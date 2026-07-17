@@ -15,8 +15,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -29,6 +31,7 @@ fun LoginScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
 
     // Splash check: nếu key đã lưu hợp lệ -> tự động vào Home
     LaunchedEffect(uiState.isCheckingSavedKey) {
@@ -178,17 +181,32 @@ fun LoginScreen(
                 Icon(Icons.Filled.CardGiftcard, contentDescription = null, tint = Primary, modifier = Modifier.size(32.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Chưa có key?", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                    Text("Mua key để trải nghiệm đầy đủ tính năng của Cày Xu.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary, fontSize = 12.sp)
+                    Text(
+                        "Chưa có key?",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        "Mua key để trải nghiệm đầy đủ tính năng của Cày Xu.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
+                // Nút "Mua ngay" -> bấm vào sẽ mở link lunex.io.vn (link ẩn, không hiện chữ URL)
                 OutlinedButton(
-                    onClick = { /* TODO: mở link mua key */ },
-                    shape = RoundedCornerShape(12.dp)
+                    onClick = { uriHandler.openUri("https://lunex.io.vn") },
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                 ) {
-                    Icon(Icons.Filled.ShoppingBag, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Filled.ShoppingBag, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Mua ngay")
+                    Text("Mua ngay", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
