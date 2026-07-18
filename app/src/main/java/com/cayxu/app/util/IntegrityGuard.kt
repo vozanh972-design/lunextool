@@ -26,7 +26,7 @@ object IntegrityGuard {
     // Để trống "" = TẠM THỜI bỏ qua kiểm tra chữ ký (dùng khi test bản debug,
     // vì bản debug ký bằng debug-key khác release-key nên sẽ luôn "invalid"
     // nếu bật kiểm tra này quá sớm).
-    private const val EXPECTED_SIGNATURE_SHA256 = ""
+    private const val EXPECTED_SIGNATURE_SHA256 = "ec7bed8d3bd42922674710fd99339c424ab1b8ab3b480ceb902abd49d5d19203"
 
     fun isTampered(context: Context): Boolean {
         return isSignatureInvalid(context) || isDebuggerAttached()
