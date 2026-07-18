@@ -48,28 +48,44 @@ git push -u origin main
    `CayXu-debug-apk` về, giải nén ra sẽ có file `.apk` cài thử được ngay.
 
 ### Bước 3 (tuỳ chọn) – Build APK Release đã ký để phát hành thật
-Debug APK ở Bước 2 dùng để cài thử, không nên phát hành. Để có APK **release**
-đã ký:
-1. Tạo keystore (nếu chưa có):
-   ```bash
-   keytool -genkey -v -keystore release.keystore -alias cayxu \
-     -keyalg RSA -keysize 2048 -validity 10000
-   ```
-2. Encode keystore sang base64:
-   ```bash
-   base64 -i release.keystore -o release.keystore.base64   # macOS
-   base64 -w0 release.keystore > release.keystore.base64   # Linux
-   ```
-3. Vào repo GitHub → **Settings > Secrets and variables > Actions** → tạo 4 secret:
-   - `KEYSTORE_BASE64` = nội dung file `release.keystore.base64`
-   - `KEYSTORE_PASSWORD` = mật khẩu keystore
-   - `KEY_ALIAS` = alias (ví dụ `cayxu`)
-   - `KEY_PASSWORD` = mật khẩu key
-4. Push lại code (hoặc **Run workflow** lần nữa) → Actions sẽ tự build thêm
-   artifact `CayXu-release-apk` đã ký sẵn, sẵn sàng phát hành.
+Debug APK ở Bước 2 dùng để cài thử, không nên phát hành. Toàn bộ bước này làm
+**hoàn toàn trên GitHub**, không cần cài keytool/Android Studio ở máy bạn:
+
+1. Vào tab **Actions** → chọn workflow **"1 - Generate Release Keystore (chỉ
+   chạy 1 lần)"** → bấm **Run workflow** → chờ chạy xong (khoảng 30 giây).
+   ⚠️ Chỉ chạy workflow này **đúng 1 lần**. Chạy lại sẽ tạo ra keystore khác,
+   làm hỏng chữ ký của các bản release cũ.
+2. Vào run vừa chạy → mục **Artifacts** → tải file
+   `release-keystore-DELETE-AFTER-DOWNLOAD` về, giải nén ra sẽ có 2 file:
+   `release.keystore` và `release.keystore.base64`.
+3. Vào repo GitHub → **Settings > Secrets and variables > Actions** → **New
+   repository secret**, tạo đủ 4 secret:
+   - `KEYSTORE_BASE64` = mở file `release.keystore.base64` bằng Notepad, copy
+     **toàn bộ nội dung** (1 dòng dài) dán vào.
+   - `KEYSTORE_PASSWORD` = `CayXu@2026Secure!`
+   - `KEY_ALIAS` = `cayxu`
+   - `KEY_PASSWORD` = `CayXu@2026Secure!`
+4. **Quan trọng:** quay lại Actions, mở run vừa tạo keystore, bấm nút **"..."**
+   góc phải mục Artifacts → **Delete artifact** để xoá file
+   `release-keystore-DELETE-AFTER-DOWNLOAD` khỏi GitHub (nó chứa keystore gốc,
+   không nên để trên mạng lâu). Bạn tự giữ 1 bản `release.keystore` đã tải về
+   ở nơi riêng, an toàn (không đăng lên đâu cả) — mất file này là mất luôn khả
+   năng phát hành bản cập nhật hợp lệ sau này.
+5. Push code (hoặc **Run workflow** lại trên workflow **Build APK**) → Actions
+   sẽ tự build thêm artifact `CayXu-release-apk` đã ký sẵn.
+6. Trong log của bước **"Print release APK signature SHA-256"** sẽ có dòng
+   `Signer #1 certificate SHA-256 digest: ...` — copy đúng chuỗi hash đó (bỏ
+   dấu `:`), dán vào biến `EXPECTED_SIGNATURE_SHA256` trong file
+   `IntegrityGuard.kt`, rồi commit + push lại lần cuối để bật kiểm tra chữ ký.
 
 ⚠️ Không commit file keystore hay mật khẩu vào Git — luôn dùng GitHub Secrets
 như trên (`.gitignore` đã loại trừ sẵn `*.keystore`, `*.jks`).
+
+⚠️ Từ giờ về sau, **mọi bản cập nhật** phải build qua đúng workflow này với
+đúng 4 secret trên (không đổi keystore) — nếu bạn generate keystore mới, chữ
+ký APK sẽ đổi, và `IntegrityGuard` sẽ coi bản mới là "bị giả mạo", tự khoá app
+với chính người dùng hợp lệ. Nâng cấp tính năng, sửa code bình thường (không
+đổi keystore) thì hoàn toàn không ảnh hưởng gì đến cơ chế này.
 
 ## Một lưu ý quan trọng
 Mô hình app (mua key kích hoạt → "cày" ra Xu quy đổi tiền → mời bạn bè nhận thưởng)

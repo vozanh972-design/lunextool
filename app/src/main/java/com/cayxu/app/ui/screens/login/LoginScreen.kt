@@ -85,7 +85,7 @@ fun LoginScreen(
         // Kích thước ảnh ví tính theo % chiều rộng màn hình thật (responsive):
         // máy màn hình to -> ảnh to hơn, máy màn hình nhỏ -> ảnh nhỏ lại theo tỉ lệ,
         // có chặn min/max để không bị quá bé hoặc quá to bất hợp lý.
-        val walletImageSize = (maxWidth * 0.30f).coerceIn(84.dp, 168.dp)
+        val walletImageSize = (maxWidth * 0.42f).coerceIn(110.dp, 220.dp)
 
         Column(
             modifier = Modifier
