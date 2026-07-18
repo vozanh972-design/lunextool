@@ -109,5 +109,10 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
+    // WorkManager: dùng để lên lịch tự động gọi lại verify_key.php định kỳ
+    // (ngẫu nhiên 3-10 tiếng/lần), phát hiện key bị thu hồi/hết hạn ngay cả khi
+    // app đã bị patch để bypass màn Login lúc mở app.
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

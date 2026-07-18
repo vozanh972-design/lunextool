@@ -98,14 +98,12 @@ fun LoginScreen(
         // Logo + tiêu đề, kèm hình minh hoạ ví bên phải cho sinh động hơn
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .background(Primary, RoundedCornerShape(16.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.MonetizationOn, contentDescription = null, tint = Color.White, modifier = Modifier.size(30.dp))
-                }
+                Image(
+                    painter = painterResource(R.drawable.ic_app_logo),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(64.dp)
+                )
                 Spacer(Modifier.height(12.dp))
                 Text(TEXT_TITLE, style = MaterialTheme.typography.headlineMedium, color = TextPrimary)
                 Spacer(Modifier.height(2.dp))
