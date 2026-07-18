@@ -63,4 +63,28 @@ object IntegrityGuard {
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
         return digest.joinToString("") { "%02x".format(it) }
     }
+
+    /**
+     * Trả về SHA-256 chữ ký thật của APK đang chạy trên máy này - dùng để hiển
+     * thị trong app (màn Tài khoản) cho bạn tự đối chiếu bằng mắt với giá trị
+     * đã điền trong EXPECTED_SIGNATURE_SHA256, không cần dùng ADB hay công cụ gì.
+     */
+    @Suppress("DEPRECATION")
+    fun currentSignatureSha256(context: Context): String {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val info = context.packageManager.getPackageInfo(
+                    context.packageName, PackageManager.GET_SIGNING_CERTIFICATES
+                )
+                info.signingInfo?.apkContentsSigners?.firstOrNull()?.let { sha256(it.toByteArray()) } ?: "?"
+            } else {
+                val info = context.packageManager.getPackageInfo(
+                    context.packageName, PackageManager.GET_SIGNATURES
+                )
+                info.signatures?.firstOrNull()?.let { sha256(it.toByteArray()) } ?: "?"
+            }
+        } catch (e: Exception) {
+            "?"
+        }
+    }
 }

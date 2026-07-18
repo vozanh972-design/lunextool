@@ -1,6 +1,7 @@
 package com.cayxu.app.ui.screens.login
 
 import android.widget.Toast
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -15,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -113,12 +115,52 @@ fun LoginScreen(
                     color = TextSecondary
                 )
             }
-            Image(
-                painter = painterResource(R.drawable.ill_wallet_growth),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.size(walletImageSize)
-            )
+            Box(
+                modifier = Modifier.size(walletImageSize * 1.35f),
+                contentAlignment = Alignment.Center
+            ) {
+                // Nền mềm (radial gradient nhạt) phía sau ảnh ví, giống ảnh mẫu,
+                // giúp ảnh hoà vào layout thay vì trông như dán rời.
+                Canvas(modifier = Modifier.matchParentSize()) {
+                    val w = size.width
+                    val h = size.height
+
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(InfoBlueBg.copy(alpha = 0.9f), InfoBlueBg.copy(alpha = 0f)),
+                            radius = w * 0.55f
+                        ),
+                        radius = w * 0.55f,
+                        center = androidx.compose.ui.geometry.Offset(w * 0.55f, h * 0.45f)
+                    )
+
+                    // Đường cong đứt nét trang trí
+                    val dashPath = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(w * 0.08f, h * 0.35f)
+                        quadraticTo(w * 0.28f, h * 0.05f, w * 0.5f, h * 0.18f)
+                    }
+                    drawPath(
+                        path = dashPath,
+                        color = Primary.copy(alpha = 0.25f),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(
+                            width = 3f,
+                            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
+                        )
+                    )
+
+                    // Vài chấm tròn nhỏ trang trí
+                    drawCircle(color = Primary.copy(alpha = 0.35f), radius = 5f, center = androidx.compose.ui.geometry.Offset(w * 0.06f, h * 0.55f))
+                    drawCircle(color = Color(0xFFFFC83D).copy(alpha = 0.55f), radius = 4f, center = androidx.compose.ui.geometry.Offset(w * 0.92f, h * 0.15f))
+                    drawCircle(color = Primary.copy(alpha = 0.2f), radius = 7f, center = androidx.compose.ui.geometry.Offset(w * 0.85f, h * 0.85f))
+                }
+
+                Image(
+                    painter = painterResource(R.drawable.ill_wallet_growth),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(walletImageSize)
+                )
+            }
         }
 
         Spacer(Modifier.height(20.dp))
