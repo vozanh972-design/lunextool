@@ -124,14 +124,26 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                         subtitle = "Hoàn thành nhiệm vụ để nhận xu",
                         accentColor = Color(0xFF16A34A),
                         modifier = Modifier.weight(1f)
-                    ) { navController.navigate("tasks") { launchSingleTop = true } }
+                    ) {
+                        navController.navigate(com.cayxu.app.ui.navigation.Routes.TASKS) {
+                            popUpTo(com.cayxu.app.ui.navigation.Routes.HOME) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
                     MenuButton(
                         icon = Icons.Filled.AccountBalanceWallet,
                         label = "Ví",
                         subtitle = "Quản lý xu và giao dịch",
                         accentColor = Color(0xFFF97316),
                         modifier = Modifier.weight(1f)
-                    ) { navController.navigate("wallet") { launchSingleTop = true } }
+                    ) {
+                        navController.navigate(com.cayxu.app.ui.navigation.Routes.WALLET) {
+                            popUpTo(com.cayxu.app.ui.navigation.Routes.HOME) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
                 }
             }
 
@@ -141,7 +153,13 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
             Spacer(Modifier.height(24.dp))
 
-            SectionHeader("Lịch sử gần đây") { navController.navigate("wallet") { launchSingleTop = true } }
+            SectionHeader("Lịch sử gần đây") {
+                navController.navigate(com.cayxu.app.ui.navigation.Routes.WALLET) {
+                    popUpTo(com.cayxu.app.ui.navigation.Routes.HOME) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
             Spacer(Modifier.height(10.dp))
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 HistoryRow(Icons.Filled.CheckCircle, SuccessGreen, "Hoàn thành nhiệm vụ", "Nhận thưởng nhiệm vụ", "+2.000 Xu", "Hôm nay, 09:30", true)

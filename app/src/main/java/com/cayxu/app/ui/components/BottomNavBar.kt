@@ -12,6 +12,8 @@ import androidx.compose.runtime.getValue
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.cayxu.app.ui.navigation.Routes
+import com.cayxu.app.ui.theme.CardWhite
+import com.cayxu.app.ui.theme.InfoBlueBg
 import com.cayxu.app.ui.theme.Primary
 import com.cayxu.app.ui.theme.TextSecondary
 
@@ -29,7 +31,7 @@ fun CayXuBottomBar(navController: NavController) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    NavigationBar(containerColor = androidx.compose.ui.graphics.Color.White) {
+    NavigationBar(containerColor = CardWhite) {
         bottomItems.forEach { item ->
             NavigationBarItem(
                 selected = currentRoute == item.route,
@@ -49,7 +51,7 @@ fun CayXuBottomBar(navController: NavController) {
                     selectedTextColor = Primary,
                     unselectedIconColor = TextSecondary,
                     unselectedTextColor = TextSecondary,
-                    indicatorColor = androidx.compose.ui.graphics.Color(0xFFEFF4FF)
+                    indicatorColor = InfoBlueBg
                 )
             )
         }
