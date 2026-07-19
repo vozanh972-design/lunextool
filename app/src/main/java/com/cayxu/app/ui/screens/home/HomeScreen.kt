@@ -106,10 +106,34 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
             // Menu 4 nút
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MenuButton(Icons.Filled.Widgets, "Tiện ích", Modifier.weight(1f)) { }
-                MenuButton(Icons.Filled.EventAvailable, "Điểm danh", Modifier.weight(1f)) { }
-                MenuButton(Icons.Filled.Assignment, "Nhiệm vụ", Modifier.weight(1f)) { navController.navigate("tasks") }
-                MenuButton(Icons.Filled.AccountBalanceWallet, "Rút tiền", Modifier.weight(1f)) { navController.navigate("wallet") }
+                MenuButton(
+                    icon = Icons.Filled.Widgets,
+                    label = "Tiện ích",
+                    subtitle = "Khám phá công cụ hữu ích",
+                    accentColor = Color(0xFF7C3AED),
+                    modifier = Modifier.weight(1f)
+                ) { }
+                MenuButton(
+                    icon = Icons.Filled.Settings,
+                    label = "Cài đặt",
+                    subtitle = "Cấu hình ứng dụng",
+                    accentColor = Color(0xFF2563EB),
+                    modifier = Modifier.weight(1f)
+                ) { }
+                MenuButton(
+                    icon = Icons.Filled.Assignment,
+                    label = "Nhiệm vụ",
+                    subtitle = "Hoàn thành nhiệm vụ để nhận xu",
+                    accentColor = Color(0xFF16A34A),
+                    modifier = Modifier.weight(1f)
+                ) { navController.navigate("tasks") }
+                MenuButton(
+                    icon = Icons.Filled.AccountBalanceWallet,
+                    label = "Ví",
+                    subtitle = "Quản lý xu và giao dịch",
+                    accentColor = Color(0xFFF97316),
+                    modifier = Modifier.weight(1f)
+                ) { navController.navigate("wallet") }
             }
 
             Spacer(Modifier.height(20.dp))
@@ -181,25 +205,57 @@ private fun PremiumCard(info: com.cayxu.app.data.model.VerifyKeyResponse) {
 }
 
 @Composable
-private fun MenuButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun MenuButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    subtitle: String,
+    accentColor: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     Column(
         modifier = modifier
-            .heightIn(min = 78.dp)
+            .heightIn(min = 128.dp)
             .background(CardWhite, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
+            .padding(horizontal = 8.dp, vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Top
     ) {
-        Icon(icon, contentDescription = label, tint = Primary, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .background(accentColor.copy(alpha = 0.12f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = label, tint = accentColor, modifier = Modifier.size(22.dp))
+        }
+        Spacer(Modifier.height(8.dp))
         Text(
             label,
-            fontSize = 11.sp,
+            fontSize = 13.sp,
             color = TextPrimary,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.Bold,
             maxLines = 1,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            subtitle,
+            fontSize = 10.sp,
+            color = TextSecondary,
+            fontWeight = FontWeight.Normal,
+            maxLines = 2,
+            lineHeight = 12.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.heightIn(min = 24.dp)
+        )
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .width(22.dp)
+                .height(3.dp)
+                .background(accentColor, RoundedCornerShape(50))
         )
     }
 }
