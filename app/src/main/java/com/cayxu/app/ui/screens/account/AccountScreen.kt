@@ -152,18 +152,22 @@ fun AccountScreen(navController: NavController) {
                                 )
                             }
                         }
-                        IconButton(
-                            onClick = { pickImageLauncher.launch(arrayOf("image/*")) },
+                        Box(
                             modifier = Modifier
-                                .size(28.dp)
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(CardWhite)
+                                .padding(2.dp)
                                 .clip(CircleShape)
                                 .background(Primary)
+                                .clickable { pickImageLauncher.launch(arrayOf("image/*")) },
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 Icons.Filled.CameraAlt,
                                 contentDescription = "Đổi ảnh đại diện",
                                 tint = CardWhite,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(13.dp)
                             )
                         }
                     }
