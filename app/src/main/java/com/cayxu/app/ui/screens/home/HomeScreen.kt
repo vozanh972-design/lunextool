@@ -102,7 +102,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
             Spacer(Modifier.height(20.dp))
 
             // Menu 4 nút
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MenuButton(Icons.Filled.SportsEsports, "Cày xu", Modifier.weight(1f)) { }
                 MenuButton(Icons.Filled.EventAvailable, "Điểm danh", Modifier.weight(1f)) { }
                 MenuButton(Icons.Filled.Assignment, "Nhiệm vụ", Modifier.weight(1f)) { navController.navigate("tasks") }
@@ -141,7 +141,6 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
 @Composable
 private fun PremiumCard(info: com.cayxu.app.data.model.VerifyKeyResponse) {
-    val packageLabel = if (info.packageName == "PRO") "Premium Pro" else "Premium Basic"
     Card(
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -151,13 +150,21 @@ private fun PremiumCard(info: com.cayxu.app.data.model.VerifyKeyResponse) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Brush.horizontalGradient(listOf(Color(0xFF1E3A8A), Color(0xFF2563EB))))
+                .background(Brush.linearGradient(listOf(Color(0xFF7C3AED), Color(0xFF2563EB))))
                 .padding(20.dp)
         ) {
+            Icon(
+                Icons.Filled.EmojiEvents,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.18f),
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .size(90.dp)
+            )
             Column {
-                Text("GÓI PREMIUM", color = Color(0xFFBFDBFE), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("GÓI", color = Color(0xFFE0D4FF), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
                 Spacer(Modifier.height(2.dp))
-                Text(packageLabel, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text("Premium", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -172,8 +179,8 @@ private fun PremiumCard(info: com.cayxu.app.data.model.VerifyKeyResponse) {
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Hết hạn: ${info.expiresAt ?: "--"}  •  Còn ${info.daysLeft ?: 0} ngày",
-                    color = Color(0xFFDCE7FF),
+                    "Hết hạn: ${info.expiresAt ?: "--"}",
+                    color = Color(0xFFE5DCFF),
                     fontSize = 12.sp
                 )
             }
@@ -185,14 +192,23 @@ private fun PremiumCard(info: com.cayxu.app.data.model.VerifyKeyResponse) {
 private fun MenuButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(
         modifier = modifier
+            .heightIn(min = 78.dp)
             .background(CardWhite, RoundedCornerShape(16.dp))
-            .padding(vertical = 14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        IconButton(onClick = onClick) {
-            Icon(icon, contentDescription = label, tint = Primary)
-        }
-        Text(label, fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+        Icon(icon, contentDescription = label, tint = Primary, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.height(6.dp))
+        Text(
+            label,
+            fontSize = 11.sp,
+            color = TextPrimary,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
     }
 }
 
@@ -209,6 +225,15 @@ private fun IncomeCard() {
                 Text("Thu nhập hôm nay", color = TextSecondary, fontSize = 13.sp)
                 Spacer(Modifier.width(4.dp))
                 Icon(Icons.Filled.Info, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "Dữ liệu minh hoạ",
+                    color = TextSecondary,
+                    fontSize = 10.sp,
+                    modifier = Modifier
+                        .background(AppBackground, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
             }
             Spacer(Modifier.height(4.dp))
             // Dữ liệu demo minh hoạ giao diện, sẽ được thay bằng dữ liệu thật từ API thu nhập trong tương lai
