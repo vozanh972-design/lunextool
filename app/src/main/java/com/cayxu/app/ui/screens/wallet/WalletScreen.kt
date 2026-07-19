@@ -62,6 +62,7 @@ private val walletTabs = listOf(
     WalletTab("Ví Tuongtaccheo", listOf(Color(0xFFF472B6), Color(0xFFEC4899)))
 )
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun WalletScreen(navController: NavController) {
     var balanceVisible by remember { mutableStateOf(true) }
@@ -86,16 +87,38 @@ fun WalletScreen(navController: NavController) {
 
             Spacer(Modifier.height(14.dp))
 
-            // 3 ví riêng theo từng nền tảng (Golike / Traodoisub / Tuongtaccheo).
-            // Hiện dùng chung 1 số dư demo vì backend chỉ có endpoint verify_key.php,
-            // chưa có API số dư riêng theo từng nền tảng.
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                walletTabs.forEach { tab ->
-                    WalletBalanceCard(
-                        title = tab.title,
-                        gradientColors = tab.gradientColors,
-                        balanceVisible = balanceVisible,
-                        onToggleVisibility = { balanceVisible = !balanceVisible }
+            // 3 ví riêng theo từng nền tảng, dạng vuốt ngang (carousel) như thẻ
+            // ngân hàng, thay vì xếp chồng dọc. Hiện dùng chung 1 số dư demo vì
+            // backend chỉ có endpoint verify_key.php, chưa có API số dư riêng
+            // theo từng nền tảng.
+            val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { walletTabs.size })
+            androidx.compose.foundation.pager.HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxWidth()
+            ) { page ->
+                val tab = walletTabs[page]
+                WalletBalanceCard(
+                    title = tab.title,
+                    gradientColors = tab.gradientColors,
+                    balanceVisible = balanceVisible,
+                    onToggleVisibility = { balanceVisible = !balanceVisible }
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                repeat(walletTabs.size) { index ->
+                    val isActive = pagerState.currentPage == index
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 3.dp)
+                            .size(if (isActive) 20.dp else 6.dp, 6.dp)
+                            .background(
+                                if (isActive) walletTabs[index].gradientColors.last() else Color(0xFFD9E7FF),
+                                RoundedCornerShape(50)
+                            )
                     )
                 }
             }

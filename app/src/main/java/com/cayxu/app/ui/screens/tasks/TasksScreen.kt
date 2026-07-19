@@ -156,38 +156,43 @@ private fun PlatformRow(option: PlatformOption, selected: Boolean, onClick: () -
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (selected) option.accentColor.copy(alpha = 0.08f) else CardWhite
+            containerColor = if (selected) option.accentColor.copy(alpha = 0.07f) else CardWhite
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (selected) 0.dp else 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .border(
-                width = if (selected) 1.5.dp else 1.dp,
-                color = if (selected) option.accentColor else Color(0xFFE2E8F0),
-                shape = RoundedCornerShape(16.dp)
-            )
             .clickable(onClick = onClick)
     ) {
-        Row(
-            modifier = Modifier.padding(14.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            // Vạch màu bên trái đánh dấu đang được chọn, thay cho viền bao quanh
+            // (dễ bị nhìn nhầm thành khung đen) và nút tích.
             Box(
-                modifier = Modifier.size(46.dp).background(option.accentColor, RoundedCornerShape(14.dp)),
-                contentAlignment = Alignment.Center
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(if (selected) option.accentColor else Color.Transparent)
+            )
+            Row(
+                modifier = Modifier.padding(14.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(option.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    option.name,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = if (selected) option.accentColor else TextPrimary
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(option.subtitle, color = TextSecondary, fontSize = 12.sp)
+                Box(
+                    modifier = Modifier.size(46.dp).background(option.accentColor, RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(option.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        option.name,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = if (selected) option.accentColor else TextPrimary
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(option.subtitle, color = TextSecondary, fontSize = 12.sp)
+                }
             }
         }
     }
