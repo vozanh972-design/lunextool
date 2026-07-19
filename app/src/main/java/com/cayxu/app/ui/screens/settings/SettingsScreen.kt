@@ -45,12 +45,12 @@ fun SettingsScreen(navController: NavController) {
     // (không phải mock) - bật/tắt FLAG_KEEP_SCREEN_ON ngay khi gạt.
     var keepScreenOn by remember { mutableStateOf(false) }
 
-    // TODO: các mục dưới đây (thông báo đẩy, email, chế độ tối, ngôn ngữ, xác minh danh tính,
-    // đổi mật khẩu...) hiện chưa có hệ thống backend/tuỳ chỉnh giao diện tương ứng, chỉ là
-    // công tắc UI cục bộ để hoàn thiện màn hình theo ảnh mẫu, chưa lưu lại hay tác động thật.
+    // TODO: các mục dưới đây (thông báo đẩy, email, ngôn ngữ...) hiện chưa có hệ thống
+    // backend/tuỳ chỉnh tương ứng, chỉ là công tắc UI cục bộ để hoàn thiện màn hình theo
+    // ảnh mẫu, chưa lưu lại hay tác động thật. Riêng "Chế độ tối" bên dưới là công tắc THẬT,
+    // đổi màu toàn app ngay lập tức (xem ThemeState.kt).
     var pushNotifications by remember { mutableStateOf(true) }
     var emailNotifications by remember { mutableStateOf(true) }
-    var darkMode by remember { mutableStateOf(false) }
 
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
@@ -77,20 +77,6 @@ fun SettingsScreen(navController: NavController) {
         }
 
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-            SettingsSectionLabel("Tài khoản")
-            SettingsGroup {
-                SettingsRow(
-                    icon = Icons.Filled.Person,
-                    iconColor = Primary,
-                    title = "Thông tin tài khoản",
-                    onClick = { navController.navigate(Routes.ACCOUNT) }
-                )
-                SettingsRow(icon = Icons.Filled.Shield, iconColor = SuccessGreen, title = "Bảo mật", onClick = { })
-                SettingsRow(icon = Icons.Filled.Badge, iconColor = Color(0xFF7C3AED), title = "Xác minh danh tính", onClick = { })
-                SettingsRow(icon = Icons.Filled.Lock, iconColor = Color(0xFFF97316), title = "Đổi mật khẩu", onClick = { })
-            }
-
-            Spacer(Modifier.height(20.dp))
             SettingsSectionLabel("Thông báo")
             SettingsGroup {
                 SettingsSwitchRow(
@@ -131,8 +117,10 @@ fun SettingsScreen(navController: NavController) {
                     icon = Icons.Filled.DarkMode,
                     iconColor = TextSecondary,
                     title = "Chế độ tối",
-                    checked = darkMode,
-                    onCheckedChange = { darkMode = it }
+                    checked = com.cayxu.app.ui.theme.ThemeState.isDarkMode,
+                    onCheckedChange = { checked ->
+                        com.cayxu.app.ui.theme.ThemeState.setDarkMode(context, checked)
+                    }
                 )
                 SettingsRow(
                     icon = Icons.Filled.Language,
