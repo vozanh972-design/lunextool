@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.cayxu.app.ui.components.CayXuBottomBar
 import com.cayxu.app.ui.theme.*
 
 @Composable
@@ -48,26 +47,22 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
         }
     }
 
-    Scaffold(
-        containerColor = AppBackground,
-        bottomBar = { CayXuBottomBar(navController) }
-    ) { padding ->
-        if (uiState.isLoading) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Primary)
-            }
-            return@Scaffold
+    if (uiState.isLoading) {
+        Box(Modifier.fillMaxSize().background(AppBackground), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Primary)
         }
+        return
+    }
 
-        val info = uiState.info
+    val info = uiState.info
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
-        ) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(AppBackground)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
             // Header: Mã máy
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -120,7 +115,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                         subtitle = "Cấu hình ứng dụng",
                         accentColor = Color(0xFF2563EB),
                         modifier = Modifier.weight(1f)
-                    ) { }
+                    ) { navController.navigate(com.cayxu.app.ui.navigation.Routes.SETTINGS) }
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     MenuButton(
@@ -156,7 +151,6 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
             Spacer(Modifier.height(90.dp))
         }
-    }
 }
 
 @Composable

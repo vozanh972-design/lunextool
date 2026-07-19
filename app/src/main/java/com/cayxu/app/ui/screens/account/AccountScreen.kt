@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,7 +37,6 @@ import androidx.navigation.NavController
 import com.cayxu.app.BuildConfig
 import com.cayxu.app.R
 import com.cayxu.app.data.local.SecurePrefs
-import com.cayxu.app.ui.components.CayXuBottomBar
 import com.cayxu.app.ui.theme.AppBackground
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.InfoBlueBg
@@ -108,17 +108,25 @@ fun AccountScreen(navController: NavController) {
         }
     }
 
-    Scaffold(containerColor = AppBackground, bottomBar = { CayXuBottomBar(navController) }) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(AppBackground)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+    ) {
+        Spacer(Modifier.height(14.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Spacer(Modifier.height(14.dp))
             Text("Tài khoản", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { navController.navigate(com.cayxu.app.ui.navigation.Routes.SETTINGS) }) {
+                Icon(Icons.Filled.Settings, contentDescription = "Cài đặt", tint = TextPrimary)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
 
             // Thẻ thông tin tài khoản: avatar (mặc định hoặc do người dùng tự chọn) + ID + mã máy
             Column(
@@ -246,7 +254,6 @@ fun AccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(90.dp))
         }
-    }
 }
 
 @Composable

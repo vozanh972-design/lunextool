@@ -7,15 +7,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
-import com.cayxu.app.ui.components.CayXuBottomBar
 import com.cayxu.app.ui.theme.AppBackground
 import com.cayxu.app.ui.theme.TextSecondary
 
 @Composable
 fun FriendsScreen(navController: NavController) {
-    Scaffold(containerColor = AppBackground, bottomBar = { CayXuBottomBar(navController) }) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding).background(AppBackground), contentAlignment = Alignment.Center) {
-            Text("Bạn bè / Giới thiệu (đang phát triển)", color = TextSecondary)
-        }
+    Box(Modifier.fillMaxSize().background(AppBackground), contentAlignment = Alignment.Center) {
+        Text("Bạn bè / Giới thiệu (đang phát triển)", color = TextSecondary)
     }
 }
