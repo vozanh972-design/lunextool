@@ -142,19 +142,18 @@ private fun PremiumCard(info: com.cayxu.app.data.model.VerifyKeyResponse) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(Color(0xFF2563EB), Color(0xFF7C3AED))))
-                .padding(20.dp)
+                .background(Brush.linearGradient(listOf(Color(0xFF418DFC), Color(0xFF7950F6))))
         ) {
             Image(
                 painter = painterResource(com.cayxu.app.R.drawable.ic_crown_premium),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                alpha = 0.9f,
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .size(90.dp)
+                    .align(Alignment.TopEnd)
+                    .offset(x = 22.dp, y = (-18).dp)
+                    .size(width = 150.dp, height = 130.dp)
             )
-            Column {
+            Column(modifier = Modifier.padding(20.dp)) {
                 Text("GÓI", color = Color(0xFFE0D4FF), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
                 Spacer(Modifier.height(2.dp))
                 Text("Premium", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
