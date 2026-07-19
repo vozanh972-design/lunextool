@@ -44,8 +44,32 @@ class SecurePrefs(context: Context) {
 
     fun isPermanentlyBlocked(): Boolean = prefs.getBoolean(KEY_BLOCKED, false)
 
+    /**
+     * Trả về ID hiển thị của tài khoản (8 chữ số, sinh ngẫu nhiên 1 lần duy nhất
+     * rồi lưu lại) - dùng thay cho username thật để hiển thị ở màn Tài khoản.
+     */
+    fun getOrCreateAccountId(): String {
+        val existing = prefs.getString(KEY_ACCOUNT_ID, null)
+        if (!existing.isNullOrBlank()) return existing
+        val generated = (10_000_000..99_999_999).random().toString()
+        prefs.edit().putString(KEY_ACCOUNT_ID, generated).apply()
+        return generated
+    }
+
+    /**
+     * Lưu/đọc URI ảnh đại diện do người dùng tự chọn. Nếu chưa chọn (null),
+     * màn Tài khoản sẽ hiển thị ảnh đại diện mặc định.
+     */
+    fun saveAvatarUri(uri: String?) {
+        prefs.edit().putString(KEY_AVATAR_URI, uri).apply()
+    }
+
+    fun getAvatarUri(): String? = prefs.getString(KEY_AVATAR_URI, null)
+
     companion object {
         private const val KEY_LOGIN_KEY = "login_key"
         private const val KEY_BLOCKED = "permanently_blocked"
+        private const val KEY_ACCOUNT_ID = "account_id"
+        private const val KEY_AVATAR_URI = "avatar_uri"
     }
 }
