@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.cayxu.app.R
+import com.cayxu.app.ui.components.CayXuBottomBar
 import com.cayxu.app.ui.theme.*
 
 private data class WalletHistoryItem(
@@ -53,11 +54,19 @@ private val historyItems = listOf(
     WalletHistoryItem(Icons.Filled.ArrowUpward, Primary, "Chuyển Xu cho bạn bè", "07/05/2026, 11:30", "-2.000 Xu", false)
 )
 
+private data class WalletTab(val title: String, val gradientColors: List<Color>)
+
+private val walletTabs = listOf(
+    WalletTab("Ví Golike", listOf(Color(0xFF9D5CE8), Color(0xFF7C3AED))),
+    WalletTab("Ví Traodoisub", listOf(Color(0xFF418DFC), Color(0xFF7950F6))),
+    WalletTab("Ví Tuongtaccheo", listOf(Color(0xFFF472B6), Color(0xFFEC4899)))
+)
+
 @Composable
 fun WalletScreen(navController: NavController) {
     var balanceVisible by remember { mutableStateOf(true) }
 
-    Scaffold(containerColor = AppBackground) { padding ->
+    Scaffold(containerColor = AppBackground, bottomBar = { CayXuBottomBar(navController) }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -77,10 +86,19 @@ fun WalletScreen(navController: NavController) {
 
             Spacer(Modifier.height(14.dp))
 
-            WalletBalanceCard(
-                balanceVisible = balanceVisible,
-                onToggleVisibility = { balanceVisible = !balanceVisible }
-            )
+            // 3 ví riêng theo từng nền tảng (Golike / Traodoisub / Tuongtaccheo).
+            // Hiện dùng chung 1 số dư demo vì backend chỉ có endpoint verify_key.php,
+            // chưa có API số dư riêng theo từng nền tảng.
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                walletTabs.forEach { tab ->
+                    WalletBalanceCard(
+                        title = tab.title,
+                        gradientColors = tab.gradientColors,
+                        balanceVisible = balanceVisible,
+                        onToggleVisibility = { balanceVisible = !balanceVisible }
+                    )
+                }
+            }
 
             Spacer(Modifier.height(24.dp))
 
@@ -125,7 +143,12 @@ fun WalletScreen(navController: NavController) {
 }
 
 @Composable
-private fun WalletBalanceCard(balanceVisible: Boolean, onToggleVisibility: () -> Unit) {
+private fun WalletBalanceCard(
+    title: String,
+    gradientColors: List<Color>,
+    balanceVisible: Boolean,
+    onToggleVisibility: () -> Unit
+) {
     Card(
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -135,7 +158,7 @@ private fun WalletBalanceCard(balanceVisible: Boolean, onToggleVisibility: () ->
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(Color(0xFF418DFC), Color(0xFF7950F6))))
+                .background(Brush.linearGradient(gradientColors))
         ) {
             Image(
                 painter = painterResource(R.drawable.ic_wallet_coin),
@@ -148,7 +171,7 @@ private fun WalletBalanceCard(balanceVisible: Boolean, onToggleVisibility: () ->
             )
             Column(modifier = Modifier.padding(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Số dư Xu của bạn", color = Color(0xFFE5DCFF), fontSize = 13.sp)
+                    Text(title, color = Color(0xFFE5DCFF), fontSize = 13.sp)
                     Spacer(Modifier.width(6.dp))
                     Icon(
                         if (balanceVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,

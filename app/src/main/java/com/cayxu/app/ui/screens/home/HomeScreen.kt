@@ -73,15 +73,15 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier.size(44.dp).background(InfoBlueBg, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.PhoneAndroid, contentDescription = null, tint = Primary)
-                }
+                Image(
+                    painter = painterResource(com.cayxu.app.R.drawable.ic_app_logo),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(44.dp)
+                )
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Mã máy", style = MaterialTheme.typography.bodyMedium, color = TextSecondary, fontSize = 12.sp)
+                    Text("CAYXU", style = MaterialTheme.typography.bodyMedium, color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     Text(uiState.androidId, fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 15.sp)
                 }
                 IconButton(onClick = {
@@ -104,36 +104,40 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
             Spacer(Modifier.height(20.dp))
 
-            // Menu 4 nút
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MenuButton(
-                    icon = Icons.Filled.Widgets,
-                    label = "Tiện ích",
-                    subtitle = "Khám phá công cụ hữu ích",
-                    accentColor = Color(0xFF7C3AED),
-                    modifier = Modifier.weight(1f)
-                ) { }
-                MenuButton(
-                    icon = Icons.Filled.Settings,
-                    label = "Cài đặt",
-                    subtitle = "Cấu hình ứng dụng",
-                    accentColor = Color(0xFF2563EB),
-                    modifier = Modifier.weight(1f)
-                ) { }
-                MenuButton(
-                    icon = Icons.Filled.Assignment,
-                    label = "Nhiệm vụ",
-                    subtitle = "Hoàn thành nhiệm vụ để nhận xu",
-                    accentColor = Color(0xFF16A34A),
-                    modifier = Modifier.weight(1f)
-                ) { navController.navigate("tasks") }
-                MenuButton(
-                    icon = Icons.Filled.AccountBalanceWallet,
-                    label = "Ví",
-                    subtitle = "Quản lý xu và giao dịch",
-                    accentColor = Color(0xFFF97316),
-                    modifier = Modifier.weight(1f)
-                ) { navController.navigate("wallet") }
+            // Menu 4 nút, xếp dạng lưới 2x2
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MenuButton(
+                        icon = Icons.Filled.Widgets,
+                        label = "Tiện ích",
+                        subtitle = "Khám phá công cụ hữu ích",
+                        accentColor = Color(0xFF7C3AED),
+                        modifier = Modifier.weight(1f)
+                    ) { }
+                    MenuButton(
+                        icon = Icons.Filled.Settings,
+                        label = "Cài đặt",
+                        subtitle = "Cấu hình ứng dụng",
+                        accentColor = Color(0xFF2563EB),
+                        modifier = Modifier.weight(1f)
+                    ) { }
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MenuButton(
+                        icon = Icons.Filled.Assignment,
+                        label = "Nhiệm vụ",
+                        subtitle = "Hoàn thành nhiệm vụ để nhận xu",
+                        accentColor = Color(0xFF16A34A),
+                        modifier = Modifier.weight(1f)
+                    ) { navController.navigate("tasks") { launchSingleTop = true } }
+                    MenuButton(
+                        icon = Icons.Filled.AccountBalanceWallet,
+                        label = "Ví",
+                        subtitle = "Quản lý xu và giao dịch",
+                        accentColor = Color(0xFFF97316),
+                        modifier = Modifier.weight(1f)
+                    ) { navController.navigate("wallet") { launchSingleTop = true } }
+                }
             }
 
             Spacer(Modifier.height(20.dp))
@@ -142,7 +146,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
             Spacer(Modifier.height(24.dp))
 
-            SectionHeader("Lịch sử gần đây") { navController.navigate("wallet") }
+            SectionHeader("Lịch sử gần đây") { navController.navigate("wallet") { launchSingleTop = true } }
             Spacer(Modifier.height(10.dp))
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 HistoryRow(Icons.Filled.CheckCircle, SuccessGreen, "Hoàn thành nhiệm vụ", "Nhận thưởng nhiệm vụ", "+2.000 Xu", "Hôm nay, 09:30", true)

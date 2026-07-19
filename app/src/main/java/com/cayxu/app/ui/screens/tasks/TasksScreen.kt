@@ -189,14 +189,6 @@ private fun PlatformRow(option: PlatformOption, selected: Boolean, onClick: () -
                 Spacer(Modifier.height(2.dp))
                 Text(option.subtitle, color = TextSecondary, fontSize = 12.sp)
             }
-            if (selected) {
-                Box(
-                    modifier = Modifier.size(22.dp).background(option.accentColor, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.Check, contentDescription = "Đã chọn", tint = Color.White, modifier = Modifier.size(14.dp))
-                }
-            }
         }
     }
 }
