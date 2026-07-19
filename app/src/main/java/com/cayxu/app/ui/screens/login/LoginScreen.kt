@@ -116,7 +116,9 @@ fun LoginScreen(
                 )
             }
             Box(
-                modifier = Modifier.size(walletImageSize * 1.35f),
+                modifier = Modifier
+                    .width(walletImageSize)
+                    .height(walletImageSize * 0.82f),
                 contentAlignment = Alignment.Center
             ) {
                 // Nền mềm (radial gradient nhạt) phía sau ảnh ví, giống ảnh mẫu,
@@ -128,16 +130,16 @@ fun LoginScreen(
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(InfoBlueBg.copy(alpha = 0.9f), InfoBlueBg.copy(alpha = 0f)),
-                            radius = w * 0.55f
+                            radius = w * 0.6f
                         ),
-                        radius = w * 0.55f,
-                        center = androidx.compose.ui.geometry.Offset(w * 0.55f, h * 0.45f)
+                        radius = w * 0.6f,
+                        center = androidx.compose.ui.geometry.Offset(w * 0.55f, h * 0.5f)
                     )
 
                     // Đường cong đứt nét trang trí
                     val dashPath = androidx.compose.ui.graphics.Path().apply {
-                        moveTo(w * 0.08f, h * 0.35f)
-                        quadraticTo(w * 0.28f, h * 0.05f, w * 0.5f, h * 0.18f)
+                        moveTo(w * 0.05f, h * 0.4f)
+                        quadraticBezierTo(w * 0.25f, h * 0.02f, w * 0.48f, h * 0.16f)
                     }
                     drawPath(
                         path = dashPath,
@@ -149,16 +151,21 @@ fun LoginScreen(
                     )
 
                     // Vài chấm tròn nhỏ trang trí
-                    drawCircle(color = Primary.copy(alpha = 0.35f), radius = 5f, center = androidx.compose.ui.geometry.Offset(w * 0.06f, h * 0.55f))
-                    drawCircle(color = Color(0xFFFFC83D).copy(alpha = 0.55f), radius = 4f, center = androidx.compose.ui.geometry.Offset(w * 0.92f, h * 0.15f))
-                    drawCircle(color = Primary.copy(alpha = 0.2f), radius = 7f, center = androidx.compose.ui.geometry.Offset(w * 0.85f, h * 0.85f))
+                    drawCircle(color = Primary.copy(alpha = 0.35f), radius = 5f, center = androidx.compose.ui.geometry.Offset(w * 0.04f, h * 0.65f))
+                    drawCircle(color = Color(0xFFFFC83D).copy(alpha = 0.55f), radius = 4f, center = androidx.compose.ui.geometry.Offset(w * 0.9f, h * 0.08f))
                 }
 
+                // Crop thay vì Fit + khung thấp hơn ảnh gốc một chút -> đồng xu góc
+                // dưới-phải bị khuất nhẹ, đúng hiệu ứng "tràn khung" như ảnh mẫu,
+                // thay vì gói gọn vừa khít trông cứng nhắc.
                 Image(
                     painter = painterResource(R.drawable.ill_wallet_growth),
                     contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(walletImageSize)
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.TopCenter,
+                    modifier = Modifier
+                        .width(walletImageSize)
+                        .height(walletImageSize)
                 )
             }
         }
