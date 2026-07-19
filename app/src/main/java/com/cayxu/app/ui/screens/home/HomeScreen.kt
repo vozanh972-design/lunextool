@@ -262,6 +262,15 @@ private fun MenuButton(
 
 @Composable
 private fun IncomeCard() {
+    // TODO: các giá trị Xu bên dưới vẫn là dữ liệu mẫu vì backend hiện chỉ có
+    // endpoint verify_key.php, chưa có API trả về thu nhập thật theo ngày.
+    // Khi có API thu nhập, thay `points` bằng dữ liệu lấy từ ViewModel/API.
+    val points = remember { listOf(52000f, 91000f, 38000f, 70000f, 55000f, 92000f, 128500f) }
+    val dayLabels = remember { last7DayLabels() }
+
+    var rangeMenuExpanded by remember { mutableStateOf(false) }
+    var selectedRange by remember { mutableStateOf("7 ngày") }
+
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = CardWhite),
@@ -274,33 +283,113 @@ private fun IncomeCard() {
                 Spacer(Modifier.width(4.dp))
                 Icon(Icons.Filled.Info, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.weight(1f))
-                Text(
-                    "Dữ liệu minh hoạ",
-                    color = TextSecondary,
-                    fontSize = 10.sp,
-                    modifier = Modifier
-                        .background(AppBackground, RoundedCornerShape(6.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                )
+                Box {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(AppBackground, RoundedCornerShape(8.dp))
+                            .clickable { rangeMenuExpanded = true }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(selectedRange, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.width(2.dp))
+                        Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                    }
+                    DropdownMenu(expanded = rangeMenuExpanded, onDismissRequest = { rangeMenuExpanded = false }) {
+                        listOf("7 ngày", "14 ngày", "30 ngày").forEach { option ->
+                            DropdownMenuItem(text = { Text(option) }, onClick = {
+                                selectedRange = option
+                                rangeMenuExpanded = false
+                            })
+                        }
+                    }
+                }
             }
             Spacer(Modifier.height(4.dp))
-            // Dữ liệu demo minh hoạ giao diện, sẽ được thay bằng dữ liệu thật từ API thu nhập trong tương lai
             Text("+128.500 Xu", color = SuccessGreen, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Text("↑ 12.5% so với hôm qua", color = SuccessGreen, fontSize = 12.sp)
-            Spacer(Modifier.height(12.dp))
-            Canvas(modifier = Modifier.fillMaxWidth().height(70.dp)) {
-                val points = listOf(0.6f, 0.5f, 0.65f, 0.45f, 0.55f, 0.3f, 0.35f, 0.15f)
-                val stepX = size.width / (points.size - 1)
-                val path = Path()
-                points.forEachIndexed { i, v ->
-                    val x = stepX * i
-                    val y = size.height * v
-                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            Spacer(Modifier.height(14.dp))
+
+            val maxValue = ((points.max() / 50000f).let { kotlin.math.ceil(it) } * 50000f).coerceAtLeast(50000f)
+
+            Row(Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.width(34.dp).height(110.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(formatCompactXu(maxValue), color = TextSecondary, fontSize = 9.sp)
+                    Text(formatCompactXu(maxValue * 2 / 3), color = TextSecondary, fontSize = 9.sp)
+                    Text(formatCompactXu(maxValue / 3), color = TextSecondary, fontSize = 9.sp)
+                    Text("0", color = TextSecondary, fontSize = 9.sp)
                 }
-                drawPath(path, color = SuccessGreen, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4f))
+                Canvas(modifier = Modifier.weight(1f).height(110.dp)) {
+                    val stepX = size.width / (points.size - 1)
+                    val gridColor = androidx.compose.ui.graphics.Color(0xFFE5E9F0)
+                    // Lưới ngang tại 0%, 33%, 66%, 100%
+                    for (i in 0..3) {
+                        val y = size.height * (1f - i / 3f)
+                        drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.5f)
+                    }
+
+                    val linePath = Path()
+                    val fillPath = Path()
+                    val coords = points.mapIndexed { i, v ->
+                        Offset(stepX * i, size.height * (1f - v / maxValue))
+                    }
+                    coords.forEachIndexed { i, p ->
+                        if (i == 0) {
+                            linePath.moveTo(p.x, p.y)
+                            fillPath.moveTo(p.x, size.height)
+                            fillPath.lineTo(p.x, p.y)
+                        } else {
+                            linePath.lineTo(p.x, p.y)
+                            fillPath.lineTo(p.x, p.y)
+                        }
+                    }
+                    fillPath.lineTo(coords.last().x, size.height)
+                    fillPath.close()
+
+                    drawPath(
+                        fillPath,
+                        brush = Brush.verticalGradient(
+                            listOf(SuccessGreen.copy(alpha = 0.28f), SuccessGreen.copy(alpha = 0f))
+                        )
+                    )
+                    drawPath(linePath, color = SuccessGreen, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f))
+                    coords.forEach { p ->
+                        drawCircle(color = CardWhite, radius = 7f, center = p)
+                        drawCircle(color = SuccessGreen, radius = 4.5f, center = p)
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 34.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                dayLabels.forEach { label ->
+                    Text(label, color = TextSecondary, fontSize = 10.sp)
+                }
             }
         }
     }
+}
+
+private fun last7DayLabels(): List<String> {
+    val fmt = java.text.SimpleDateFormat("dd/MM", java.util.Locale.getDefault())
+    val cal = java.util.Calendar.getInstance()
+    val labels = mutableListOf<String>()
+    repeat(7) {
+        labels.add(0, fmt.format(cal.time))
+        cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
+    }
+    return labels
+}
+
+private fun formatCompactXu(value: Float): String {
+    if (value <= 0f) return "0"
+    val k = value / 1000f
+    return if (k == k.toLong().toFloat()) "${k.toLong()}K" else String.format(java.util.Locale.getDefault(), "%.1fK", k)
 }
 
 @Composable
