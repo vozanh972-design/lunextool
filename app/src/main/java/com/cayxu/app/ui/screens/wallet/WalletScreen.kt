@@ -28,7 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.cayxu.app.R
-import com.cayxu.app.ui.components.CayXuBottomBar
 import com.cayxu.app.ui.theme.*
 
 private data class WalletHistoryItem(
@@ -58,7 +57,7 @@ private val historyItems = listOf(
 fun WalletScreen(navController: NavController) {
     var balanceVisible by remember { mutableStateOf(true) }
 
-    Scaffold(containerColor = AppBackground, bottomBar = { CayXuBottomBar(navController) }) { padding ->
+    Scaffold(containerColor = AppBackground) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -144,7 +143,7 @@ private fun WalletBalanceCard(balanceVisible: Boolean, onToggleVisibility: () ->
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = 14.dp, y = 6.dp)
+                    .offset(x = (-6).dp, y = 6.dp)
                     .size(width = 130.dp, height = 126.dp)
             )
             Column(modifier = Modifier.padding(20.dp)) {
