@@ -21,7 +21,6 @@ private val bottomItems = listOf(
     NavItem(Routes.HOME, "Trang chủ", Icons.Filled.Home),
     NavItem(Routes.TASKS, "Nhiệm vụ", Icons.Filled.TaskAlt),
     NavItem(Routes.WALLET, "Ví", Icons.Filled.AccountBalanceWallet),
-    NavItem(Routes.FRIENDS, "Bạn bè", Icons.Filled.Group),
     NavItem(Routes.ACCOUNT, "Tài khoản", Icons.Filled.Person)
 )
 

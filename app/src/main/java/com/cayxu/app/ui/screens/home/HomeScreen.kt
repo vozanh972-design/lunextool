@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,7 +23,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -103,7 +106,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
             // Menu 4 nút
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MenuButton(Icons.Filled.SportsEsports, "Cày xu", Modifier.weight(1f)) { }
+                MenuButton(Icons.Filled.Widgets, "Tiện ích", Modifier.weight(1f)) { }
                 MenuButton(Icons.Filled.EventAvailable, "Điểm danh", Modifier.weight(1f)) { }
                 MenuButton(Icons.Filled.Assignment, "Nhiệm vụ", Modifier.weight(1f)) { navController.navigate("tasks") }
                 MenuButton(Icons.Filled.AccountBalanceWallet, "Rút tiền", Modifier.weight(1f)) { navController.navigate("wallet") }
@@ -112,17 +115,6 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
             Spacer(Modifier.height(20.dp))
 
             IncomeCard()
-
-            Spacer(Modifier.height(24.dp))
-
-            SectionHeader("Nhiệm vụ nổi bật") { navController.navigate("tasks") }
-            Spacer(Modifier.height(10.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                TaskRow(Icons.Filled.PlayCircle, "Xem quảng cáo", "+500 Xu")
-                TaskRow(Icons.Filled.EventAvailable, "Check-in", "+100 Xu")
-                TaskRow(Icons.Filled.SportsEsports, "Chơi game", "+1.000 Xu")
-                TaskRow(Icons.Filled.PersonAdd, "Mời bạn bè", "+10.000 Xu")
-            }
 
             Spacer(Modifier.height(24.dp))
 
@@ -150,13 +142,14 @@ private fun PremiumCard(info: com.cayxu.app.data.model.VerifyKeyResponse) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(Color(0xFF7C3AED), Color(0xFF2563EB))))
+                .background(Brush.linearGradient(listOf(Color(0xFF2563EB), Color(0xFF7C3AED))))
                 .padding(20.dp)
         ) {
-            Icon(
-                Icons.Filled.EmojiEvents,
+            Image(
+                painter = painterResource(com.cayxu.app.R.drawable.ic_crown_premium),
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.18f),
+                contentScale = ContentScale.Fit,
+                alpha = 0.9f,
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .size(90.dp)
