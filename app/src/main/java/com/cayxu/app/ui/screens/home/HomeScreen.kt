@@ -320,6 +320,8 @@ private fun IncomeCard() {
                     Text(formatCompactXu(maxValue / 3), color = TextSecondary, fontSize = 9.sp)
                     Text("0", color = TextSecondary, fontSize = 9.sp)
                 }
+                val successGreenColor = SuccessGreen
+                val cardWhiteColor = CardWhite
                 Canvas(modifier = Modifier.weight(1f).height(110.dp)) {
                     val stepX = size.width / (points.size - 1)
                     val gridColor = androidx.compose.ui.graphics.Color(0xFFE5E9F0)
@@ -350,13 +352,13 @@ private fun IncomeCard() {
                     drawPath(
                         fillPath,
                         brush = Brush.verticalGradient(
-                            listOf(SuccessGreen.copy(alpha = 0.28f), SuccessGreen.copy(alpha = 0f))
+                            listOf(successGreenColor.copy(alpha = 0.28f), successGreenColor.copy(alpha = 0f))
                         )
                     )
-                    drawPath(linePath, color = SuccessGreen, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f))
+                    drawPath(linePath, color = successGreenColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f))
                     coords.forEach { p ->
-                        drawCircle(color = CardWhite, radius = 7f, center = p)
-                        drawCircle(color = SuccessGreen, radius = 4.5f, center = p)
+                        drawCircle(color = cardWhiteColor, radius = 7f, center = p)
+                        drawCircle(color = successGreenColor, radius = 4.5f, center = p)
                     }
                 }
             }

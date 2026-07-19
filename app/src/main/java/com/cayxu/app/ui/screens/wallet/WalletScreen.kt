@@ -43,7 +43,8 @@ private data class WalletHistoryItem(
 // Khi có API, thay `balanceXu` và `historyItems` bằng dữ liệu lấy từ ViewModel/API tương ứng.
 private const val balanceXu = "128.500"
 
-private val historyItems = listOf(
+@Composable
+private fun historyItems(): List<WalletHistoryItem> = listOf(
     WalletHistoryItem(Icons.Filled.CheckCircle, SuccessGreen, "Check-in hàng ngày", "Hôm nay, 09:30", "+500 Xu", true),
     WalletHistoryItem(Icons.Filled.PlayCircle, Primary, "Xem quảng cáo", "Hôm nay, 08:15", "+500 Xu", true),
     WalletHistoryItem(Icons.Filled.SportsEsports, Color(0xFFF97316), "Chơi game: Lucky Spin", "Hôm qua, 21:10", "+2.000 Xu", true),
@@ -145,9 +146,10 @@ fun WalletScreen(navController: NavController) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column {
-                    historyItems.forEachIndexed { index, item ->
+                    val items = historyItems()
+                    items.forEachIndexed { index, item ->
                         WalletHistoryRow(item)
-                        if (index != historyItems.lastIndex) {
+                        if (index != items.lastIndex) {
                             HorizontalDivider(color = AppBackground, thickness = 1.dp)
                         }
                     }

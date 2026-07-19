@@ -47,7 +47,8 @@ private data class PlatformOption(
     val accentColor: Color
 )
 
-private val platformOptions = listOf(
+@Composable
+private fun platformOptions(): List<PlatformOption> = listOf(
     PlatformOption(
         name = "Golike",
         subtitle = "Nhiệm vụ tăng like, view, follow cho mạng xã hội",
@@ -100,7 +101,7 @@ fun TasksScreen(navController: NavController) {
             Spacer(Modifier.height(10.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                platformOptions.forEachIndexed { index, option ->
+                platformOptions().forEachIndexed { index, option ->
                     PlatformRow(
                         option = option,
                         selected = index == selectedPlatform,

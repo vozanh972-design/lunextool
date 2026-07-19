@@ -123,13 +123,15 @@ fun LoginScreen(
             ) {
                 // Nền mềm (radial gradient nhạt) phía sau ảnh ví, giống ảnh mẫu,
                 // giúp ảnh hoà vào layout thay vì trông như dán rời.
+                val infoBlueBgColor = InfoBlueBg
+                val primaryColor = Primary
                 Canvas(modifier = Modifier.matchParentSize()) {
                     val w = size.width
                     val h = size.height
 
                     drawCircle(
                         brush = Brush.radialGradient(
-                            colors = listOf(InfoBlueBg.copy(alpha = 0.9f), InfoBlueBg.copy(alpha = 0f)),
+                            colors = listOf(infoBlueBgColor.copy(alpha = 0.9f), infoBlueBgColor.copy(alpha = 0f)),
                             radius = w * 0.6f
                         ),
                         radius = w * 0.6f,
@@ -143,7 +145,7 @@ fun LoginScreen(
                     }
                     drawPath(
                         path = dashPath,
-                        color = Primary.copy(alpha = 0.25f),
+                        color = primaryColor.copy(alpha = 0.25f),
                         style = androidx.compose.ui.graphics.drawscope.Stroke(
                             width = 3f,
                             pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
@@ -151,7 +153,7 @@ fun LoginScreen(
                     )
 
                     // Vài chấm tròn nhỏ trang trí
-                    drawCircle(color = Primary.copy(alpha = 0.35f), radius = 5f, center = androidx.compose.ui.geometry.Offset(w * 0.04f, h * 0.65f))
+                    drawCircle(color = primaryColor.copy(alpha = 0.35f), radius = 5f, center = androidx.compose.ui.geometry.Offset(w * 0.04f, h * 0.65f))
                     drawCircle(color = Color(0xFFFFC83D).copy(alpha = 0.55f), radius = 4f, center = androidx.compose.ui.geometry.Offset(w * 0.9f, h * 0.08f))
                 }
 
