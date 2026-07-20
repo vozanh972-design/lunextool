@@ -337,38 +337,35 @@ fun FacebookAddAccountScreen(navController: NavController) {
                             return@Button
                         }
 
+                        // Nếu có cookie, bắt buộc kiểm tra live
                         if (singleCookie.isNotBlank()) {
                             isLoading = true
                             Toast.makeText(context, "Đang kiểm tra cookie...", Toast.LENGTH_SHORT).show()
-                            try {
-                                FacebookLiveChecker.checkCookie(context, singleCookie) { uid, isLive ->
-                                    try {
-                                        isLoading = false
-                                        val finalUid = if (singleUid.isBlank()) uid ?: "unknown" else singleUid
-                                        val note = "Cookie: $singleCookie"
-                                        FacebookAccountsStore.addAccount(
-                                            context,
-                                            uid = finalUid,
-                                            name = singlePassword,
-                                            link = singleTwoFa,
-                                            note = note,
-                                            phone = singleProxy,
-                                            bio = singleToken,
-                                            isLive = isLive
-                                        )
-                                        val status = if (isLive) "Live" else "Die"
-                                        Toast.makeText(context, "✅ Đã thêm tài khoản ($status)", Toast.LENGTH_SHORT).show()
-                                        navController.popBackStack()
-                                    } catch (e: Exception) {
-                                        isLoading = false
-                                        Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
-                                    }
+                            FacebookLiveChecker.checkCookie(context, singleCookie) { uid, isLive ->
+                                try {
+                                    isLoading = false
+                                    val finalUid = if (singleUid.isBlank()) uid ?: "unknown" else singleUid
+                                    val note = "Cookie: $singleCookie"
+                                    FacebookAccountsStore.addAccount(
+                                        context,
+                                        uid = finalUid,
+                                        name = singlePassword,
+                                        link = singleTwoFa,
+                                        note = note,
+                                        phone = singleProxy,
+                                        bio = singleToken,
+                                        isLive = isLive
+                                    )
+                                    val status = if (isLive) "Live" else "Die"
+                                    Toast.makeText(context, "✅ Đã thêm tài khoản ($status)", Toast.LENGTH_SHORT).show()
+                                    navController.popBackStack()
+                                } catch (e: Exception) {
+                                    isLoading = false
+                                    Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
                                 }
-                            } catch (e: Exception) {
-                                isLoading = false
-                                Toast.makeText(context, "Lỗi kiểm tra cookie: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
                         } else {
+                            // Không có cookie, lưu mặc định Live
                             FacebookAccountsStore.addAccount(
                                 context,
                                 uid = singleUid,
