@@ -27,11 +27,8 @@ import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.theme.*
+import com.cayxu.app.utils.FacebookLiveChecker
 
-/**
- * Màn hình danh sách tài khoản Facebook - RIÊNG BIỆT, không dùng chung.
- * Hiển thị dữ liệu thật từ FacebookAccountsStore, không có dữ liệu mẫu.
- */
 @Composable
 fun FacebookLinkAccountScreen(navController: NavController) {
     val context = LocalContext.current
@@ -40,8 +37,8 @@ fun FacebookLinkAccountScreen(navController: NavController) {
     var accounts by remember { mutableStateOf(FacebookAccountsStore.getAccounts(context)) }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(setOf<String>()) }
+    var isLoading by remember { mutableStateOf(false) }
 
-    // Tự động cập nhật khi quay lại màn hình
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -53,12 +50,8 @@ fun FacebookLinkAccountScreen(navController: NavController) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val filtered = if (query.isBlank()) {
-        accounts
-    } else {
-        accounts.filter {
-            it.uid.contains(query, ignoreCase = true) || it.name.contains(query, ignoreCase = true)
-        }
+    val filtered = if (query.isBlank()) accounts else accounts.filter {
+        it.uid.contains(query, ignoreCase = true) || it.name.contains(query, ignoreCase = true)
     }
     val liveCount = accounts.count { it.isLive }
     val dieCount = accounts.size - liveCount
@@ -123,7 +116,7 @@ fun FacebookLinkAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(14.dp))
 
-            // Ô tìm kiếm + nút lọc
+            // Tìm kiếm
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = query,
@@ -152,7 +145,7 @@ fun FacebookLinkAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(12.dp))
 
-            // Hàng chọn tất cả / kiểm tra Live / xóa
+            // Hàng thao tác
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -165,16 +158,52 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                 )
                 Text("Chọn tất cả", fontSize = 13.sp, color = TextPrimary, modifier = Modifier.weight(1f))
 
-                TextButton(onClick = {
-                    val targets = if (selected.isEmpty()) filtered.map { it.uid } else selected.toList()
-                    FacebookAccountsStore.markLive(context, targets)
-                    accounts = FacebookAccountsStore.getAccounts(context)
-                    Toast.makeText(context, "Đã cập nhật trạng thái", Toast.LENGTH_SHORT).show()
-                }) {
-                    Icon(Icons.Filled.Refresh, contentDescription = null, tint = Primary, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Kiểm tra Live", color = Primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                TextButton(
+                    onClick = {
+                        if (isLoading) return@TextButton
+                        val targets = if (selected.isEmpty()) filtered.map { it.uid } else selected.toList()
+                        if (targets.isEmpty()) {
+                            Toast.makeText(context, "Không có tài khoản nào được chọn", Toast.LENGTH_SHORT).show()
+                            return@TextButton
+                        }
+
+                        // Lấy cookie từ note của từng tài khoản
+                        val accountsWithCookie = targets.mapNotNull { uid ->
+                            val acc = accounts.find { it.uid == uid }
+                            if (acc != null && acc.note.startsWith("Cookie: ")) {
+                                val cookie = acc.note.substringAfter("Cookie: ")
+                                if (cookie.isNotBlank()) acc to cookie else null
+                            } else null
+                        }
+
+                        if (accountsWithCookie.isEmpty()) {
+                            Toast.makeText(context, "Không có cookie để kiểm tra", Toast.LENGTH_SHORT).show()
+                            return@TextButton
+                        }
+
+                        isLoading = true
+                        Toast.makeText(context, "Đang kiểm tra ${accountsWithCookie.size} tài khoản...", Toast.LENGTH_SHORT).show()
+
+                        // Kiểm tra tuần tự
+                        checkAccountsSequentially(context, accountsWithCookie, 0) {
+                            isLoading = false
+                            accounts = FacebookAccountsStore.getAccounts(context)
+                            Toast.makeText(context, "Đã kiểm tra xong", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = !isLoading
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(color = Primary, modifier = Modifier.size(16.dp))
+                    } else {
+                        Row {
+                            Icon(Icons.Filled.Refresh, contentDescription = null, tint = Primary, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Kiểm tra Live", color = Primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
+
                 TextButton(
                     onClick = {
                         if (selected.isNotEmpty()) {
@@ -183,7 +212,7 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                             selected = emptySet()
                         }
                     },
-                    enabled = selected.isNotEmpty()
+                    enabled = selected.isNotEmpty() && !isLoading
                 ) {
                     Icon(Icons.Filled.Delete, contentDescription = null, tint = DangerRed, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
@@ -193,6 +222,7 @@ fun FacebookLinkAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(6.dp))
 
+            // Danh sách
             if (filtered.isEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
                     Text(
@@ -232,16 +262,41 @@ fun FacebookLinkAccountScreen(navController: NavController) {
             }
         }
 
+        // Nút thêm
         Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
             Button(
                 onClick = { navController.navigate(Routes.ADD_ACCOUNT_FACEBOOK) },
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                modifier = Modifier.fillMaxWidth().height(50.dp)
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                enabled = !isLoading
             ) {
                 Text("+  Thêm tài khoản mới", color = CardWhite, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
         }
+    }
+}
+
+// Hàm kiểm tra tuần tự (gọi đệ quy)
+private fun checkAccountsSequentially(
+    context: android.content.Context,
+    accounts: List<Pair<FacebookAccount, String>>,
+    index: Int,
+    onComplete: () -> Unit
+) {
+    if (index >= accounts.size) {
+        onComplete()
+        return
+    }
+    val (account, cookie) = accounts[index]
+    FacebookLiveChecker.checkCookie(context, cookie) { uid, isLive ->
+        if (uid != null && isLive) {
+            FacebookAccountsStore.markLive(context, listOf(account.uid))
+        } else {
+            FacebookAccountsStore.markDie(context, listOf(account.uid))
+        }
+        // Kiểm tra tiếp
+        checkAccountsSequentially(context, accounts, index + 1, onComplete)
     }
 }
 
@@ -254,7 +309,7 @@ private fun FacebookAccountRow(
     onRemove: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    val title = account.name.ifBlank { account.uid }
+    val title = if (account.name.isNotBlank()) account.name else account.uid
 
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
@@ -275,10 +330,12 @@ private fun FacebookAccountRow(
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            // Luôn hiển thị UID
             Text("UID: ${account.uid}", color = TextSecondary, fontSize = 11.sp)
             if (account.link.isNotBlank()) {
                 Text(account.link, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
+            }
+            if (account.note.isNotBlank()) {
+                Text("Cookie: có", color = TextSecondary, fontSize = 10.sp)
             }
         }
 
