@@ -26,17 +26,22 @@ object FacebookAccountsStore {
         val raw = prefs(context).getString(KEY_ACCOUNTS, null) ?: return emptyList()
         return raw.split(ENTRY_SEPARATOR)
             .filter { it.isNotBlank() }
-            .map { entry ->
+            .mapNotNull { entry ->
                 val parts = entry.split(FIELD_SEPARATOR)
-                FacebookAccount(
-                    uid = parts.getOrNull(0).orEmpty(),
-                    name = parts.getOrNull(1).orEmpty(),
-                    link = parts.getOrNull(2).orEmpty(),
-                    note = parts.getOrNull(3).orEmpty(),
-                    phone = parts.getOrNull(4).orEmpty(),
-                    bio = parts.getOrNull(5).orEmpty(),
-                    isLive = parts.getOrNull(6) != "die"
-                )
+                if (parts.size < 7) return@mapNotNull null
+                try {
+                    FacebookAccount(
+                        uid = parts[0],
+                        name = parts.getOrElse(1) { "" },
+                        link = parts.getOrElse(2) { "" },
+                        note = parts.getOrElse(3) { "" },
+                        phone = parts.getOrElse(4) { "" },
+                        bio = parts.getOrElse(5) { "" },
+                        isLive = parts.getOrElse(6) { "live" } != "die"
+                    )
+                } catch (e: Exception) {
+                    null
+                }
             }
             .filter { it.uid.isNotBlank() }
     }
@@ -106,7 +111,6 @@ object FacebookAccountsStore {
         save(context, current)
     }
 
-    // Thêm hàm markDie
     fun markDie(context: Context, uids: List<String>) {
         val current = getAccounts(context).map { acc ->
             if (acc.uid in uids) acc.copy(isLive = false) else acc
