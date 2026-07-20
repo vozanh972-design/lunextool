@@ -10,7 +10,8 @@ data class FacebookAccount(
     val note: String = "",      // Cookie
     val phone: String = "",     // Proxy
     val bio: String = "",       // Token
-    val isLive: Boolean = true
+    val isLive: Boolean = false, // Mặc định Die
+    val avatar: String = ""     // URL avatar
 )
 
 object FacebookAccountsStore {
@@ -37,7 +38,8 @@ object FacebookAccountsStore {
                         note = parts.getOrElse(3) { "" },
                         phone = parts.getOrElse(4) { "" },
                         bio = parts.getOrElse(5) { "" },
-                        isLive = parts.getOrElse(6) { "live" } != "die"
+                        isLive = parts.getOrElse(6) { "die" } != "die",
+                        avatar = parts.getOrElse(7) { "" }
                     )
                 } catch (e: Exception) {
                     null
@@ -54,7 +56,8 @@ object FacebookAccountsStore {
         note: String = "",
         phone: String = "",
         bio: String = "",
-        isLive: Boolean = true
+        isLive: Boolean = false,
+        avatar: String = ""
     ) {
         val account = FacebookAccount(
             uid = uid,
@@ -63,7 +66,8 @@ object FacebookAccountsStore {
             note = note,
             phone = phone,
             bio = bio,
-            isLive = isLive
+            isLive = isLive,
+            avatar = avatar
         )
         addAccounts(context, listOf(account))
     }
@@ -77,7 +81,9 @@ object FacebookAccountsStore {
                     link = it.link.trim(),
                     note = it.note.trim(),
                     phone = it.phone.trim(),
-                    bio = it.bio.trim()
+                    bio = it.bio.trim(),
+                    isLive = false,
+                    avatar = ""
                 )
             }
             .filter { it.uid.isNotEmpty() }
@@ -118,10 +124,25 @@ object FacebookAccountsStore {
         save(context, current)
     }
 
+    fun markLiveWithAvatar(context: Context, uids: List<String>, avatar: String) {
+        val current = getAccounts(context).map { acc ->
+            if (acc.uid in uids) acc.copy(isLive = true, avatar = avatar) else acc
+        }
+        save(context, current)
+    }
+
     private fun save(context: Context, accounts: List<FacebookAccount>) {
         val raw = accounts.joinToString(ENTRY_SEPARATOR) { acc ->
-            listOf(acc.uid, acc.name, acc.link, acc.note, acc.phone, acc.bio, if (acc.isLive) "live" else "die")
-                .joinToString(FIELD_SEPARATOR)
+            listOf(
+                acc.uid,
+                acc.name,
+                acc.link,
+                acc.note,
+                acc.phone,
+                acc.bio,
+                if (acc.isLive) "live" else "die",
+                acc.avatar
+            ).joinToString(FIELD_SEPARATOR)
         }
         prefs(context).edit().putString(KEY_ACCOUNTS, raw).apply()
     }
