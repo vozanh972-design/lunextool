@@ -167,7 +167,6 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                             return@TextButton
                         }
 
-                        // Lấy cookie từ note của từng tài khoản
                         val accountsWithCookie = targets.mapNotNull { uid ->
                             val acc = accounts.find { it.uid == uid }
                             if (acc != null && acc.note.startsWith("Cookie: ")) {
@@ -184,7 +183,6 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                         isLoading = true
                         Toast.makeText(context, "Đang kiểm tra ${accountsWithCookie.size} tài khoản...", Toast.LENGTH_SHORT).show()
 
-                        // Kiểm tra tuần tự
                         checkAccountsSequentially(context, accountsWithCookie, 0) {
                             isLoading = false
                             accounts = FacebookAccountsStore.getAccounts(context)
