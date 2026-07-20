@@ -332,65 +332,29 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 onClick = {
                     if (isLoading) return@Button
                     if (tabIndex == 0) {
-                        if (singleUid.isBlank() && singleCookie.isBlank()) {
-                            Toast.makeText(context, "Vui lòng nhập UID hoặc Cookie", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-
-                        // Nếu có cookie, bắt buộc kiểm tra live
-                        if (singleCookie.isNotBlank()) {
-                            isLoading = true
-                            Toast.makeText(context, "Đang kiểm tra cookie...", Toast.LENGTH_SHORT).show()
-                            FacebookLiveChecker.checkCookie(context, singleCookie) { uid, isLive ->
-                                try {
-                                    isLoading = false
-                                    val finalUid = if (singleUid.isBlank()) uid ?: "unknown" else singleUid
-                                    val note = "Cookie: $singleCookie"
-                                    FacebookAccountsStore.addAccount(
-                                        context,
-                                        uid = finalUid,
-                                        name = singlePassword,
-                                        link = singleTwoFa,
-                                        note = note,
-                                        phone = singleProxy,
-                                        bio = singleToken,
-                                        isLive = isLive
-                                    )
-                                    val status = if (isLive) "Live" else "Die"
-                                    Toast.makeText(context, "✅ Đã thêm tài khoản ($status)", Toast.LENGTH_SHORT).show()
-                                    navController.popBackStack()
-                                } catch (e: Exception) {
-                                    isLoading = false
-                                    Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        } else {
-                            // Không có cookie, lưu mặc định Live
-                            FacebookAccountsStore.addAccount(
-                                context,
-                                uid = singleUid,
-                                name = singlePassword,
-                                link = singleTwoFa,
-                                note = "",
-                                phone = singleProxy,
-                                bio = singleToken,
-                                isLive = true
-                            )
-                            Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
-                            navController.popBackStack()
-                        }
+                        // Chỉ lưu, không check live
+                        val finalUid = if (singleUid.isBlank()) "unknown" else singleUid
+                        val note = if (singleCookie.isNotBlank()) "Cookie: $singleCookie" else ""
+                        FacebookAccountsStore.addAccount(
+                            context,
+                            uid = finalUid,
+                            name = singlePassword,
+                            link = singleTwoFa,
+                            note = note,
+                            phone = singleProxy,
+                            bio = singleToken,
+                            isLive = false
+                        )
+                        Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
+                        navController.popBackStack()
                     } else {
                         val entries = parseMultiUidInput(multiUid, multiSelectedFields)
                         if (entries.isEmpty()) {
                             Toast.makeText(context, "Không có dữ liệu hợp lệ", Toast.LENGTH_SHORT).show()
                         } else {
-                            try {
-                                FacebookAccountsStore.addAccounts(context, entries)
-                                Toast.makeText(context, "Đã thêm ${entries.size} tài khoản", Toast.LENGTH_SHORT).show()
-                                navController.popBackStack()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
+                            FacebookAccountsStore.addAccounts(context, entries)
+                            Toast.makeText(context, "Đã thêm ${entries.size} tài khoản", Toast.LENGTH_SHORT).show()
+                            navController.popBackStack()
                         }
                     }
                 },
@@ -399,11 +363,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 enabled = !isLoading
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(color = CardWhite, modifier = Modifier.size(24.dp))
-                } else {
-                    Text("Xác nhận", color = CardWhite, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                }
+                Text("Xác nhận", color = CardWhite, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
         }
     }
@@ -471,7 +431,7 @@ private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<Facebo
                 note = cookie,
                 phone = proxy,
                 bio = token,
-                isLive = true
+                isLive = false
             )
         }
 }
