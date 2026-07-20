@@ -17,13 +17,20 @@ object FacebookLiveChecker {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
+    /**
+     * Kiểm tra cookie bằng Graph API
+     * @param context (không dùng, chỉ để giữ chữ ký)
+     * @param cookieString chuỗi cookie (name1=value1; name2=value2; ...)
+     * @param onResult (uid: String?, isLive: Boolean)
+     */
     fun checkCookie(context: Context, cookieString: String, onResult: (uid: String?, isLive: Boolean) -> Unit) {
-        try {
-            if (cookieString.isBlank()) {
-                onResult(null, false)
-                return
-            }
+        if (cookieString.isBlank()) {
+            Log.w(TAG, "Cookie rỗng")
+            onResult(null, false)
+            return
+        }
 
+        try {
             val request = Request.Builder()
                 .url("https://graph.facebook.com/me?fields=id")
                 .addHeader("Cookie", cookieString)
@@ -32,44 +39,46 @@ object FacebookLiveChecker {
 
             client.newCall(request).enqueue(object : okhttp3.Callback {
                 override fun onFailure(call: okhttp3.Call, e: IOException) {
-                    try {
-                        onResult(null, false)
-                    } catch (ignore: Exception) { }
+                    Log.e(TAG, "Request failed", e)
+                    onResult(null, false)
                 }
 
                 override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                    try {
-                        response.use {
-                            val body = it.body?.string() ?: "{}"
-                            when (it.code) {
-                                200 -> {
-                                    try {
-                                        val json = JSONObject(body)
-                                        val uid = json.optString("id", null)
-                                        if (!uid.isNullOrEmpty()) {
-                                            onResult(uid, true)
-                                        } else {
-                                            onResult(null, false)
-                                        }
-                                    } catch (e: Exception) {
+                    response.use {
+                        val body = it.body?.string() ?: "{}"
+                        Log.d(TAG, "HTTP ${it.code}, Body: $body")
+                        when (it.code) {
+                            200 -> {
+                                try {
+                                    val json = JSONObject(body)
+                                    val uid = json.optString("id", null)
+                                    if (!uid.isNullOrEmpty()) {
+                                        Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid")
+                                        onResult(uid, true)
+                                    } else {
+                                        Log.w(TAG, "⚠️ Response 200 nhưng không có id: $body")
                                         onResult(null, false)
                                     }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "❌ Lỗi parse JSON: $body", e)
+                                    onResult(null, false)
                                 }
-                                401, 403 -> onResult(null, false)
-                                else -> onResult(null, false)
+                            }
+                            401, 403 -> {
+                                Log.w(TAG, "❌ Cookie không hợp lệ (HTTP ${it.code})")
+                                onResult(null, false)
+                            }
+                            else -> {
+                                Log.w(TAG, "⚠️ HTTP ${it.code}: $body")
+                                onResult(null, false)
                             }
                         }
-                    } catch (e: Exception) {
-                        try {
-                            onResult(null, false)
-                        } catch (ignore: Exception) { }
                     }
                 }
             })
         } catch (e: Exception) {
-            try {
-                onResult(null, false)
-            } catch (ignore: Exception) { }
+            Log.e(TAG, "Exception khi kiểm tra cookie", e)
+            onResult(null, false)
         }
     }
 }
