@@ -43,15 +43,14 @@ private data class WalletHistoryItem(
 // Khi có API, thay `balanceXu` và `historyItems` bằng dữ liệu lấy từ ViewModel/API tương ứng.
 private const val balanceXu = "128.500"
 
-@Composable
-private fun historyItems(): List<WalletHistoryItem> = listOf(
-    WalletHistoryItem(Icons.Filled.CheckCircle, SuccessGreen, "Check-in hàng ngày", "Hôm nay, 09:30", "+500 Xu", true),
-    WalletHistoryItem(Icons.Filled.PlayCircle, Primary, "Xem quảng cáo", "Hôm nay, 08:15", "+500 Xu", true),
+private val historyItems = listOf(
+    WalletHistoryItem(Icons.Filled.CheckCircle, Color(0xFF16A34A), "Check-in hàng ngày", "Hôm nay, 09:30", "+500 Xu", true),
+    WalletHistoryItem(Icons.Filled.PlayCircle, Color(0xFF2563EB), "Xem quảng cáo", "Hôm nay, 08:15", "+500 Xu", true),
     WalletHistoryItem(Icons.Filled.SportsEsports, Color(0xFFF97316), "Chơi game: Lucky Spin", "Hôm qua, 21:10", "+2.000 Xu", true),
     WalletHistoryItem(Icons.Filled.Assignment, Color(0xFF7C3AED), "Hoàn thành nhiệm vụ", "Hôm qua, 20:05", "+1.500 Xu", true),
     WalletHistoryItem(Icons.Filled.Group, Color(0xFFDB2777), "Giới thiệu bạn bè", "08/05/2026, 15:45", "+5.000 Xu", true),
     WalletHistoryItem(Icons.Filled.CardGiftcard, Color(0xFFF97316), "Đổi quà: Thẻ cào 10.000đ", "07/05/2026, 14:20", "-10.000 Xu", false),
-    WalletHistoryItem(Icons.Filled.ArrowUpward, Primary, "Chuyển Xu cho bạn bè", "07/05/2026, 11:30", "-2.000 Xu", false)
+    WalletHistoryItem(Icons.Filled.ArrowUpward, Color(0xFF2563EB), "Chuyển Xu cho bạn bè", "07/05/2026, 11:30", "-2.000 Xu", false)
 )
 
 private data class WalletTab(val title: String, val gradientColors: List<Color>)
@@ -146,10 +145,9 @@ fun WalletScreen(navController: NavController) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column {
-                    val items = historyItems()
-                    items.forEachIndexed { index, item ->
+                    historyItems.forEachIndexed { index, item ->
                         WalletHistoryRow(item)
-                        if (index != items.lastIndex) {
+                        if (index != historyItems.lastIndex) {
                             HorizontalDivider(color = AppBackground, thickness = 1.dp)
                         }
                     }

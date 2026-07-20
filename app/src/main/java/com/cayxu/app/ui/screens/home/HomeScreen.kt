@@ -124,26 +124,14 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                         subtitle = "Hoàn thành nhiệm vụ để nhận xu",
                         accentColor = Color(0xFF16A34A),
                         modifier = Modifier.weight(1f)
-                    ) {
-                        navController.navigate(com.cayxu.app.ui.navigation.Routes.TASKS) {
-                            popUpTo(com.cayxu.app.ui.navigation.Routes.HOME) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
+                    ) { navController.navigate("tasks") { launchSingleTop = true } }
                     MenuButton(
                         icon = Icons.Filled.AccountBalanceWallet,
                         label = "Ví",
                         subtitle = "Quản lý xu và giao dịch",
                         accentColor = Color(0xFFF97316),
                         modifier = Modifier.weight(1f)
-                    ) {
-                        navController.navigate(com.cayxu.app.ui.navigation.Routes.WALLET) {
-                            popUpTo(com.cayxu.app.ui.navigation.Routes.HOME) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
+                    ) { navController.navigate("wallet") { launchSingleTop = true } }
                 }
             }
 
@@ -153,13 +141,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
             Spacer(Modifier.height(24.dp))
 
-            SectionHeader("Lịch sử gần đây") {
-                navController.navigate(com.cayxu.app.ui.navigation.Routes.WALLET) {
-                    popUpTo(com.cayxu.app.ui.navigation.Routes.HOME) { saveState = true }
-                    launchSingleTop = true
-                    restoreState = true
-                }
-            }
+            SectionHeader("Lịch sử gần đây") { navController.navigate("wallet") { launchSingleTop = true } }
             Spacer(Modifier.height(10.dp))
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 HistoryRow(Icons.Filled.CheckCircle, SuccessGreen, "Hoàn thành nhiệm vụ", "Nhận thưởng nhiệm vụ", "+2.000 Xu", "Hôm nay, 09:30", true)
@@ -287,6 +269,12 @@ private fun IncomeCard() {
     var rangeMenuExpanded by remember { mutableStateOf(false) }
     var selectedRange by remember { mutableStateOf("7 ngày") }
 
+    // Canvas vẽ biểu đồ bên dưới chạy trong DrawScope (không phải @Composable), nên phải
+    // đọc màu theo theme hiện tại ở ĐÂY (trong hàm Composable) rồi truyền giá trị đã lấy
+    // vào trong, chứ không được gọi thẳng SuccessGreen/CardWhite bên trong Canvas { ... }.
+    val chartLineColor = SuccessGreen
+    val chartDotColor = CardWhite
+
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = CardWhite),
@@ -338,8 +326,6 @@ private fun IncomeCard() {
                     Text(formatCompactXu(maxValue / 3), color = TextSecondary, fontSize = 9.sp)
                     Text("0", color = TextSecondary, fontSize = 9.sp)
                 }
-                val successGreenColor = SuccessGreen
-                val cardWhiteColor = CardWhite
                 Canvas(modifier = Modifier.weight(1f).height(110.dp)) {
                     val stepX = size.width / (points.size - 1)
                     val gridColor = androidx.compose.ui.graphics.Color(0xFFE5E9F0)
@@ -370,13 +356,13 @@ private fun IncomeCard() {
                     drawPath(
                         fillPath,
                         brush = Brush.verticalGradient(
-                            listOf(successGreenColor.copy(alpha = 0.28f), successGreenColor.copy(alpha = 0f))
+                            listOf(chartLineColor.copy(alpha = 0.28f), chartLineColor.copy(alpha = 0f))
                         )
                     )
-                    drawPath(linePath, color = successGreenColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f))
+                    drawPath(linePath, color = chartLineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f))
                     coords.forEach { p ->
-                        drawCircle(color = cardWhiteColor, radius = 7f, center = p)
-                        drawCircle(color = successGreenColor, radius = 4.5f, center = p)
+                        drawCircle(color = chartDotColor, radius = 7f, center = p)
+                        drawCircle(color = chartLineColor, radius = 4.5f, center = p)
                     }
                 }
             }

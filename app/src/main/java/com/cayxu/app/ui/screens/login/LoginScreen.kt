@@ -89,6 +89,11 @@ fun LoginScreen(
         // có chặn min/max để không bị quá bé hoặc quá to bất hợp lý.
         val walletImageSize = (maxWidth * 0.42f).coerceIn(110.dp, 220.dp)
 
+        // Canvas trang trí bên dưới chạy trong DrawScope (không phải @Composable), nên phải
+        // đọc màu theo theme ở ĐÂY rồi truyền vào, không gọi thẳng InfoBlueBg/Primary trong Canvas { ... }.
+        val decorGlowColor = InfoBlueBg
+        val decorLineColor = Primary
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -123,15 +128,13 @@ fun LoginScreen(
             ) {
                 // Nền mềm (radial gradient nhạt) phía sau ảnh ví, giống ảnh mẫu,
                 // giúp ảnh hoà vào layout thay vì trông như dán rời.
-                val infoBlueBgColor = InfoBlueBg
-                val primaryColor = Primary
                 Canvas(modifier = Modifier.matchParentSize()) {
                     val w = size.width
                     val h = size.height
 
                     drawCircle(
                         brush = Brush.radialGradient(
-                            colors = listOf(infoBlueBgColor.copy(alpha = 0.9f), infoBlueBgColor.copy(alpha = 0f)),
+                            colors = listOf(decorGlowColor.copy(alpha = 0.9f), decorGlowColor.copy(alpha = 0f)),
                             radius = w * 0.6f
                         ),
                         radius = w * 0.6f,
@@ -145,7 +148,7 @@ fun LoginScreen(
                     }
                     drawPath(
                         path = dashPath,
-                        color = primaryColor.copy(alpha = 0.25f),
+                        color = decorLineColor.copy(alpha = 0.25f),
                         style = androidx.compose.ui.graphics.drawscope.Stroke(
                             width = 3f,
                             pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
@@ -153,7 +156,7 @@ fun LoginScreen(
                     )
 
                     // Vài chấm tròn nhỏ trang trí
-                    drawCircle(color = primaryColor.copy(alpha = 0.35f), radius = 5f, center = androidx.compose.ui.geometry.Offset(w * 0.04f, h * 0.65f))
+                    drawCircle(color = decorLineColor.copy(alpha = 0.35f), radius = 5f, center = androidx.compose.ui.geometry.Offset(w * 0.04f, h * 0.65f))
                     drawCircle(color = Color(0xFFFFC83D).copy(alpha = 0.55f), radius = 4f, center = androidx.compose.ui.geometry.Offset(w * 0.9f, h * 0.08f))
                 }
 

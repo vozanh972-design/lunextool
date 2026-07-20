@@ -223,7 +223,9 @@ fun AccountScreen(navController: NavController) {
             ) {
                 Column {
                     socialAccounts.forEachIndexed { index, item ->
-                        SocialAccountRow(item)
+                        SocialAccountRow(item) {
+                            navController.navigate(com.cayxu.app.ui.navigation.Routes.linkAccount(item.label, item.iconRes))
+                        }
                         if (index != socialAccounts.lastIndex) {
                             HorizontalDivider(color = AppBackground, thickness = 1.dp)
                         }
@@ -257,12 +259,11 @@ fun AccountScreen(navController: NavController) {
 }
 
 @Composable
-private fun SocialAccountRow(item: SocialAccountItem) {
+private fun SocialAccountRow(item: SocialAccountItem, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            // TODO: chưa có luồng liên kết mạng xã hội thật (OAuth) - sẽ nối API sau.
-            .clickable { }
+            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

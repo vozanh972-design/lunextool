@@ -31,6 +31,9 @@ object Routes {
     const val FRIENDS = "friends"
     const val ACCOUNT = "account"
     const val SETTINGS = "settings"
+    const val LINK_ACCOUNT = "link_account/{platform}/{iconRes}"
+
+    fun linkAccount(platform: String, iconRes: Int) = "link_account/$platform/$iconRes"
 }
 
 // Các route hiện thanh điều hướng dưới (bottom bar cố định, không nằm trong vùng chuyển
@@ -82,6 +85,21 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             composable(Routes.FRIENDS) { FriendsScreen(navController) }
             composable(Routes.ACCOUNT) { AccountScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
+            composable(
+                route = Routes.LINK_ACCOUNT,
+                arguments = listOf(
+                    androidx.navigation.navArgument("platform") { type = androidx.navigation.NavType.StringType },
+                    androidx.navigation.navArgument("iconRes") { type = androidx.navigation.NavType.IntType }
+                )
+            ) { backStack ->
+                val platform = backStack.arguments?.getString("platform") ?: ""
+                val iconRes = backStack.arguments?.getInt("iconRes") ?: 0
+                com.cayxu.app.ui.screens.linkaccount.LinkAccountScreen(
+                    navController = navController,
+                    platform = platform,
+                    iconRes = iconRes
+                )
+            }
         }
     }
 }
