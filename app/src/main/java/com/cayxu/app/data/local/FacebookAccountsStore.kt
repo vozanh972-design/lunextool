@@ -3,22 +3,11 @@ package com.cayxu.app.data.local
 import android.content.Context
 import android.content.SharedPreferences
 
-/**
- * Store RIÊNG cho danh sách tài khoản Facebook đã liên kết - độc lập hoàn toàn với
- * LinkedAccountsStore (dùng cho TikTok/Instagram/...), để sau này chỉnh sửa tính năng
- * Facebook không ảnh hưởng tới các nền tảng khác.
- *
- * Chỉ lưu các trường CÔNG KHAI do người dùng tự nhập: UID, tên hiển thị, link trang cá nhân.
- * KHÔNG lưu mật khẩu, mã 2FA, cookie, token hay proxy của bất kỳ ai.
- *
- * Trường "isLive" chỉ là cờ hiển thị cho giao diện demo (mặc định true khi thêm mới),
- * KHÔNG có logic gọi mạng/xác thực thật - không phải tool check tài khoản.
- */
 data class FacebookAccount(
     val uid: String,
     val name: String = "",
     val link: String = "",
-    val note: String = "",
+    val note: String = "",   // Lưu cookie ở đây
     val phone: String = "",
     val bio: String = "",
     val isLive: Boolean = true
@@ -59,15 +48,15 @@ object FacebookAccountsStore {
         link: String = "",
         note: String = "",
         phone: String = "",
-        bio: String = ""
+        bio: String = "",
+        isLive: Boolean = true
     ) {
         addAccounts(
             context,
-            listOf(FacebookAccount(uid = uid, name = name, link = link, note = note, phone = phone, bio = bio))
+            listOf(FacebookAccount(uid = uid, name = name, link = link, note = note, phone = phone, bio = bio, isLive = isLive))
         )
     }
 
-    /** Thêm nhiều tài khoản cùng lúc (dùng cho tab "Nhập nhiều UID" - tên/link/ghi chú để trống). */
     fun addAccounts(context: Context, entries: List<FacebookAccount>) {
         val trimmedNew = entries
             .map {
@@ -87,7 +76,7 @@ object FacebookAccountsStore {
         val existingUids = current.map { it.uid }.toMutableSet()
         trimmedNew.forEach { entry ->
             if (entry.uid !in existingUids) {
-                current.add(entry.copy(isLive = true))
+                current.add(entry)
                 existingUids.add(entry.uid)
             }
         }
@@ -104,13 +93,18 @@ object FacebookAccountsStore {
         save(context, current)
     }
 
-    /**
-     * Chỉ đổi cờ hiển thị "Live" trên giao diện cho các UID được chọn - không gọi mạng,
-     * không xác thực gì cả. Dùng cho nút "Kiểm tra Live" (mock UI).
-     */
+    // Đánh dấu Live
     fun markLive(context: Context, uids: List<String>) {
         val current = getAccounts(context).map { acc ->
             if (acc.uid in uids) acc.copy(isLive = true) else acc
+        }
+        save(context, current)
+    }
+
+    // Đánh dấu Die
+    fun markDie(context: Context, uids: List<String>) {
+        val current = getAccounts(context).map { acc ->
+            if (acc.uid in uids) acc.copy(isLive = false) else acc
         }
         save(context, current)
     }
