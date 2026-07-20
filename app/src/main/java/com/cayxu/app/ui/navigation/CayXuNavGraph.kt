@@ -34,6 +34,11 @@ object Routes {
     const val LINK_ACCOUNT = "link_account/{platform}/{iconRes}"
     const val ADD_ACCOUNT = "add_account/{platform}/{iconRes}"
 
+    // Facebook có route RIÊNG, độc lập với route dùng chung ở trên
+    // (TikTok/Instagram/LinkedIn/... vẫn dùng LINK_ACCOUNT/ADD_ACCOUNT như cũ).
+    const val LINK_ACCOUNT_FACEBOOK = "link_account_facebook"
+    const val ADD_ACCOUNT_FACEBOOK = "add_account_facebook"
+
     fun linkAccount(platform: String, iconRes: Int) = "link_account/$platform/$iconRes"
     fun addAccount(platform: String, iconRes: Int) = "add_account/$platform/$iconRes"
 }
@@ -115,6 +120,18 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
                     navController = navController,
                     platform = platform,
                     iconRes = iconRes
+                )
+            }
+
+            // Route RIÊNG cho Facebook - không dùng chung với LINK_ACCOUNT/ADD_ACCOUNT ở trên.
+            composable(Routes.LINK_ACCOUNT_FACEBOOK) {
+                com.cayxu.app.ui.screens.linkaccount.facebook.FacebookLinkAccountScreen(
+                    navController = navController
+                )
+            }
+            composable(Routes.ADD_ACCOUNT_FACEBOOK) {
+                com.cayxu.app.ui.screens.linkaccount.facebook.FacebookAddAccountScreen(
+                    navController = navController
                 )
             }
         }

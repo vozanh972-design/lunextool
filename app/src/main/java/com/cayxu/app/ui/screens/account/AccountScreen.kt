@@ -224,7 +224,12 @@ fun AccountScreen(navController: NavController) {
                 Column {
                     socialAccounts.forEachIndexed { index, item ->
                         SocialAccountRow(item) {
-                            navController.navigate(com.cayxu.app.ui.navigation.Routes.linkAccount(item.label, item.iconRes))
+                            if (item.label == "Facebook") {
+                                // Facebook dùng route + màn hình RIÊNG, độc lập với các nền tảng khác.
+                                navController.navigate(com.cayxu.app.ui.navigation.Routes.LINK_ACCOUNT_FACEBOOK)
+                            } else {
+                                navController.navigate(com.cayxu.app.ui.navigation.Routes.linkAccount(item.label, item.iconRes))
+                            }
                         }
                         if (index != socialAccounts.lastIndex) {
                             HorizontalDivider(color = AppBackground, thickness = 1.dp)
