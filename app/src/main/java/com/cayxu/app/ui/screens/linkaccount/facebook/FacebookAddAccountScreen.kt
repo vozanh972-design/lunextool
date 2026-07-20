@@ -31,7 +31,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
     val context = LocalContext.current
     var tabIndex by remember { mutableIntStateOf(0) }
 
-    // Single account
     var singleUid by remember { mutableStateOf("") }
     var singlePassword by remember { mutableStateOf("") }
     var singleTwoFa by remember { mutableStateOf("") }
@@ -39,13 +38,11 @@ fun FacebookAddAccountScreen(navController: NavController) {
     var singleToken by remember { mutableStateOf("") }
     var singleProxy by remember { mutableStateOf("") }
 
-    // Multi account
     var multiUid by remember { mutableStateOf("") }
     var multiSelectedFields by remember { mutableStateOf(listOf(FieldKey.UID)) }
 
     var isLoading by remember { mutableStateOf(false) }
 
-    // Tự động trích xuất UID từ cookie
     fun extractUidFromCookie(cookie: String): String? {
         val pairs = cookie.split(';')
         for (pair in pairs) {
@@ -66,7 +63,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
     }
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
-        // Header
+        // Header (giữ nguyên)
         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 20.dp)) {
             IconButton(
                 onClick = { navController.popBackStack() },
@@ -92,7 +89,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
         ) {
             Spacer(Modifier.height(4.dp))
 
-            // Banner
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = InfoBlueBg),
@@ -112,7 +108,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(16.dp))
 
-            // Segment
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -180,7 +175,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
                 Spacer(Modifier.height(16.dp))
 
-                // 2FA (label "Link")
                 Text("Link", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -204,7 +198,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
                 Spacer(Modifier.height(16.dp))
 
-                // Cookie
                 Text("Cookie", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -230,7 +223,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
                 Spacer(Modifier.height(16.dp))
 
-                // Token
                 Text("Token", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -254,7 +246,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
                 Spacer(Modifier.height(16.dp))
 
-                // Proxy
                 Text("Proxy", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -270,7 +261,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                // Chế độ nhập nhiều (giữ nguyên cũ)
+                // Multi (giữ nguyên)
                 Text("Danh sách UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
 
@@ -339,7 +330,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
             }
         }
 
-        // Nút Xác nhận
+        // Nút Xác nhận – đã sửa logic
         Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
             Button(
                 onClick = {
@@ -350,48 +341,35 @@ fun FacebookAddAccountScreen(navController: NavController) {
                             return@Button
                         }
 
-                        // Nếu có cookie, kiểm tra live trước
+                        // Nếu có cookie, kiểm tra live
                         if (singleCookie.isNotBlank()) {
                             isLoading = true
                             Toast.makeText(context, "Đang kiểm tra cookie...", Toast.LENGTH_SHORT).show()
                             FacebookLiveChecker.checkCookie(context, singleCookie) { uid, isLive ->
                                 isLoading = false
-                                if (uid != null && isLive) {
-                                    // Đăng nhập thành công
-                                    val finalUid = if (singleUid.isBlank()) uid else singleUid
-                                    val note = "Cookie: $singleCookie"
-                                    FacebookAccountsStore.addAccount(
-                                        context,
-                                        uid = finalUid,
-                                        name = singlePassword,
-                                        link = singleTwoFa,
-                                        note = note,
-                                        phone = singleProxy,
-                                        bio = singleToken,
-                                        isLive = true
-                                    )
+                                val finalUid = if (singleUid.isNotBlank()) singleUid else uid ?: "unknown"
+                                val note = "Cookie: $singleCookie"
+
+                                FacebookAccountsStore.addAccount(
+                                    context,
+                                    uid = finalUid,
+                                    name = singlePassword,
+                                    link = singleTwoFa,
+                                    note = note,
+                                    phone = singleProxy,
+                                    bio = singleToken,
+                                    isLive = isLive
+                                )
+
+                                if (isLive) {
                                     Toast.makeText(context, "✅ Đã thêm tài khoản (Live)", Toast.LENGTH_SHORT).show()
-                                    navController.popBackStack()
                                 } else {
-                                    // Cookie không hợp lệ, vẫn lưu nhưng đánh dấu Die
-                                    val finalUid = if (singleUid.isBlank()) "unknown" else singleUid
-                                    val note = "Cookie: $singleCookie"
-                                    FacebookAccountsStore.addAccount(
-                                        context,
-                                        uid = finalUid,
-                                        name = singlePassword,
-                                        link = singleTwoFa,
-                                        note = note,
-                                        phone = singleProxy,
-                                        bio = singleToken,
-                                        isLive = false
-                                    )
-                                    Toast.makeText(context, "⚠️ Cookie không hợp lệ, đã lưu với trạng thái Die", Toast.LENGTH_SHORT).show()
-                                    navController.popBackStack()
+                                    Toast.makeText(context, "⚠️ Cookie không hợp lệ, lưu với trạng thái Die", Toast.LENGTH_SHORT).show()
                                 }
+                                navController.popBackStack()
                             }
                         } else {
-                            // Không có cookie, lưu bình thường (isLive = true mặc định)
+                            // Không có cookie, lưu bình thường
                             FacebookAccountsStore.addAccount(
                                 context,
                                 uid = singleUid,
@@ -405,7 +383,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                             navController.popBackStack()
                         }
                     } else {
-                        // Chế độ nhiều UID (không kiểm tra cookie)
                         val entries = parseMultiUidInput(multiUid, multiSelectedFields)
                         if (entries.isEmpty()) {
                             Toast.makeText(context, "Vui lòng nhập ít nhất một UID", Toast.LENGTH_SHORT).show()
@@ -431,8 +408,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
     }
 }
 
-// ===== Các helper không thay đổi =====
-
+// === Helper giữ nguyên ===
 private enum class FieldKey { UID, PASSWORD, TWOFA, COOKIE, TOKEN, PROXY }
 
 private data class FieldOption(val key: FieldKey, val label: String)
