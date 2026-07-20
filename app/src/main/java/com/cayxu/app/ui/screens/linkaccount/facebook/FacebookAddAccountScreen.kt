@@ -278,7 +278,9 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Định dạng hiện tại: " + multiSelectedFields.joinToString(" | ") { it.label },
+                    "Định dạng hiện tại: " + multiSelectedFields.joinToString(" | ") { key ->
+                        ALL_FIELD_OPTIONS.first { it.key == key }.label
+                    },
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Primary
