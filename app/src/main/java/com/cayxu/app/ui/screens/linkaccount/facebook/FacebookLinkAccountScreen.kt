@@ -7,21 +7,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,21 +26,11 @@ import com.cayxu.app.R
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.ui.navigation.Routes
-import com.cayxu.app.ui.theme.AppBackground
-import com.cayxu.app.ui.theme.CardWhite
-import com.cayxu.app.ui.theme.DangerRed
-import com.cayxu.app.ui.theme.InfoBlueBg
-import com.cayxu.app.ui.theme.Primary
-import com.cayxu.app.ui.theme.SuccessGreen
-import com.cayxu.app.ui.theme.TextPrimary
-import com.cayxu.app.ui.theme.TextSecondary
+import com.cayxu.app.ui.theme.*
 
 /**
- * Màn hình danh sách tài khoản Facebook - RIÊNG BIỆT, không dùng chung với
- * LinkAccountScreen (TikTok/Instagram/...). Mọi thay đổi cho Facebook chỉ sửa ở đây.
- *
- * Chỉ hiển thị các trường công khai: UID, tên, link. Nút "Kiểm tra Live" chỉ đổi cờ
- * hiển thị (mock UI), không gọi mạng hay xác thực gì cả.
+ * Màn hình danh sách tài khoản Facebook - RIÊNG BIỆT, không dùng chung.
+ * Hiển thị dữ liệu thật từ FacebookAccountsStore, không có dữ liệu mẫu.
  */
 @Composable
 fun FacebookLinkAccountScreen(navController: NavController) {
@@ -63,20 +41,7 @@ fun FacebookLinkAccountScreen(navController: NavController) {
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(setOf<String>()) }
 
-    // TODO: seed demo chỉ để giao diện danh sách có sẵn vài mục khi chưa có dữ liệu thật.
-    LaunchedEffect(Unit) {
-        if (FacebookAccountsStore.getAccounts(context).isEmpty()) {
-            FacebookAccountsStore.addAccounts(
-                context,
-                listOf(
-                    FacebookAccount(uid = "uid_mau_001", name = "Tài khoản mẫu 1"),
-                    FacebookAccount(uid = "uid_mau_002", name = "Tài khoản mẫu 2")
-                )
-            )
-            accounts = FacebookAccountsStore.getAccounts(context)
-        }
-    }
-
+    // Tự động cập nhật khi quay lại màn hình
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -99,6 +64,7 @@ fun FacebookLinkAccountScreen(navController: NavController) {
     val dieCount = accounts.size - liveCount
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
+        // Header
         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 20.dp)) {
             IconButton(
                 onClick = { navController.popBackStack() },
@@ -309,9 +275,8 @@ private fun FacebookAccountRow(
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            if (account.name.isNotBlank()) {
-                Text("UID: ${account.uid}", color = TextSecondary, fontSize = 11.sp)
-            }
+            // Luôn hiển thị UID
+            Text("UID: ${account.uid}", color = TextSecondary, fontSize = 11.sp)
             if (account.link.isNotBlank()) {
                 Text(account.link, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
             }
