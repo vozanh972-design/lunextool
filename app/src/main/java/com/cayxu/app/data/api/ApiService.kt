@@ -1,24 +1,37 @@
-package com.cayxu.app.data.api
+package com.cayxu.app.network
 
-import com.cayxu.app.data.model.VerifyKeyResponse
-import retrofit2.Response
-import retrofit2.http.FormUrlEncoded
-import retrofit2.http.Field
+import retrofit2.Call
+import retrofit2.http.Body
 import retrofit2.http.POST
 
-/**
- * Định nghĩa duy nhất 1 endpoint theo đúng yêu cầu:
- * POST https://lunex.io.vn/api/verify_key.php
- * Body: key=<key>, device_id=<ANDROID_ID>
- *
- * KHÔNG được thêm endpoint khác, KHÔNG được đổi tham số.
- */
-interface ApiService {
+data class LoginRequest(
+    val email: String,
+    val password: String,
+    val auth: String? = "",
+    val app_token: String = "350685531728|62f8ce9f74b12f84c123cc23437a4a32"
+)
 
-    @FormUrlEncoded
-    @POST("api/verify_key.php")
-    suspend fun verifyKey(
-        @Field("key") key: String,
-        @Field("device_id") deviceId: String
-    ): Response<VerifyKeyResponse>
+data class LoginResponse(
+    val success: Boolean,
+    val uid: String?,
+    val token: String?,
+    val cookies: String?,
+    val error: String?
+)
+
+data class MultipleLoginRequest(
+    val accounts: List<LoginRequest>,
+    val app_token: String = "350685531728|62f8ce9f74b12f84c123cc23437a4a32"
+)
+
+data class MultipleLoginResponse(
+    val results: List<LoginResponse>
+)
+
+interface ApiService {
+    @POST("/login")
+    fun login(@Body request: LoginRequest): Call<LoginResponse>
+
+    @POST("/login-multiple")
+    fun loginMultiple(@Body request: MultipleLoginRequest): Call<MultipleLoginResponse>
 }
