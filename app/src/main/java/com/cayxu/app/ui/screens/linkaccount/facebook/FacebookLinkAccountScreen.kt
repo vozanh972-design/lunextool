@@ -43,7 +43,9 @@ fun FacebookLinkAccountScreen(navController: NavController) {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                accounts = FacebookAccountsStore.getAccounts(context)
+                try {
+                    accounts = FacebookAccountsStore.getAccounts(context)
+                } catch (e: Exception) { }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -51,10 +53,18 @@ fun FacebookLinkAccountScreen(navController: NavController) {
     }
 
     val filtered = if (query.isBlank()) accounts else accounts.filter {
-        it.uid.contains(query, ignoreCase = true) || it.name.contains(query, ignoreCase = true)
+        try {
+            it.uid.contains(query, ignoreCase = true) || it.name.contains(query, ignoreCase = true)
+        } catch (e: Exception) { false }
     }
     val liveCount = accounts.count { it.isLive }
     val dieCount = accounts.size - liveCount
+
+    fun safeToast(msg: String) {
+        try {
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) { }
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 20.dp)) {
@@ -157,32 +167,39 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                 TextButton(
                     onClick = {
                         if (isLoading) return@TextButton
-                        val targets = if (selected.isEmpty()) filtered.map { it.uid } else selected.toList()
-                        if (targets.isEmpty()) {
-                            Toast.makeText(context, "Không có tài khoản nào được chọn", Toast.LENGTH_SHORT).show()
-                            return@TextButton
-                        }
+                        try {
+                            val targets = if (selected.isEmpty()) filtered.map { it.uid } else selected.toList()
+                            if (targets.isEmpty()) {
+                                safeToast("Không có tài khoản nào được chọn")
+                                return@TextButton
+                            }
 
-                        val accountsWithCookie = targets.mapNotNull { uid ->
-                            val acc = accounts.find { it.uid == uid }
-                            if (acc != null && acc.note.startsWith("Cookie: ")) {
-                                val cookie = acc.note.substringAfter("Cookie: ")
-                                if (cookie.isNotBlank()) acc to cookie else null
-                            } else null
-                        }
+                            val accountsWithCookie = targets.mapNotNull { uid ->
+                                val acc = accounts.find { it.uid == uid }
+                                if (acc != null && acc.note.startsWith("Cookie: ")) {
+                                    val cookie = acc.note.substringAfter("Cookie: ")
+                                    if (cookie.isNotBlank()) acc to cookie else null
+                                } else null
+                            }
 
-                        if (accountsWithCookie.isEmpty()) {
-                            Toast.makeText(context, "Không có cookie để kiểm tra", Toast.LENGTH_SHORT).show()
-                            return@TextButton
-                        }
+                            if (accountsWithCookie.isEmpty()) {
+                                safeToast("Không có cookie để kiểm tra")
+                                return@TextButton
+                            }
 
-                        isLoading = true
-                        Toast.makeText(context, "Đang kiểm tra ${accountsWithCookie.size} tài khoản...", Toast.LENGTH_SHORT).show()
+                            isLoading = true
+                            safeToast("Đang kiểm tra ${accountsWithCookie.size} tài khoản...")
 
-                        checkAccountsSequentially(context, accountsWithCookie, 0) {
+                            checkAccountsSequentially(context, accountsWithCookie, 0) {
+                                try {
+                                    isLoading = false
+                                    accounts = FacebookAccountsStore.getAccounts(context)
+                                    safeToast("Đã kiểm tra xong")
+                                } catch (e: Exception) { }
+                            }
+                        } catch (e: Exception) {
                             isLoading = false
-                            accounts = FacebookAccountsStore.getAccounts(context)
-                            Toast.makeText(context, "Đã kiểm tra xong", Toast.LENGTH_SHORT).show()
+                            safeToast("Lỗi: ${e.message}")
                         }
                     },
                     enabled = !isLoading
@@ -200,10 +217,14 @@ fun FacebookLinkAccountScreen(navController: NavController) {
 
                 TextButton(
                     onClick = {
-                        if (selected.isNotEmpty()) {
-                            FacebookAccountsStore.removeAccounts(context, selected.toList())
-                            accounts = FacebookAccountsStore.getAccounts(context)
-                            selected = emptySet()
+                        try {
+                            if (selected.isNotEmpty()) {
+                                FacebookAccountsStore.removeAccounts(context, selected.toList())
+                                accounts = FacebookAccountsStore.getAccounts(context)
+                                selected = emptySet()
+                            }
+                        } catch (e: Exception) {
+                            safeToast("Lỗi xóa: ${e.message}")
                         }
                     },
                     enabled = selected.isNotEmpty() && !isLoading
@@ -241,9 +262,13 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                                     selected = if (checked) selected + account.uid else selected - account.uid
                                 },
                                 onRemove = {
-                                    FacebookAccountsStore.removeAccount(context, account.uid)
-                                    accounts = FacebookAccountsStore.getAccounts(context)
-                                    selected = selected - account.uid
+                                    try {
+                                        FacebookAccountsStore.removeAccount(context, account.uid)
+                                        accounts = FacebookAccountsStore.getAccounts(context)
+                                        selected = selected - account.uid
+                                    } catch (e: Exception) {
+                                        safeToast("Lỗi xóa: ${e.message}")
+                                    }
                                 }
                             )
                             if (index != filtered.lastIndex) {
@@ -290,12 +315,10 @@ private fun checkAccountsSequentially(
                 }
                 checkAccountsSequentially(context, accounts, index + 1, onComplete)
             } catch (e: Exception) {
-                // Bắt lỗi khi update state
                 checkAccountsSequentially(context, accounts, index + 1, onComplete)
             }
         }
     } catch (e: Exception) {
-        // Lỗi gọi checkCookie
         checkAccountsSequentially(context, accounts, index + 1, onComplete)
     }
 }
