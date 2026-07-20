@@ -17,6 +17,12 @@ object FacebookLiveChecker {
 
     fun checkCookie(context: Context, cookieString: String, onResult: (uid: String?, isLive: Boolean) -> Unit) {
         try {
+            if (cookieString.isBlank()) {
+                Log.w(TAG, "Cookie rỗng")
+                onResult(null, false)
+                return
+            }
+
             val cookieMap = mutableMapOf<String, String>()
             cookieString.split(';').forEach { pair ->
                 val trimmed = pair.trim()
@@ -32,6 +38,7 @@ object FacebookLiveChecker {
 
             val cUser = cookieMap["c_user"]
             if (cUser.isNullOrEmpty()) {
+                Log.w(TAG, "❌ Không tìm thấy c_user trong cookie")
                 onResult(null, false)
                 return
             }
@@ -53,70 +60,91 @@ object FacebookLiveChecker {
             client.newCall(request).enqueue(object : okhttp3.Callback {
                 override fun onFailure(call: okhttp3.Call, e: IOException) {
                     Log.e(TAG, "Request failed", e)
-                    onResult(null, false)
+                    try {
+                        onResult(null, false)
+                    } catch (ex: Exception) {
+                        Log.e(TAG, "Lỗi khi gọi onResult failure", ex)
+                    }
                 }
 
                 override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                    response.use {
-                        if (!it.isSuccessful) {
-                            val effectiveUrl = it.request.url.toString()
-                            if (effectiveUrl.contains("login") || !effectiveUrl.contains("home.php")) {
-                                onResult(null, false)
-                            } else {
-                                val html = it.body?.string() ?: ""
-                                val uid = extractUidFromHtml(html)
-                                onResult(uid, uid != null)
+                    try {
+                        response.use {
+                            if (!it.isSuccessful) {
+                                val effectiveUrl = it.request.url.toString()
+                                if (effectiveUrl.contains("login") || !effectiveUrl.contains("home.php")) {
+                                    onResult(null, false)
+                                } else {
+                                    val html = it.body?.string() ?: ""
+                                    val uid = extractUidFromHtml(html)
+                                    onResult(uid, uid != null)
+                                }
+                                return
                             }
-                            return
-                        }
 
-                        val html = it.body?.string() ?: ""
-                        val uid = extractUidFromHtml(html)
-                        if (uid != null) {
-                            Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid")
-                            onResult(uid, true)
-                        } else {
-                            val cookiesFromResponse = it.headers("Set-Cookie")
-                            var cUserFromResponse: String? = null
-                            cookiesFromResponse.forEach { cookie ->
-                                if (cookie.startsWith("c_user=")) {
-                                    cUserFromResponse = cookie.substringAfter("c_user=").substringBefore(";").trim()
+                            val html = it.body?.string() ?: ""
+                            val uid = extractUidFromHtml(html)
+                            if (uid != null) {
+                                Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid")
+                                onResult(uid, true)
+                            } else {
+                                // Thử lấy từ Set-Cookie
+                                var cUserFromResponse: String? = null
+                                it.headers("Set-Cookie").forEach { cookie ->
+                                    if (cookie.startsWith("c_user=")) {
+                                        cUserFromResponse = cookie.substringAfter("c_user=").substringBefore(";").trim()
+                                    }
+                                }
+                                if (cUserFromResponse != null) {
+                                    onResult(cUserFromResponse, true)
+                                } else {
+                                    Log.d(TAG, "❌ Cookie không hợp lệ hoặc hết hạn")
+                                    onResult(null, false)
                                 }
                             }
-                            if (cUserFromResponse != null) {
-                                onResult(cUserFromResponse, true)
-                            } else {
-                                Log.d(TAG, "❌ Cookie không hợp lệ hoặc hết hạn")
-                                onResult(null, false)
-                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Lỗi xử lý response", e)
+                        try {
+                            onResult(null, false)
+                        } catch (ex: Exception) {
+                            Log.e(TAG, "Lỗi khi gọi onResult từ catch", ex)
                         }
                     }
                 }
             })
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking cookie", e)
-            onResult(null, false)
+            Log.e(TAG, "Lỗi trong checkCookie", e)
+            try {
+                onResult(null, false)
+            } catch (ex: Exception) {
+                Log.e(TAG, "Lỗi khi gọi onResult từ try-catch ngoài", ex)
+            }
         }
     }
 
     private fun extractUidFromHtml(html: String?): String? {
         if (html.isNullOrEmpty()) return null
-        val patterns = listOf(
-            "\"c_user\":\"(\\d+)\"",
-            "c_user\\s*=\\s*['\"]?(\\d+)['\"]?",
-            "window\\.__INITIAL_STATE__.*?\"c_user\":\"(\\d+)\"",
-            "https://m\\.facebook\\.com/(\\d+)"
-        )
-        for (pattern in patterns) {
-            val regex = Regex(pattern)
-            val match = regex.find(html)
-            if (match != null) {
-                return match.groupValues[1]
+        return try {
+            val patterns = listOf(
+                "\"c_user\":\"(\\d+)\"",
+                "c_user\\s*=\\s*['\"]?(\\d+)['\"]?",
+                "window\\.__INITIAL_STATE__.*?\"c_user\":\"(\\d+)\"",
+                "https://m\\.facebook\\.com/(\\d+)"
+            )
+            for (pattern in patterns) {
+                val regex = Regex(pattern)
+                val match = regex.find(html)
+                if (match != null) {
+                    return match.groupValues[1]
+                }
             }
+            if (html.contains("home.php") || html.contains("messages") || html.contains("news_feed")) {
+                "unknown"
+            } else null
+        } catch (e: Exception) {
+            Log.e(TAG, "Lỗi extractUidFromHtml", e)
+            null
         }
-        if (html.contains("home.php") || html.contains("messages") || html.contains("news_feed")) {
-            return "unknown"
-        }
-        return null
     }
 }
