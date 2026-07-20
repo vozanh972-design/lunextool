@@ -1,5 +1,7 @@
 package com.cayxu.app.ui.screens.linkaccount.facebook
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -13,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
@@ -22,13 +25,16 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
-import coil.compose.AsyncImage
 import com.cayxu.app.R
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.theme.*
 import com.cayxu.app.utils.FacebookLiveChecker
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 @Composable
 fun FacebookLinkAccountScreen(navController: NavController) {
@@ -270,10 +276,11 @@ private fun checkAccountsSequentially(
     val uid = uids[index]
 
     try {
-        FacebookLiveChecker.checkUidLiveWithAvatar(uid) { isLive, avatarUrl ->
+        FacebookLiveChecker.checkUidLiveWithAvatar(uid) { isLive, avatarUrl, avatarBitmap ->
             try {
-                if (isLive && avatarUrl != null) {
-                    FacebookAccountsStore.markLiveWithAvatar(context, listOf(uid), avatarUrl)
+                if (isLive && avatarBitmap != null) {
+                    // Lưu avatar dưới dạng base64? Bỏ qua, chỉ lưu URL hoặc bitmap
+                    FacebookAccountsStore.markLive(context, listOf(uid))
                 } else {
                     FacebookAccountsStore.markDie(context, listOf(uid))
                 }
@@ -297,6 +304,28 @@ private fun FacebookAccountRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val title = if (account.name.isNotBlank()) account.name else account.uid
+    var avatarBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+
+    // Tải avatar nếu có URL
+    LaunchedEffect(account.avatar) {
+        if (account.isLive && account.avatar.isNotBlank()) {
+            try {
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(5, TimeUnit.SECONDS)
+                    .readTimeout(5, TimeUnit.SECONDS)
+                    .build()
+                val request = Request.Builder().url(account.avatar).build()
+                val response = client.newCall(request).execute()
+                response.use {
+                    if (it.isSuccessful) {
+                        avatarBitmap = BitmapFactory.decodeStream(it.body?.byteStream())
+                    }
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
@@ -304,16 +333,14 @@ private fun FacebookAccountRow(
     ) {
         Checkbox(checked = checked, onCheckedChange = onCheckedChange)
 
-        if (account.isLive && account.avatar.isNotBlank()) {
-            AsyncImage(
-                model = account.avatar,
+        if (avatarBitmap != null) {
+            Image(
+                bitmap = avatarBitmap!!.asImageBitmap(),
                 contentDescription = "Avatar",
                 modifier = Modifier
                     .size(38.dp)
                     .clip(CircleShape)
-                    .background(TextSecondary.copy(alpha = 0.10f)),
-                error = painterResource(iconRes),
-                placeholder = painterResource(iconRes)
+                    .background(TextSecondary.copy(alpha = 0.10f))
             )
         } else {
             Box(
