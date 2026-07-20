@@ -5,7 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Badge
@@ -55,6 +57,8 @@ fun FacebookAddAccountScreen(navController: NavController) {
     var singlePhone by remember { mutableStateOf("") }
 
     var multiUid by remember { mutableStateOf("") }
+    // 0 = mỗi dòng chỉ có UID, 1 = mỗi dòng dạng "UID|Tên"
+    var multiFormat by remember { mutableIntStateOf(0) }
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 20.dp)) {
@@ -73,7 +77,13 @@ fun FacebookAddAccountScreen(navController: NavController) {
             )
         }
 
-        Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+        ) {
             Spacer(Modifier.height(4.dp))
 
             // Banner thông tin
@@ -229,10 +239,46 @@ fun FacebookAddAccountScreen(navController: NavController) {
             } else {
                 Text("Danh sách UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
+
+                Text(
+                    "Định dạng mỗi dòng",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextSecondary
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(CardWhite)
+                        .padding(4.dp)
+                ) {
+                    SegmentButton(
+                        text = "Chỉ UID",
+                        selected = multiFormat == 0,
+                        modifier = Modifier.weight(1f),
+                        onClick = { multiFormat = 0 }
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    SegmentButton(
+                        text = "UID | Tên",
+                        selected = multiFormat == 1,
+                        modifier = Modifier.weight(1f),
+                        onClick = { multiFormat = 1 }
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+
+                val multiPlaceholder = if (multiFormat == 0) {
+                    "Mỗi UID một dòng, ví dụ:\n100000001234567\n100000001234568"
+                } else {
+                    "Mỗi dòng dạng UID|Tên, ví dụ:\n100000001234567|Nguyễn Văn A\n100000001234568|Trần Thị B"
+                }
                 OutlinedTextField(
                     value = multiUid,
                     onValueChange = { multiUid = it },
-                    placeholder = { Text("Mỗi UID một dòng, ví dụ:\n100000001234567\n100000001234568") },
+                    placeholder = { Text(multiPlaceholder) },
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = CardWhite,
@@ -241,12 +287,13 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     modifier = Modifier.fillMaxWidth().height(160.dp)
                 )
                 Spacer(Modifier.height(8.dp))
-                val previewCount = multiUid.lines().map { it.trim() }.count { it.isNotEmpty() }
-                Text(
-                    "Đã nhập $previewCount UID. Mỗi dòng là một UID công khai, không phải mật khẩu.",
-                    fontSize = 11.sp,
-                    color = TextSecondary
-                )
+                val parsedMultiAccounts = parseMultiUidInput(multiUid, multiFormat)
+                val hint = if (multiFormat == 0) {
+                    "Đã nhập ${parsedMultiAccounts.size} UID. Mỗi dòng là một UID công khai, không phải mật khẩu."
+                } else {
+                    "Đã nhập ${parsedMultiAccounts.size} tài khoản. Định dạng: UID | Tên, phân tách bằng dấu \"|\"."
+                }
+                Text(hint, fontSize = 11.sp, color = TextSecondary)
             }
         }
 
@@ -270,12 +317,12 @@ fun FacebookAddAccountScreen(navController: NavController) {
                             navController.popBackStack()
                         }
                     } else {
-                        val uids = multiUid.lines().map { it.trim() }.filter { it.isNotEmpty() }
-                        if (uids.isEmpty()) {
+                        val entries = parseMultiUidInput(multiUid, multiFormat)
+                        if (entries.isEmpty()) {
                             Toast.makeText(context, "Vui lòng nhập ít nhất một UID", Toast.LENGTH_SHORT).show()
                         } else {
-                            FacebookAccountsStore.addAccounts(context, uids.map { FacebookAccount(uid = it) })
-                            Toast.makeText(context, "Đã thêm ${uids.size} tài khoản Facebook", Toast.LENGTH_SHORT).show()
+                            FacebookAccountsStore.addAccounts(context, entries)
+                            Toast.makeText(context, "Đã thêm ${entries.size} tài khoản Facebook", Toast.LENGTH_SHORT).show()
                             navController.popBackStack()
                         }
                     }
@@ -288,6 +335,27 @@ fun FacebookAddAccountScreen(navController: NavController) {
             }
         }
     }
+}
+
+/**
+ * Phân tích nội dung ô "Nhập nhiều UID" theo định dạng đã chọn:
+ * - format = 0: mỗi dòng là một UID.
+ * - format = 1: mỗi dòng dạng "UID|Tên" (phân tách bằng dấu "|"), tên là không bắt buộc.
+ */
+private fun parseMultiUidInput(raw: String, format: Int): List<FacebookAccount> {
+    return raw.lines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .mapNotNull { line ->
+            if (format == 1) {
+                val parts = line.split("|").map { it.trim() }
+                val uid = parts.getOrNull(0).orEmpty()
+                val name = parts.getOrNull(1).orEmpty()
+                if (uid.isEmpty()) null else FacebookAccount(uid = uid, name = name)
+            } else {
+                if (line.isEmpty()) null else FacebookAccount(uid = line)
+            }
+        }
 }
 
 @Composable
