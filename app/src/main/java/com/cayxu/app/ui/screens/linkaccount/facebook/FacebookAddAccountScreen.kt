@@ -21,14 +21,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
+import com.cayxu.app.network.LoginRequest
+import com.cayxu.app.network.RetrofitClient
 import com.cayxu.app.ui.theme.*
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 
-/**
- * Màn hình thêm tài khoản Facebook với các trường: UID, Password, 2FA, Cookie, Token, Proxy.
- * Có 2 chế độ: nhập 1 tài khoản hoặc nhập hàng loạt.
- */
 @Composable
 fun FacebookAddAccountScreen(navController: NavController) {
     val context = LocalContext.current
@@ -38,16 +38,10 @@ fun FacebookAddAccountScreen(navController: NavController) {
     var singleUid by remember { mutableStateOf("") }
     var singlePassword by remember { mutableStateOf("") }
     var singleTwoFa by remember { mutableStateOf("") }
-    var singleCookie by remember { mutableStateOf("") }
-    var singleToken by remember { mutableStateOf("") }
-    var singleProxy by remember { mutableStateOf("") }
 
-    // State cho nhập nhiều
+    // State cho nhập nhiều (giữ nguyên nếu cần, nhưng đơn giản hóa)
     var multiText by remember { mutableStateOf("") }
-    // Các trường được chọn theo thứ tự (mặc định chỉ có UID)
-    var multiSelectedFields by remember { mutableStateOf(listOf(FieldKey.UID)) }
 
-    // Loading state
     var isLoading by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
@@ -75,9 +69,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
         ) {
-            Spacer(Modifier.height(4.dp))
-
-            // Banner thông báo
+            // Banner
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = InfoBlueBg),
@@ -87,7 +79,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     Icon(Icons.Filled.Badge, contentDescription = null, tint = Primary)
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        "UID là mã định danh công khai, không phải mật khẩu. Password và 2FA là bắt buộc.",
+                        "UID là email hoặc số điện thoại. Password và 2FA (nếu có) sẽ được gửi lên server để xác thực.",
                         fontSize = 12.5.sp,
                         color = TextPrimary,
                         modifier = Modifier.weight(1f)
@@ -97,7 +89,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(16.dp))
 
-            // Tab chọn chế độ
+            // Tab chọn chế độ (1 hoặc nhiều)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -123,128 +115,49 @@ fun FacebookAddAccountScreen(navController: NavController) {
             Spacer(Modifier.height(20.dp))
 
             if (tabIndex == 0) {
-                // ========== CHẾ ĐỘ NHẬP 1 TÀI KHOẢN ==========
+                // Nhập 1 tài khoản
                 InputField(
-                    label = "UID",
+                    label = "UID (Email)",
                     value = singleUid,
                     onValueChange = { singleUid = it },
-                    placeholder = "Nhập UID tài khoản Facebook",
-                    helperText = "Mã định danh công khai, không phải mật khẩu.",
+                    placeholder = "Nhập email hoặc số điện thoại",
                     isRequired = true
                 )
                 InputField(
                     label = "Password",
                     value = singlePassword,
                     onValueChange = { singlePassword = it },
-                    placeholder = "Nhập mật khẩu (bắt buộc)",
-                    helperText = null,
+                    placeholder = "Nhập mật khẩu",
                     isRequired = true,
                     isPassword = true
                 )
                 InputField(
-                    label = "2FA",
+                    label = "2FA Secret (nếu có)",
                     value = singleTwoFa,
                     onValueChange = { singleTwoFa = it },
-                    placeholder = "Nhập mã 2FA (bắt buộc)",
-                    helperText = "Mã xác thực hai yếu tố.",
-                    isRequired = true
-                )
-                InputField(
-                    label = "Cookie",
-                    value = singleCookie,
-                    onValueChange = { singleCookie = it },
-                    placeholder = "Cookie (không bắt buộc)",
-                    helperText = null,
-                    isMultiline = true
-                )
-                InputField(
-                    label = "Token",
-                    value = singleToken,
-                    onValueChange = { singleToken = it },
-                    placeholder = "Token (không bắt buộc, dùng nếu không có UID|PASS|2FA)",
-                    helperText = null,
-                    isMultiline = true
-                )
-                InputField(
-                    label = "Proxy",
-                    value = singleProxy,
-                    onValueChange = { singleProxy = it },
-                    placeholder = "IP:Port:Username:Password (không bắt buộc)",
-                    helperText = "Ví dụ: 192.168.1.1:8080:user:pass"
+                    placeholder = "Nhập mã bí mật 2FA (không bắt buộc)",
+                    isRequired = false
                 )
             } else {
-                // ========== CHẾ ĐỘ NHẬP NHIỀU ==========
-                Text("Danh sách UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                // Nhập nhiều (đơn giản: mỗi dòng email|password|2fa)
+                Text("Nhập nhiều tài khoản", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Chọn các trường và thứ tự phân tách bằng dấu \"|\"",
+                    "Mỗi dòng: email|password|2fa (2fa có thể để trống)",
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
                     color = TextSecondary
                 )
                 Spacer(Modifier.height(8.dp))
-
-                // Chip chọn trường
-                val allFields = listOf(
-                    FieldKey.UID to "UID",
-                    FieldKey.PASSWORD to "Password",
-                    FieldKey.TWOFA to "2FA",
-                    FieldKey.COOKIE to "Cookie",
-                    FieldKey.TOKEN to "Token",
-                    FieldKey.PROXY to "Proxy"
-                )
-                // Hiển thị chip theo hàng, mỗi hàng 3 cái
-                allFields.chunked(3).forEach { row ->
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        row.forEachIndexed { index, (key, label) ->
-                            val order = multiSelectedFields.indexOf(key).let { if (it >= 0) it + 1 else null }
-                            FieldToggleChip(
-                                label = label,
-                                order = order,
-                                locked = key == FieldKey.UID, // UID luôn được chọn
-                                modifier = Modifier.weight(1f).padding(end = if (index != row.lastIndex) 6.dp else 0.dp),
-                                onClick = {
-                                    if (key == FieldKey.UID) return@FieldToggleChip
-                                    multiSelectedFields = if (key in multiSelectedFields) {
-                                        multiSelectedFields - key
-                                    } else {
-                                        multiSelectedFields + key
-                                    }
-                                }
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                }
-
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Định dạng hiện tại: " + multiSelectedFields.joinToString(" | ") { key ->
-                        allFields.first { it.first == key }.second
-                    },
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Primary
-                )
-
-                Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = multiText,
                     onValueChange = { multiText = it },
-                    placeholder = { Text("Mỗi dòng phân tách bằng \"|\" theo đúng thứ tự đã chọn, ví dụ:\n100000001234567|Pass123|2FACODE") },
+                    placeholder = { Text("example@email.com|pass123|2FASECRET") },
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = CardWhite,
                         unfocusedContainerColor = CardWhite
                     ),
-                    modifier = Modifier.fillMaxWidth().height(160.dp)
-                )
-                Spacer(Modifier.height(8.dp))
-                val parsedMulti = parseMultiUidInput(multiText, multiSelectedFields)
-                Text(
-                    "Đã nhập ${parsedMulti.size} tài khoản. Mỗi dòng phân tách bằng dấu \"|\" theo đúng thứ tự trường đã chọn ở trên.",
-                    fontSize = 11.sp,
-                    color = TextSecondary
+                    modifier = Modifier.fillMaxWidth().height(180.dp)
                 )
             }
         }
@@ -255,61 +168,93 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 onClick = {
                     if (isLoading) return@Button
                     if (tabIndex == 0) {
-                        val uid = singleUid.trim()
+                        val email = singleUid.trim()
                         val password = singlePassword.trim()
-                        val twoFa = singleTwoFa.trim()
-                        if (uid.isEmpty() || password.isEmpty()) {
-                            Toast.makeText(context, "UID và Password là bắt buộc", Toast.LENGTH_SHORT).show()
+                        if (email.isEmpty() || password.isEmpty()) {
+                            Toast.makeText(context, "Email và Password là bắt buộc", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
                         isLoading = true
-                        // Gọi đăng nhập
-                        FacebookLoginHelper.login(
-                            username = uid,
+                        val request = LoginRequest(
+                            email = email,
                             password = password,
-                            twoFA = twoFa.ifEmpty { null },
-                            cookie = singleCookie.trim().ifEmpty { null },
-                            token = singleToken.trim().ifEmpty { null },
-                            proxy = singleProxy.trim().ifEmpty { null },
-                            onSuccess = { uidResult, tokenResult, name ->
-                                // Lưu tài khoản
-                                FacebookAccountsStore.addAccount(
-                                    context,
-                                    uid = uidResult,
-                                    name = name ?: "",
-                                    link = "",
-                                    note = "",
-                                    phone = "",
-                                    bio = "",
-                                    token = tokenResult
-                                )
-                                Toast.makeText(context, "Đăng nhập thành công", Toast.LENGTH_SHORT).show()
-                                navController.popBackStack()
-                            },
-                            onError = { message ->
-                                Toast.makeText(context, "Lỗi: $message", Toast.LENGTH_SHORT).show()
-                            },
-                            onComplete = { isLoading = false }
+                            auth = singleTwoFa.trim().takeIf { it.isNotEmpty() }
                         )
+                        RetrofitClient.apiService.login(request).enqueue(object : Callback<LoginResponse> {
+                            override fun onResponse(call: Call<LoginResponse>, response: Response<LoginResponse>) {
+                                isLoading = false
+                                if (response.isSuccessful && response.body()?.success == true) {
+                                    val result = response.body()!!
+                                    FacebookAccountsStore.addAccount(
+                                        context,
+                                        uid = result.uid ?: email,
+                                        name = "User ${result.uid}",
+                                        token = result.token ?: ""
+                                    )
+                                    Toast.makeText(context, "Đăng nhập thành công", Toast.LENGTH_SHORT).show()
+                                    navController.popBackStack()
+                                } else {
+                                    val msg = response.body()?.error ?: "Lỗi không xác định"
+                                    Toast.makeText(context, "Lỗi: $msg", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            override fun onFailure(call: Call<LoginResponse>, t: Throwable) {
+                                isLoading = false
+                                Toast.makeText(context, "Lỗi kết nối: ${t.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        })
                     } else {
                         // Nhập nhiều
-                        val entries = parseMultiUidInput(multiText, multiSelectedFields)
-                        if (entries.isEmpty()) {
-                            Toast.makeText(context, "Vui lòng nhập ít nhất một dòng hợp lệ", Toast.LENGTH_SHORT).show()
+                        val lines = multiText.lines().filter { it.isNotBlank() }
+                        if (lines.isEmpty()) {
+                            Toast.makeText(context, "Vui lòng nhập ít nhất một tài khoản", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        val accounts = lines.mapNotNull { line ->
+                            val parts = line.split("|").map { it.trim() }
+                            if (parts.size >= 2) {
+                                LoginRequest(
+                                    email = parts[0],
+                                    password = parts[1],
+                                    auth = parts.getOrNull(2)?.takeIf { it.isNotEmpty() }
+                                )
+                            } else null
+                        }
+                        if (accounts.isEmpty()) {
+                            Toast.makeText(context, "Định dạng không hợp lệ", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
                         isLoading = true
-                        // Đăng nhập từng tài khoản (có thể xử lý tuần tự hoặc song song)
-                        // Ở đây tôi giả sử bạn chỉ muốn lưu trực tiếp (không cần đăng nhập) vì không có password riêng cho từng dòng?
-                        // Theo yêu cầu, mỗi dòng có password, 2FA,... nên cần đăng nhập từng cái.
-                        // Nhưng để đơn giản, tôi sẽ lưu tất cả với trạng thái "chưa đăng nhập"
-                        // Bạn có thể mở rộng.
-                        FacebookAccountsStore.addAccounts(context, entries.map { 
-                            FacebookAccount(uid = it.uid, name = it.name, link = it.link, note = it.note, phone = it.phone, bio = it.bio, token = it.token)
+                        val request = MultipleLoginRequest(accounts)
+                        RetrofitClient.apiService.loginMultiple(request).enqueue(object : Callback<MultipleLoginResponse> {
+                            override fun onResponse(call: Call<MultipleLoginResponse>, response: Response<MultipleLoginResponse>) {
+                                isLoading = false
+                                if (response.isSuccessful) {
+                                    val results = response.body()?.results ?: emptyList()
+                                    val successList = results.filter { it.success }
+                                    successList.forEach {
+                                        FacebookAccountsStore.addAccount(
+                                            context,
+                                            uid = it.uid ?: "",
+                                            name = "User ${it.uid}",
+                                            token = it.token ?: ""
+                                        )
+                                    }
+                                    Toast.makeText(
+                                        context,
+                                        "Thành công ${successList.size}/${results.size}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    navController.popBackStack()
+                                } else {
+                                    Toast.makeText(context, "Lỗi server", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            override fun onFailure(call: Call<MultipleLoginResponse>, t: Throwable) {
+                                isLoading = false
+                                Toast.makeText(context, "Lỗi kết nối: ${t.message}", Toast.LENGTH_SHORT).show()
+                            }
                         })
-                        Toast.makeText(context, "Đã thêm ${entries.size} tài khoản", Toast.LENGTH_SHORT).show()
-                        navController.popBackStack()
-                        isLoading = false
                     }
                 },
                 shape = RoundedCornerShape(14.dp),
@@ -327,18 +272,15 @@ fun FacebookAddAccountScreen(navController: NavController) {
     }
 }
 
-// ========== Các thành phần UI dùng chung ==========
-
+// ========== Component hỗ trợ ==========
 @Composable
 private fun InputField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
-    helperText: String?,
     isRequired: Boolean = false,
-    isPassword: Boolean = false,
-    isMultiline: Boolean = false
+    isPassword: Boolean = false
 ) {
     Column(modifier = Modifier.padding(bottom = 16.dp)) {
         Row {
@@ -353,8 +295,7 @@ private fun InputField(
             value = value,
             onValueChange = onValueChange,
             placeholder = { Text(placeholder, fontSize = 13.sp) },
-            singleLine = !isMultiline,
-            minLines = if (isMultiline) 3 else 1,
+            singleLine = true,
             visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
@@ -362,42 +303,6 @@ private fun InputField(
                 unfocusedContainerColor = CardWhite
             ),
             modifier = Modifier.fillMaxWidth()
-        )
-        if (helperText != null) {
-            Spacer(Modifier.height(4.dp))
-            Text(helperText, fontSize = 11.sp, color = TextSecondary)
-        }
-    }
-}
-
-@Composable
-private fun FieldToggleChip(
-    label: String,
-    order: Int?,
-    locked: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val selected = order != null
-    val interactionSource = remember { MutableInteractionSource() }
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) Primary else CardWhite)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                enabled = !locked,
-                onClick = onClick
-            )
-            .padding(vertical = 9.dp, horizontal = 6.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            if (selected) "$order. $label" else label,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (selected) CardWhite else TextSecondary
         )
     }
 }
@@ -429,47 +334,4 @@ private fun SegmentButton(
             color = if (selected) CardWhite else TextSecondary
         )
     }
-}
-
-// ========== Enums và hàm parse cho nhập nhiều ==========
-
-private enum class FieldKey { UID, PASSWORD, TWOFA, COOKIE, TOKEN, PROXY }
-
-private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<FacebookAccount> {
-    val uidPos = fields.indexOf(FieldKey.UID)
-    if (uidPos < 0) return emptyList()
-    return raw.lines()
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .mapNotNull { line ->
-            val parts = line.split("|").map { it.trim() }
-            val uid = parts.getOrNull(uidPos).orEmpty()
-            if (uid.isEmpty()) return@mapNotNull null
-            var password = ""
-            var twoFA = ""
-            var cookie = ""
-            var token = ""
-            var proxy = ""
-            fields.forEachIndexed { index, key ->
-                val value = parts.getOrNull(index).orEmpty()
-                when (key) {
-                    FieldKey.UID -> { /* đã có uid */ }
-                    FieldKey.PASSWORD -> password = value
-                    FieldKey.TWOFA -> twoFA = value
-                    FieldKey.COOKIE -> cookie = value
-                    FieldKey.TOKEN -> token = value
-                    FieldKey.PROXY -> proxy = value
-                }
-            }
-            // Tạo FacebookAccount (có thể thêm các trường này nếu cần, nhưng hiện tại lưu dưới dạng note?)
-            // Tạm thời chỉ lưu UID, name, link, note, phone, bio. Bạn có thể mở rộng model.
-            FacebookAccount(
-                uid = uid,
-                name = "", // sẽ cập nhật sau khi login
-                link = "",
-                note = "pass:$password,2fa:$twoFA,cookie:$cookie,token:$token,proxy:$proxy", // lưu tạm
-                phone = "",
-                bio = ""
-            )
-        }
 }
