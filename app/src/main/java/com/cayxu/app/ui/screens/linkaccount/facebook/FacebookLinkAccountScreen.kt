@@ -57,7 +57,6 @@ fun FacebookLinkAccountScreen(navController: NavController) {
     val dieCount = accounts.size - liveCount
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
-        // Header
         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 20.dp)) {
             IconButton(
                 onClick = { navController.popBackStack() },
@@ -80,7 +79,6 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
-            // Card tổng quan
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = CardWhite),
@@ -116,7 +114,6 @@ fun FacebookLinkAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(14.dp))
 
-            // Tìm kiếm
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = query,
@@ -145,7 +142,6 @@ fun FacebookLinkAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(12.dp))
 
-            // Hàng thao tác
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -220,7 +216,6 @@ fun FacebookLinkAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(6.dp))
 
-            // Danh sách
             if (filtered.isEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
                     Text(
@@ -260,7 +255,6 @@ fun FacebookLinkAccountScreen(navController: NavController) {
             }
         }
 
-        // Nút thêm
         Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
             Button(
                 onClick = { navController.navigate(Routes.ADD_ACCOUNT_FACEBOOK) },
@@ -275,7 +269,6 @@ fun FacebookLinkAccountScreen(navController: NavController) {
     }
 }
 
-// Hàm kiểm tra tuần tự (gọi đệ quy)
 private fun checkAccountsSequentially(
     context: android.content.Context,
     accounts: List<Pair<FacebookAccount, String>>,
@@ -287,13 +280,22 @@ private fun checkAccountsSequentially(
         return
     }
     val (account, cookie) = accounts[index]
-    FacebookLiveChecker.checkCookie(context, cookie) { uid, isLive ->
-        if (uid != null && isLive) {
-            FacebookAccountsStore.markLive(context, listOf(account.uid))
-        } else {
-            FacebookAccountsStore.markDie(context, listOf(account.uid))
+    try {
+        FacebookLiveChecker.checkCookie(context, cookie) { uid, isLive ->
+            try {
+                if (uid != null && isLive) {
+                    FacebookAccountsStore.markLive(context, listOf(account.uid))
+                } else {
+                    FacebookAccountsStore.markDie(context, listOf(account.uid))
+                }
+                checkAccountsSequentially(context, accounts, index + 1, onComplete)
+            } catch (e: Exception) {
+                // Bắt lỗi khi update state
+                checkAccountsSequentially(context, accounts, index + 1, onComplete)
+            }
         }
-        // Kiểm tra tiếp
+    } catch (e: Exception) {
+        // Lỗi gọi checkCookie
         checkAccountsSequentially(context, accounts, index + 1, onComplete)
     }
 }
