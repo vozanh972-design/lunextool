@@ -2,14 +2,13 @@ package com.cayxu.app.ui.screens.linkaccount.facebook
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Badge
-import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.ui.theme.AppBackground
 import com.cayxu.app.ui.theme.CardWhite
@@ -36,10 +36,10 @@ import com.cayxu.app.ui.theme.TextSecondary
  * Màn hình thêm tài khoản Facebook - RIÊNG BIỆT, không dùng chung với AddAccountScreen
  * (TikTok/Instagram/...). Mọi thay đổi cho Facebook chỉ sửa ở đây.
  *
- * Chỉ có các trường CÔNG KHAI: UID, Tên, Link trang cá nhân - KHÔNG có ô mật khẩu/2FA/
- * cookie/token/proxy, không thu thập thông tin đăng nhập của bất kỳ ai.
+ * Chỉ có các trường CÔNG KHAI: UID, Tên, Link trang cá nhân, Ghi chú - KHÔNG có ô mật khẩu/
+ * 2FA/cookie/token/proxy, không thu thập thông tin đăng nhập hay hạ tầng ẩn danh của bất kỳ ai.
  *
- * Có 2 tab: nhập 1 tài khoản (UID + tên + link) hoặc nhập nhiều UID cùng lúc.
+ * Có 2 chế độ: nhập 1 tài khoản (UID + tên + link + ghi chú) hoặc nhập nhiều UID cùng lúc.
  */
 @Composable
 fun FacebookAddAccountScreen(navController: NavController) {
@@ -49,6 +49,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
     var singleUid by remember { mutableStateOf("") }
     var singleName by remember { mutableStateOf("") }
     var singleLink by remember { mutableStateOf("") }
+    var singleNote by remember { mutableStateOf("") }
 
     var multiUid by remember { mutableStateOf("") }
 
@@ -92,23 +93,26 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(16.dp))
 
-            // 2 tab: nhập 1 tài khoản / nhập nhiều UID
-            TabRow(
-                selectedTabIndex = tabIndex,
-                containerColor = CardWhite,
-                contentColor = Primary
+            // Bộ chọn 2 chế độ, dạng viên thuốc nhỏ gọn thay cho TabRow to chiếm nhiều chỗ.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(CardWhite)
+                    .padding(4.dp)
             ) {
-                Tab(
+                SegmentButton(
+                    text = "Nhập UID",
                     selected = tabIndex == 0,
-                    onClick = { tabIndex = 0 },
-                    text = { Text("Nhập UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Filled.Badge, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    modifier = Modifier.weight(1f),
+                    onClick = { tabIndex = 0 }
                 )
-                Tab(
+                Spacer(Modifier.width(4.dp))
+                SegmentButton(
+                    text = "Nhập nhiều UID",
                     selected = tabIndex == 1,
-                    onClick = { tabIndex = 1 },
-                    text = { Text("Nhập nhiều UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Filled.Groups, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    modifier = Modifier.weight(1f),
+                    onClick = { tabIndex = 1 }
                 )
             }
 
@@ -121,7 +125,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     value = singleUid,
                     onValueChange = { singleUid = it },
                     placeholder = { Text("Nhập UID tài khoản Facebook") },
-                    leadingIcon = { Icon(Icons.Filled.Badge, contentDescription = null, tint = TextSecondary) },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -144,7 +147,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     value = singleName,
                     onValueChange = { singleName = it },
                     placeholder = { Text("Nhập tên hiển thị (không bắt buộc)") },
-                    leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, tint = TextSecondary) },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -161,7 +163,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     value = singleLink,
                     onValueChange = { singleLink = it },
                     placeholder = { Text("Nhập link trang cá nhân (không bắt buộc)") },
-                    leadingIcon = { Icon(Icons.Filled.Link, contentDescription = null, tint = TextSecondary) },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -175,6 +176,21 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     "Link là địa chỉ công khai của trang cá nhân, ví dụ facebook.com/ten-trang.",
                     fontSize = 11.sp,
                     color = TextSecondary
+                )
+
+                Spacer(Modifier.height(16.dp))
+                Text("Ghi chú", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = singleNote,
+                    onValueChange = { singleNote = it },
+                    placeholder = { Text("Ghi chú thêm về tài khoản (không bắt buộc)") },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = CardWhite,
+                        unfocusedContainerColor = CardWhite
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(120.dp)
                 )
             } else {
                 Text("Danh sách UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
@@ -207,7 +223,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                         if (singleUid.isBlank()) {
                             Toast.makeText(context, "Vui lòng nhập UID", Toast.LENGTH_SHORT).show()
                         } else {
-                            FacebookAccountsStore.addAccount(context, singleUid, singleName, singleLink)
+                            FacebookAccountsStore.addAccount(context, singleUid, singleName, singleLink, singleNote)
                             Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
                             navController.popBackStack()
                         }
@@ -216,7 +232,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                         if (uids.isEmpty()) {
                             Toast.makeText(context, "Vui lòng nhập ít nhất một UID", Toast.LENGTH_SHORT).show()
                         } else {
-                            FacebookAccountsStore.addAccounts(context, uids.map { Triple(it, "", "") })
+                            FacebookAccountsStore.addAccounts(context, uids.map { FacebookAccount(uid = it) })
                             Toast.makeText(context, "Đã thêm ${uids.size} tài khoản Facebook", Toast.LENGTH_SHORT).show()
                             navController.popBackStack()
                         }
@@ -229,5 +245,34 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 Text("Xác nhận", color = CardWhite, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
         }
+    }
+}
+
+@Composable
+private fun SegmentButton(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Primary else CardWhite)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .padding(vertical = 9.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) CardWhite else TextSecondary
+        )
     }
 }

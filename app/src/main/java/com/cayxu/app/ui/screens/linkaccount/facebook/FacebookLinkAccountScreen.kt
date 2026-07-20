@@ -69,8 +69,8 @@ fun FacebookLinkAccountScreen(navController: NavController) {
             FacebookAccountsStore.addAccounts(
                 context,
                 listOf(
-                    Triple("uid_mau_001", "Tài khoản mẫu 1", ""),
-                    Triple("uid_mau_002", "Tài khoản mẫu 2", "")
+                    FacebookAccount(uid = "uid_mau_001", name = "Tài khoản mẫu 1"),
+                    FacebookAccount(uid = "uid_mau_002", name = "Tài khoản mẫu 2")
                 )
             )
             accounts = FacebookAccountsStore.getAccounts(context)
