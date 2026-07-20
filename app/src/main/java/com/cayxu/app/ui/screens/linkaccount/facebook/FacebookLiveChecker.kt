@@ -1,9 +1,9 @@
 package com.cayxu.app.utils
 
+import android.content.Context
 import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -15,14 +15,8 @@ object FacebookLiveChecker {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    /**
-     * Kiểm tra cookie có hợp lệ không bằng cách gửi request đến m.facebook.com
-     * @param cookieString chuỗi cookie (định dạng: name1=value1; name2=value2; ...)
-     * @param onResult (uid: String?, isLive: Boolean)
-     */
-    fun checkCookie(cookieString: String, onResult: (uid: String?, isLive: Boolean) -> Unit) {
+    fun checkCookie(context: Context, cookieString: String, onResult: (uid: String?, isLive: Boolean) -> Unit) {
         try {
-            // Parse cookie thành Map
             val cookieMap = mutableMapOf<String, String>()
             cookieString.split(';').forEach { pair ->
                 val trimmed = pair.trim()
@@ -36,14 +30,12 @@ object FacebookLiveChecker {
                 }
             }
 
-            // Kiểm tra có c_user không
             val cUser = cookieMap["c_user"]
             if (cUser.isNullOrEmpty()) {
                 onResult(null, false)
                 return
             }
 
-            // Xây dựng cookie string theo định dạng của OkHttp
             val cookieBuilder = StringBuilder()
             cookieMap.forEach { (key, value) ->
                 if (cookieBuilder.isNotEmpty()) cookieBuilder.append("; ")
@@ -67,15 +59,13 @@ object FacebookLiveChecker {
                 override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
                     response.use {
                         if (!it.isSuccessful) {
-                            // Thường là redirect hoặc lỗi
                             val effectiveUrl = it.request.url.toString()
-                            // Kiểm tra xem có bị redirect đến login không
-                            if (effectiveUrl.contains("login") || effectiveUrl.contains("home.php") == false) {
+                            if (effectiveUrl.contains("login") || !effectiveUrl.contains("home.php")) {
                                 onResult(null, false)
                             } else {
-                                // Có thể vẫn live dù response code không 200 (ví dụ redirect đến home.php)
-                                val isLive = extractUidFromHtml(it.body?.string()) != null
-                                onResult(if (isLive) extractUidFromHtml(it.body?.string()) else null, isLive)
+                                val html = it.body?.string() ?: ""
+                                val uid = extractUidFromHtml(html)
+                                onResult(uid, uid != null)
                             }
                             return
                         }
@@ -86,7 +76,6 @@ object FacebookLiveChecker {
                             Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid")
                             onResult(uid, true)
                         } else {
-                            // Thử lấy từ cookie manager (có thể response không chứa uid trực tiếp)
                             val cookiesFromResponse = it.headers("Set-Cookie")
                             var cUserFromResponse: String? = null
                             cookiesFromResponse.forEach { cookie ->
@@ -112,28 +101,21 @@ object FacebookLiveChecker {
 
     private fun extractUidFromHtml(html: String?): String? {
         if (html.isNullOrEmpty()) return null
-        // Tìm c_user trong HTML (thường có trong script hoặc meta)
         val patterns = listOf(
             "\"c_user\":\"(\\d+)\"",
-            "\"c_user\":\"(\\d+)\"".toRegex(),
             "c_user\\s*=\\s*['\"]?(\\d+)['\"]?",
             "window\\.__INITIAL_STATE__.*?\"c_user\":\"(\\d+)\"",
-            "https://m\\.facebook\\.com/(\\d+)" // fallback
+            "https://m\\.facebook\\.com/(\\d+)"
         )
         for (pattern in patterns) {
-            val regex = when (pattern) {
-                is Regex -> pattern
-                else -> Regex(pattern)
-            }
+            val regex = Regex(pattern)
             val match = regex.find(html)
             if (match != null) {
                 return match.groupValues[1]
             }
         }
-        // Nếu không tìm thấy, kiểm tra xem có phải trang chủ đã đăng nhập không (chứa "home.php" hoặc "messages")
         if (html.contains("home.php") || html.contains("messages") || html.contains("news_feed")) {
-            // Nếu đã đăng nhập mà không lấy được uid, trả về "unknown" hoặc null
-            return "unknown" // hoặc null tùy bạn
+            return "unknown"
         }
         return null
     }
