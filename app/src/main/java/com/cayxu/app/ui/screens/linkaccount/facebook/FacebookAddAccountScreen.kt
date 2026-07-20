@@ -57,8 +57,9 @@ fun FacebookAddAccountScreen(navController: NavController) {
     var singlePhone by remember { mutableStateOf("") }
 
     var multiUid by remember { mutableStateOf("") }
-    // 0 = mỗi dòng chỉ có UID, 1 = mỗi dòng dạng "UID|Tên"
-    var multiFormat by remember { mutableIntStateOf(0) }
+    // Danh sách các trường được chọn cho chế độ "Nhập nhiều UID", theo ĐÚNG thứ tự người dùng
+    // bấm chọn -> đó cũng là thứ tự phân tách bằng dấu "|" trên mỗi dòng. UID luôn bắt buộc có.
+    var multiSelectedFields by remember { mutableStateOf(listOf(FieldKey.UID)) }
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 20.dp)) {
@@ -241,40 +242,50 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 Spacer(Modifier.height(8.dp))
 
                 Text(
-                    "Định dạng mỗi dòng",
+                    "Chọn các trường và thứ tự phân tách bằng dấu \"|\"",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = TextSecondary
                 )
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(CardWhite)
-                        .padding(4.dp)
-                ) {
-                    SegmentButton(
-                        text = "Chỉ UID",
-                        selected = multiFormat == 0,
-                        modifier = Modifier.weight(1f),
-                        onClick = { multiFormat = 0 }
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    SegmentButton(
-                        text = "UID | Tên",
-                        selected = multiFormat == 1,
-                        modifier = Modifier.weight(1f),
-                        onClick = { multiFormat = 1 }
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
 
-                val multiPlaceholder = if (multiFormat == 0) {
-                    "Mỗi UID một dòng, ví dụ:\n100000001234567\n100000001234568"
-                } else {
-                    "Mỗi dòng dạng UID|Tên, ví dụ:\n100000001234567|Nguyễn Văn A\n100000001234568|Trần Thị B"
+                // Lưới chip cho phép bật/tắt từng trường. UID luôn bật sẵn và không thể bỏ chọn.
+                // Bấm vào trường nào thì trường đó được thêm vào CUỐI thứ tự (số hiển thị trên chip
+                // chính là vị trí trong định dạng phân tách bằng "|"); bấm lại lần nữa để bỏ chọn.
+                val fieldRows = ALL_FIELD_OPTIONS.chunked(3)
+                fieldRows.forEach { row ->
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        row.forEachIndexed { index, option ->
+                            val order = multiSelectedFields.indexOf(option.key).let { if (it >= 0) it + 1 else null }
+                            FieldToggleChip(
+                                label = option.label,
+                                order = order,
+                                locked = option.key == FieldKey.UID,
+                                modifier = Modifier.weight(1f).padding(end = if (index != row.lastIndex) 6.dp else 0.dp),
+                                onClick = {
+                                    if (option.key == FieldKey.UID) return@FieldToggleChip
+                                    multiSelectedFields = if (option.key in multiSelectedFields) {
+                                        multiSelectedFields - option.key
+                                    } else {
+                                        multiSelectedFields + option.key
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
                 }
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Định dạng hiện tại: " + multiSelectedFields.joinToString(" | ") { it.label },
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Primary
+                )
+
+                Spacer(Modifier.height(12.dp))
+                val multiPlaceholder = buildMultiUidPlaceholder(multiSelectedFields)
                 OutlinedTextField(
                     value = multiUid,
                     onValueChange = { multiUid = it },
@@ -287,13 +298,12 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     modifier = Modifier.fillMaxWidth().height(160.dp)
                 )
                 Spacer(Modifier.height(8.dp))
-                val parsedMultiAccounts = parseMultiUidInput(multiUid, multiFormat)
-                val hint = if (multiFormat == 0) {
-                    "Đã nhập ${parsedMultiAccounts.size} UID. Mỗi dòng là một UID công khai, không phải mật khẩu."
-                } else {
-                    "Đã nhập ${parsedMultiAccounts.size} tài khoản. Định dạng: UID | Tên, phân tách bằng dấu \"|\"."
-                }
-                Text(hint, fontSize = 11.sp, color = TextSecondary)
+                val parsedMultiAccounts = parseMultiUidInput(multiUid, multiSelectedFields)
+                Text(
+                    "Đã nhập ${parsedMultiAccounts.size} tài khoản. Mỗi dòng phân tách bằng dấu \"|\" theo đúng thứ tự trường đã chọn ở trên.",
+                    fontSize = 11.sp,
+                    color = TextSecondary
+                )
             }
         }
 
@@ -317,7 +327,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                             navController.popBackStack()
                         }
                     } else {
-                        val entries = parseMultiUidInput(multiUid, multiFormat)
+                        val entries = parseMultiUidInput(multiUid, multiSelectedFields)
                         if (entries.isEmpty()) {
                             Toast.makeText(context, "Vui lòng nhập ít nhất một UID", Toast.LENGTH_SHORT).show()
                         } else {
@@ -337,25 +347,102 @@ fun FacebookAddAccountScreen(navController: NavController) {
     }
 }
 
+/** Khóa định danh cho từng trường có thể chọn ở chế độ "Nhập nhiều UID". */
+private enum class FieldKey { UID, NAME, LINK, NOTE, BIO, PHONE }
+
+private data class FieldOption(val key: FieldKey, val label: String)
+
+private val ALL_FIELD_OPTIONS = listOf(
+    FieldOption(FieldKey.UID, "UID"),
+    FieldOption(FieldKey.NAME, "Tên"),
+    FieldOption(FieldKey.LINK, "Link"),
+    FieldOption(FieldKey.NOTE, "Ghi chú"),
+    FieldOption(FieldKey.BIO, "Mô tả"),
+    FieldOption(FieldKey.PHONE, "SĐT")
+)
+
+private val SAMPLE_VALUES = mapOf(
+    FieldKey.UID to "100000001234567",
+    FieldKey.NAME to "Nguyễn Văn A",
+    FieldKey.LINK to "facebook.com/ten-trang",
+    FieldKey.NOTE to "Ghi chú",
+    FieldKey.BIO to "Mô tả trang",
+    FieldKey.PHONE to "0901234567"
+)
+
+/** Sinh dòng ví dụ cho ô placeholder dựa theo các trường và thứ tự người dùng đã chọn. */
+private fun buildMultiUidPlaceholder(fields: List<FieldKey>): String {
+    val exampleLine = fields.joinToString("|") { SAMPLE_VALUES[it].orEmpty() }
+    return "Mỗi dòng phân tách bằng \"|\" theo đúng thứ tự đã chọn, ví dụ:\n$exampleLine"
+}
+
 /**
- * Phân tích nội dung ô "Nhập nhiều UID" theo định dạng đã chọn:
- * - format = 0: mỗi dòng là một UID.
- * - format = 1: mỗi dòng dạng "UID|Tên" (phân tách bằng dấu "|"), tên là không bắt buộc.
+ * Phân tích nội dung ô "Nhập nhiều UID" theo danh sách trường và thứ tự người dùng đã chọn.
+ * Mỗi dòng được tách theo dấu "|"; vị trí của từng phần tương ứng với vị trí của trường đó
+ * trong danh sách [fields]. Dòng nào không có UID hợp lệ sẽ bị bỏ qua.
  */
-private fun parseMultiUidInput(raw: String, format: Int): List<FacebookAccount> {
+private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<FacebookAccount> {
+    val uidPos = fields.indexOf(FieldKey.UID)
+    if (uidPos < 0) return emptyList()
+
     return raw.lines()
         .map { it.trim() }
         .filter { it.isNotEmpty() }
         .mapNotNull { line ->
-            if (format == 1) {
-                val parts = line.split("|").map { it.trim() }
-                val uid = parts.getOrNull(0).orEmpty()
-                val name = parts.getOrNull(1).orEmpty()
-                if (uid.isEmpty()) null else FacebookAccount(uid = uid, name = name)
-            } else {
-                if (line.isEmpty()) null else FacebookAccount(uid = line)
+            val parts = line.split("|").map { it.trim() }
+            val uid = parts.getOrNull(uidPos).orEmpty()
+            if (uid.isEmpty()) return@mapNotNull null
+
+            var name = ""
+            var link = ""
+            var note = ""
+            var bio = ""
+            var phone = ""
+            fields.forEachIndexed { index, key ->
+                val value = parts.getOrNull(index).orEmpty()
+                when (key) {
+                    FieldKey.NAME -> name = value
+                    FieldKey.LINK -> link = value
+                    FieldKey.NOTE -> note = value
+                    FieldKey.BIO -> bio = value
+                    FieldKey.PHONE -> phone = value
+                    FieldKey.UID -> {}
+                }
             }
+            FacebookAccount(uid = uid, name = name, link = link, note = note, phone = phone, bio = bio)
         }
+}
+
+@Composable
+private fun FieldToggleChip(
+    label: String,
+    order: Int?,
+    locked: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val selected = order != null
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Primary else CardWhite)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = !locked,
+                onClick = onClick
+            )
+            .padding(vertical = 9.dp, horizontal = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            if (selected) "$order. $label" else label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) CardWhite else TextSecondary
+        )
+    }
 }
 
 @Composable
