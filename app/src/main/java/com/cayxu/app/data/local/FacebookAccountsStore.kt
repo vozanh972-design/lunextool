@@ -5,11 +5,11 @@ import android.content.SharedPreferences
 
 data class FacebookAccount(
     val uid: String,
-    val name: String = "",
-    val link: String = "",
-    val note: String = "",   // Lưu cookie ở đây
-    val phone: String = "",
-    val bio: String = "",
+    val name: String = "",      // Password
+    val link: String = "",      // 2FA
+    val note: String = "",      // Cookie
+    val phone: String = "",     // Proxy
+    val bio: String = "",       // Token
     val isLive: Boolean = true
 )
 
@@ -51,10 +51,16 @@ object FacebookAccountsStore {
         bio: String = "",
         isLive: Boolean = true
     ) {
-        addAccounts(
-            context,
-            listOf(FacebookAccount(uid = uid, name = name, link = link, note = note, phone = phone, bio = bio, isLive = isLive))
+        val account = FacebookAccount(
+            uid = uid,
+            name = name,
+            link = link,
+            note = note,
+            phone = phone,
+            bio = bio,
+            isLive = isLive
         )
+        addAccounts(context, listOf(account))
     }
 
     fun addAccounts(context: Context, entries: List<FacebookAccount>) {
@@ -93,7 +99,6 @@ object FacebookAccountsStore {
         save(context, current)
     }
 
-    // Đánh dấu Live
     fun markLive(context: Context, uids: List<String>) {
         val current = getAccounts(context).map { acc ->
             if (acc.uid in uids) acc.copy(isLive = true) else acc
@@ -101,7 +106,7 @@ object FacebookAccountsStore {
         save(context, current)
     }
 
-    // Đánh dấu Die
+    // Thêm hàm markDie
     fun markDie(context: Context, uids: List<String>) {
         val current = getAccounts(context).map { acc ->
             if (acc.uid in uids) acc.copy(isLive = false) else acc
