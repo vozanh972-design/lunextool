@@ -19,6 +19,8 @@ data class FacebookAccount(
     val name: String = "",
     val link: String = "",
     val note: String = "",
+    val phone: String = "",
+    val bio: String = "",
     val isLive: Boolean = true
 )
 
@@ -42,21 +44,41 @@ object FacebookAccountsStore {
                     name = parts.getOrNull(1).orEmpty(),
                     link = parts.getOrNull(2).orEmpty(),
                     note = parts.getOrNull(3).orEmpty(),
-                    isLive = parts.getOrNull(4) != "die"
+                    phone = parts.getOrNull(4).orEmpty(),
+                    bio = parts.getOrNull(5).orEmpty(),
+                    isLive = parts.getOrNull(6) != "die"
                 )
             }
             .filter { it.uid.isNotBlank() }
     }
 
-    fun addAccount(context: Context, uid: String, name: String = "", link: String = "", note: String = "") {
-        addAccounts(context, listOf(FacebookAccount(uid = uid, name = name, link = link, note = note)))
+    fun addAccount(
+        context: Context,
+        uid: String,
+        name: String = "",
+        link: String = "",
+        note: String = "",
+        phone: String = "",
+        bio: String = ""
+    ) {
+        addAccounts(
+            context,
+            listOf(FacebookAccount(uid = uid, name = name, link = link, note = note, phone = phone, bio = bio))
+        )
     }
 
     /** Thêm nhiều tài khoản cùng lúc (dùng cho tab "Nhập nhiều UID" - tên/link/ghi chú để trống). */
     fun addAccounts(context: Context, entries: List<FacebookAccount>) {
         val trimmedNew = entries
             .map {
-                it.copy(uid = it.uid.trim(), name = it.name.trim(), link = it.link.trim(), note = it.note.trim())
+                it.copy(
+                    uid = it.uid.trim(),
+                    name = it.name.trim(),
+                    link = it.link.trim(),
+                    note = it.note.trim(),
+                    phone = it.phone.trim(),
+                    bio = it.bio.trim()
+                )
             }
             .filter { it.uid.isNotEmpty() }
         if (trimmedNew.isEmpty()) return
@@ -95,7 +117,7 @@ object FacebookAccountsStore {
 
     private fun save(context: Context, accounts: List<FacebookAccount>) {
         val raw = accounts.joinToString(ENTRY_SEPARATOR) { acc ->
-            listOf(acc.uid, acc.name, acc.link, acc.note, if (acc.isLive) "live" else "die")
+            listOf(acc.uid, acc.name, acc.link, acc.note, acc.phone, acc.bio, if (acc.isLive) "live" else "die")
                 .joinToString(FIELD_SEPARATOR)
         }
         prefs(context).edit().putString(KEY_ACCOUNTS, raw).apply()

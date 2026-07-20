@@ -51,6 +51,8 @@ fun FacebookAddAccountScreen(navController: NavController) {
     var singleName by remember { mutableStateOf("") }
     var singleLink by remember { mutableStateOf("") }
     var singleNote by remember { mutableStateOf("") }
+    var singleBio by remember { mutableStateOf("") }
+    var singlePhone by remember { mutableStateOf("") }
 
     var multiUid by remember { mutableStateOf("") }
 
@@ -193,6 +195,37 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     ),
                     modifier = Modifier.fillMaxWidth().height(120.dp)
                 )
+
+                Spacer(Modifier.height(16.dp))
+                Text("Mô tả / tiểu sử trang", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = singleBio,
+                    onValueChange = { singleBio = it },
+                    placeholder = { Text("Mô tả hoặc tiểu sử công khai của trang (không bắt buộc)") },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = CardWhite,
+                        unfocusedContainerColor = CardWhite
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(120.dp)
+                )
+
+                Spacer(Modifier.height(16.dp))
+                Text("Số điện thoại liên kết", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = singlePhone,
+                    onValueChange = { singlePhone = it },
+                    placeholder = { Text("Nhập số điện thoại liên kết (không bắt buộc)") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = CardWhite,
+                        unfocusedContainerColor = CardWhite
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
             } else {
                 Text("Danh sách UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
@@ -224,7 +257,15 @@ fun FacebookAddAccountScreen(navController: NavController) {
                         if (singleUid.isBlank()) {
                             Toast.makeText(context, "Vui lòng nhập UID", Toast.LENGTH_SHORT).show()
                         } else {
-                            FacebookAccountsStore.addAccount(context, singleUid, singleName, singleLink, singleNote)
+                            FacebookAccountsStore.addAccount(
+                                context,
+                                uid = singleUid,
+                                name = singleName,
+                                link = singleLink,
+                                note = singleNote,
+                                phone = singlePhone,
+                                bio = singleBio
+                            )
                             Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
                             navController.popBackStack()
                         }
