@@ -1,22 +1,21 @@
 package com.cayxu.app.utils
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Response
+import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-import org.json.JSONObject
 
 object FacebookLiveChecker {
 
     private const val TAG = "FacebookLiveChecker"
-    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -24,9 +23,9 @@ object FacebookLiveChecker {
         .followRedirects(true)
         .build()
 
-    fun checkUidLiveWithAvatar(uid: String, onResult: (isLive: Boolean, avatarUrl: String?) -> Unit) {
+    fun checkUidLiveWithAvatar(uid: String, onResult: (isLive: Boolean, avatarUrl: String?, avatarBitmap: Bitmap?) -> Unit) {
         if (uid.isBlank()) {
-            mainHandler.post { onResult(false, null) }
+            onResult(false, null, null)
             return
         }
 
@@ -39,93 +38,71 @@ object FacebookLiveChecker {
             client.newCall(request).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     Log.e(TAG, "Check UID failed: ${e.message}")
-                    mainHandler.post { onResult(false, null) }
+                    onResult(false, null, null)
                 }
 
                 override fun onResponse(call: Call, response: Response) {
                     response.use {
-                        try {
-                            when (it.code) {
-                                200 -> {
+                        when (it.code) {
+                            200 -> {
+                                try {
                                     val json = JSONObject(it.body?.string() ?: "{}")
                                     val data = json.optJSONObject("data")
                                     val isSilhouette = data?.optBoolean("is_silhouette", true) ?: true
                                     val url = data?.optString("url", null)
 
                                     if (!isSilhouette && url != null) {
-                                        mainHandler.post { onResult(true, url) }
-                                    } else {
-                                        // Fallback
-                                        checkProfilePage(uid) { live, avatar ->
-                                            mainHandler.post { onResult(live, avatar) }
+                                        downloadAvatar(url) { bitmap ->
+                                            onResult(true, url, bitmap)
                                         }
+                                    } else {
+                                        onResult(false, null, null)
                                     }
-                                }
-                                else -> {
-                                    // Fallback
-                                    checkProfilePage(uid) { live, avatar ->
-                                        mainHandler.post { onResult(live, avatar) }
-                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Parse error", e)
+                                    onResult(false, null, null)
                                 }
                             }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Parse error", e)
-                            mainHandler.post { onResult(false, null) }
+                            else -> {
+                                onResult(false, null, null)
+                            }
                         }
                     }
                 }
             })
         } catch (e: Exception) {
             Log.e(TAG, "Exception check UID", e)
-            mainHandler.post { onResult(false, null) }
+            onResult(false, null, null)
         }
     }
 
-    private fun checkProfilePage(uid: String, onResult: (isLive: Boolean, avatarUrl: String?) -> Unit) {
+    private fun downloadAvatar(url: String, onResult: (Bitmap?) -> Unit) {
         try {
-            val request = Request.Builder()
-                .url("https://m.facebook.com/$uid")
-                .addHeader("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1")
-                .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                .build()
-
+            val request = Request.Builder().url(url).build()
             client.newCall(request).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    mainHandler.post { onResult(false, null) }
+                    onResult(null)
                 }
 
                 override fun onResponse(call: Call, response: Response) {
                     response.use {
                         if (!it.isSuccessful) {
-                            mainHandler.post { onResult(false, null) }
+                            onResult(null)
                             return
                         }
-                        val html = it.body?.string() ?: ""
-                        val avatarPattern = Regex("""(https?://[^\s"']+\.(?:jpg|jpeg|png|gif|webp)[^\s"']*)""")
-                        val match = avatarPattern.find(html)
-                        val isLoginPage = html.contains("login") && html.contains("password")
-
-                        if (match != null && !isLoginPage) {
-                            val avatarUrl = match.groupValues[1]
-                            if (avatarUrl.contains("profile") || avatarUrl.contains("avatar") || avatarUrl.contains("pic")) {
-                                mainHandler.post { onResult(true, avatarUrl) }
-                            } else {
-                                mainHandler.post { onResult(false, null) }
-                            }
-                        } else {
-                            mainHandler.post { onResult(false, null) }
-                        }
+                        val bitmap = BitmapFactory.decodeStream(it.body?.byteStream())
+                        onResult(bitmap)
                     }
                 }
             })
         } catch (e: Exception) {
-            mainHandler.post { onResult(false, null) }
+            onResult(null)
         }
     }
 
     fun checkCookie(context: Context, cookieString: String, onResult: (uid: String?, isLive: Boolean) -> Unit) {
         if (cookieString.isBlank()) {
-            mainHandler.post { onResult(null, false) }
+            onResult(null, false)
             return
         }
 
@@ -138,34 +115,32 @@ object FacebookLiveChecker {
 
             client.newCall(request).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    mainHandler.post { onResult(null, false) }
+                    onResult(null, false)
                 }
 
                 override fun onResponse(call: Call, response: Response) {
                     response.use {
-                        try {
-                            when (it.code) {
-                                200 -> {
+                        when (it.code) {
+                            200 -> {
+                                try {
                                     val json = JSONObject(it.body?.string() ?: "{}")
                                     val uid = json.optString("id", null)
                                     if (!uid.isNullOrEmpty()) {
-                                        mainHandler.post { onResult(uid, true) }
+                                        onResult(uid, true)
                                     } else {
-                                        mainHandler.post { onResult(null, false) }
+                                        onResult(null, false)
                                     }
-                                }
-                                else -> {
-                                    mainHandler.post { onResult(null, false) }
+                                } catch (e: Exception) {
+                                    onResult(null, false)
                                 }
                             }
-                        } catch (e: Exception) {
-                            mainHandler.post { onResult(null, false) }
+                            else -> onResult(null, false)
                         }
                     }
                 }
             })
         } catch (e: Exception) {
-            mainHandler.post { onResult(null, false) }
+            onResult(null, false)
         }
     }
 }
