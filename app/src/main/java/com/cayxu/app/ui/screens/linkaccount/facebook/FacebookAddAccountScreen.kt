@@ -17,18 +17,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.navigation.NavController
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.ui.theme.*
 import com.cayxu.app.utils.FacebookLiveChecker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun FacebookAddAccountScreen(navController: NavController) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     var tabIndex by remember { mutableIntStateOf(0) }
 
     var singleUid by remember { mutableStateOf("") }
@@ -44,22 +52,33 @@ fun FacebookAddAccountScreen(navController: NavController) {
     var isLoading by remember { mutableStateOf(false) }
 
     fun extractUidFromCookie(cookie: String): String? {
-        val pairs = cookie.split(';')
-        for (pair in pairs) {
-            val trimmed = pair.trim()
-            if (trimmed.startsWith("c_user=")) {
-                return trimmed.substringAfter("c_user=").trim()
+        try {
+            val pairs = cookie.split(';')
+            for (pair in pairs) {
+                val trimmed = pair.trim()
+                if (trimmed.startsWith("c_user=")) {
+                    return trimmed.substringAfter("c_user=").trim()
+                }
             }
-        }
+        } catch (e: Exception) { }
         return null
     }
 
     LaunchedEffect(singleCookie) {
         if (singleCookie.isNotBlank() && singleUid.isBlank()) {
-            extractUidFromCookie(singleCookie)?.let { uid ->
+            val uid = extractUidFromCookie(singleCookie)
+            if (uid != null) {
                 singleUid = uid
             }
         }
+    }
+
+    fun safePopBackStack() {
+        try {
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                navController.popBackStack()
+            }
+        } catch (e: Exception) { }
     }
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
@@ -87,7 +106,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 .padding(horizontal = 20.dp)
         ) {
             Spacer(Modifier.height(4.dp))
-
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = InfoBlueBg),
@@ -104,7 +122,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     )
                 }
             }
-
             Spacer(Modifier.height(16.dp))
 
             Row(
@@ -132,7 +149,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
             Spacer(Modifier.height(20.dp))
 
             if (tabIndex == 0) {
-                // UID
                 Text("UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -155,7 +171,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
 
                 Spacer(Modifier.height(16.dp))
-
                 Text("Password", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -172,7 +187,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
 
                 Spacer(Modifier.height(16.dp))
-
                 Text("Link", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -195,7 +209,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
 
                 Spacer(Modifier.height(16.dp))
-
                 Text("Cookie", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -220,7 +233,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 }
 
                 Spacer(Modifier.height(16.dp))
-
                 Text("Token", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -243,7 +255,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
 
                 Spacer(Modifier.height(16.dp))
-
                 Text("Proxy", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -259,10 +270,8 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                // Hàng loạt
                 Text("Danh sách UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
-
                 Text(
                     "Chọn các trường và thứ tự phân tách bằng dấu \"|\"",
                     fontSize = 12.sp,
@@ -358,7 +367,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                         )
                                         val status = if (isLive) "Live" else "Die"
                                         Toast.makeText(context, "✅ Đã thêm tài khoản ($status)", Toast.LENGTH_SHORT).show()
-                                        navController.popBackStack()
+                                        safePopBackStack()
                                     } catch (e: Exception) {
                                         isLoading = false
                                         Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -380,7 +389,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                 isLive = true
                             )
                             Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
-                            navController.popBackStack()
+                            safePopBackStack()
                         }
                     } else {
                         val entries = parseMultiUidInput(multiUid, multiSelectedFields)
@@ -390,7 +399,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                             try {
                                 FacebookAccountsStore.addAccounts(context, entries)
                                 Toast.makeText(context, "Đã thêm ${entries.size} tài khoản", Toast.LENGTH_SHORT).show()
-                                navController.popBackStack()
+                                safePopBackStack()
                             } catch (e: Exception) {
                                 Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
@@ -412,7 +421,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
     }
 }
 
-// ===== Helpers =====
 private enum class FieldKey { UID, PASSWORD, TWOFA, COOKIE, TOKEN, PROXY }
 private data class FieldOption(val key: FieldKey, val label: String)
 private val ALL_FIELD_OPTIONS = listOf(
@@ -442,7 +450,6 @@ private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<Facebo
     if (uidPos < 0) {
         return emptyList()
     }
-
     return raw.lines()
         .map { it.trim() }
         .filter { it.isNotEmpty() }
@@ -450,7 +457,6 @@ private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<Facebo
             val parts = line.split("|").map { it.trim() }
             val uid = parts.getOrNull(uidPos).orEmpty()
             if (uid.isEmpty()) return@mapNotNull null
-
             var password = ""
             var twofa = ""
             var cookie = ""
