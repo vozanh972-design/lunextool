@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import com.cayxu.app.R
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
@@ -163,23 +164,10 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                             return@TextButton
                         }
 
-                        val accountsWithCookie = targets.mapNotNull { uid ->
-                            val acc = accounts.find { it.uid == uid }
-                            if (acc != null && acc.note.startsWith("Cookie: ")) {
-                                val cookie = acc.note.substringAfter("Cookie: ")
-                                if (cookie.isNotBlank()) acc to cookie else null
-                            } else null
-                        }
-
-                        if (accountsWithCookie.isEmpty()) {
-                            Toast.makeText(context, "Không có cookie để kiểm tra", Toast.LENGTH_SHORT).show()
-                            return@TextButton
-                        }
-
                         isLoading = true
-                        Toast.makeText(context, "Đang kiểm tra ${accountsWithCookie.size} tài khoản...", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Đang kiểm tra ${targets.size} tài khoản...", Toast.LENGTH_SHORT).show()
 
-                        checkAccountsSequentially(context, accountsWithCookie, 0) {
+                        checkAccountsSequentially(context, targets, 0) {
                             isLoading = false
                             accounts = FacebookAccountsStore.getAccounts(context)
                             Toast.makeText(context, "Đã kiểm tra xong", Toast.LENGTH_SHORT).show()
@@ -271,30 +259,31 @@ fun FacebookLinkAccountScreen(navController: NavController) {
 
 private fun checkAccountsSequentially(
     context: android.content.Context,
-    accounts: List<Pair<FacebookAccount, String>>,
+    uids: List<String>,
     index: Int,
     onComplete: () -> Unit
 ) {
-    if (index >= accounts.size) {
+    if (index >= uids.size) {
         onComplete()
         return
     }
-    val (account, cookie) = accounts[index]
+    val uid = uids[index]
+
     try {
-        FacebookLiveChecker.checkCookie(context, cookie) { uid, isLive ->
+        FacebookLiveChecker.checkUidLiveWithAvatar(uid) { isLive, avatarUrl ->
             try {
-                if (uid != null && isLive) {
-                    FacebookAccountsStore.markLive(context, listOf(account.uid))
+                if (isLive && avatarUrl != null) {
+                    FacebookAccountsStore.markLiveWithAvatar(context, listOf(uid), avatarUrl)
                 } else {
-                    FacebookAccountsStore.markDie(context, listOf(account.uid))
+                    FacebookAccountsStore.markDie(context, listOf(uid))
                 }
-                checkAccountsSequentially(context, accounts, index + 1, onComplete)
+                checkAccountsSequentially(context, uids, index + 1, onComplete)
             } catch (e: Exception) {
-                checkAccountsSequentially(context, accounts, index + 1, onComplete)
+                checkAccountsSequentially(context, uids, index + 1, onComplete)
             }
         }
     } catch (e: Exception) {
-        checkAccountsSequentially(context, accounts, index + 1, onComplete)
+        checkAccountsSequentially(context, uids, index + 1, onComplete)
     }
 }
 
@@ -315,16 +304,30 @@ private fun FacebookAccountRow(
     ) {
         Checkbox(checked = checked, onCheckedChange = onCheckedChange)
 
-        Box(
-            modifier = Modifier.size(38.dp).clip(CircleShape).background(TextSecondary.copy(alpha = 0.10f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Image(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                modifier = Modifier.size(22.dp).clip(RoundedCornerShape(6.dp))
+        if (account.isLive && account.avatar.isNotBlank()) {
+            AsyncImage(
+                model = account.avatar,
+                contentDescription = "Avatar",
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(TextSecondary.copy(alpha = 0.10f)),
+                error = painterResource(iconRes),
+                placeholder = painterResource(iconRes)
             )
+        } else {
+            Box(
+                modifier = Modifier.size(38.dp).clip(CircleShape).background(TextSecondary.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(iconRes),
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp).clip(RoundedCornerShape(6.dp))
+                )
+            }
         }
+
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
