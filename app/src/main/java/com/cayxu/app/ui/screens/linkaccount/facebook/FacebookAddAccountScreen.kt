@@ -155,12 +155,12 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
 
                 Spacer(Modifier.height(16.dp))
-                Text("Tên", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Text("Password", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = singleName,
                     onValueChange = { singleName = it },
-                    placeholder = { Text("Nhập tên hiển thị (không bắt buộc)") },
+                    placeholder = { Text("Nhập Password (bắt buộc)") },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -171,12 +171,12 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
 
                 Spacer(Modifier.height(16.dp))
-                Text("Link", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Text("2FA", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = singleLink,
                     onValueChange = { singleLink = it },
-                    placeholder = { Text("Nhập link trang cá nhân (không bắt buộc)") },
+                    placeholder = { Text("Nhập 2FA (bắt buộc)") },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -187,18 +187,18 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Link là địa chỉ công khai của trang cá nhân, ví dụ facebook.com/ten-trang.",
+                    "Mã 2fa xác thực tài khoản.",
                     fontSize = 11.sp,
                     color = TextSecondary
                 )
 
                 Spacer(Modifier.height(16.dp))
-                Text("Ghi chú", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Text("Cookie", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = singleNote,
                     onValueChange = { singleNote = it },
-                    placeholder = { Text("Ghi chú thêm về tài khoản (không bắt buộc)") },
+                    placeholder = { Text("Nhập cookie (không bắt buộc,dùng nếu acc là scan no2fa)") },
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = CardWhite,
@@ -208,12 +208,12 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
 
                 Spacer(Modifier.height(16.dp))
-                Text("Mô tả / tiểu sử trang", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Text("Token", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = singleBio,
                     onValueChange = { singleBio = it },
-                    placeholder = { Text("Mô tả hoặc tiểu sử công khai của trang (không bắt buộc)") },
+                    placeholder = { Text("Nhập Token (không bắt buộc,dùng nếu acc no2fa)") },
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = CardWhite,
@@ -223,12 +223,12 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
 
                 Spacer(Modifier.height(16.dp))
-                Text("Số điện thoại liên kết", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Text("Proxy", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = singlePhone,
                     onValueChange = { singlePhone = it },
-                    placeholder = { Text("Nhập số điện thoại liên kết (không bắt buộc)") },
+                    placeholder = { Text("Nhập  (không bắt buộc)") },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -238,7 +238,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                Text("Danh sách UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Text("Định dạng", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
 
                 Text(
@@ -356,20 +356,20 @@ private data class FieldOption(val key: FieldKey, val label: String)
 
 private val ALL_FIELD_OPTIONS = listOf(
     FieldOption(FieldKey.UID, "UID"),
-    FieldOption(FieldKey.NAME, "Tên"),
-    FieldOption(FieldKey.LINK, "Link"),
-    FieldOption(FieldKey.NOTE, "Ghi chú"),
-    FieldOption(FieldKey.BIO, "Mô tả"),
-    FieldOption(FieldKey.PHONE, "SĐT")
+    FieldOption(FieldKey.NAME, "Password"),
+    FieldOption(FieldKey.LINK, "2FA"),
+    FieldOption(FieldKey.NOTE, "cookie"),
+    FieldOption(FieldKey.BIO, "Token"),
+    FieldOption(FieldKey.PHONE, "Proxy")
 )
 
 private val SAMPLE_VALUES = mapOf(
     FieldKey.UID to "100000001234567",
-    FieldKey.NAME to "Nguyễn Văn A",
-    FieldKey.LINK to "facebook.com/ten-trang",
-    FieldKey.NOTE to "Ghi chú",
-    FieldKey.BIO to "Mô tả trang",
-    FieldKey.PHONE to "0901234567"
+    FieldKey.NAME to "Password",
+    FieldKey.LINK to "2FA",
+    FieldKey.NOTE to "Cookie",
+    FieldKey.BIO to "Token",
+    FieldKey.PHONE to "Proxy"
 )
 
 /** Sinh dòng ví dụ cho ô placeholder dựa theo các trường và thứ tự người dùng đã chọn. */
