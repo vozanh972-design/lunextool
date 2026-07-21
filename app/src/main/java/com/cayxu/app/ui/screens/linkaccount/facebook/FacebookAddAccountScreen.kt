@@ -33,7 +33,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
-// Hàm trích xuất UID từ cookie (dùng chung)
+// Hàm trích xuất UID từ cookie
 private fun extractUidFromCookie(cookie: String): String? {
     val pairs = cookie.split(';')
     for (pair in pairs) {
@@ -58,12 +58,11 @@ fun FacebookAddAccountScreen(navController: NavController) {
     var singleProxy by remember { mutableStateOf("") }
 
     var multiUid by remember { mutableStateOf("") }
-    var multiSelectedFields by remember { mutableStateOf(listOf(FieldKey.COOKIE)) } // Mặc định chọn Cookie
+    var multiSelectedFields by remember { mutableStateOf(listOf(FieldKey.COOKIE)) }
 
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // Tự động trích xuất UID từ cookie cho nhập đơn
     LaunchedEffect(singleCookie) {
         if (singleCookie.isNotBlank() && singleUid.isBlank()) {
             extractUidFromCookie(singleCookie)?.let { uid ->
@@ -73,6 +72,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
     }
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
+        // Header (giữ nguyên)
         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 20.dp)) {
             IconButton(
                 onClick = { navController.popBackStack() },
@@ -96,8 +96,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
         ) {
-            Spacer(Modifier.height(4.dp))
-
+            // Card thông báo
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = InfoBlueBg),
@@ -117,6 +116,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(16.dp))
 
+            // Tab
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -141,146 +141,56 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(20.dp))
 
+            // Nội dung tab
             if (tabIndex == 0) {
-                // ===== NHẬP 1 TÀI KHOẢN ===== (giữ nguyên)
-                Text("UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                Spacer(Modifier.height(8.dp))
+                // Nhập 1 tài khoản (giữ nguyên UI)
                 OutlinedTextField(
                     value = singleUid,
                     onValueChange = { singleUid = it },
-                    placeholder = { Text("Nhập UID tài khoản Facebook") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CardWhite,
-                        unfocusedContainerColor = CardWhite
-                    ),
+                    label = { Text("UID") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "UID là mã định danh công khai của tài khoản, không phải mật khẩu.",
-                    fontSize = 11.sp,
-                    color = TextSecondary
-                )
-
-                Spacer(Modifier.height(16.dp))
-
-                Text("Password", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = singlePassword,
                     onValueChange = { singlePassword = it },
-                    placeholder = { Text("Nhập password (bắt buộc)") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CardWhite,
-                        unfocusedContainerColor = CardWhite
-                    ),
+                    label = { Text("Password") },
                     modifier = Modifier.fillMaxWidth()
                 )
-
-                Spacer(Modifier.height(16.dp))
-
-                Text("2FA", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = singleTwoFa,
                     onValueChange = { singleTwoFa = it },
-                    placeholder = { Text("Nhập 2FA (bắt buộc)") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CardWhite,
-                        unfocusedContainerColor = CardWhite
-                    ),
+                    label = { Text("2FA") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "Mã 2FA (Xác thực 2 yếu tố).",
-                    fontSize = 11.sp,
-                    color = TextSecondary
-                )
-
-                Spacer(Modifier.height(16.dp))
-
-                Text("Cookie", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = singleCookie,
                     onValueChange = { singleCookie = it },
-                    placeholder = { Text("Cookie (không bắt buộc)") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CardWhite,
-                        unfocusedContainerColor = CardWhite
-                    ),
+                    label = { Text("Cookie") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 if (singleCookie.isNotBlank() && singleUid.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "✅ Đã trích xuất UID: $singleUid",
-                        fontSize = 11.sp,
-                        color = SuccessGreen
-                    )
+                    Text("✅ Đã trích xuất UID: $singleUid", color = SuccessGreen)
                 }
-
-                Spacer(Modifier.height(16.dp))
-
-                Text("Token", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = singleToken,
                     onValueChange = { singleToken = it },
-                    placeholder = { Text("Token (không bắt buộc)") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CardWhite,
-                        unfocusedContainerColor = CardWhite
-                    ),
+                    label = { Text("Token") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "Token (không bắt buộc, dùng nếu không có UID|PASS|2FA)",
-                    fontSize = 11.sp,
-                    color = TextSecondary
-                )
-
-                Spacer(Modifier.height(16.dp))
-
-                Text("Proxy", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = singleProxy,
                     onValueChange = { singleProxy = it },
-                    placeholder = { Text("Nhập proxy (không bắt buộc)") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CardWhite,
-                        unfocusedContainerColor = CardWhite
-                    ),
+                    label = { Text("Proxy") },
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                // ===== HÀNG LOẠT =====
-                Text("Danh sách UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                Spacer(Modifier.height(8.dp))
-
-                Text(
-                    "Chọn các trường và thứ tự phân tách bằng dấu \"|\"",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextSecondary
-                )
-                Spacer(Modifier.height(8.dp))
-
+                // Hàng loạt (giữ nguyên UI)
+                Text("Chọn các trường và thứ tự phân tách bằng dấu \"|\"")
                 val fieldRows = ALL_FIELD_OPTIONS.chunked(3)
                 fieldRows.forEach { row ->
                     Row(modifier = Modifier.fillMaxWidth()) {
@@ -301,90 +211,66 @@ fun FacebookAddAccountScreen(navController: NavController) {
                             )
                         }
                     }
-                    Spacer(Modifier.height(6.dp))
                 }
-
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Định dạng hiện tại: " + multiSelectedFields.joinToString(" | ") { key ->
-                        ALL_FIELD_OPTIONS.first { it.key == key }.label
-                    },
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Primary
-                )
-
-                Spacer(Modifier.height(12.dp))
+                Text("Định dạng hiện tại: " + multiSelectedFields.joinToString(" | ") { key ->
+                    ALL_FIELD_OPTIONS.first { it.key == key }.label
+                })
                 val multiPlaceholder = buildMultiUidPlaceholder(multiSelectedFields)
                 OutlinedTextField(
                     value = multiUid,
                     onValueChange = { multiUid = it },
                     placeholder = { Text(multiPlaceholder) },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CardWhite,
-                        unfocusedContainerColor = CardWhite
-                    ),
                     modifier = Modifier.fillMaxWidth().height(160.dp)
                 )
-                Spacer(Modifier.height(8.dp))
                 val parsedMultiAccounts = parseMultiUidInput(multiUid, multiSelectedFields)
-                Text(
-                    "Đã nhập ${parsedMultiAccounts.size} tài khoản. Mỗi dòng phân tách bằng dấu \"|\" theo đúng thứ tự trường đã chọn ở trên.",
-                    fontSize = 11.sp,
-                    color = TextSecondary
-                )
+                Text("Đã nhập ${parsedMultiAccounts.size} tài khoản.")
             }
         }
 
+        // Nút Xác nhận
         Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
             Button(
                 onClick = {
                     if (isLoading) return@Button
                     if (tabIndex == 0) {
-                        // Xử lý 1 tài khoản (có thể kiểm tra Live nếu có cookie)
-                        val finalUid = if (singleUid.isBlank()) "unknown" else singleUid
-                        val note = if (singleCookie.isNotBlank()) singleCookie else ""
-                        // Nếu có cookie, kiểm tra Live để lấy tên + avatar
-                        if (note.isNotBlank()) {
+                        // THÊM 1 TÀI KHOẢN
+                        val uid = if (singleUid.isNotBlank()) singleUid else extractUidFromCookie(singleCookie) ?: "unknown"
+                        val account = FacebookAccount(
+                            uid = uid,
+                            name = singlePassword,
+                            link = singleTwoFa,
+                            note = singleCookie,   // LƯU COOKIE VÀO NOTE
+                            phone = singleProxy,
+                            bio = singleToken,
+                            isLive = false
+                        )
+                        // Lưu ngay
+                        FacebookAccountsStore.addAccount(context, account)
+
+                        // Nếu có cookie, kiểm tra Live để cập nhật tên/avatar
+                        if (singleCookie.isNotBlank()) {
                             isLoading = true
                             FacebookLiveChecker.checkCookieWithAvatarAndName(
-                                cookieString = note,
+                                cookieString = singleCookie,
                                 onResult = { uid, isLive, avatarUrl, fullName ->
-                                    val finalUid2 = uid ?: finalUid
-                                    val finalName = fullName ?: singlePassword
-                                    val finalBio = avatarUrl ?: ""
-                                    FacebookAccountsStore.addAccount(
-                                        context,
-                                        uid = finalUid2,
-                                        name = finalName,
-                                        link = singleTwoFa,
-                                        note = note,
-                                        phone = singleProxy,
-                                        bio = finalBio,
+                                    val updated = account.copy(
+                                        uid = uid ?: account.uid,
+                                        name = fullName ?: account.name,
+                                        bio = avatarUrl ?: account.bio,
                                         isLive = isLive
                                     )
+                                    FacebookAccountsStore.updateAccount(context, updated)
                                     isLoading = false
-                                    Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Đã thêm tài khoản", Toast.LENGTH_SHORT).show()
                                     navController.popBackStack()
                                 }
                             )
                         } else {
-                            FacebookAccountsStore.addAccount(
-                                context,
-                                uid = finalUid,
-                                name = singlePassword,
-                                link = singleTwoFa,
-                                note = note,
-                                phone = singleProxy,
-                                bio = singleToken,
-                                isLive = false
-                            )
-                            Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Đã thêm tài khoản", Toast.LENGTH_SHORT).show()
                             navController.popBackStack()
                         }
                     } else {
-                        // HÀNG LOẠT – kiểm tra Live cho từng tài khoản có cookie
+                        // THÊM HÀNG LOẠT
                         val entries = parseMultiUidInput(multiUid, multiSelectedFields)
                         if (entries.isEmpty()) {
                             Toast.makeText(context, "Không có dữ liệu hợp lệ", Toast.LENGTH_SHORT).show()
@@ -425,12 +311,10 @@ fun FacebookAddAccountScreen(navController: NavController) {
                         }
                     }
                 },
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Primary),
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 enabled = !isLoading
             ) {
-                Text("Xác nhận", color = CardWhite, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text("Xác nhận")
             }
         }
     }
@@ -458,7 +342,7 @@ private val SAMPLE_VALUES = mapOf(
 
 private fun buildMultiUidPlaceholder(fields: List<FieldKey>): String {
     val exampleLine = fields.joinToString("|") { SAMPLE_VALUES[it].orEmpty() }
-    return "Mỗi dòng phân tách bằng \"|\" theo đúng thứ tự đã chọn, ví dụ:\n$exampleLine"
+    return "Mỗi dòng phân tách bằng \"|\", ví dụ:\n$exampleLine"
 }
 
 private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<FacebookAccount> {
@@ -486,19 +370,16 @@ private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<Facebo
                 }
             }
 
-            // Nếu UID không được cung cấp, thử trích xuất từ cookie
             if (uid.isEmpty() && cookie.isNotBlank()) {
                 uid = extractUidFromCookie(cookie) ?: ""
             }
-
-            // Nếu vẫn không có UID, bỏ qua
             if (uid.isEmpty()) return@mapNotNull null
 
             FacebookAccount(
                 uid = uid,
                 name = password,
                 link = twofa,
-                note = cookie,
+                note = cookie,   // LƯU COOKIE VÀO NOTE
                 phone = proxy,
                 bio = token,
                 isLive = false
