@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import com.cayxu.app.R
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
@@ -282,11 +283,13 @@ private fun checkAccountsSequentially(
     }
     val (account, cookie) = accounts[index]
     try {
-        FacebookLiveChecker.checkCookie(context, cookie) { uid, isLive ->
+        FacebookLiveChecker.checkCookieWithAvatar(cookie) { uid, isLive, avatarUrl ->
             try {
                 if (uid != null && isLive) {
-                    FacebookAccountsStore.markLive(context, listOf(account.uid))
+                    // Live – cập nhật cả avatar
+                    FacebookAccountsStore.markLiveWithAvatar(context, listOf(account.uid), avatarUrl ?: "")
                 } else {
+                    // Die – chỉ mark die, avatar để trống
                     FacebookAccountsStore.markDie(context, listOf(account.uid))
                 }
                 checkAccountsSequentially(context, accounts, index + 1, onComplete)
@@ -316,16 +319,31 @@ private fun FacebookAccountRow(
     ) {
         Checkbox(checked = checked, onCheckedChange = onCheckedChange)
 
-        Box(
-            modifier = Modifier.size(38.dp).clip(CircleShape).background(TextSecondary.copy(alpha = 0.10f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Image(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                modifier = Modifier.size(22.dp).clip(RoundedCornerShape(6.dp))
+        // Avatar
+        if (account.isLive && account.avatar.isNotBlank()) {
+            AsyncImage(
+                model = account.avatar,
+                contentDescription = "Avatar",
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(TextSecondary.copy(alpha = 0.10f)),
+                error = painterResource(iconRes),
+                placeholder = painterResource(iconRes)
             )
+        } else {
+            Box(
+                modifier = Modifier.size(38.dp).clip(CircleShape).background(TextSecondary.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(iconRes),
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp).clip(RoundedCornerShape(6.dp))
+                )
+            }
         }
+
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
