@@ -93,6 +93,9 @@ object FacebookLiveChecker {
 
     /**
      * Kiểm tra cookie + lấy avatar thật + tên hiển thị của tài khoản.
+     * QUAN TRỌNG: việc xác định isLive dùng ĐÚNG logic y hệt checkCookieWithAvatar
+     * (đã kiểm chứng chạy đúng). Avatar/tên chỉ là dữ liệu bổ sung, không ảnh hưởng
+     * tới kết quả live/die.
      * @param onResult (uid, isLive, avatarUrl, fullName)
      */
     fun checkCookieWithAvatarAndName(
@@ -131,25 +134,33 @@ object FacebookLiveChecker {
                             val html = it.body?.string() ?: ""
                             val finalUrl = it.request.url.toString()
 
-                            if (finalUrl.contains("login") || (html.contains("login") && html.contains("password"))) {
+                            // ==== Bước 1: xác định isLive Y HỆT hàm checkCookieWithAvatar đã chạy chuẩn ====
+                            if (finalUrl.contains("login") || html.contains("login") && html.contains("password")) {
                                 Log.w(TAG, "❌ Bị redirect về login")
                                 onResult(uid, false, null, null)
                                 return
                             }
 
-                            val avatarUrl = extractAvatarUrlV2(html) ?: extractAvatarUrl(html)
+                            val avatarUrlOld = extractAvatarUrl(html)
+                            val isLive: Boolean
+                            if (avatarUrlOld != null) {
+                                isLive = true
+                            } else {
+                                val hasProfileContent = html.contains("profile") || html.contains("_1dwg") || html.contains("profilePic")
+                                isLive = hasProfileContent
+                            }
+
+                            // ==== Bước 2: lấy avatar đẹp hơn + tên, chỉ để bổ sung dữ liệu ====
+                            val avatarUrl = extractAvatarUrlV2(html) ?: avatarUrlOld
                             val fullName = extractFullName(html)
 
-                            val hasProfileContent = avatarUrl != null || fullName != null ||
-                                    html.contains("profile") || html.contains("_1dwg") || html.contains("profilePic")
-
-                            if (hasProfileContent) {
+                            if (isLive) {
                                 Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid, Avatar: $avatarUrl, Tên: $fullName")
-                                onResult(uid, true, avatarUrl, fullName)
                             } else {
                                 Log.w(TAG, "❌ Không tìm thấy avatar/tên hoặc nội dung profile")
-                                onResult(uid, false, avatarUrl, fullName)
                             }
+
+                            onResult(uid, isLive, avatarUrl, fullName)
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Error parsing response: ${e.message}")
@@ -199,8 +210,8 @@ object FacebookLiveChecker {
         return null
     }
 
-    // Avatar thật ở layout mới (m.facebook.com dạng MSite) luôn có class "rounded gray-border",
-    // khác với icon overlay (chỉ có class "img contain")
+    // Avatar đẹp hơn ở layout mới (m.facebook.com dạng MSite) thường có class "rounded gray-border".
+    // Chỉ dùng để LÀM ĐẸP kết quả avatar, không ảnh hưởng tới việc xác định live/die.
     private fun extractAvatarUrlV2(html: String): String? {
         try {
             val pattern = """<img[^>]+src="([^"]+)"[^>]*class="[^"]*rounded gray-border[^"]*"""".toRegex()
@@ -217,11 +228,12 @@ object FacebookLiveChecker {
 
     private fun extractFullName(html: String): String? {
         try {
-            // 1) Cách ổn định nhất: thẻ <title> luôn chứa tên hiển thị của trang cá nhân
             val titleMatch = """<title[^>]*>([^<]+)</title>""".toRegex(RegexOption.IGNORE_CASE).find(html)
             if (titleMatch != null) {
                 var title = unescapeText(titleMatch.groupValues[1])
                 title = title.substringBefore(" | ").substringBefore(" - ").trim()
+                // Bỏ số thông báo dạng "(3) Tên" nếu có
+                title = title.replace(Regex("^\\(\\d+\\)\\s*"), "").trim()
                 if (title.isNotBlank() &&
                     !title.equals("Facebook", ignoreCase = true) &&
                     !title.equals("Log in", ignoreCase = true) &&
@@ -231,8 +243,6 @@ object FacebookLiveChecker {
                 }
             }
 
-            // 2) Fallback: layout MSite, tên nằm trong <span class="f4"> ngay trong nút
-            // role="button" mà aria-label trùng khớp nội dung span đó
             val pattern = """aria-label="([^"]+)"[^>]{0,400}?class="f4"[^>]*>\s*([^<]+?)\s*(?:&nbsp;)?\s*</span>""".toRegex()
             val match = pattern.find(html)
             if (match != null) {
