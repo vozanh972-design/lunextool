@@ -145,6 +145,23 @@ object FacebookAccountsStore {
         save(context, current)
     }
 
+    /**
+     * Cập nhật kết quả kiểm tra Live cho 1 tài khoản: trạng thái live/die,
+     * avatar và tên hiển thị (nếu lấy được). Không đụng tới các field khác.
+     */
+    fun updateLiveStatus(context: Context, uid: String, isLive: Boolean, avatar: String?, name: String?) {
+        val current = getAccounts(context).map { acc ->
+            if (acc.uid == uid) {
+                acc.copy(
+                    isLive = isLive,
+                    avatar = avatar ?: acc.avatar,
+                    name = name ?: acc.name
+                )
+            } else acc
+        }
+        save(context, current)
+    }
+
     private fun save(context: Context, accounts: List<FacebookAccount>) {
         val raw = accounts.joinToString(ENTRY_SEPARATOR) { acc ->
             listOf(
