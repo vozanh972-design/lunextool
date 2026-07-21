@@ -72,7 +72,10 @@ object FacebookLiveChecker {
                                 Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid, Avatar: $avatarUrl")
                                 onResult(uid, true, avatarUrl)
                             } else {
-                                val hasProfileContent = html.contains("profile") || html.contains("_1dwg") || html.contains("profilePic") || html.contains("profile_pic")
+                                val hasProfileContent = html.contains("profile") || 
+                                                        html.contains("_1dwg") || 
+                                                        html.contains("profilePic") ||
+                                                        html.contains("profile_pic")
                                 if (hasProfileContent) {
                                     Log.d(TAG, "✅ Cookie hợp lệ (profile content), UID: $uid")
                                     onResult(uid, true, null)
@@ -95,23 +98,28 @@ object FacebookLiveChecker {
     }
 
     private fun extractAvatarUrl(html: String): String? {
-        val patterns = listOf(
-            """data-profile-pic-url="([^"]+)""".toRegex(),
-            """<img[^>]*class="[^"]*profilePic[^"]*"[^>]*src="([^"]+)""".toRegex(),
-            """<div[^>]*role="img"[^>]*style="background-image:\s*url\(['"]?([^'"]+)['"]?\)""".toRegex(),
-            """https://scontent\.[^"]+\.fbcdn\.net/[^"]+_n\.(?:jpg|jpeg|png|gif|webp)""".toRegex()
-        )
+        try {
+            val patterns = listOf(
+                """data-profile-pic-url="([^"]+)""".toRegex(),
+                """<img[^>]*class="[^"]*profilePic[^"]*"[^>]*src="([^"]+)""".toRegex(),
+                """<div[^>]*role="img"[^>]*style="background-image:\s*url\(['"]?([^'"]+)['"]?\)""".toRegex(),
+                """https://scontent\.[^"]+\.fbcdn\.net/[^"]+_n\.(?:jpg|jpeg|png|gif|webp)""".toRegex()
+            )
 
-        for (pattern in patterns) {
-            val match = pattern.find(html)
-            if (match != null) {
-                val url = match.groupValues[1]
-                if (!url.contains("silhouette") && !url.contains("default_avatar")) {
-                    return url
+            for (pattern in patterns) {
+                val match = pattern.find(html)
+                if (match != null) {
+                    val url = match.groupValues[1]
+                    if (!url.contains("silhouette") && !url.contains("default_avatar")) {
+                        return url
+                    }
                 }
             }
+            return null
+        } catch (e: Exception) {
+            Log.e(TAG, "extractAvatarUrl error: ${e.message}", e)
+            return null
         }
-        return null
     }
 
     fun checkCookie(context: Context, cookieString: String, onResult: (uid: String?, isLive: Boolean) -> Unit) {
