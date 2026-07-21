@@ -58,7 +58,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
     var singleProxy by remember { mutableStateOf("") }
 
     var multiUid by remember { mutableStateOf("") }
-    var multiSelectedFields by remember { mutableStateOf(listOf(FieldKey.UID)) }
+    var multiSelectedFields by remember { mutableStateOf(listOf(FieldKey.COOKIE)) } // Mặc định chọn Cookie
 
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -142,7 +142,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
             Spacer(Modifier.height(20.dp))
 
             if (tabIndex == 0) {
-                // ===== NHẬP 1 TÀI KHOẢN =====
+                // ===== NHẬP 1 TÀI KHOẢN ===== (giữ nguyên)
                 Text("UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -183,7 +183,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
                 Spacer(Modifier.height(16.dp))
 
-                Text("Link", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Text("2FA", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = singleTwoFa,
@@ -342,20 +342,47 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 onClick = {
                     if (isLoading) return@Button
                     if (tabIndex == 0) {
+                        // Xử lý 1 tài khoản (có thể kiểm tra Live nếu có cookie)
                         val finalUid = if (singleUid.isBlank()) "unknown" else singleUid
                         val note = if (singleCookie.isNotBlank()) singleCookie else ""
-                        FacebookAccountsStore.addAccount(
-                            context,
-                            uid = finalUid,
-                            name = singlePassword,
-                            link = singleTwoFa,
-                            note = note,
-                            phone = singleProxy,
-                            bio = singleToken,
-                            isLive = false
-                        )
-                        Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
-                        navController.popBackStack()
+                        // Nếu có cookie, kiểm tra Live để lấy tên + avatar
+                        if (note.isNotBlank()) {
+                            isLoading = true
+                            FacebookLiveChecker.checkCookieWithAvatarAndName(
+                                cookieString = note,
+                                onResult = { uid, isLive, avatarUrl, fullName ->
+                                    val finalUid2 = uid ?: finalUid
+                                    val finalName = fullName ?: singlePassword
+                                    val finalBio = avatarUrl ?: ""
+                                    FacebookAccountsStore.addAccount(
+                                        context,
+                                        uid = finalUid2,
+                                        name = finalName,
+                                        link = singleTwoFa,
+                                        note = note,
+                                        phone = singleProxy,
+                                        bio = finalBio,
+                                        isLive = isLive
+                                    )
+                                    isLoading = false
+                                    Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
+                                    navController.popBackStack()
+                                }
+                            )
+                        } else {
+                            FacebookAccountsStore.addAccount(
+                                context,
+                                uid = finalUid,
+                                name = singlePassword,
+                                link = singleTwoFa,
+                                note = note,
+                                phone = singleProxy,
+                                bio = singleToken,
+                                isLive = false
+                            )
+                            Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
+                            navController.popBackStack()
+                        }
                     } else {
                         // HÀNG LOẠT – kiểm tra Live cho từng tài khoản có cookie
                         val entries = parseMultiUidInput(multiUid, multiSelectedFields)
@@ -371,10 +398,14 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                     val cookie = account.note
                                     if (cookie.isNotBlank()) {
                                         suspendCancellableCoroutine { continuation ->
-                                            FacebookLiveChecker.checkCookieWithAvatar(
+                                            FacebookLiveChecker.checkCookieWithAvatarAndName(
                                                 cookieString = cookie,
-                                                onResult = { uid, isLive, avatarUrl ->
-                                                    val updated = account.copy(isLive = isLive)
+                                                onResult = { uid, isLive, avatarUrl, fullName ->
+                                                    val updated = account.copy(
+                                                        isLive = isLive,
+                                                        bio = avatarUrl ?: account.bio,
+                                                        name = fullName ?: account.name
+                                                    )
                                                     continuation.resume(updated)
                                                 }
                                             )
@@ -431,15 +462,12 @@ private fun buildMultiUidPlaceholder(fields: List<FieldKey>): String {
 }
 
 private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<FacebookAccount> {
-    val uidPos = fields.indexOf(FieldKey.UID)
-    if (uidPos < 0) return emptyList()
-
     return raw.lines()
         .map { it.trim() }
         .filter { it.isNotEmpty() }
         .mapNotNull { line ->
             val parts = line.split("|").map { it.trim() }
-            var uid = parts.getOrNull(uidPos).orEmpty()
+            var uid = ""
             var password = ""
             var twofa = ""
             var cookie = ""
@@ -449,20 +477,21 @@ private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<Facebo
             fields.forEachIndexed { index, key ->
                 val value = parts.getOrNull(index).orEmpty()
                 when (key) {
+                    FieldKey.UID -> uid = value
                     FieldKey.PASSWORD -> password = value
                     FieldKey.TWOFA -> twofa = value
                     FieldKey.COOKIE -> cookie = value
                     FieldKey.TOKEN -> token = value
                     FieldKey.PROXY -> proxy = value
-                    FieldKey.UID -> {} // đã xử lý riêng
                 }
             }
 
-            // === TỰ ĐỘNG TRÍCH XUẤT UID TỪ COOKIE NẾU UID RỖNG ===
+            // Nếu UID không được cung cấp, thử trích xuất từ cookie
             if (uid.isEmpty() && cookie.isNotBlank()) {
                 uid = extractUidFromCookie(cookie) ?: ""
             }
 
+            // Nếu vẫn không có UID, bỏ qua
             if (uid.isEmpty()) return@mapNotNull null
 
             FacebookAccount(
