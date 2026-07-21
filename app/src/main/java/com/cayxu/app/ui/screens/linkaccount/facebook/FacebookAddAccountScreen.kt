@@ -33,6 +33,18 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
+// Hàm trích xuất UID từ cookie (dùng chung)
+private fun extractUidFromCookie(cookie: String): String? {
+    val pairs = cookie.split(';')
+    for (pair in pairs) {
+        val trimmed = pair.trim()
+        if (trimmed.startsWith("c_user=")) {
+            return trimmed.substringAfter("c_user=").trim()
+        }
+    }
+    return null
+}
+
 @Composable
 fun FacebookAddAccountScreen(navController: NavController) {
     val context = LocalContext.current
@@ -51,17 +63,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    fun extractUidFromCookie(cookie: String): String? {
-        val pairs = cookie.split(';')
-        for (pair in pairs) {
-            val trimmed = pair.trim()
-            if (trimmed.startsWith("c_user=")) {
-                return trimmed.substringAfter("c_user=").trim()
-            }
-        }
-        return null
-    }
-
+    // Tự động trích xuất UID từ cookie cho nhập đơn
     LaunchedEffect(singleCookie) {
         if (singleCookie.isNotBlank() && singleUid.isBlank()) {
             extractUidFromCookie(singleCookie)?.let { uid ->
@@ -140,7 +142,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
             Spacer(Modifier.height(20.dp))
 
             if (tabIndex == 0) {
-                // UID
+                // ===== NHẬP 1 TÀI KHOẢN =====
                 Text("UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -267,7 +269,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                // Hàng loạt
+                // ===== HÀNG LOẠT =====
                 Text("Danh sách UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
 
@@ -342,7 +344,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     if (tabIndex == 0) {
                         val finalUid = if (singleUid.isBlank()) "unknown" else singleUid
                         val note = if (singleCookie.isNotBlank()) singleCookie else ""
-                        // Có thể kiểm tra live ở đây nếu muốn, nhưng giữ nguyên logic cũ
                         FacebookAccountsStore.addAccount(
                             context,
                             uid = finalUid,
@@ -356,7 +357,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                         Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
                         navController.popBackStack()
                     } else {
-                        // Hàng loạt – kiểm tra Live cho từng tài khoản có cookie
+                        // HÀNG LOẠT – kiểm tra Live cho từng tài khoản có cookie
                         val entries = parseMultiUidInput(multiUid, multiSelectedFields)
                         if (entries.isEmpty()) {
                             Toast.makeText(context, "Không có dữ liệu hợp lệ", Toast.LENGTH_SHORT).show()
@@ -438,14 +439,13 @@ private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<Facebo
         .filter { it.isNotEmpty() }
         .mapNotNull { line ->
             val parts = line.split("|").map { it.trim() }
-            val uid = parts.getOrNull(uidPos).orEmpty()
-            if (uid.isEmpty()) return@mapNotNull null
-
+            var uid = parts.getOrNull(uidPos).orEmpty()
             var password = ""
             var twofa = ""
             var cookie = ""
             var token = ""
             var proxy = ""
+
             fields.forEachIndexed { index, key ->
                 val value = parts.getOrNull(index).orEmpty()
                 when (key) {
@@ -454,9 +454,17 @@ private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<Facebo
                     FieldKey.COOKIE -> cookie = value
                     FieldKey.TOKEN -> token = value
                     FieldKey.PROXY -> proxy = value
-                    FieldKey.UID -> {}
+                    FieldKey.UID -> {} // đã xử lý riêng
                 }
             }
+
+            // === TỰ ĐỘNG TRÍCH XUẤT UID TỪ COOKIE NẾU UID RỖNG ===
+            if (uid.isEmpty() && cookie.isNotBlank()) {
+                uid = extractUidFromCookie(cookie) ?: ""
+            }
+
+            if (uid.isEmpty()) return@mapNotNull null
+
             FacebookAccount(
                 uid = uid,
                 name = password,
