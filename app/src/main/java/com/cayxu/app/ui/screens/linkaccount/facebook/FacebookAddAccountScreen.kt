@@ -72,7 +72,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
     }
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
-        // Header (giữ nguyên)
+        // Header
         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 20.dp)) {
             IconButton(
                 onClick = { navController.popBackStack() },
@@ -143,7 +143,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
             // Nội dung tab
             if (tabIndex == 0) {
-                // Nhập 1 tài khoản (giữ nguyên UI)
                 OutlinedTextField(
                     value = singleUid,
                     onValueChange = { singleUid = it },
@@ -189,7 +188,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                // Hàng loạt (giữ nguyên UI)
                 Text("Chọn các trường và thứ tự phân tách bằng dấu \"|\"")
                 val fieldRows = ALL_FIELD_OPTIONS.chunked(3)
                 fieldRows.forEach { row ->
@@ -256,7 +254,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                     val updated = account.copy(
                                         uid = uid ?: account.uid,
                                         name = fullName ?: account.name,
-                                        bio = avatarUrl ?: account.bio,
+                                        avatar = avatarUrl ?: account.avatar,
                                         isLive = isLive
                                     )
                                     FacebookAccountsStore.updateAccount(context, updated)
@@ -289,7 +287,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                                 onResult = { uid, isLive, avatarUrl, fullName ->
                                                     val updated = account.copy(
                                                         isLive = isLive,
-                                                        bio = avatarUrl ?: account.bio,
+                                                        avatar = avatarUrl ?: account.avatar,
                                                         name = fullName ?: account.name
                                                     )
                                                     continuation.resume(updated)
