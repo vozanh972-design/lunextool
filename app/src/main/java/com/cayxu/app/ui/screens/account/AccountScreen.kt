@@ -33,9 +33,12 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import com.cayxu.app.BuildConfig
 import com.cayxu.app.R
+import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.ui.theme.AppBackground
 import com.cayxu.app.ui.theme.CardWhite
@@ -65,11 +68,22 @@ fun AccountScreen(navController: NavController) {
     val securePrefs = remember { SecurePrefs(context) }
     val clipboardManager = LocalClipboardManager.current
 
-    // ID hiển thị: sinh ngẫu nhiên 1 lần duy nhất trên máy này rồi lưu lại,
-    // không dùng username thật.
-    val accountId = remember { securePrefs.getOrCreateAccountId() }
+    // Lấy số lượng tài khoản Facebook
+    var facebookCount by remember { mutableStateOf(FacebookAccountsStore.getAccounts(context).size) }
 
-    // Mã máy: tự nhận diện bằng ANDROID_ID, không cần người dùng nhập.
+    // Cập nhật khi quay lại màn hình
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                facebookCount = FacebookAccountsStore.getAccounts(context).size
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val accountId = remember { securePrefs.getOrCreateAccountId() }
     val deviceId = remember { DeviceUtils.getAndroidId(context) }
 
     var avatarUriString by remember { mutableStateOf(securePrefs.getAvatarUri()) }
@@ -100,8 +114,7 @@ fun AccountScreen(navController: NavController) {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             } catch (e: SecurityException) {
-                // Một số nguồn ảnh (ví dụ vài trình quản lý file) không hỗ trợ quyền
-                // truy cập lâu dài - ảnh vẫn hiển thị được trong phiên làm việc hiện tại.
+                // ignore
             }
             avatarUriString = uri.toString()
             securePrefs.saveAvatarUri(uri.toString())
@@ -128,143 +141,147 @@ fun AccountScreen(navController: NavController) {
         }
         Spacer(Modifier.height(16.dp))
 
-            // Thẻ thông tin tài khoản: avatar (mặc định hoặc do người dùng tự chọn) + ID + mã máy
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .background(InfoBlueBg, RoundedCornerShape(18.dp))
-                    .padding(16.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(contentAlignment = Alignment.BottomEnd) {
-                        Box(
-                            Modifier
-                                .size(72.dp)
-                                .clip(CircleShape)
-                                .background(CardWhite)
-                        ) {
-                            val bitmap = avatarBitmap
-                            if (bitmap != null) {
-                                Image(
-                                    bitmap = bitmap,
-                                    contentDescription = "Ảnh đại diện",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Image(
-                                    painter = painterResource(R.drawable.ic_default_avatar),
-                                    contentDescription = "Ảnh đại diện mặc định",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-                        }
-                        Box(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .clip(CircleShape)
-                                .background(CardWhite)
-                                .padding(2.dp)
-                                .clip(CircleShape)
-                                .background(Primary)
-                                .clickable { pickImageLauncher.launch(arrayOf("image/*")) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Filled.CameraAlt,
-                                contentDescription = "Đổi ảnh đại diện",
-                                tint = CardWhite,
-                                modifier = Modifier.size(13.dp)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(InfoBlueBg, RoundedCornerShape(18.dp))
+                .padding(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(contentAlignment = Alignment.BottomEnd) {
+                    Box(
+                        Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(CardWhite)
+                    ) {
+                        val bitmap = avatarBitmap
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap,
+                                contentDescription = "Ảnh đại diện",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Image(
+                                painter = painterResource(R.drawable.ic_default_avatar),
+                                contentDescription = "Ảnh đại diện mặc định",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
                     }
-
-                    Spacer(Modifier.width(16.dp))
-
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "ID: $accountId",
-                                color = TextPrimary,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            IconButton(
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(accountId))
-                                    Toast.makeText(context, "Đã sao chép ID", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(26.dp)
-                            ) {
-                                Icon(
-                                    Icons.Filled.ContentCopy,
-                                    contentDescription = "Sao chép ID",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(2.dp))
-                        Text("Mã máy: $deviceId", color = TextSecondary, fontSize = 12.sp)
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(CardWhite)
+                            .padding(2.dp)
+                            .clip(CircleShape)
+                            .background(Primary)
+                            .clickable { pickImageLauncher.launch(arrayOf("image/*")) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.CameraAlt,
+                            contentDescription = "Đổi ảnh đại diện",
+                            tint = CardWhite,
+                            modifier = Modifier.size(13.dp)
+                        )
                     }
                 }
+
+                Spacer(Modifier.width(16.dp))
+
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "ID: $accountId",
+                            color = TextPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        IconButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(accountId))
+                                Toast.makeText(context, "Đã sao chép ID", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(26.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.ContentCopy,
+                                contentDescription = "Sao chép ID",
+                                tint = TextSecondary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    Text("Mã máy: $deviceId", color = TextSecondary, fontSize = 12.sp)
+                }
             }
+        }
 
-            Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(24.dp))
 
-            Text("Quản lý tài khoản", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            Spacer(Modifier.height(8.dp))
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = CardWhite),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column {
-                    socialAccounts.forEachIndexed { index, item ->
-                        SocialAccountRow(item) {
+        Text("Quản lý tài khoản", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+        Spacer(Modifier.height(8.dp))
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = CardWhite),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column {
+                socialAccounts.forEachIndexed { index, item ->
+                    // Với Facebook, hiển thị số lượng đã thêm
+                    val count = if (item.label == "Facebook") facebookCount else 0
+                    SocialAccountRow(
+                        item = item,
+                        count = count,
+                        onClick = {
                             if (item.label == "Facebook") {
-                                // Facebook dùng route + màn hình RIÊNG, độc lập với các nền tảng khác.
                                 navController.navigate(com.cayxu.app.ui.navigation.Routes.LINK_ACCOUNT_FACEBOOK)
                             } else {
                                 navController.navigate(com.cayxu.app.ui.navigation.Routes.linkAccount(item.label, item.iconRes))
                             }
                         }
-                        if (index != socialAccounts.lastIndex) {
-                            HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                        }
+                    )
+                    if (index != socialAccounts.lastIndex) {
+                        HorizontalDivider(color = AppBackground, thickness = 1.dp)
                     }
                 }
             }
-
-            Spacer(Modifier.height(24.dp))
-
-            Text("Hỗ trợ & khác", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            Spacer(Modifier.height(8.dp))
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = CardWhite),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column {
-                    SimpleInfoRow("Trung tâm hỗ trợ")
-                    HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                    SimpleInfoRow("Điều khoản sử dụng")
-                    HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                    SimpleInfoRow("Chính sách bảo mật")
-                    HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                    SimpleInfoRow("Phiên bản ứng dụng", trailing = BuildConfig.VERSION_NAME)
-                }
-            }
-
-            Spacer(Modifier.height(90.dp))
         }
+
+        Spacer(Modifier.height(24.dp))
+
+        Text("Hỗ trợ & khác", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+        Spacer(Modifier.height(8.dp))
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = CardWhite),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column {
+                SimpleInfoRow("Trung tâm hỗ trợ")
+                HorizontalDivider(color = AppBackground, thickness = 1.dp)
+                SimpleInfoRow("Điều khoản sử dụng")
+                HorizontalDivider(color = AppBackground, thickness = 1.dp)
+                SimpleInfoRow("Chính sách bảo mật")
+                HorizontalDivider(color = AppBackground, thickness = 1.dp)
+                SimpleInfoRow("Phiên bản ứng dụng", trailing = BuildConfig.VERSION_NAME)
+            }
+        }
+
+        Spacer(Modifier.height(90.dp))
+    }
 }
 
 @Composable
-private fun SocialAccountRow(item: SocialAccountItem, onClick: () -> Unit) {
+private fun SocialAccountRow(item: SocialAccountItem, count: Int, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -282,7 +299,12 @@ private fun SocialAccountRow(item: SocialAccountItem, onClick: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text("Thêm tài khoản ${item.label}", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            Text("Chưa liên kết", color = TextSecondary, fontSize = 12.sp)
+            val statusText = if (item.label == "Facebook" && count > 0) {
+                "$count tài khoản"
+            } else {
+                "Chưa liên kết"
+            }
+            Text(statusText, color = if (count > 0) Primary else TextSecondary, fontSize = 12.sp)
         }
         Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = TextSecondary)
     }
