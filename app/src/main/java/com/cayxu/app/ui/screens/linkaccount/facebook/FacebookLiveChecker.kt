@@ -17,9 +17,6 @@ object FacebookLiveChecker {
         .followRedirects(true)
         .build()
 
-    /**
-     * Trích xuất UID từ chuỗi cookie (public để dùng cho cả parse hàng loạt)
-     */
     fun extractUidFromCookie(cookie: String?): String? {
         if (cookie.isNullOrBlank()) return null
         val pairs = cookie.split(';')
@@ -32,34 +29,25 @@ object FacebookLiveChecker {
         return null
     }
 
-    /**
-     * Kiểm tra cookie bằng cách tải trang profile và kiểm tra avatar.
-     * @param cookieString chuỗi cookie (có thể rỗng)
-     * @param onResult (uid: String?, isLive: Boolean, avatarUrl: String?)
-     */
     fun checkCookieWithAvatar(
         cookieString: String,
         onResult: (uid: String?, isLive: Boolean, avatarUrl: String?) -> Unit
     ) {
-        val uid = extractUidFromCookie(cookieString)
-        if (uid == null) {
-            Log.w(TAG, "❌ Không tìm thấy c_user trong cookie")
-            onResult(null, false, null)
-            return
-        }
-
         try {
-            val builder = Request.Builder()
+            val uid = extractUidFromCookie(cookieString)
+            if (uid == null) {
+                Log.w(TAG, "❌ Không tìm thấy c_user trong cookie")
+                onResult(null, false, null)
+                return
+            }
+
+            val request = Request.Builder()
                 .url("https://m.facebook.com/$uid")
                 .addHeader("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1")
                 .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                 .addHeader("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
-
-            if (cookieString.isNotBlank()) {
-                builder.addHeader("Cookie", cookieString)
-            }
-
-            val request = builder.build()
+                .addHeader("Cookie", cookieString)
+                .build()
 
             client.newCall(request).enqueue(object : okhttp3.Callback {
                 override fun onFailure(call: okhttp3.Call, e: IOException) {
@@ -68,36 +56,41 @@ object FacebookLiveChecker {
                 }
 
                 override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                    response.use {
-                        val html = it.body?.string() ?: ""
-                        val finalUrl = it.request.url.toString()
+                    try {
+                        response.use {
+                            val html = it.body?.string() ?: ""
+                            val finalUrl = it.request.url.toString()
 
-                        if (finalUrl.contains("login") || html.contains("login") && html.contains("password")) {
-                            Log.w(TAG, "❌ Bị redirect về login")
-                            onResult(uid, false, null)
-                            return
-                        }
-
-                        val avatarUrl = extractAvatarUrl(html)
-                        if (avatarUrl != null) {
-                            Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid, Avatar: $avatarUrl")
-                            onResult(uid, true, avatarUrl)
-                        } else {
-                            val hasProfileContent = html.contains("profile") || html.contains("_1dwg") || html.contains("profilePic")
-                            if (hasProfileContent) {
-                                Log.d(TAG, "✅ Cookie hợp lệ (profile content), UID: $uid")
-                                onResult(uid, true, null)
-                            } else {
-                                Log.w(TAG, "❌ Không tìm thấy avatar hoặc nội dung profile")
+                            if (finalUrl.contains("login") || html.contains("login") && html.contains("password")) {
+                                Log.w(TAG, "❌ Bị redirect về login")
                                 onResult(uid, false, null)
+                                return
+                            }
+
+                            val avatarUrl = extractAvatarUrl(html)
+                            if (avatarUrl != null) {
+                                Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid, Avatar: $avatarUrl")
+                                onResult(uid, true, avatarUrl)
+                            } else {
+                                val hasProfileContent = html.contains("profile") || html.contains("_1dwg") || html.contains("profilePic") || html.contains("profile_pic")
+                                if (hasProfileContent) {
+                                    Log.d(TAG, "✅ Cookie hợp lệ (profile content), UID: $uid")
+                                    onResult(uid, true, null)
+                                } else {
+                                    Log.w(TAG, "❌ Không tìm thấy avatar hoặc nội dung profile")
+                                    onResult(uid, false, null)
+                                }
                             }
                         }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing response: ${e.message}", e)
+                        onResult(uid, false, null)
                     }
                 }
             })
         } catch (e: Exception) {
             Log.e(TAG, "Exception: ${e.message}", e)
-            onResult(uid, false, null)
+            onResult(null, false, null)
         }
     }
 
@@ -106,7 +99,7 @@ object FacebookLiveChecker {
             """data-profile-pic-url="([^"]+)""".toRegex(),
             """<img[^>]*class="[^"]*profilePic[^"]*"[^>]*src="([^"]+)""".toRegex(),
             """<div[^>]*role="img"[^>]*style="background-image:\s*url\(['"]?([^'"]+)['"]?\)""".toRegex(),
-            """https://scontent\.[^"]+\.fbcdn\.net/[^"]+_n\.(?:jpg|png|gif|webp)""".toRegex()
+            """https://scontent\.[^"]+\.fbcdn\.net/[^"]+_n\.(?:jpg|jpeg|png|gif|webp)""".toRegex()
         )
 
         for (pattern in patterns) {
