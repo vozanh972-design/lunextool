@@ -260,7 +260,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     placeholder = { Text("Nhập proxy (không bắt buộc)") },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.cols(
+                    colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = CardWhite,
                         unfocusedContainerColor = CardWhite
                     ),
@@ -342,6 +342,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     if (tabIndex == 0) {
                         val finalUid = if (singleUid.isBlank()) "unknown" else singleUid
                         val note = if (singleCookie.isNotBlank()) singleCookie else ""
+                        // Có thể kiểm tra live ở đây nếu muốn, nhưng giữ nguyên logic cũ
                         FacebookAccountsStore.addAccount(
                             context,
                             uid = finalUid,
@@ -355,6 +356,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                         Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
                         navController.popBackStack()
                     } else {
+                        // Hàng loạt – kiểm tra Live cho từng tài khoản có cookie
                         val entries = parseMultiUidInput(multiUid, multiSelectedFields)
                         if (entries.isEmpty()) {
                             Toast.makeText(context, "Không có dữ liệu hợp lệ", Toast.LENGTH_SHORT).show()
