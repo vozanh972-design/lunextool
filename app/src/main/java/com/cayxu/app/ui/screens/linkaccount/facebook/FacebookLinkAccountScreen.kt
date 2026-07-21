@@ -349,9 +349,7 @@ private fun FacebookAccountRow(
                 modifier = Modifier
                     .size(38.dp)
                     .clip(CircleShape)
-                    .background(TextSecondary.copy(alpha = 0.10f)),
-                onError = { _, _ -> },
-                onSuccess = { _, _ -> }
+                    .background(TextSecondary.copy(alpha = 0.10f))
             )
         } else {
             Box(
