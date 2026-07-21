@@ -20,15 +20,14 @@ object FacebookLiveChecker {
         .build()
 
     /**
-     * Kiểm tra cookie bằng Graph API
-     * @param context (không dùng, chỉ để giữ chữ ký)
-     * @param cookieString chuỗi cookie (định dạng: name1=value1; name2=value2; ...)
-     * @param onResult callback (uid: String?, isLive: Boolean)
+     * Kiểm tra cookie và trả về uid, isLive, avatarUrl
      */
-    fun checkCookie(context: Context, cookieString: String, onResult: (uid: String?, isLive: Boolean) -> Unit) {
+    fun checkCookieWithAvatar(
+        cookieString: String,
+        onResult: (uid: String?, isLive: Boolean, avatarUrl: String?) -> Unit
+    ) {
         if (cookieString.isBlank()) {
-            Log.w(TAG, "Cookie rỗng")
-            onResult(null, false)
+            onResult(null, false, null)
             return
         }
 
@@ -42,7 +41,7 @@ object FacebookLiveChecker {
             client.newCall(request).enqueue(object : okhttp3.Callback {
                 override fun onFailure(call: okhttp3.Call, e: IOException) {
                     Log.e(TAG, "Check cookie failed: ${e.message}")
-                    onResult(null, false)
+                    onResult(null, false, null)
                 }
 
                 override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
@@ -54,24 +53,27 @@ object FacebookLiveChecker {
                                     val json = JSONObject(body)
                                     val uid = json.optString("id", null)
                                     if (!uid.isNullOrEmpty()) {
-                                        Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid")
-                                        onResult(uid, true)
+                                        // Lấy avatar URL
+                                        getAvatarUrl(uid) { avatarUrl ->
+                                            Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid, Avatar: $avatarUrl")
+                                            onResult(uid, true, avatarUrl)
+                                        }
                                     } else {
                                         Log.w(TAG, "⚠️ Response 200 nhưng không có id: $body")
-                                        onResult(null, false)
+                                        onResult(null, false, null)
                                     }
                                 } catch (e: Exception) {
                                     Log.e(TAG, "❌ Lỗi parse JSON: $body", e)
-                                    onResult(null, false)
+                                    onResult(null, false, null)
                                 }
                             }
                             401, 403 -> {
                                 Log.w(TAG, "❌ Cookie không hợp lệ (HTTP ${it.code})")
-                                onResult(null, false)
+                                onResult(null, false, null)
                             }
                             else -> {
                                 Log.w(TAG, "⚠️ HTTP ${it.code}: $body")
-                                onResult(null, false)
+                                onResult(null, false, null)
                             }
                         }
                     }
@@ -79,29 +81,23 @@ object FacebookLiveChecker {
             })
         } catch (e: Exception) {
             Log.e(TAG, "Exception khi kiểm tra cookie", e)
-            onResult(null, false)
+            onResult(null, false, null)
         }
     }
 
     /**
-     * Kiểm tra UID live bằng Graph API public (không cần cookie)
+     * Lấy avatar URL từ UID
      */
-    fun checkUidLive(uid: String, onResult: (isLive: Boolean) -> Unit) {
-        if (uid.isBlank()) {
-            onResult(false)
-            return
-        }
-
+    private fun getAvatarUrl(uid: String, onResult: (String?) -> Unit) {
         try {
             val request = Request.Builder()
-                .url("https://graph.facebook.com/$uid?fields=id")
+                .url("https://graph.facebook.com/$uid/picture?type=normal&redirect=false")
                 .addHeader("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1")
                 .build()
 
             client.newCall(request).enqueue(object : okhttp3.Callback {
                 override fun onFailure(call: okhttp3.Call, e: IOException) {
-                    Log.e(TAG, "Check UID failed: ${e.message}")
-                    onResult(false)
+                    onResult(null)
                 }
 
                 override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
@@ -110,21 +106,34 @@ object FacebookLiveChecker {
                             200 -> {
                                 try {
                                     val json = JSONObject(it.body?.string() ?: "{}")
-                                    val id = json.optString("id", null)
-                                    onResult(id != null && id == uid)
+                                    val data = json.optJSONObject("data")
+                                    val url = data?.optString("url", null)
+                                    val isSilhouette = data?.optBoolean("is_silhouette", true) ?: true
+                                    if (!isSilhouette && url != null) {
+                                        onResult(url)
+                                    } else {
+                                        onResult(null)
+                                    }
                                 } catch (e: Exception) {
-                                    Log.e(TAG, "Parse error", e)
-                                    onResult(false)
+                                    onResult(null)
                                 }
                             }
-                            else -> onResult(false)
+                            else -> onResult(null)
                         }
                     }
                 }
             })
         } catch (e: Exception) {
-            Log.e(TAG, "Exception check UID", e)
-            onResult(false)
+            onResult(null)
+        }
+    }
+
+    /**
+     * Kiểm tra cookie cũ (chỉ trả về uid, isLive) – giữ lại để tương thích
+     */
+    fun checkCookie(context: Context, cookieString: String, onResult: (uid: String?, isLive: Boolean) -> Unit) {
+        checkCookieWithAvatar(cookieString) { uid, isLive, _ ->
+            onResult(uid, isLive)
         }
     }
 }
