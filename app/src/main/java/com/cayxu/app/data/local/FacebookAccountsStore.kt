@@ -3,6 +3,17 @@ package com.cayxu.app.data.local
 import android.content.Context
 import android.content.SharedPreferences
 
+data class FacebookAccount(
+    val uid: String,
+    val name: String = "",      // Password
+    val link: String = "",      // 2FA
+    val note: String = "",      // Cookie
+    val phone: String = "",     // Proxy
+    val bio: String = "",       // Token
+    val isLive: Boolean = false,
+    val avatar: String = ""     // URL avatar
+)
+
 object FacebookAccountsStore {
     private const val PREFS_NAME = "cayxu_facebook_accounts"
     private const val KEY_ACCOUNTS = "accounts"
