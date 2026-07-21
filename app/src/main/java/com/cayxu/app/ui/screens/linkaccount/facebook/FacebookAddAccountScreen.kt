@@ -43,13 +43,10 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
     var isLoading by remember { mutableStateOf(false) }
 
-    // Hàm trích xuất UID từ cookie (gọi từ FacebookLiveChecker)
-    fun extractUidFromCookie(cookie: String): String? = FacebookLiveChecker.extractUidFromCookie(cookie)
-
     // Tự động điền UID cho chế độ một tài khoản
     LaunchedEffect(singleCookie) {
         if (singleCookie.isNotBlank() && singleUid.isBlank()) {
-            extractUidFromCookie(singleCookie)?.let { uid ->
+            FacebookLiveChecker.extractUidFromCookie(singleCookie)?.let { uid ->
                 singleUid = uid
             }
         }
@@ -125,7 +122,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
             Spacer(Modifier.height(20.dp))
 
             if (tabIndex == 0) {
-                // ... (giữ nguyên phần UI một tài khoản, không thay đổi) ...
+                // UI một tài khoản (giữ nguyên)
                 Text("UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -148,7 +145,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
 
                 Spacer(Modifier.height(16.dp))
-
                 Text("Password", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -165,7 +161,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
 
                 Spacer(Modifier.height(16.dp))
-
                 Text("Link", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -188,7 +183,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
 
                 Spacer(Modifier.height(16.dp))
-
                 Text("Cookie", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -213,7 +207,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 }
 
                 Spacer(Modifier.height(16.dp))
-
                 Text("Token", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -236,7 +229,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 )
 
                 Spacer(Modifier.height(16.dp))
-
                 Text("Proxy", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -252,7 +244,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                // Chế độ hàng loạt – giữ nguyên UI, chỉ parse được cập nhật
+                // Hàng loạt
                 Text("Danh sách UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
 
@@ -397,9 +389,10 @@ private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<Facebo
         .filter { it.isNotEmpty() }
         .mapNotNull { line ->
             val parts = line.split("|").map { it.trim() }
+
             var uid = parts.getOrNull(uidPos).orEmpty()
 
-            // Nếu UID rỗng nhưng có cookie, thử trích xuất từ cookie
+            // Nếu UID rỗng, thử trích xuất từ cookie
             if (uid.isEmpty()) {
                 val cookieIndex = fields.indexOf(FieldKey.COOKIE)
                 if (cookieIndex >= 0) {
@@ -428,17 +421,19 @@ private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<Facebo
                     FieldKey.UID -> {}
                 }
             }
+
+            val note = if (cookie.isNotBlank()) "Cookie: $cookie" else ""
+
             FacebookAccount(
                 uid = uid,
                 name = password,
                 link = twofa,
-                note = cookie,
+                note = note,
                 phone = proxy,
                 bio = token,
                 isLive = false
             )
         }
-}
 
 @Composable
 private fun FieldToggleChip(
