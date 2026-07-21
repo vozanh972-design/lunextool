@@ -114,5 +114,8 @@ dependencies {
     // app đã bị patch để bypass màn Login lúc mở app.
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
+    // Coil để load avatar
+    implementation("io.coil-kt:coil-compose:2.6.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
