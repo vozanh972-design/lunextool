@@ -35,9 +35,13 @@ object Routes {
     const val ADD_ACCOUNT = "add_account/{platform}/{iconRes}"
 
     // Facebook có route RIÊNG, độc lập với route dùng chung ở trên
-    // (TikTok/Instagram/LinkedIn/... vẫn dùng LINK_ACCOUNT/ADD_ACCOUNT như cũ).
+    // (Instagram/LinkedIn/... vẫn dùng LINK_ACCOUNT/ADD_ACCOUNT như cũ).
     const val LINK_ACCOUNT_FACEBOOK = "link_account_facebook"
     const val ADD_ACCOUNT_FACEBOOK = "add_account_facebook"
+
+    // TikTok cũng có route RIÊNG (khác Facebook và khác route dùng chung) vì có luồng
+    // thêm tài khoản bằng cách check trực tiếp trong app TikTok/Lite/Studio.
+    const val LINK_ACCOUNT_TIKTOK = "link_account_tiktok"
 
     fun linkAccount(platform: String, iconRes: Int) = "link_account/$platform/$iconRes"
     fun addAccount(platform: String, iconRes: Int) = "add_account/$platform/$iconRes"
@@ -131,6 +135,13 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             }
             composable(Routes.ADD_ACCOUNT_FACEBOOK) {
                 com.cayxu.app.ui.screens.linkaccount.facebook.FacebookAddAccountScreen(
+                    navController = navController
+                )
+            }
+
+            // Route RIÊNG cho TikTok - không dùng chung với LINK_ACCOUNT/ADD_ACCOUNT ở trên.
+            composable(Routes.LINK_ACCOUNT_TIKTOK) {
+                com.cayxu.app.ui.screens.linkaccount.tiktok.TikTokLinkAccountScreen(
                     navController = navController
                 )
             }

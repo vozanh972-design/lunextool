@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Cày Xu</string>
+    <string name="tiktok_accessibility_service_description">Cho phép Cày Xu đọc @handle hiển thị trên trang \"Tôi\" của TikTok/TikTok Lite/TikTok Studio khi bạn bấm \"Lưu @\" trên lớp nổi, để tự điền tài khoản vào danh sách trong tool. Không đọc mật khẩu hay dữ liệu nào khác.</string>
 </resources>

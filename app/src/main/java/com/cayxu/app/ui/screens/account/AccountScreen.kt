@@ -40,6 +40,7 @@ import com.cayxu.app.BuildConfig
 import com.cayxu.app.R
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.data.local.SecurePrefs
+import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.ui.theme.AppBackground
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.InfoBlueBg
@@ -68,8 +69,9 @@ fun AccountScreen(navController: NavController) {
     val securePrefs = remember { SecurePrefs(context) }
     val clipboardManager = LocalClipboardManager.current
 
-    // Lấy số lượng tài khoản Facebook
+    // Lấy số lượng tài khoản Facebook và TikTok (mỗi nền tảng lưu riêng, không dùng chung store)
     var facebookCount by remember { mutableStateOf(FacebookAccountsStore.getAccounts(context).size) }
+    var tikTokCount by remember { mutableStateOf(TikTokAccountsStore.getAccounts(context).size) }
 
     // Cập nhật khi quay lại màn hình
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
@@ -77,6 +79,7 @@ fun AccountScreen(navController: NavController) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 facebookCount = FacebookAccountsStore.getAccounts(context).size
+                tikTokCount = TikTokAccountsStore.getAccounts(context).size
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -235,16 +238,20 @@ fun AccountScreen(navController: NavController) {
         ) {
             Column {
                 socialAccounts.forEachIndexed { index, item ->
-                    // Với Facebook, hiển thị số lượng đã thêm
-                    val count = if (item.label == "Facebook") facebookCount else 0
+                    // Với Facebook/TikTok, hiển thị số lượng đã thêm (mỗi nền tảng có store riêng)
+                    val count = when (item.label) {
+                        "Facebook" -> facebookCount
+                        "TikTok" -> tikTokCount
+                        else -> 0
+                    }
                     SocialAccountRow(
                         item = item,
                         count = count,
                         onClick = {
-                            if (item.label == "Facebook") {
-                                navController.navigate(com.cayxu.app.ui.navigation.Routes.LINK_ACCOUNT_FACEBOOK)
-                            } else {
-                                navController.navigate(com.cayxu.app.ui.navigation.Routes.linkAccount(item.label, item.iconRes))
+                            when (item.label) {
+                                "Facebook" -> navController.navigate(com.cayxu.app.ui.navigation.Routes.LINK_ACCOUNT_FACEBOOK)
+                                "TikTok" -> navController.navigate(com.cayxu.app.ui.navigation.Routes.LINK_ACCOUNT_TIKTOK)
+                                else -> navController.navigate(com.cayxu.app.ui.navigation.Routes.linkAccount(item.label, item.iconRes))
                             }
                         }
                     )
@@ -299,7 +306,7 @@ private fun SocialAccountRow(item: SocialAccountItem, count: Int, onClick: () ->
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text("Thêm tài khoản ${item.label}", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            val statusText = if (item.label == "Facebook" && count > 0) {
+            val statusText = if ((item.label == "Facebook" || item.label == "TikTok") && count > 0) {
                 "$count tài khoản"
             } else {
                 "Chưa liên kết"
