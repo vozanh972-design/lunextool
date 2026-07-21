@@ -122,7 +122,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
             Spacer(Modifier.height(20.dp))
 
             if (tabIndex == 0) {
-                // UI một tài khoản (giữ nguyên)
+                // UI một tài khoản
                 Text("UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -434,7 +434,6 @@ private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<Facebo
                 isLive = false
             )
         }
-    }
 }
 
 @Composable
