@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -13,124 +12,115 @@ object FacebookLiveChecker {
     private const val TAG = "FacebookLiveChecker"
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .writeTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
 
     /**
-     * Kiểm tra cookie và trả về uid, isLive, avatarUrl
+     * Kiểm tra cookie bằng cách tải trang profile và kiểm tra avatar.
+     * @param cookieString chuỗi cookie (có thể rỗng)
+     * @param onResult (uid: String?, isLive: Boolean, avatarUrl: String?)
      */
     fun checkCookieWithAvatar(
         cookieString: String,
         onResult: (uid: String?, isLive: Boolean, avatarUrl: String?) -> Unit
     ) {
-        if (cookieString.isBlank()) {
+        val uid = extractUidFromCookie(cookieString)
+        if (uid == null) {
+            Log.w(TAG, "❌ Không tìm thấy c_user trong cookie")
             onResult(null, false, null)
             return
         }
 
         try {
-            val request = Request.Builder()
-                .url("https://graph.facebook.com/me?fields=id")
-                .addHeader("Cookie", cookieString)
+            val builder = Request.Builder()
+                .url("https://m.facebook.com/$uid")
                 .addHeader("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1")
-                .build()
+                .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .addHeader("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+
+            if (cookieString.isNotBlank()) {
+                builder.addHeader("Cookie", cookieString)
+            }
+
+            val request = builder.build()
 
             client.newCall(request).enqueue(object : okhttp3.Callback {
                 override fun onFailure(call: okhttp3.Call, e: IOException) {
-                    Log.e(TAG, "Check cookie failed: ${e.message}")
-                    onResult(null, false, null)
+                    Log.e(TAG, "Request failed: ${e.message}")
+                    onResult(uid, false, null)
                 }
 
                 override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
                     response.use {
-                        val body = it.body?.string() ?: "{}"
-                        when (it.code) {
-                            200 -> {
-                                try {
-                                    val json = JSONObject(body)
-                                    val uid = json.optString("id", null)
-                                    if (!uid.isNullOrEmpty()) {
-                                        // Lấy avatar URL
-                                        getAvatarUrl(uid) { avatarUrl ->
-                                            Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid, Avatar: $avatarUrl")
-                                            onResult(uid, true, avatarUrl)
-                                        }
-                                    } else {
-                                        Log.w(TAG, "⚠️ Response 200 nhưng không có id: $body")
-                                        onResult(null, false, null)
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "❌ Lỗi parse JSON: $body", e)
-                                    onResult(null, false, null)
-                                }
-                            }
-                            401, 403 -> {
-                                Log.w(TAG, "❌ Cookie không hợp lệ (HTTP ${it.code})")
-                                onResult(null, false, null)
-                            }
-                            else -> {
-                                Log.w(TAG, "⚠️ HTTP ${it.code}: $body")
-                                onResult(null, false, null)
+                        val html = it.body?.string() ?: ""
+                        val finalUrl = it.request.url.toString()
+
+                        // Nếu bị redirect về login → cookie không hợp lệ
+                        if (finalUrl.contains("login") || html.contains("login") && html.contains("password")) {
+                            Log.w(TAG, "❌ Bị redirect về login")
+                            onResult(uid, false, null)
+                            return
+                        }
+
+                        // Tìm avatar trong HTML
+                        val avatarUrl = extractAvatarUrl(html)
+                        if (avatarUrl != null) {
+                            Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid, Avatar: $avatarUrl")
+                            onResult(uid, true, avatarUrl)
+                        } else {
+                            // Nếu trang có nội dung profile nhưng không có avatar → vẫn live
+                            val hasProfileContent = html.contains("profile") || html.contains("_1dwg") || html.contains("profilePic")
+                            if (hasProfileContent) {
+                                Log.d(TAG, "✅ Cookie hợp lệ (profile content), UID: $uid")
+                                onResult(uid, true, null)
+                            } else {
+                                Log.w(TAG, "❌ Không tìm thấy avatar hoặc nội dung profile")
+                                onResult(uid, false, null)
                             }
                         }
                     }
                 }
             })
         } catch (e: Exception) {
-            Log.e(TAG, "Exception khi kiểm tra cookie", e)
-            onResult(null, false, null)
+            Log.e(TAG, "Exception: ${e.message}", e)
+            onResult(uid, false, null)
         }
     }
 
-    /**
-     * Lấy avatar URL từ UID
-     */
-    private fun getAvatarUrl(uid: String, onResult: (String?) -> Unit) {
-        try {
-            val request = Request.Builder()
-                .url("https://graph.facebook.com/$uid/picture?type=normal&redirect=false")
-                .addHeader("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1")
-                .build()
-
-            client.newCall(request).enqueue(object : okhttp3.Callback {
-                override fun onFailure(call: okhttp3.Call, e: IOException) {
-                    onResult(null)
-                }
-
-                override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                    response.use {
-                        when (it.code) {
-                            200 -> {
-                                try {
-                                    val json = JSONObject(it.body?.string() ?: "{}")
-                                    val data = json.optJSONObject("data")
-                                    val url = data?.optString("url", null)
-                                    val isSilhouette = data?.optBoolean("is_silhouette", true) ?: true
-                                    if (!isSilhouette && url != null) {
-                                        onResult(url)
-                                    } else {
-                                        onResult(null)
-                                    }
-                                } catch (e: Exception) {
-                                    onResult(null)
-                                }
-                            }
-                            else -> onResult(null)
-                        }
-                    }
-                }
-            })
-        } catch (e: Exception) {
-            onResult(null)
+    private fun extractUidFromCookie(cookie: String?): String? {
+        if (cookie.isNullOrBlank()) return null
+        val pairs = cookie.split(';')
+        for (pair in pairs) {
+            val trimmed = pair.trim()
+            if (trimmed.startsWith("c_user=")) {
+                return trimmed.substringAfter("c_user=").trim()
+            }
         }
+        return null
     }
 
-    /**
-     * Kiểm tra cookie cũ (chỉ trả về uid, isLive) – giữ lại để tương thích
-     */
+    private fun extractAvatarUrl(html: String): String? {
+        val patterns = listOf(
+            """data-profile-pic-url="([^"]+)""".toRegex(),
+            """<img[^>]*class="[^"]*profilePic[^"]*"[^>]*src="([^"]+)""".toRegex(),
+            """<div[^>]*role="img"[^>]*style="background-image:\s*url\(['"]?([^'"]+)['"]?\)""".toRegex(),
+            """https://scontent\.[^"]+\.fbcdn\.net/[^"]+_n\.(?:jpg|png|gif|webp)""".toRegex()
+        )
+
+        for (pattern in patterns) {
+            val match = pattern.find(html)
+            if (match != null) {
+                val url = match.groupValues[1]
+                if (!url.contains("silhouette") && !url.contains("default_avatar")) {
+                    return url
+                }
+            }
+        }
+        return null
+    }
+
     fun checkCookie(context: Context, cookieString: String, onResult: (uid: String?, isLive: Boolean) -> Unit) {
         checkCookieWithAvatar(cookieString) { uid, isLive, _ ->
             onResult(uid, isLive)
