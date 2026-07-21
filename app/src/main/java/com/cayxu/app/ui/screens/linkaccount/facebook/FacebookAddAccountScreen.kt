@@ -24,6 +24,14 @@ import androidx.navigation.NavController
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.ui.theme.*
+import com.cayxu.app.utils.FacebookLiveChecker
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 @Composable
 fun FacebookAddAccountScreen(navController: NavController) {
@@ -41,6 +49,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
     var multiSelectedFields by remember { mutableStateOf(listOf(FieldKey.UID)) }
 
     var isLoading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     fun extractUidFromCookie(cookie: String): String? {
         val pairs = cookie.split(';')
@@ -331,8 +340,10 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 onClick = {
                     if (isLoading) return@Button
                     if (tabIndex == 0) {
+                        // 1 tài khoản: vẫn giữ nguyên logic cũ (không kiểm tra Live)
+                        // Nếu muốn kiểm tra Live cho 1 acc cũng có thể làm tương tự, nhưng yêu cầu không nói, tạm giữ
                         val finalUid = if (singleUid.isBlank()) "unknown" else singleUid
-                        val note = if (singleCookie.isNotBlank()) "Cookie: $singleCookie" else ""
+                        val note = if (singleCookie.isNotBlank()) singleCookie else ""
                         FacebookAccountsStore.addAccount(
                             context,
                             uid = finalUid,
@@ -346,13 +357,50 @@ fun FacebookAddAccountScreen(navController: NavController) {
                         Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
                         navController.popBackStack()
                     } else {
+                        // HÀNG LOẠT
                         val entries = parseMultiUidInput(multiUid, multiSelectedFields)
                         if (entries.isEmpty()) {
                             Toast.makeText(context, "Không có dữ liệu hợp lệ", Toast.LENGTH_SHORT).show()
-                        } else {
-                            FacebookAccountsStore.addAccounts(context, entries)
-                            Toast.makeText(context, "Đã thêm ${entries.size} tài khoản", Toast.LENGTH_SHORT).show()
-                            navController.popBackStack()
+                            return@Button
+                        }
+
+                        isLoading = true
+                        scope.launch {
+                            // Tạo danh sách các Deferred để kiểm tra đồng thời
+                            val checkedAccounts = entries.map { account ->
+                                async {
+                                    // Nếu có cookie (lưu trong note), kiểm tra Live
+                                    val cookie = account.note
+                                    if (cookie.isNotBlank()) {
+                                        // Sử dụng suspendCancellableCoroutine để chuyển callback thành suspend
+                                        suspendCancellableCoroutine { continuation ->
+                                            FacebookLiveChecker.checkCookieWithAvatar(
+                                                cookieString = cookie,
+                                                onResult = { uid, isLive, avatarUrl ->
+                                                    // Cập nhật thông tin
+                                                    val updated = account.copy(
+                                                        isLive = isLive,
+                                                        // Nếu có avatarUrl có thể lưu thêm, hiện tại không có trường
+                                                    )
+                                                    continuation.resume(updated)
+                                                }
+                                            )
+                                        }
+                                    } else {
+                                        // Không có cookie, giữ nguyên isLive = false
+                                        account
+                                    }
+                                }
+                            }
+                            // Chờ tất cả hoàn thành
+                            val finalAccounts = checkedAccounts.awaitAll()
+                            // Lưu tất cả vào store
+                            FacebookAccountsStore.addAccounts(context, finalAccounts)
+                            withContext(Dispatchers.Main) {
+                                isLoading = false
+                                Toast.makeText(context, "Đã thêm ${finalAccounts.size} tài khoản", Toast.LENGTH_SHORT).show()
+                                navController.popBackStack()
+                            }
                         }
                     }
                 },
