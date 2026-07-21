@@ -434,6 +434,8 @@ private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<Facebo
                 isLive = false
             )
         }
+    }
+}
 
 @Composable
 private fun FieldToggleChip(
