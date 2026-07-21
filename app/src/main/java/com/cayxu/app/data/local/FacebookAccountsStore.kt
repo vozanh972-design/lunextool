@@ -48,6 +48,10 @@ object FacebookAccountsStore {
             .filter { it.uid.isNotBlank() }
     }
 
+    fun addAccount(context: Context, account: FacebookAccount) {
+        addAccounts(context, listOf(account))
+    }
+
     fun addAccount(
         context: Context,
         uid: String,
@@ -81,9 +85,8 @@ object FacebookAccountsStore {
                     link = it.link.trim(),
                     note = it.note.trim(),
                     phone = it.phone.trim(),
-                    bio = it.bio.trim(),
-                    isLive = false,
-                    avatar = ""
+                    bio = it.bio.trim()
+                    // Không reset isLive/avatar nữa — giữ đúng kết quả đã kiểm tra cookie
                 )
             }
             .filter { it.uid.isNotEmpty() }
@@ -96,6 +99,17 @@ object FacebookAccountsStore {
                 current.add(entry)
                 existingUids.add(entry.uid)
             }
+        }
+        save(context, current)
+    }
+
+    fun updateAccount(context: Context, account: FacebookAccount) {
+        val current = getAccounts(context).toMutableList()
+        val index = current.indexOfFirst { it.uid == account.uid }
+        if (index >= 0) {
+            current[index] = account
+        } else {
+            current.add(account)
         }
         save(context, current)
     }
