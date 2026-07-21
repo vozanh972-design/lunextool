@@ -260,7 +260,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     placeholder = { Text("Nhập proxy (không bắt buộc)") },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
+                    colors = OutlinedTextFieldDefaults.cols(
                         focusedContainerColor = CardWhite,
                         unfocusedContainerColor = CardWhite
                     ),
@@ -340,8 +340,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 onClick = {
                     if (isLoading) return@Button
                     if (tabIndex == 0) {
-                        // 1 tài khoản: vẫn giữ nguyên logic cũ (không kiểm tra Live)
-                        // Nếu muốn kiểm tra Live cho 1 acc cũng có thể làm tương tự, nhưng yêu cầu không nói, tạm giữ
                         val finalUid = if (singleUid.isBlank()) "unknown" else singleUid
                         val note = if (singleCookie.isNotBlank()) singleCookie else ""
                         FacebookAccountsStore.addAccount(
@@ -357,7 +355,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                         Toast.makeText(context, "Đã thêm tài khoản Facebook", Toast.LENGTH_SHORT).show()
                         navController.popBackStack()
                     } else {
-                        // HÀNG LOẠT
                         val entries = parseMultiUidInput(multiUid, multiSelectedFields)
                         if (entries.isEmpty()) {
                             Toast.makeText(context, "Không có dữ liệu hợp lệ", Toast.LENGTH_SHORT).show()
@@ -366,35 +363,25 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
                         isLoading = true
                         scope.launch {
-                            // Tạo danh sách các Deferred để kiểm tra đồng thời
                             val checkedAccounts = entries.map { account ->
                                 async {
-                                    // Nếu có cookie (lưu trong note), kiểm tra Live
                                     val cookie = account.note
                                     if (cookie.isNotBlank()) {
-                                        // Sử dụng suspendCancellableCoroutine để chuyển callback thành suspend
                                         suspendCancellableCoroutine { continuation ->
                                             FacebookLiveChecker.checkCookieWithAvatar(
                                                 cookieString = cookie,
                                                 onResult = { uid, isLive, avatarUrl ->
-                                                    // Cập nhật thông tin
-                                                    val updated = account.copy(
-                                                        isLive = isLive,
-                                                        // Nếu có avatarUrl có thể lưu thêm, hiện tại không có trường
-                                                    )
+                                                    val updated = account.copy(isLive = isLive)
                                                     continuation.resume(updated)
                                                 }
                                             )
                                         }
                                     } else {
-                                        // Không có cookie, giữ nguyên isLive = false
                                         account
                                     }
                                 }
                             }
-                            // Chờ tất cả hoàn thành
                             val finalAccounts = checkedAccounts.awaitAll()
-                            // Lưu tất cả vào store
                             FacebookAccountsStore.addAccounts(context, finalAccounts)
                             withContext(Dispatchers.Main) {
                                 isLoading = false
@@ -442,9 +429,7 @@ private fun buildMultiUidPlaceholder(fields: List<FieldKey>): String {
 
 private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<FacebookAccount> {
     val uidPos = fields.indexOf(FieldKey.UID)
-    if (uidPos < 0) {
-        return emptyList()
-    }
+    if (uidPos < 0) return emptyList()
 
     return raw.lines()
         .map { it.trim() }
