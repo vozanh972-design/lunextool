@@ -24,6 +24,7 @@ import androidx.navigation.NavController
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.ui.theme.*
+import com.cayxu.app.utils.FacebookLiveChecker
 
 @Composable
 fun FacebookAddAccountScreen(navController: NavController) {
@@ -42,17 +43,10 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
     var isLoading by remember { mutableStateOf(false) }
 
-    fun extractUidFromCookie(cookie: String): String? {
-        val pairs = cookie.split(';')
-        for (pair in pairs) {
-            val trimmed = pair.trim()
-            if (trimmed.startsWith("c_user=")) {
-                return trimmed.substringAfter("c_user=").trim()
-            }
-        }
-        return null
-    }
+    // Hàm trích xuất UID từ cookie (gọi từ FacebookLiveChecker)
+    fun extractUidFromCookie(cookie: String): String? = FacebookLiveChecker.extractUidFromCookie(cookie)
 
+    // Tự động điền UID cho chế độ một tài khoản
     LaunchedEffect(singleCookie) {
         if (singleCookie.isNotBlank() && singleUid.isBlank()) {
             extractUidFromCookie(singleCookie)?.let { uid ->
@@ -131,7 +125,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
             Spacer(Modifier.height(20.dp))
 
             if (tabIndex == 0) {
-                // UID
+                // ... (giữ nguyên phần UI một tài khoản, không thay đổi) ...
                 Text("UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -258,7 +252,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                // Hàng loạt
+                // Chế độ hàng loạt – giữ nguyên UI, chỉ parse được cập nhật
                 Text("Danh sách UID", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
 
@@ -403,7 +397,19 @@ private fun parseMultiUidInput(raw: String, fields: List<FieldKey>): List<Facebo
         .filter { it.isNotEmpty() }
         .mapNotNull { line ->
             val parts = line.split("|").map { it.trim() }
-            val uid = parts.getOrNull(uidPos).orEmpty()
+            var uid = parts.getOrNull(uidPos).orEmpty()
+
+            // Nếu UID rỗng nhưng có cookie, thử trích xuất từ cookie
+            if (uid.isEmpty()) {
+                val cookieIndex = fields.indexOf(FieldKey.COOKIE)
+                if (cookieIndex >= 0) {
+                    val cookie = parts.getOrNull(cookieIndex).orEmpty()
+                    if (cookie.isNotBlank()) {
+                        uid = FacebookLiveChecker.extractUidFromCookie(cookie) ?: ""
+                    }
+                }
+            }
+
             if (uid.isEmpty()) return@mapNotNull null
 
             var password = ""
