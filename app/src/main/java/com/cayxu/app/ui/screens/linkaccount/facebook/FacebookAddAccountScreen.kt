@@ -24,7 +24,6 @@ import androidx.navigation.NavController
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.ui.theme.*
-import com.cayxu.app.utils.FacebookLiveChecker
 
 @Composable
 fun FacebookAddAccountScreen(navController: NavController) {
@@ -332,7 +331,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 onClick = {
                     if (isLoading) return@Button
                     if (tabIndex == 0) {
-                        // Chỉ lưu, không check live
                         val finalUid = if (singleUid.isBlank()) "unknown" else singleUid
                         val note = if (singleCookie.isNotBlank()) "Cookie: $singleCookie" else ""
                         FacebookAccountsStore.addAccount(
