@@ -164,7 +164,6 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                             return@TextButton
                         }
 
-                        // Lấy cookie từ note của từng tài khoản
                         val accountsWithCookie = targets.mapNotNull { uid ->
                             val acc = accounts.find { it.uid == uid }
                             if (acc != null && acc.note.startsWith("Cookie: ")) {
@@ -286,10 +285,12 @@ private fun checkAccountsSequentially(
         FacebookLiveChecker.checkCookieWithAvatar(cookie) { uid, isLive, avatarUrl ->
             try {
                 if (uid != null && isLive) {
-                    // Live – cập nhật cả avatar
-                    FacebookAccountsStore.markLiveWithAvatar(context, listOf(account.uid), avatarUrl ?: "")
+                    if (avatarUrl != null) {
+                        FacebookAccountsStore.markLiveWithAvatar(context, listOf(account.uid), avatarUrl)
+                    } else {
+                        FacebookAccountsStore.markLive(context, listOf(account.uid))
+                    }
                 } else {
-                    // Die – chỉ mark die, avatar để trống
                     FacebookAccountsStore.markDie(context, listOf(account.uid))
                 }
                 checkAccountsSequentially(context, accounts, index + 1, onComplete)
@@ -319,7 +320,6 @@ private fun FacebookAccountRow(
     ) {
         Checkbox(checked = checked, onCheckedChange = onCheckedChange)
 
-        // Avatar
         if (account.isLive && account.avatar.isNotBlank()) {
             AsyncImage(
                 model = account.avatar,
