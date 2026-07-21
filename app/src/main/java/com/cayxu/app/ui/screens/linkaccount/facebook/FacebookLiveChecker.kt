@@ -1,26 +1,98 @@
 package com.cayxu.app.utils
 
-import android.os.Handler
-import android.os.Looper
+import android.content.Context
 import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 object FacebookLiveChecker {
 
     private const val TAG = "FacebookLiveChecker"
-    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(false)
+        .followRedirects(true)
         .build()
 
-    fun extractUidFromCookie(cookie: String?): String? {
+    /**
+     * Kiểm tra cookie bằng cách tải trang profile và kiểm tra avatar.
+     * @param cookieString chuỗi cookie (có thể rỗng)
+     * @param onResult (uid: String?, isLive: Boolean, avatarUrl: String?)
+     */
+    fun checkCookieWithAvatar(
+        cookieString: String,
+        onResult: (uid: String?, isLive: Boolean, avatarUrl: String?) -> Unit
+    ) {
+        try {
+            val uid = extractUidFromCookie(cookieString)
+            if (uid == null) {
+                Log.w(TAG, "❌ Không tìm thấy c_user trong cookie")
+                onResult(null, false, null)
+                return
+            }
+
+            val builder = Request.Builder()
+                .url("https://m.facebook.com/$uid")
+                .addHeader("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1")
+                .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .addHeader("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+
+            if (cookieString.isNotBlank()) {
+                builder.addHeader("Cookie", cookieString)
+            }
+
+            val request = builder.build()
+
+            client.newCall(request).enqueue(object : okhttp3.Callback {
+                override fun onFailure(call: okhttp3.Call, e: IOException) {
+                    Log.e(TAG, "Request failed: ${e.message}")
+                    // Không crash, chỉ callback với false
+                    try { onResult(uid, false, null) } catch (_: Exception) {}
+                }
+
+                override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                    try {
+                        response.use {
+                            val html = it.body?.string() ?: ""
+                            val finalUrl = it.request.url.toString()
+
+                            if (finalUrl.contains("login") || html.contains("login") && html.contains("password")) {
+                                Log.w(TAG, "❌ Bị redirect về login")
+                                onResult(uid, false, null)
+                                return
+                            }
+
+                            val avatarUrl = extractAvatarUrl(html)
+                            if (avatarUrl != null) {
+                                Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid, Avatar: $avatarUrl")
+                                onResult(uid, true, avatarUrl)
+                            } else {
+                                val hasProfileContent = html.contains("profile") || html.contains("_1dwg") || html.contains("profilePic")
+                                if (hasProfileContent) {
+                                    Log.d(TAG, "✅ Cookie hợp lệ (profile content), UID: $uid")
+                                    onResult(uid, true, null)
+                                } else {
+                                    Log.w(TAG, "❌ Không tìm thấy avatar hoặc nội dung profile")
+                                    onResult(uid, false, null)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error parsing response: ${e.message}")
+                        try { onResult(uid, false, null) } catch (_: Exception) {}
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception: ${e.message}", e)
+            try { onResult(null, false, null) } catch (_: Exception) {}
+        }
+    }
+
+    private fun extractUidFromCookie(cookie: String?): String? {
         if (cookie.isNullOrBlank()) return null
         try {
             val pairs = cookie.split(';')
@@ -30,90 +102,8 @@ object FacebookLiveChecker {
                     return trimmed.substringAfter("c_user=").trim()
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "extractUidFromCookie error: ${e.message}", e)
-        }
+        } catch (_: Exception) {}
         return null
-    }
-
-    fun checkCookieWithAvatar(
-        cookieString: String,
-        onResult: (uid: String?, isLive: Boolean, avatarUrl: String?) -> Unit
-    ) {
-        try {
-            val uid = extractUidFromCookie(cookieString)
-            if (uid == null) {
-                Log.w(TAG, "❌ Không tìm thấy c_user trong cookie")
-                mainHandler.post { onResult(null, false, null) }
-                return
-            }
-
-            val request = Request.Builder()
-                .url("https://m.facebook.com/me")
-                .addHeader("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1")
-                .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                .addHeader("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
-                .addHeader("Cookie", cookieString)
-                .build()
-
-            client.newCall(request).enqueue(object : okhttp3.Callback {
-                override fun onFailure(call: okhttp3.Call, e: IOException) {
-                    Log.e(TAG, "Request failed: ${e.message}")
-                    mainHandler.post { onResult(uid, false, null) }
-                }
-
-                override fun onResponse(call: okhttp3.Call, response: Response) {
-                    try {
-                        response.use {
-                            val code = response.code
-                            if (code in 300..399) {
-                                val location = response.header("Location")
-                                if (location?.contains("login") == true) {
-                                    Log.w(TAG, "❌ Redirect đến login: $location")
-                                    mainHandler.post { onResult(uid, false, null) }
-                                    return
-                                }
-                            }
-
-                            if (code != 200) {
-                                Log.w(TAG, "❌ Response code = $code")
-                                mainHandler.post { onResult(uid, false, null) }
-                                return
-                            }
-
-                            val html = response.body?.string() ?: ""
-
-                            if (html.contains("login") && html.contains("password")) {
-                                Log.w(TAG, "❌ Trang chứa form login")
-                                mainHandler.post { onResult(uid, false, null) }
-                                return
-                            }
-
-                            val hasProfile = html.contains("profile") ||
-                                    html.contains("_1dwg") ||
-                                    html.contains("profilePic") ||
-                                    html.contains("profile_pic") ||
-                                    html.contains("data-profile-pic-url") ||
-                                    html.contains("user")
-
-                            if (!hasProfile) {
-                                Log.w(TAG, "⚠️ Không thấy nội dung profile rõ ràng, nhưng vẫn có thể login")
-                            }
-
-                            val avatarUrl = extractAvatarUrl(html)
-                            Log.d(TAG, "✅ Cookie hợp lệ, UID: $uid, Avatar: $avatarUrl")
-                            mainHandler.post { onResult(uid, true, avatarUrl) }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error processing response: ${e.message}", e)
-                        mainHandler.post { onResult(uid, false, null) }
-                    }
-                }
-            })
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception: ${e.message}", e)
-            mainHandler.post { onResult(null, false, null) }
-        }
     }
 
     private fun extractAvatarUrl(html: String): String? {
@@ -122,8 +112,9 @@ object FacebookLiveChecker {
                 """data-profile-pic-url="([^"]+)""".toRegex(),
                 """<img[^>]*class="[^"]*profilePic[^"]*"[^>]*src="([^"]+)""".toRegex(),
                 """<div[^>]*role="img"[^>]*style="background-image:\s*url\(['"]?([^'"]+)['"]?\)""".toRegex(),
-                """https://scontent\.[^"]+\.fbcdn\.net/[^"]+_n\.(?:jpg|jpeg|png|gif|webp)""".toRegex()
+                """https://scontent\.[^"]+\.fbcdn\.net/[^"]+_n\.(?:jpg|png|gif|webp)""".toRegex()
             )
+
             for (pattern in patterns) {
                 val match = pattern.find(html)
                 if (match != null) {
@@ -133,15 +124,11 @@ object FacebookLiveChecker {
                     }
                 }
             }
-            return null
-        } catch (e: Exception) {
-            Log.e(TAG, "extractAvatarUrl error: ${e.message}", e)
-            return null
-        }
+        } catch (_: Exception) {}
+        return null
     }
 
-    // Hàm tiện lợi (không có context)
-    fun checkCookie(cookieString: String, onResult: (uid: String?, isLive: Boolean) -> Unit) {
+    fun checkCookie(context: Context, cookieString: String, onResult: (uid: String?, isLive: Boolean) -> Unit) {
         checkCookieWithAvatar(cookieString) { uid, isLive, _ ->
             onResult(uid, isLive)
         }

@@ -44,23 +44,18 @@ fun FacebookLinkAccountScreen(navController: NavController) {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                try {
-                    accounts = FacebookAccountsStore.getAccounts(context)
-                } catch (_: Exception) {}
+                accounts = FacebookAccountsStore.getAccounts(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val filtered = try {
-        if (query.isBlank()) accounts else accounts.filter {
-            it.uid.contains(query, ignoreCase = true) || it.name.contains(query, ignoreCase = true)
-        }
-    } catch (_: Exception) { accounts }
-
-    val liveCount = try { accounts.count { it.isLive } } catch (_: Exception) { 0 }
-    val dieCount = try { accounts.size - liveCount } catch (_: Exception) { 0 }
+    val filtered = if (query.isBlank()) accounts else accounts.filter {
+        it.uid.contains(query, ignoreCase = true) || it.name.contains(query, ignoreCase = true)
+    }
+    val liveCount = accounts.count { it.isLive }
+    val dieCount = accounts.size - liveCount
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 20.dp)) {
@@ -153,11 +148,9 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(
-                    checked = try { selected.size == filtered.size && filtered.isNotEmpty() } catch (_: Exception) { false },
+                    checked = selected.size == filtered.size && filtered.isNotEmpty(),
                     onCheckedChange = { checked ->
-                        try {
-                            selected = if (checked) filtered.map { it.uid }.toSet() else emptySet()
-                        } catch (_: Exception) {}
+                        selected = if (checked) filtered.map { it.uid }.toSet() else emptySet()
                     }
                 )
                 Text("Chọn tất cả", fontSize = 13.sp, color = TextPrimary, modifier = Modifier.weight(1f))
@@ -165,41 +158,32 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                 TextButton(
                     onClick = {
                         if (isLoading) return@TextButton
-                        try {
-                            val targets = if (selected.isEmpty()) filtered.map { it.uid } else selected.toList()
-                            if (targets.isEmpty()) {
-                                Toast.makeText(context, "Không có tài khoản nào được chọn", Toast.LENGTH_SHORT).show()
-                                return@TextButton
-                            }
+                        val targets = if (selected.isEmpty()) filtered.map { it.uid } else selected.toList()
+                        if (targets.isEmpty()) {
+                            Toast.makeText(context, "Không có tài khoản nào được chọn", Toast.LENGTH_SHORT).show()
+                            return@TextButton
+                        }
 
-                            val accountsWithCookie = targets.mapNotNull { uid ->
-                                try {
-                                    val acc = accounts.find { it.uid == uid }
-                                    if (acc != null && acc.note.startsWith("Cookie: ")) {
-                                        val cookie = acc.note.substringAfter("Cookie: ")
-                                        if (cookie.isNotBlank()) acc to cookie else null
-                                    } else null
-                                } catch (_: Exception) { null }
-                            }
+                        val accountsWithCookie = targets.mapNotNull { uid ->
+                            val acc = accounts.find { it.uid == uid }
+                            if (acc != null && acc.note.startsWith("Cookie: ")) {
+                                val cookie = acc.note.substringAfter("Cookie: ")
+                                if (cookie.isNotBlank()) acc to cookie else null
+                            } else null
+                        }
 
-                            if (accountsWithCookie.isEmpty()) {
-                                Toast.makeText(context, "Không có cookie để kiểm tra", Toast.LENGTH_SHORT).show()
-                                return@TextButton
-                            }
+                        if (accountsWithCookie.isEmpty()) {
+                            Toast.makeText(context, "Không có cookie để kiểm tra", Toast.LENGTH_SHORT).show()
+                            return@TextButton
+                        }
 
-                            isLoading = true
-                            Toast.makeText(context, "Đang kiểm tra ${accountsWithCookie.size} tài khoản...", Toast.LENGTH_SHORT).show()
+                        isLoading = true
+                        Toast.makeText(context, "Đang kiểm tra ${accountsWithCookie.size} tài khoản...", Toast.LENGTH_SHORT).show()
 
-                            checkAccountsSequentially(context, accountsWithCookie, 0) {
-                                isLoading = false
-                                try {
-                                    accounts = FacebookAccountsStore.getAccounts(context)
-                                } catch (_: Exception) {}
-                                Toast.makeText(context, "Đã kiểm tra xong", Toast.LENGTH_SHORT).show()
-                            }
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                        checkAccountsSequentially(context, accountsWithCookie, 0) {
                             isLoading = false
+                            accounts = FacebookAccountsStore.getAccounts(context)
+                            Toast.makeText(context, "Đã kiểm tra xong", Toast.LENGTH_SHORT).show()
                         }
                     },
                     enabled = !isLoading
@@ -218,11 +202,9 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                 TextButton(
                     onClick = {
                         if (selected.isNotEmpty()) {
-                            try {
-                                FacebookAccountsStore.removeAccounts(context, selected.toList())
-                                accounts = FacebookAccountsStore.getAccounts(context)
-                                selected = emptySet()
-                            } catch (_: Exception) {}
+                            FacebookAccountsStore.removeAccounts(context, selected.toList())
+                            accounts = FacebookAccountsStore.getAccounts(context)
+                            selected = emptySet()
                         }
                     },
                     enabled = selected.isNotEmpty() && !isLoading
@@ -257,16 +239,12 @@ fun FacebookLinkAccountScreen(navController: NavController) {
                                 account = account,
                                 checked = account.uid in selected,
                                 onCheckedChange = { checked ->
-                                    try {
-                                        selected = if (checked) selected + account.uid else selected - account.uid
-                                    } catch (_: Exception) {}
+                                    selected = if (checked) selected + account.uid else selected - account.uid
                                 },
                                 onRemove = {
-                                    try {
-                                        FacebookAccountsStore.removeAccount(context, account.uid)
-                                        accounts = FacebookAccountsStore.getAccounts(context)
-                                        selected = selected - account.uid
-                                    } catch (_: Exception) {}
+                                    FacebookAccountsStore.removeAccount(context, account.uid)
+                                    accounts = FacebookAccountsStore.getAccounts(context)
+                                    selected = selected - account.uid
                                 }
                             )
                             if (index != filtered.lastIndex) {
@@ -349,7 +327,9 @@ private fun FacebookAccountRow(
                 modifier = Modifier
                     .size(38.dp)
                     .clip(CircleShape)
-                    .background(TextSecondary.copy(alpha = 0.10f))
+                    .background(TextSecondary.copy(alpha = 0.10f)),
+                error = painterResource(iconRes),
+                placeholder = painterResource(iconRes)
             )
         } else {
             Box(
