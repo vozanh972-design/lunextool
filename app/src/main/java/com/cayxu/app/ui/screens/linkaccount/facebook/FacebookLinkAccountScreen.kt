@@ -279,15 +279,17 @@ private fun checkAccountsSequentially(
     }
     val (account, cookie) = accounts[index]
     try {
-        FacebookLiveChecker.checkCookieWithAvatarAndName(cookie) { uid, isLive, avatarUrl, fullName ->
+        FacebookLiveChecker.checkCookieWithAvatar(cookie) { uid, isLive, avatarUrl ->
             try {
-                FacebookAccountsStore.updateLiveStatus(
-                    context = context,
-                    uid = account.uid,
-                    isLive = isLive,
-                    avatar = avatarUrl,
-                    name = fullName
-                )
+                if (uid != null && isLive) {
+                    if (avatarUrl != null) {
+                        FacebookAccountsStore.markLiveWithAvatar(context, listOf(account.uid), avatarUrl)
+                    } else {
+                        FacebookAccountsStore.markLive(context, listOf(account.uid))
+                    }
+                } else {
+                    FacebookAccountsStore.markDie(context, listOf(account.uid))
+                }
                 checkAccountsSequentially(context, accounts, index + 1, onComplete)
             } catch (e: Exception) {
                 checkAccountsSequentially(context, accounts, index + 1, onComplete)
