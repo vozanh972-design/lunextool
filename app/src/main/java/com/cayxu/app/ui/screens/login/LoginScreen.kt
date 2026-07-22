@@ -286,7 +286,13 @@ fun LoginScreen(
                 }
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(
-                    onClick = { /* TODO: mở link mua key */ },
+                    onClick = {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://lunex.io.vn")
+                        )
+                        runCatching { context.startActivity(intent) }
+                    },
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Filled.ShoppingBag, contentDescription = null, modifier = Modifier.size(16.dp))

@@ -24,8 +24,24 @@ sealed class TikTokCaptureState {
         val variant: TikTokAppVariant
     ) : TikTokCaptureState()
 
+    /**
+     * RIÊNG cho TikTok bản chuẩn (STANDARD): đã mở sheet "Chuyển đổi tài khoản" và đọc được
+     * TOÀN BỘ danh sách tài khoản đang đăng nhập trên máy (không phải chỉ 1 acc đang active),
+     * chờ lưu hết vào tool.
+     */
+    data class CapturedBatch(
+        val accounts: List<CapturedAccountEntry>,
+        val variant: TikTokAppVariant
+    ) : TikTokCaptureState()
+
     data class Failed(val reason: String) : TikTokCaptureState()
 }
+
+/** Một dòng trong sheet "Chuyển đổi tài khoản" - tên hiển thị đọc được từ màn hình. */
+data class CapturedAccountEntry(
+    val displayName: String,
+    val isActive: Boolean
+)
 
 object TikTokCaptureBridge {
     private val _state = MutableStateFlow<TikTokCaptureState>(TikTokCaptureState.Idle)
@@ -50,6 +66,11 @@ object TikTokCaptureBridge {
     /** Gọi từ TikTokAccessibilityService khi lớp nổi được bấm và tìm thấy @handle trên màn hình. */
     fun onCaptured(handle: String, displayName: String, avatarUrl: String, variant: TikTokAppVariant) {
         _state.value = TikTokCaptureState.Captured(handle, displayName, avatarUrl, variant)
+    }
+
+    /** Gọi từ TikTokAccessibilityService sau khi quét xong TOÀN BỘ sheet "Chuyển đổi tài khoản". */
+    fun onCapturedBatch(accounts: List<CapturedAccountEntry>, variant: TikTokAppVariant) {
+        _state.value = TikTokCaptureState.CapturedBatch(accounts, variant)
     }
 
     fun onFailed(reason: String) {

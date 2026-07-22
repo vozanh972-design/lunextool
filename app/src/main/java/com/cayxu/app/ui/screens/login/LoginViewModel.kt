@@ -43,6 +43,9 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
             val deviceId = DeviceUtils.getAndroidId(getApplication())
             when (val result = repository.verifyKey(savedKey, deviceId)) {
                 is AuthResult.Success -> {
+                    // Re-bind fingerprint mỗi lần verify thành công - phòng trường hợp chữ ký
+                    // APK hợp lệ đổi (vd sau khi bạn tự cập nhật bản ký release thật).
+                    com.cayxu.app.util.IntegrityGuard.bindKeyToDevice(getApplication(), savedKey)
                     _uiState.value = _uiState.value.copy(isCheckingSavedKey = false)
                     _pendingAutoLoginSuccess = true
                 }
@@ -78,6 +81,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
             when (val result = repository.verifyKey(key, deviceId)) {
                 is AuthResult.Success -> {
                     securePrefs.saveKey(key)
+                    com.cayxu.app.util.IntegrityGuard.bindKeyToDevice(getApplication(), key)
                     _uiState.value = _uiState.value.copy(isLoading = false)
                     onSuccess()
                 }

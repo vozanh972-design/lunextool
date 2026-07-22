@@ -32,6 +32,62 @@ object IntegrityGuard {
         return isSignatureInvalid(context) || isDebuggerAttached()
     }
 
+    // Salt cục bộ trộn thêm vào fingerprint - mã hoá XOR như các chuỗi UI khác, chỉ để
+    // không hiện thẳng ra khi ai đó mở APK bằng jadx/Dex Editor rồi grep chuỗi tĩnh.
+    // Giới hạn: không chống được người đủ kỹ năng đọc bytecode/patch trực tiếp hàm này.
+    private val FINGERPRINT_SALT = decodeText(
+        0x39, 0x28, 0x3e, 0x3b, 0x39, 0x22, 0x6c, 0x2e, 0x3d, 0x28, 0x38, 0x6c, 0x21, 0x39, 0x3f,
+        0x24, 0x6c, 0x37, 0x30
+    )
+
+    /**
+     * Băm cục bộ ràng buộc key với chính máy này (device_id) và chính bản APK đang chạy
+     * (chữ ký APK) - KHÔNG gọi mạng. Nếu ai copy nguyên file lưu trữ đã mã hoá sang máy
+     * khác, hoặc chỉnh trực tiếp giá trị key trong đó, hoặc chạy trên bản APK ký lại khác
+     * chữ ký gốc, giá trị băm tính lại sẽ không khớp với giá trị đã lưu lúc đăng nhập.
+     */
+    private fun computeKeyFingerprint(context: Context, key: String): String {
+        val deviceId = com.cayxu.app.util.DeviceUtils.getAndroidId(context)
+        val sigHash = currentSignatureSha256(context)
+        return sha256("$key|$deviceId|$sigHash|$FINGERPRINT_SALT")
+    }
+
+    /** Gọi ngay sau khi lưu key thành công (login server trả về hợp lệ) để ràng buộc vào máy. */
+    fun bindKeyToDevice(context: Context, key: String) {
+        val fingerprint = computeKeyFingerprint(context, key)
+        com.cayxu.app.data.local.SecurePrefs(context).saveKeyFingerprint(fingerprint)
+    }
+
+    /**
+     * Chỉ xét khi ĐÃ CÓ key lưu sẵn trên máy (người dùng đã đăng nhập trước đó). Máy mới cài,
+     * chưa từng đăng nhập -> trả về false (không phải bất thường, đó là luồng Login bình
+     * thường), tránh chặn nhầm người dùng hợp lệ mới cài app lần đầu.
+     */
+    private fun isKeyFingerprintInvalid(context: Context): Boolean {
+        val prefs = com.cayxu.app.data.local.SecurePrefs(context)
+        val key = prefs.getKey()
+        if (key.isNullOrBlank()) return false
+        val storedFingerprint = prefs.getKeyFingerprint() ?: return true
+        val expectedFingerprint = computeKeyFingerprint(context, key)
+        return !expectedFingerprint.equals(storedFingerprint, ignoreCase = true)
+    }
+
+    /**
+     * Kiểm tra CỨNG, chỉ cục bộ (không gọi verify_key.php hay request mạng nào): chữ ký APK
+     * và tính toàn vẹn của key đã lưu (nếu có). Gọi càng SỚM càng tốt trong vòng đời app
+     * (trước khi vẽ UI) - nếu 1 trong 2 sai thì ném exception ngay để app dừng/crash tại chỗ,
+     * không hiện màn hình giải thích gì. Cố tình gọi ở NHIỀU điểm khác nhau trong app (xem
+     * CayXuApp và HomeScreen) thay vì chỉ 1 chỗ duy nhất, để việc patch/xoá 1 điểm gọi không
+     * đủ để vô hiệu hoá toàn bộ - đây là lớp gây khó/tốn thời gian, KHÔNG PHẢI chống crack
+     * tuyệt đối.
+     */
+    fun assertValidOrCrash(context: Context) {
+        val invalid = isTampered(context) || isKeyFingerprintInvalid(context)
+        if (invalid) {
+            throw IllegalStateException()
+        }
+    }
+
     private fun isDebuggerAttached(): Boolean {
         return Debug.isDebuggerConnected() || Debug.waitingForDebugger()
     }
@@ -63,6 +119,8 @@ object IntegrityGuard {
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
         return digest.joinToString("") { "%02x".format(it) }
     }
+
+    private fun sha256(text: String): String = sha256(text.toByteArray(Charsets.UTF_8))
 
     /**
      * Trả về SHA-256 chữ ký thật của APK đang chạy trên máy này - dùng để hiển

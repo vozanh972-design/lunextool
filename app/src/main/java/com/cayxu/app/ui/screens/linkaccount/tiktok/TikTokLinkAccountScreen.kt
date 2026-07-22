@@ -72,17 +72,40 @@ fun TikTokLinkAccountScreen(navController: NavController) {
     // Khi lớp nổi báo đã quét được @handle, tự lưu vào danh sách và trả bridge về Idle.
     LaunchedEffect(Unit) {
         TikTokCaptureBridge.state.collect { state ->
-            if (state is TikTokCaptureState.Captured) {
-                TikTokAccountsStore.addFromCapture(
-                    context = context,
-                    handle = state.handle,
-                    displayName = state.displayName,
-                    avatarUrl = state.avatarUrl,
-                    variant = state.variant
-                )
-                refresh()
-                Toast.makeText(context, "Đã thêm tài khoản ${state.handle}", Toast.LENGTH_SHORT).show()
-                TikTokCaptureBridge.reset()
+            when (state) {
+                is TikTokCaptureState.Captured -> {
+                    TikTokAccountsStore.addFromCapture(
+                        context = context,
+                        handle = state.handle,
+                        displayName = state.displayName,
+                        avatarUrl = state.avatarUrl,
+                        variant = state.variant
+                    )
+                    refresh()
+                    Toast.makeText(context, "Đã thêm tài khoản ${state.handle}", Toast.LENGTH_SHORT).show()
+                    TikTokCaptureBridge.reset()
+                }
+                is TikTokCaptureState.CapturedBatch -> {
+                    // Sheet "Chuyển đổi tài khoản" không luôn hiện @handle thật cho từng dòng
+                    // (có thể chỉ hiện tên hiển thị) - dùng tên đọc được làm handle tạm, người
+                    // dùng có thể sửa lại tên phụ (subName) sau trong danh sách nếu cần.
+                    state.accounts.forEach { entry ->
+                        TikTokAccountsStore.addFromCapture(
+                            context = context,
+                            handle = entry.displayName,
+                            displayName = entry.displayName,
+                            variant = state.variant
+                        )
+                    }
+                    refresh()
+                    Toast.makeText(
+                        context,
+                        "Đã quét và thêm ${state.accounts.size} tài khoản",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    TikTokCaptureBridge.reset()
+                }
+                else -> Unit
             }
         }
     }

@@ -28,8 +28,15 @@ class SecurePrefs(context: Context) {
 
     fun getKey(): String? = prefs.getString(KEY_LOGIN_KEY, null)
 
+    /** Fingerprint cục bộ ràng buộc key với máy+chữ ký APK - xem IntegrityGuard.bindKeyToDevice. */
+    fun saveKeyFingerprint(fingerprint: String) {
+        prefs.edit().putString(KEY_FINGERPRINT, fingerprint).apply()
+    }
+
+    fun getKeyFingerprint(): String? = prefs.getString(KEY_FINGERPRINT, null)
+
     fun clearKey() {
-        prefs.edit().remove(KEY_LOGIN_KEY).apply()
+        prefs.edit().remove(KEY_LOGIN_KEY).remove(KEY_FINGERPRINT).apply()
     }
 
     /**
@@ -68,6 +75,7 @@ class SecurePrefs(context: Context) {
 
     companion object {
         private const val KEY_LOGIN_KEY = "login_key"
+        private const val KEY_FINGERPRINT = "login_key_fingerprint"
         private const val KEY_BLOCKED = "permanently_blocked"
         private const val KEY_ACCOUNT_ID = "account_id"
         private const val KEY_AVATAR_URI = "avatar_uri"

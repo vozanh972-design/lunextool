@@ -11,6 +11,11 @@ class CayXuApp : Application() {
 
         val prefs = SecurePrefs(this)
 
+        // Kiểm tra CỨNG, chỉ cục bộ (chữ ký APK + fingerprint của key đã lưu) - gọi SỚM
+        // NHẤT có thể, trước cả phần set cờ "tampered" mềm bên dưới. Nếu sai -> crash app
+        // ngay tại đây, không tới được setContent() của MainActivity.
+        com.cayxu.app.util.IntegrityGuard.assertValidOrCrash(this)
+
         // Kiểm tra tính toàn vẹn ngay khi app khởi động: nếu phát hiện app đã bị
         // patch/ký lại (chữ ký APK sai) hoặc đang bị debug/hook -> khoá vĩnh viễn.
         if (IntegrityGuard.isTampered(this)) {

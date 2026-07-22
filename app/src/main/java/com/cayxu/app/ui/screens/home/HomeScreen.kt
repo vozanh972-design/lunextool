@@ -38,6 +38,13 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
+    // Điểm kiểm tra CỨNG thứ 2, độc lập với CayXuApp.onCreate() - cố tình đặt ở đây thay vì
+    // gộp chung 1 chỗ, để việc patch/xoá điểm gọi trong CayXuApp không đủ vô hiệu hoá toàn
+    // bộ cơ chế (ai vào được tới Home tức đã có key hợp lệ nên fingerprint phải khớp).
+    LaunchedEffect(Unit) {
+        com.cayxu.app.util.IntegrityGuard.assertValidOrCrash(context)
+    }
+
     LaunchedEffect(uiState.sessionExpired) {
         if (uiState.sessionExpired) {
             Toast.makeText(context, "Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại", Toast.LENGTH_LONG).show()

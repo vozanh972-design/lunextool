@@ -33,6 +33,15 @@ class TikTokAccessibilityService : AccessibilityService() {
         // báo lỗi (chỉ để tránh treo dịch vụ mãi mãi, không phải để giới hạn thời gian chờ
         // TikTok load thật sự).
         private const val MAX_POLL_ATTEMPTS = 420 // ~5 phút
+
+        // Tiêu đề sheet "Chuyển đổi tài khoản" mà TikTok bản chuẩn hiển thị khi bấm mũi tên
+        // cạnh tên ở trang "Tôi". Chỉ dùng để XÁC NHẬN sheet đã mở, không dùng để bấm gì.
+        private val SWITCH_SHEET_TITLE = setOf("chuyển đổi tài khoản", "switch account", "switch accounts")
+        // Nhãn không phải là 1 dòng tài khoản trong sheet - loại các dòng này ra khi quét.
+        private val SWITCH_SHEET_IGNORE_LABELS = setOf(
+            "chuyển đổi tài khoản", "switch account", "switch accounts",
+            "thêm tài khoản", "add account", "quản lý tài khoản", "manage accounts"
+        )
     }
 
     private val scope = CoroutineScope(Dispatchers.Main)
@@ -65,6 +74,14 @@ class TikTokAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {}
 
     private fun startPolling(variant: TikTokAppVariant) {
+        if (variant == TikTokAppVariant.STANDARD) {
+            startPollingSwitchAccountList(variant)
+        } else {
+            startPollingSingleHandle(variant)
+        }
+    }
+
+    private fun startPollingSingleHandle(variant: TikTokAppVariant) {
         pollingJob?.cancel()
         var hasTappedProfileTab = false
         pollingJob = scope.launch {
@@ -123,6 +140,174 @@ class TikTokAccessibilityService : AccessibilityService() {
                 TikTokCaptureBridge.onFailed("Không tự tìm thấy @ sau nhiều lần thử, hãy mở lại và thử lại")
             }
         }
+    }
+
+    /**
+     * RIÊNG cho TikTok bản chuẩn: sau khi vào tab "Tôi", tự bấm vào khu vực tên/@ (có mũi tên)
+     * để mở sheet "Chuyển đổi tài khoản" - đây là sheet CÓ SẴN của chính app TikTok, liệt kê
+     * các tài khoản NGƯỜI DÙNG ĐÃ TỰ ĐĂNG NHẬP trên máy này (giống hệt việc người dùng bấm tay
+     * để xem, tool chỉ đọc lại chữ đang hiển thị). Sau khi sheet mở, quét toàn bộ các dòng tên
+     * trong đó rồi lưu hết một lượt, thay vì phải lặp lại thao tác cho từng acc.
+     */
+    private fun startPollingSwitchAccountList(variant: TikTokAppVariant) {
+        pollingJob?.cancel()
+        var hasTappedProfileTab = false
+        var hasTappedSwitcher = false
+        var switcherTapAttempts = 0
+        pollingJob = scope.launch {
+            var attempt = 0
+            while (attempt < MAX_POLL_ATTEMPTS) {
+                attempt++
+                val expectedPkg = TikTokAppLauncher.packageNameOf(variant)
+                val root = findRootForPackage(expectedPkg)
+
+                if (root == null) {
+                    TikTokCaptureBridge.updateProgress("Đang đợi TikTok tải xong...")
+                    delay(POLL_INTERVAL_MS)
+                    continue
+                }
+
+                // Bước 3: nếu sheet "Chuyển đổi tài khoản" đã mở (do bước bấm mũi tên bên dưới),
+                // quét toàn bộ danh sách trong đó.
+                if (hasTappedSwitcher) {
+                    val sheetTitleNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
+                    if (sheetTitleNode != null) {
+                        TikTokCaptureBridge.updateProgress("Đã mở danh sách tài khoản, đang quét...")
+                        val entries = collectSwitchAccountEntries(root)
+                        if (entries.isNotEmpty()) {
+                            TikTokCaptureBridge.updateProgress("Đã quét ${entries.size} tài khoản, đang lưu...")
+                            TikTokCaptureBridge.onCapturedBatch(entries, variant)
+                            stopService(Intent(applicationContext, TikTokCaptureOverlayService::class.java))
+                            TikTokAppLauncher.bringToolToFront(applicationContext)
+                            return@launch
+                        }
+                        // Sheet mở nhưng chưa kịp render danh sách bên trong - dò tiếp.
+                        TikTokCaptureBridge.updateProgress("Đang chờ danh sách tài khoản hiện ra...")
+                    } else {
+                        // Có thể lần bấm trước bị trượt (chưa đúng vị trí mũi tên) - thử bấm lại
+                        // vài lần trước khi báo lỗi.
+                        if (switcherTapAttempts < 5) {
+                            val arrowNode = findSwitchAccountArrow(root)
+                            if (arrowNode != null) {
+                                TikTokCaptureBridge.updateProgress("Đang mở danh sách tài khoản...")
+                                clickNode(arrowNode)
+                                switcherTapAttempts++
+                            }
+                        } else {
+                            TikTokCaptureBridge.updateProgress("Đang chờ danh sách tài khoản hiện ra...")
+                        }
+                    }
+                    delay(POLL_INTERVAL_MS)
+                    continue
+                }
+
+                // Bước 2: đã ở trang "Tôi" (thấy @handle) - bấm vào khu vực tên để mở sheet.
+                if (hasTappedProfileTab) {
+                    val handleNode = findHandleNode(root)
+                    if (handleNode != null) {
+                        val arrowNode = findSwitchAccountArrow(root) ?: handleNode
+                        TikTokCaptureBridge.updateProgress("Đã thấy @, đang mở danh sách tài khoản...")
+                        clickNode(arrowNode)
+                        hasTappedSwitcher = true
+                        switcherTapAttempts = 1
+                    } else {
+                        TikTokCaptureBridge.updateProgress("Đang chờ trang \"Tôi\" hiện @...")
+                    }
+                    delay(POLL_INTERVAL_MS)
+                    continue
+                }
+
+                // Bước 1: bấm tab "Tôi" ở thanh dưới cùng.
+                val tabNode = findNodeByText(root, PROFILE_TAB_LABELS, exact = false)
+                if (tabNode != null) {
+                    TikTokCaptureBridge.updateProgress("Đã thấy tab \"Tôi\", đang bấm...")
+                    clickNode(tabNode)
+                    hasTappedProfileTab = true
+                } else {
+                    TikTokCaptureBridge.updateProgress("Đang tìm tab \"Tôi\" ở thanh dưới cùng...")
+                }
+                delay(POLL_INTERVAL_MS)
+            }
+            if (TikTokCaptureBridge.state.value is TikTokCaptureState.Waiting) {
+                TikTokCaptureBridge.onFailed("Không tự mở được danh sách tài khoản sau nhiều lần thử, hãy mở lại và thử lại")
+            }
+        }
+    }
+
+    /**
+     * Mũi tên/dropdown cạnh tên ở đầu trang "Tôi" thường không có text riêng - nó là node
+     * clickable NHỎ nhất bao quanh (hoặc ngay cạnh) node tên hiển thị/@ ở khu vực đầu trang
+     * (không phải trong thanh tab dưới cùng). Nếu không tìm được node clickable tách riêng,
+     * fallback: bấm thẳng vào node tên/@ (thường cả khối tên+mũi tên dùng chung 1 click target).
+     */
+    private fun findSwitchAccountArrow(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val handleNode = findHandleNode(root) ?: return null
+        // Tên hiển thị (không bắt đầu bằng @) thường nằm cùng khối với mũi tên chuyển đổi,
+        // và nằm PHÍA TRÊN @handle. Ưu tiên node clickable bao quanh tên hiển thị đó.
+        var node: AccessibilityNodeInfo? = handleNode.parent
+        var depth = 0
+        while (node != null && depth < 6) {
+            if (node.isClickable) return node
+            node = node.parent
+            depth++
+        }
+        return null
+    }
+
+    /**
+     * Quét toàn bộ dòng tên tài khoản trong sheet "Chuyển đổi tài khoản" đang mở. Mỗi dòng
+     * trong sheet thường là 1 node clickable chứa avatar + tên; lấy text ngắn gọn nhất (không
+     * rỗng) trong mỗi dòng làm tên hiển thị, bỏ qua tiêu đề sheet và nút "Thêm tài khoản".
+     */
+    private fun collectSwitchAccountEntries(root: AccessibilityNodeInfo): List<CapturedAccountEntry> {
+        val rows = mutableListOf<AccessibilityNodeInfo>()
+        findClickableRowsWithText(root, rows)
+
+        val seen = LinkedHashSet<String>()
+        val entries = mutableListOf<CapturedAccountEntry>()
+        for (row in rows) {
+            val label = firstMeaningfulText(row) ?: continue
+            val normalized = label.trim()
+            val lower = normalized.lowercase()
+            if (normalized.isBlank()) continue
+            if (SWITCH_SHEET_IGNORE_LABELS.any { lower == it || lower.contains(it) }) continue
+            if (!seen.add(normalized)) continue
+            val isActive = row.isSelected ||
+                (row.contentDescription?.toString()?.lowercase()?.contains("đang chọn") == true)
+            entries.add(CapturedAccountEntry(displayName = normalized, isActive = isActive))
+        }
+        return entries
+    }
+
+    /** Tìm các node clickable mà bên trong có chứa chữ (ứng viên cho 1 "dòng" tài khoản). */
+    private fun findClickableRowsWithText(
+        node: AccessibilityNodeInfo,
+        out: MutableList<AccessibilityNodeInfo>,
+        depth: Int = 0
+    ) {
+        if (depth > 40) return
+        if (node.isClickable && firstMeaningfulText(node) != null) {
+            out.add(node)
+            // Không cần lặn sâu hơn vào bên trong 1 dòng đã nhận diện, tránh trùng lặp.
+            return
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            findClickableRowsWithText(child, out, depth + 1)
+        }
+    }
+
+    /** Lấy đoạn text đầu tiên, không rỗng, tìm được trong cây con của node (kể cả contentDescription). */
+    private fun firstMeaningfulText(node: AccessibilityNodeInfo, depth: Int = 0): String? {
+        if (depth > 20) return null
+        val text = (node.text?.toString() ?: node.contentDescription?.toString())?.trim()
+        if (!text.isNullOrBlank()) return text
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = firstMeaningfulText(child, depth + 1)
+            if (found != null) return found
+        }
+        return null
     }
 
     /** Ưu tiên cửa sổ đang active; nếu không đúng gói, dò qua windows() để tìm đúng gói TikTok. */
