@@ -26,7 +26,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import com.cayxu.app.automation.tiktok.TikTokCaptureBridge
 import com.cayxu.app.automation.tiktok.TikTokCaptureState
-import com.cayxu.app.automation.tiktok.TikTokTaskRunner
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.data.local.TikTokAccount
 import com.cayxu.app.data.local.TikTokAccountStatus
@@ -182,7 +181,6 @@ fun TikTokLinkAccountScreen(navController: NavController) {
                     )
                 }
             } else {
-                val runStatusMap by TikTokTaskRunner.statusByUid.collectAsState()
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -191,8 +189,6 @@ fun TikTokLinkAccountScreen(navController: NavController) {
                     items(filtered, key = { it.uid }) { account ->
                         TikTokAccountCard(
                             account = account,
-                            runStatus = runStatusMap[account.uid] ?: TikTokTaskRunner.RunStatus.Idle,
-                            onRun = { TikTokTaskRunner.run(context, account.uid, account.variant) },
                             onAddSubName = { subNameDialogFor = account },
                             onRemove = {
                                 TikTokAccountsStore.removeAccount(context, account.uid)
@@ -345,8 +341,6 @@ private fun FilterStatCard(label: String, count: Int, color: Color, selected: Bo
 @Composable
 private fun TikTokAccountCard(
     account: TikTokAccount,
-    runStatus: TikTokTaskRunner.RunStatus,
-    onRun: () -> Unit,
     onAddSubName: () -> Unit,
     onRemove: () -> Unit
 ) {
@@ -354,9 +348,6 @@ private fun TikTokAccountCard(
     val title = account.displayName.ifBlank { account.handle.ifBlank { "Chưa xác định" } }
     val avatarColor = colorForKey(account.uid)
     val initials = title.trim().take(2).uppercase()
-    val isRunning = runStatus is TikTokTaskRunner.RunStatus.StoppingApp ||
-        runStatus is TikTokTaskRunner.RunStatus.Launching ||
-        runStatus is TikTokTaskRunner.RunStatus.RunningTask
 
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -381,22 +372,6 @@ private fun TikTokAccountCard(
                         color = TextSecondary,
                         fontSize = 11.sp
                     )
-                }
-                Button(
-                    onClick = onRun,
-                    enabled = !isRunning,
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
-                    modifier = Modifier.height(34.dp)
-                ) {
-                    if (isRunning) {
-                        CircularProgressIndicator(color = CardWhite, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
-                    } else {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = CardWhite, modifier = Modifier.size(16.dp))
-                    }
-                    Spacer(Modifier.width(4.dp))
-                    Text("Chạy", color = CardWhite, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
 
@@ -427,17 +402,11 @@ private fun TikTokAccountCard(
             }
 
             Spacer(Modifier.height(6.dp))
-            // Trạng thái đang làm gì hiển thị ngay dưới tài khoản (buộc dừng TikTok -> mở lại -> chạy nhiệm vụ).
-            val statusLine = when (runStatus) {
-                is TikTokTaskRunner.RunStatus.Idle -> "${account.taskCount} N.vụ · Chưa chạy"
-                is TikTokTaskRunner.RunStatus.Done -> "Hoàn tất"
-                is TikTokTaskRunner.RunStatus.Error -> runStatus.reason
-                else -> runStatus.label
-            }
-            val statusColor = if (runStatus is TikTokTaskRunner.RunStatus.Error) DangerRed
-                else if (isRunning) Primary
-                else TextSecondary
-            Text(statusLine, color = statusColor, fontSize = 11.sp)
+            Text(
+                "${account.taskCount} N.vụ · ${if (account.taskCount == 0) "Chưa chạy" else "Đang chạy"}",
+                color = TextSecondary,
+                fontSize = 11.sp
+            )
         }
     }
 }
