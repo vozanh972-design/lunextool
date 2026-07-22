@@ -31,8 +31,19 @@ object TikTokCaptureBridge {
     private val _state = MutableStateFlow<TikTokCaptureState>(TikTokCaptureState.Idle)
     val state: StateFlow<TikTokCaptureState> = _state.asStateFlow()
 
+    // Thông báo tiến trình chi tiết (vd "Đang đợi TikTok tải xong...", "Đang tìm tab Tôi...")
+    // để lớp nổi hiển thị đúng bước đang làm - KHÔNG phải chữ "Tôi" cố định trên lớp nổi,
+    // mà là trạng thái tự dò tab "Tôi" ở THANH ĐIỀU HƯỚNG DƯỚI CÙNG của app TikTok thật.
+    private val _progress = MutableStateFlow("")
+    val progress: StateFlow<String> = _progress.asStateFlow()
+
+    fun updateProgress(message: String) {
+        _progress.value = message
+    }
+
     /** Gọi khi người dùng bấm "TikTok Lite/..." và app đã mở, chờ bấm nút quét trên lớp nổi. */
     fun startWaiting(variant: TikTokAppVariant) {
+        _progress.value = ""
         _state.value = TikTokCaptureState.Waiting(variant)
     }
 
@@ -47,6 +58,7 @@ object TikTokCaptureBridge {
 
     /** Gọi sau khi màn hình quản lý TikTok đã lưu xong tài khoản mới lấy được. */
     fun reset() {
+        _progress.value = ""
         _state.value = TikTokCaptureState.Idle
     }
 }

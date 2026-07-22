@@ -88,6 +88,11 @@ class TikTokCaptureOverlayService : Service() {
     private fun observeBridge() {
         watchJob?.cancel()
         watchJob = scope.launch {
+            scope.launch {
+                TikTokCaptureBridge.progress.collect { msg ->
+                    if (msg.isNotBlank()) statusText?.text = msg
+                }
+            }
             TikTokCaptureBridge.state.collect { state ->
                 when (state) {
                     is TikTokCaptureState.Captured -> {
@@ -101,7 +106,7 @@ class TikTokCaptureOverlayService : Service() {
                         statusText?.text = state.reason
                     }
                     is TikTokCaptureState.Waiting -> {
-                        statusText?.text = "Vào TikTok, bấm tab \"Tôi\" rồi bấm Lưu @"
+                        statusText?.text = "Đang đợi TikTok tải xong..."
                     }
                     TikTokCaptureState.Idle -> Unit
                 }
