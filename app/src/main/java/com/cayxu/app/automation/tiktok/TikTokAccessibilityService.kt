@@ -6,16 +6,17 @@ import android.view.accessibility.AccessibilityNodeInfo
 import java.lang.ref.WeakReference
 
 /**
- * Dịch vụ hỗ trợ - CHỈ dùng để tự động (KHÔNG cần người dùng bấm tay):
- *  1) Khi TikTokCaptureBridge đang ở trạng thái "Waiting" và người dùng đang ở đúng app
- *     TikTok/TikTok Lite/TikTok Studio, tự bấm vào tab "Tôi/Me/Profile" (best-effort).
- *  2) Tự quét cây node của màn hình để tìm text dạng "@handle" (định danh công khai,
- *     KHÔNG phải mật khẩu) và tên hiển thị gần đó, rồi tự báo về TikTokCaptureBridge -
- *     không cần người dùng bấm nút gì thêm.
+ * Dịch vụ hỗ trợ cho luồng lấy tài khoản TikTok. Có 2 đường:
+ *  1) TỰ ĐỘNG (best-effort): mỗi khi có sự kiện màn hình đổi trong app TikTok/Lite/Studio
+ *     lúc TikTokCaptureBridge đang "Waiting", tự thử bấm tab "Tôi" rồi tự quét @.
+ *     Trên một số máy/emulator (vd BlueStacks) accessibility event có thể không bắn đủ
+ *     hoặc node tree không đọc được ngay, nên đường tự động có thể không ăn.
+ *  2) THỦ CÔNG (đáng tin cậy hơn): người dùng tự bấm tab "Tôi" trong app TikTok, sau đó
+ *     bấm nút "Lưu @" trên lớp nổi -> gọi requestCapture() -> quét lại NGAY LÚC ĐÓ,
+ *     không phụ thuộc việc event có bắn hay không.
  *
- * Chỉ xử lý khi cửa sổ đang active thuộc đúng gói TikTok/TikTok Lite/TikTok Studio và chỉ khi
- * đang trong phiên "Waiting" do người dùng chủ động bắt đầu (chọn loại TikTok trong tool).
- * Không đọc/gửi bất kỳ dữ liệu nào khác.
+ * Chỉ đọc @handle (định danh công khai) và tên hiển thị, không đọc dữ liệu nào khác,
+ * và chỉ hoạt động trong đúng gói TikTok/TikTok Lite/TikTok Studio.
  */
 class TikTokAccessibilityService : AccessibilityService() {
 
@@ -23,6 +24,16 @@ class TikTokAccessibilityService : AccessibilityService() {
         private var instanceRef: WeakReference<TikTokAccessibilityService>? = null
 
         private val PROFILE_TAB_LABELS = setOf("tôi", "me", "hồ sơ", "profile")
+
+        /** Gọi từ lớp nổi khi người dùng bấm "Lưu @" - quét lại NGAY, không chờ event. */
+        fun requestCapture(variant: com.cayxu.app.data.local.TikTokAppVariant) {
+            val service = instanceRef?.get()
+            if (service == null) {
+                TikTokCaptureBridge.onFailed("Chưa bật quyền Trợ năng cho ứng dụng")
+                return
+            }
+            service.performManualCapture(variant)
+        }
     }
 
     private var hasTappedProfileTabThisSession = false
@@ -38,13 +49,11 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Chỉ xử lý khi tool đang thực sự chờ lấy tài khoản (người dùng vừa chọn loại
-        // TikTok trong bottom sheet) - tránh đọc màn hình ngoài lúc cần.
+        // Chỉ tự động xử lý khi tool đang thực sự chờ lấy tài khoản.
         val waitingState = TikTokCaptureBridge.state.value as? TikTokCaptureState.Waiting ?: return
         val expectedPkg = TikTokAppLauncher.packageNameOf(waitingState.variant)
 
-        val root = rootInActiveWindow ?: return
-        if (root.packageName?.toString() != expectedPkg) return
+        val root = findRootForPackage(expectedPkg) ?: return
 
         // Best-effort: tự bấm sang tab "Tôi" một lần khi vừa vào app.
         if (!hasTappedProfileTabThisSession) {
@@ -52,7 +61,6 @@ class TikTokAccessibilityService : AccessibilityService() {
             if (tabNode != null) {
                 tabNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 hasTappedProfileTabThisSession = true
-                // Đợi màn hình "Tôi" render xong ở sự kiện kế tiếp rồi mới quét @, không quét ngay.
                 return
             }
         }
@@ -72,6 +80,45 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {}
+
+    /** Quét thủ công theo yêu cầu từ lớp nổi (không phụ thuộc accessibility event). */
+    private fun performManualCapture(variant: com.cayxu.app.data.local.TikTokAppVariant) {
+        val expectedPkg = TikTokAppLauncher.packageNameOf(variant)
+        val root = findRootForPackage(expectedPkg)
+        if (root == null) {
+            TikTokCaptureBridge.onFailed("Chưa ở đúng màn hình TikTok, hãy mở app rồi thử lại")
+            return
+        }
+
+        val handleNode = findHandleNode(root)
+        if (handleNode == null) {
+            TikTokCaptureBridge.onFailed("Chưa tìm thấy @ trên màn hình. Hãy bấm vào tab \"Tôi\" rồi bấm Lưu @ lại")
+            return
+        }
+
+        val handleText = handleNode.text?.toString()?.trim().orEmpty()
+        val displayName = findDisplayNameNear(handleNode)
+        TikTokCaptureBridge.onCaptured(
+            handle = handleText,
+            displayName = displayName,
+            avatarUrl = "",
+            variant = variant
+        )
+    }
+
+    /** Ưu tiên cửa sổ đang active; nếu không đúng gói, dò qua danh sách windows() để tìm đúng gói. */
+    private fun findRootForPackage(expectedPkg: String): AccessibilityNodeInfo? {
+        val activeRoot = rootInActiveWindow
+        if (activeRoot?.packageName?.toString() == expectedPkg) return activeRoot
+
+        return try {
+            windows.firstNotNullOfOrNull { w ->
+                w.root?.takeIf { it.packageName?.toString() == expectedPkg }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     /** Tìm node có text bắt đầu bằng "@" (định danh công khai, không phải thông tin đăng nhập). */
     private fun findHandleNode(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
