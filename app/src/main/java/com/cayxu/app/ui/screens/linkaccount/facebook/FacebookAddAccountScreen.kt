@@ -96,7 +96,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
         ) {
-            // Card thông báo
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = InfoBlueBg),
@@ -116,7 +115,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(16.dp))
 
-            // Tab
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -141,7 +139,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(20.dp))
 
-            // Nội dung tab
             if (tabIndex == 0) {
                 OutlinedTextField(
                     value = singleUid,
@@ -225,7 +222,6 @@ fun FacebookAddAccountScreen(navController: NavController) {
             }
         }
 
-        // Nút Xác nhận
         Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
             Button(
                 onClick = {
@@ -242,18 +238,15 @@ fun FacebookAddAccountScreen(navController: NavController) {
                             bio = singleToken,
                             isLive = false
                         )
-                        // Lưu ngay
                         FacebookAccountsStore.addAccount(context, account)
 
-                        // Nếu có cookie, kiểm tra Live để cập nhật tên/avatar
                         if (singleCookie.isNotBlank()) {
                             isLoading = true
-                            FacebookLiveChecker.checkCookieWithAvatarAndName(
+                            FacebookLiveChecker.checkCookieWithAvatar(
                                 cookieString = singleCookie,
-                                onResult = { uid, isLive, avatarUrl, fullName ->
+                                onResult = { uid, isLive, avatarUrl ->
                                     val updated = account.copy(
                                         uid = uid ?: account.uid,
-                                        name = fullName ?: account.name,
                                         avatar = avatarUrl ?: account.avatar,
                                         isLive = isLive
                                     )
@@ -282,13 +275,12 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                     val cookie = account.note
                                     if (cookie.isNotBlank()) {
                                         suspendCancellableCoroutine { continuation ->
-                                            FacebookLiveChecker.checkCookieWithAvatarAndName(
+                                            FacebookLiveChecker.checkCookieWithAvatar(
                                                 cookieString = cookie,
-                                                onResult = { uid, isLive, avatarUrl, fullName ->
+                                                onResult = { uid, isLive, avatarUrl ->
                                                     val updated = account.copy(
                                                         isLive = isLive,
-                                                        avatar = avatarUrl ?: account.avatar,
-                                                        name = fullName ?: account.name
+                                                        avatar = avatarUrl ?: account.avatar
                                                     )
                                                     continuation.resume(updated)
                                                 }
