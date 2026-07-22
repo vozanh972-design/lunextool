@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 sealed class TikTokCaptureState {
     data object Idle : TikTokCaptureState()
 
-    /** Đang chờ người dùng bấm "Lưu @" trên lớp nổi trong khi ở app TikTok/Lite/Studio. */
+    /** Đang tự động dò/bấm tab "Tôi" và tự quét @ trong khi ở app TikTok/Lite/Studio. */
     data class Waiting(val variant: TikTokAppVariant) : TikTokCaptureState()
 
     /** Đã quét được @handle, chờ lưu vào danh sách trong tool. */

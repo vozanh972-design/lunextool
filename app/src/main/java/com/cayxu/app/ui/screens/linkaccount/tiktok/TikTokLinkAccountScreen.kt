@@ -368,7 +368,7 @@ private fun TikTokAccountCard(
                     Text(title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     Text(
                         (if (account.handle.isNotBlank()) "@${account.handle.removePrefix("@")}" else "Chưa có handle") +
-                            "  ·  tạo ${relativeAgo(account.createdAt)}",
+                            "  ·  ${variantLabel(account.variant)}  ·  tạo ${relativeAgo(account.createdAt)}",
                         color = TextSecondary,
                         fontSize = 11.sp
                     )
@@ -461,6 +461,12 @@ private val avatarPalette = listOf(
 private fun colorForKey(key: String): Color {
     val idx = (key.hashCode().let { if (it < 0) -it else it }) % avatarPalette.size
     return avatarPalette[idx]
+}
+
+private fun variantLabel(variant: com.cayxu.app.data.local.TikTokAppVariant): String = when (variant) {
+    com.cayxu.app.data.local.TikTokAppVariant.STANDARD -> "TikTok"
+    com.cayxu.app.data.local.TikTokAppVariant.LITE -> "TikTok Lite"
+    com.cayxu.app.data.local.TikTokAppVariant.STUDIO -> "TikTok Studio"
 }
 
 private fun relativeAgo(timestampMs: Long): String {

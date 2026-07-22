@@ -1,6 +1,7 @@
 package com.cayxu.app.automation.tiktok
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.cayxu.app.data.local.TikTokAppVariant
@@ -9,44 +10,29 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.lang.ref.WeakReference
 
 /**
  * Dịch vụ hỗ trợ - lo TOÀN BỘ việc tự động lấy tài khoản TikTok, KHÔNG cần người dùng
  * bấm tay: ngay khi TikTokCaptureBridge chuyển sang "Waiting" (do người dùng bấm
  * "Tiếp tục" trong tool), service tự dò liên tục (polling) cho tới khi:
  *   - Tìm thấy app TikTok/Lite/Studio đang ở foreground
- *   - Tự bấm tab "Tôi/Me/Profile" nếu chưa ở đó
- *   - Tự tìm text "@handle" trên màn hình rồi tự báo về TikTokCaptureBridge để lưu
+ *   - Tự bấm tab "Tôi/Me/Profile" ở thanh dưới cùng, CHỈ bấm khi đã thật sự thấy tab đó
+ *   - Tự tìm text "@handle" trên màn hình
+ *   - Tự lưu vào TikTokCaptureBridge, tự đóng lớp nổi, tự đưa tool trở lại màn hình
  *
- * Dùng polling (dò lặp lại mỗi ~700ms) thay vì chỉ dựa vào onAccessibilityEvent, vì trên
- * nhiều máy/emulator sự kiện đổi nội dung màn hình khi chuyển tab không bắn đủ để bắt kịp -
- * polling đảm bảo vẫn tự chạy được dù event có tới hay không.
- *
- * Nút "Lưu @" trên lớp nổi vẫn giữ làm phương án dự phòng (quét ngay lập tức theo yêu cầu),
- * không thay thế luồng tự động này.
+ * Dùng polling (dò lặp lại mỗi ~700ms, không có mốc thời gian cố định) thay vì chỉ dựa vào
+ * onAccessibilityEvent, vì trên nhiều máy/emulator sự kiện đổi nội dung màn hình khi chuyển
+ * tab không bắn đủ để bắt kịp - polling đảm bảo vẫn tự chạy được dù event có tới hay không.
  */
 class TikTokAccessibilityService : AccessibilityService() {
 
     companion object {
-        private var instanceRef: WeakReference<TikTokAccessibilityService>? = null
-
         private val PROFILE_TAB_LABELS = setOf("tôi", "me", "hồ sơ", "profile")
         private const val POLL_INTERVAL_MS = 700L
         // Không có mốc cố định vì máy nhanh/chậm khác nhau - cho dò tới ~5 phút rồi mới
         // báo lỗi (chỉ để tránh treo dịch vụ mãi mãi, không phải để giới hạn thời gian chờ
         // TikTok load thật sự).
         private const val MAX_POLL_ATTEMPTS = 420 // ~5 phút
-
-        /** Gọi từ lớp nổi khi người dùng bấm "Lưu @" - quét lại NGAY, không chờ polling. */
-        fun requestCapture(variant: TikTokAppVariant) {
-            val service = instanceRef?.get()
-            if (service == null) {
-                TikTokCaptureBridge.onFailed("Chưa bật quyền Trợ năng cho ứng dụng")
-                return
-            }
-            service.performManualCapture(variant)
-        }
     }
 
     private val scope = CoroutineScope(Dispatchers.Main)
@@ -54,8 +40,6 @@ class TikTokAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        instanceRef = WeakReference(this)
-
         // Theo dõi bridge: hễ chuyển sang "Waiting" là tự bắt đầu dò; chuyển sang trạng
         // thái khác thì dừng dò lại.
         scope.launch {
@@ -72,7 +56,6 @@ class TikTokAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         pollingJob?.cancel()
-        instanceRef = null
     }
 
     // Không cần xử lý gì ở đây - toàn bộ logic tự động nằm ở vòng lặp polling để không phụ
@@ -111,6 +94,11 @@ class TikTokAccessibilityService : AccessibilityService() {
                         avatarUrl = "",
                         variant = variant
                     )
+                    // Gọi THẲNG tại đây, không đợi lớp nổi/màn tool "nghe" lại state - tránh
+                    // trường hợp màn tool reset state gần như ngay lập tức khiến lớp nổi lỡ
+                    // mất thời điểm Captured và không tự đóng/không tự đưa tool lên được.
+                    stopService(Intent(applicationContext, TikTokCaptureOverlayService::class.java))
+                    TikTokAppLauncher.bringToolToFront(applicationContext)
                     return@launch
                 }
 
@@ -130,36 +118,11 @@ class TikTokAccessibilityService : AccessibilityService() {
 
                 delay(POLL_INTERVAL_MS)
             }
-            // Dò rất lâu (vài phút) mà vẫn chưa xong mới báo lỗi - lúc đó bấm "Lưu @" thủ công.
+            // Dò rất lâu (vài phút) mà vẫn chưa xong mới báo lỗi.
             if (TikTokCaptureBridge.state.value is TikTokCaptureState.Waiting) {
-                TikTokCaptureBridge.onFailed("Chưa tự tìm thấy @, hãy bấm tab \"Tôi\" trong TikTok rồi bấm \"Lưu @\"")
+                TikTokCaptureBridge.onFailed("Không tự tìm thấy @ sau nhiều lần thử, hãy mở lại và thử lại")
             }
         }
-    }
-
-    /** Quét thủ công theo yêu cầu từ lớp nổi (không phụ thuộc vòng lặp polling). */
-    private fun performManualCapture(variant: TikTokAppVariant) {
-        val expectedPkg = TikTokAppLauncher.packageNameOf(variant)
-        val root = findRootForPackage(expectedPkg)
-        if (root == null) {
-            TikTokCaptureBridge.onFailed("Chưa ở đúng màn hình TikTok, hãy mở app rồi thử lại")
-            return
-        }
-
-        val handleNode = findHandleNode(root)
-        if (handleNode == null) {
-            TikTokCaptureBridge.onFailed("Chưa tìm thấy @ trên màn hình. Hãy bấm vào tab \"Tôi\" rồi bấm Lưu @ lại")
-            return
-        }
-
-        val handleText = handleNode.text?.toString()?.trim().orEmpty()
-        val displayName = findDisplayNameNear(handleNode)
-        TikTokCaptureBridge.onCaptured(
-            handle = handleText,
-            displayName = displayName,
-            avatarUrl = "",
-            variant = variant
-        )
     }
 
     /** Ưu tiên cửa sổ đang active; nếu không đúng gói, dò qua windows() để tìm đúng gói TikTok. */
@@ -229,10 +192,9 @@ class TikTokAccessibilityService : AccessibilityService() {
         if (depth > 40) return null
         val text = (node.text?.toString() ?: node.contentDescription?.toString())?.trim()?.lowercase()
         if (text != null) {
-            // BUG cũ: nhánh "không cần khớp chính xác" lại so == y hệt exact, khiến tab
-            // "Tôi" có kèm badge/khoảng trắng thừa không bao giờ khớp được. Giờ dùng contains,
-            // nhưng CHỈ cho nhãn đủ dài (>=4 ký tự) để tránh khớp nhầm - vd nhãn "me" ngắn mà
-            // cho contains thì chữ "Home" (chứa "me") sẽ bị khớp nhầm.
+            // Nhánh "không cần khớp chính xác" dùng contains, nhưng CHỈ cho nhãn đủ dài
+            // (>=4 ký tự) để tránh khớp nhầm - vd nhãn "me" ngắn mà cho contains thì chữ
+            // "Home" (chứa "me") sẽ bị khớp nhầm.
             val match = if (exact) {
                 text in labels
             } else {

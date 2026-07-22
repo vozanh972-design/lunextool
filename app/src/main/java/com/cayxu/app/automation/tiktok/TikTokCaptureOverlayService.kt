@@ -6,9 +6,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -28,10 +26,14 @@ import kotlinx.coroutines.launch
 /**
  * Lớp nổi (floating bubble) - CHỈ dùng cho luồng thêm tài khoản TikTok.
  *
- * Tool sẽ TỰ THỬ bấm tab "Tôi" và tự quét @ trước (qua TikTokAccessibilityService),
- * nhưng vì một số máy/emulator đọc accessibility event không ổn định, lớp nổi vẫn có
- * nút "Lưu @" để người dùng tự bấm tab "Tôi" rồi bấm nút này - quét lại ngay lập tức,
- * không phụ thuộc việc tự động có ăn hay không (giống thao tác tay, đáng tin cậy hơn).
+ * Toàn bộ việc bấm tab "Tôi" và đọc @handle đều do TikTokAccessibilityService tự làm.
+ * Lớp nổi CHỈ hiển thị trạng thái đang làm gì - không còn nút "Lưu @" (đường tự động
+ * đã chạy ổn), chỉ còn nút "Huỷ" để người dùng dừng nếu muốn.
+ *
+ * Việc đóng lớp nổi + đưa tool lên trước KHÔNG còn dựa vào việc "nghe" trạng thái Captured
+ * ở đây nữa (dễ bị lỡ mất do màn hình tool cũng nghe cùng lúc rồi reset trạng thái gần như
+ * ngay lập tức) - TikTokAccessibilityService sẽ gọi thẳng stopService()/bringToolToFront()
+ * ngay tại chỗ tìm thấy @, đảm bảo chắc chắn chạy, không phụ thuộc StateFlow nữa.
  */
 class TikTokCaptureOverlayService : Service() {
 
@@ -45,18 +47,13 @@ class TikTokCaptureOverlayService : Service() {
     private var keyInfoText: TextView? = null
     private val scope = CoroutineScope(Dispatchers.Main)
     private var watchJob: Job? = null
-    private var variant: TikTokAppVariant = TikTokAppVariant.LITE
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        variant = (intent?.getStringExtra(EXTRA_VARIANT))
-            ?.let { runCatching { TikTokAppVariant.valueOf(it) }.getOrNull() }
-            ?: TikTokAppVariant.LITE
-
         if (bubbleView == null) {
             showBubble()
-            observeBridge()
+            observeProgress()
             loadKeyInfo()
         }
         return START_NOT_STICKY
@@ -85,31 +82,12 @@ class TikTokCaptureOverlayService : Service() {
         }
     }
 
-    private fun observeBridge() {
+    /** Chỉ hiển thị tiến trình từng bước - việc đóng lớp nổi do service accessibility tự gọi thẳng. */
+    private fun observeProgress() {
         watchJob?.cancel()
         watchJob = scope.launch {
-            scope.launch {
-                TikTokCaptureBridge.progress.collect { msg ->
-                    if (msg.isNotBlank()) statusText?.text = msg
-                }
-            }
-            TikTokCaptureBridge.state.collect { state ->
-                when (state) {
-                    is TikTokCaptureState.Captured -> {
-                        statusText?.text = "Đã lấy được ${state.handle} — đang lưu..."
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            TikTokAppLauncher.bringToolToFront(applicationContext)
-                            stopSelf()
-                        }, 700)
-                    }
-                    is TikTokCaptureState.Failed -> {
-                        statusText?.text = state.reason
-                    }
-                    is TikTokCaptureState.Waiting -> {
-                        statusText?.text = "Đang đợi TikTok tải xong..."
-                    }
-                    TikTokCaptureState.Idle -> Unit
-                }
+            TikTokCaptureBridge.progress.collect { msg ->
+                if (msg.isNotBlank()) statusText?.text = msg
             }
         }
     }
@@ -146,13 +124,13 @@ class TikTokCaptureOverlayService : Service() {
         }
 
         val title = TextView(this).apply {
-            text = "CâyXu • Lấy tài khoản TikTok"
+            text = "CâyXu • Đang tự động lấy tài khoản TikTok"
             setTextColor(Color.WHITE)
             textSize = 13f
         }
 
         val status = TextView(this).apply {
-            text = "Vào TikTok, bấm tab \"Tôi\" rồi bấm Lưu @"
+            text = "Đang đợi TikTok tải xong..."
             setTextColor(Color.parseColor("#E6FFFFFF"))
             textSize = 12f
             setPadding(0, 6, 0, 6)
@@ -167,38 +145,25 @@ class TikTokCaptureOverlayService : Service() {
         }
         keyInfoText = keyInfo
 
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-
-        val saveBtn = TextView(this).apply {
-            text = "  Lưu @  "
-            setTextColor(Color.parseColor("#2F5BFF"))
+        val closeBtn = TextView(this).apply {
+            text = "  Huỷ  "
+            setTextColor(Color.WHITE)
             textSize = 13f
             background = GradientDrawable().apply {
                 cornerRadius = 20f
-                setColor(Color.WHITE)
+                setColor(Color.parseColor("#33FFFFFF"))
             }
             setPadding(24, 14, 24, 14)
-            setOnClickListener { TikTokAccessibilityService.requestCapture(variant) }
-        }
-
-        val closeBtn = TextView(this).apply {
-            text = "  Đóng  "
-            setTextColor(Color.WHITE)
-            textSize = 13f
-            setPadding(24, 14, 8, 14)
             setOnClickListener {
                 TikTokCaptureBridge.reset()
                 stopSelf()
             }
         }
 
-        row.addView(saveBtn)
-        row.addView(closeBtn)
-
         container.addView(title)
         container.addView(status)
         container.addView(keyInfo)
-        container.addView(row)
+        container.addView(closeBtn)
 
         // Cho phép kéo lớp nổi đi chỗ khác trên màn hình.
         var initialX = 0

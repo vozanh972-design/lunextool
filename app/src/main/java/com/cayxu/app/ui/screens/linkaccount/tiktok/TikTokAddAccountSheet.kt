@@ -166,8 +166,8 @@ private fun TikTokTypeRow(option: TikTokTypeOption, isSelected: Boolean, onClick
 
 /**
  * Bước xin quyền TRƯỚC khi mở app TikTok: quyền hiển thị lớp nổi (để hiện trạng thái
- * và nút "Lưu @") và quyền Trợ năng (để tool tự thử bấm tab "Tôi"/tự đọc @, đồng thời
- * phục vụ luôn cho nút "Lưu @" thủ công). Sau khi cấp đủ 2 quyền, người dùng bấm
+ * và hiển thị trạng thái) và quyền Trợ năng (để tool tự bấm tab "Tôi" và tự đọc @).
+ * Sau khi cấp đủ 2 quyền, người dùng bấm
  * "Tiếp tục" để tool mới mở app TikTok - giống hệt lúc thao tác tay, không tự ý mở app.
  */
 @Composable
@@ -192,7 +192,7 @@ private fun TikTokPermissionStep(variant: TikTokAppVariant, onBack: () -> Unit, 
         Text("Cấp quyền cho ${optionTitle(variant)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Cần 2 quyền sau. Tool sẽ tự thử bấm tab \"Tôi\" và tự đọc @, nếu không ăn thì bấm \"Lưu @\" trên lớp nổi để lấy thủ công.",
+            "Cần 2 quyền sau. Sau khi bấm \"Tiếp tục\", tool sẽ tự mở app, tự bấm tab \"Tôi\" và tự đọc @ - bạn không cần thao tác gì thêm.",
             fontSize = 12.sp,
             color = TextSecondary
         )
@@ -200,14 +200,14 @@ private fun TikTokPermissionStep(variant: TikTokAppVariant, onBack: () -> Unit, 
 
         PermissionRow(
             title = "Hiển thị trên ứng dụng khác",
-            desc = "Để hiện lớp nổi (trạng thái + nút \"Lưu @\") trên app TikTok",
+            desc = "Để hiện lớp nổi (trạng thái đang xử lý) trên app TikTok",
             granted = overlayGranted,
             onClick = { TikTokAppLauncher.openOverlayPermissionSettings(context) }
         )
         Spacer(Modifier.height(10.dp))
         PermissionRow(
             title = "Trợ năng (Accessibility)",
-            desc = "Để tool đọc @ khi bạn bấm \"Lưu @\" (và tự thử giúp trước)",
+            desc = "Để tool tự bấm tab \"Tôi\" và tự đọc @ giúp bạn",
             granted = accessibilityGranted,
             onClick = { TikTokAppLauncher.openAccessibilitySettings(context) }
         )
