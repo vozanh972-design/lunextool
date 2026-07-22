@@ -26,9 +26,15 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import com.cayxu.app.automation.tiktok.TikTokCaptureBridge
 import com.cayxu.app.automation.tiktok.TikTokCaptureState
+import com.cayxu.app.automation.tiktok.TikTokTaskRunner
+import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.data.local.TikTokAccount
 import com.cayxu.app.data.local.TikTokAccountStatus
 import com.cayxu.app.data.local.TikTokAccountsStore
+import com.cayxu.app.data.model.VerifyKeyResponse
+import com.cayxu.app.data.repository.AuthRepository
+import com.cayxu.app.data.repository.AuthResult
+import com.cayxu.app.util.DeviceUtils
 import com.cayxu.app.ui.theme.*
 import java.util.concurrent.TimeUnit
 
@@ -109,6 +115,10 @@ fun TikTokLinkAccountScreen(navController: NavController) {
         }
 
         Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp)) {
+            KeyExpiryBanner()
+
+            Spacer(Modifier.height(12.dp))
+
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -158,20 +168,7 @@ fun TikTokLinkAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(12.dp))
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(InfoBlueBg)
-                    .clickable { Toast.makeText(context, "Đang cập nhật mẹo dùng tài khoản TikTok", Toast.LENGTH_SHORT).show() }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Primary, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Mẹo dùng tài khoản TikTok", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = TextSecondary)
-            }
+            TikTokTipsBanner()
 
             Spacer(Modifier.height(12.dp))
 
@@ -185,6 +182,7 @@ fun TikTokLinkAccountScreen(navController: NavController) {
                     )
                 }
             } else {
+                val runStatusMap by TikTokTaskRunner.statusByUid.collectAsState()
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -193,10 +191,8 @@ fun TikTokLinkAccountScreen(navController: NavController) {
                     items(filtered, key = { it.uid }) { account ->
                         TikTokAccountCard(
                             account = account,
-                            onToggle = { enabled ->
-                                TikTokAccountsStore.setEnabled(context, account.uid, enabled)
-                                refresh()
-                            },
+                            runStatus = runStatusMap[account.uid] ?: TikTokTaskRunner.RunStatus.Idle,
+                            onRun = { TikTokTaskRunner.run(context, account.uid, account.variant) },
                             onAddSubName = { subNameDialogFor = account },
                             onRemove = {
                                 TikTokAccountsStore.removeAccount(context, account.uid)
@@ -209,24 +205,13 @@ fun TikTokLinkAccountScreen(navController: NavController) {
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
-            Button(
-                onClick = { refresh(); Toast.makeText(context, "Đã đồng bộ danh sách tài khoản", Toast.LENGTH_SHORT).show() },
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB4530F)),
-                modifier = Modifier.weight(1f).height(50.dp)
-            ) {
-                Icon(Icons.Filled.Sync, contentDescription = null, tint = CardWhite, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Đồng bộ", color = CardWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            }
             Button(
                 onClick = { showAddSheet = true },
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
-                modifier = Modifier.weight(1f).height(50.dp)
+                modifier = Modifier.fillMaxWidth().height(50.dp)
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null, tint = CardWhite, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
@@ -249,6 +234,91 @@ fun TikTokLinkAccountScreen(navController: NavController) {
                 subNameDialogFor = null
             }
         )
+    }
+}
+
+/**
+ * Hiển thị ngày hết hạn / số ngày còn lại của KEY đang dùng - liên kết thẳng với hệ thống
+ * key ở màn Trang chủ (AuthRepository.verifyKey), không tạo hệ key riêng cho TikTok.
+ */
+@Composable
+private fun KeyExpiryBanner() {
+    val context = LocalContext.current
+    var info by remember { mutableStateOf<VerifyKeyResponse?>(null) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        val key = SecurePrefs(context).getKey()
+        if (key.isNullOrBlank()) {
+            errorMsg = "Chưa đăng nhập key"
+            return@LaunchedEffect
+        }
+        when (val result = AuthRepository().verifyKey(key, DeviceUtils.getAndroidId(context))) {
+            is AuthResult.Success -> info = result.data
+            is AuthResult.ApiError -> errorMsg = result.message
+            is AuthResult.NetworkError -> errorMsg = "Không kiểm tra được hạn key (mất mạng)"
+        }
+    }
+
+    val (label, color) = when {
+        info?.expiresAt != null -> "Key hết hạn: ${info?.expiresAt}" +
+            (info?.daysLeft?.let { " · còn $it ngày" } ?: "") to
+            (if ((info?.daysLeft ?: 99) <= 3) DangerRed else Primary)
+        errorMsg != null -> errorMsg!! to TextSecondary
+        else -> "Đang kiểm tra hạn key..." to TextSecondary
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(CardWhite)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Filled.VpnKey, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = color, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+private val tikTokTips = listOf(
+    "Giữ một tài khoản để bật chế độ chọn nhiều, rồi chạm để chọn thêm. Chọn xong có thể bật/tắt hoặc xoá hàng loạt.",
+    "Tài khoản mới (chưa đủ ngày tuổi) thường chỉ nhận job giá thấp. Nuôi nick vài ngày để mở job giá cao hơn.",
+    "Badge ⭐ đánh dấu nick vừa thêm gần đây.",
+    "Bấm \"Chạy\" để buộc dừng và mở lại TikTok cho tài khoản đó trước khi chạy nhiệm vụ."
+)
+
+@Composable
+private fun TikTokTipsBanner() {
+    var expanded by remember { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(InfoBlueBg)
+            .clickable { expanded = !expanded }
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Mẹo dùng tài khoản TikTok", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            Icon(
+                if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = TextSecondary
+            )
+        }
+        if (expanded) {
+            Spacer(Modifier.height(8.dp))
+            tikTokTips.forEach { tip ->
+                Row(modifier = Modifier.padding(vertical = 3.dp)) {
+                    Text("•  ", color = Primary, fontSize = 11.sp)
+                    Text(tip, color = TextPrimary, fontSize = 11.sp, lineHeight = 15.sp)
+                }
+            }
+        }
     }
 }
 
@@ -275,7 +345,8 @@ private fun FilterStatCard(label: String, count: Int, color: Color, selected: Bo
 @Composable
 private fun TikTokAccountCard(
     account: TikTokAccount,
-    onToggle: (Boolean) -> Unit,
+    runStatus: TikTokTaskRunner.RunStatus,
+    onRun: () -> Unit,
     onAddSubName: () -> Unit,
     onRemove: () -> Unit
 ) {
@@ -283,6 +354,9 @@ private fun TikTokAccountCard(
     val title = account.displayName.ifBlank { account.handle.ifBlank { "Chưa xác định" } }
     val avatarColor = colorForKey(account.uid)
     val initials = title.trim().take(2).uppercase()
+    val isRunning = runStatus is TikTokTaskRunner.RunStatus.StoppingApp ||
+        runStatus is TikTokTaskRunner.RunStatus.Launching ||
+        runStatus is TikTokTaskRunner.RunStatus.RunningTask
 
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -308,7 +382,22 @@ private fun TikTokAccountCard(
                         fontSize = 11.sp
                     )
                 }
-                Switch(checked = account.enabled, onCheckedChange = onToggle)
+                Button(
+                    onClick = onRun,
+                    enabled = !isRunning,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                    modifier = Modifier.height(34.dp)
+                ) {
+                    if (isRunning) {
+                        CircularProgressIndicator(color = CardWhite, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
+                    } else {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = CardWhite, modifier = Modifier.size(16.dp))
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    Text("Chạy", color = CardWhite, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
 
             Spacer(Modifier.height(10.dp))
@@ -338,11 +427,17 @@ private fun TikTokAccountCard(
             }
 
             Spacer(Modifier.height(6.dp))
-            Text(
-                "${account.taskCount} N.vụ · ${if (account.taskCount == 0) "Chưa chạy" else "Đang chạy"}",
-                color = TextSecondary,
-                fontSize = 11.sp
-            )
+            // Trạng thái đang làm gì hiển thị ngay dưới tài khoản (buộc dừng TikTok -> mở lại -> chạy nhiệm vụ).
+            val statusLine = when (runStatus) {
+                is TikTokTaskRunner.RunStatus.Idle -> "${account.taskCount} N.vụ · Chưa chạy"
+                is TikTokTaskRunner.RunStatus.Done -> "Hoàn tất"
+                is TikTokTaskRunner.RunStatus.Error -> runStatus.reason
+                else -> runStatus.label
+            }
+            val statusColor = if (runStatus is TikTokTaskRunner.RunStatus.Error) DangerRed
+                else if (isRunning) Primary
+                else TextSecondary
+            Text(statusLine, color = statusColor, fontSize = 11.sp)
         }
     }
 }

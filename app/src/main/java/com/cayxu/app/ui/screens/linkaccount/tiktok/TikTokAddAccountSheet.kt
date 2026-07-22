@@ -165,14 +165,16 @@ private fun TikTokTypeRow(option: TikTokTypeOption, isSelected: Boolean, onClick
 }
 
 /**
- * Bước xin quyền TRƯỚC khi mở app TikTok: quyền hiển thị lớp nổi (để bấm "Lưu @")
- * và quyền Trợ năng (để đọc @handle trên màn hình khi người dùng bấm nút đó).
+ * Bước xin quyền TRƯỚC khi mở app TikTok: quyền hiển thị lớp nổi (để hiện trạng thái)
+ * và quyền Trợ năng (để tool tự bấm tab "Tôi" và tự đọc @handle - không cần người
+ * dùng thao tác tay). Ngay khi cả 2 quyền đã được cấp, tự động chạy tiếp luôn.
  */
 @Composable
 private fun TikTokPermissionStep(variant: TikTokAppVariant, onBack: () -> Unit, onGranted: () -> Unit) {
     val context = LocalContext.current
     var overlayGranted by remember { mutableStateOf(TikTokAppLauncher.isOverlayPermissionGranted(context)) }
     var accessibilityGranted by remember { mutableStateOf(TikTokAppLauncher.isAccessibilityServiceEnabled(context)) }
+    var autoStarted by remember { mutableStateOf(false) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -186,11 +188,19 @@ private fun TikTokPermissionStep(variant: TikTokAppVariant, onBack: () -> Unit, 
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // Tự động chạy tiếp ngay khi đủ 2 quyền, không cần người dùng bấm nút nào cả.
+    LaunchedEffect(overlayGranted, accessibilityGranted) {
+        if (overlayGranted && accessibilityGranted && !autoStarted) {
+            autoStarted = true
+            onGranted()
+        }
+    }
+
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
         Text("Cấp quyền cho ${optionTitle(variant)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Cần 2 quyền sau để mở lớp nổi và đọc @ hiển thị khi bạn bấm \"Lưu @\" trong app TikTok.",
+            "Cần 2 quyền sau để tool tự động mở ${optionTitle(variant)}, tự bấm tab \"Tôi\" và tự đọc @ - bạn không cần thao tác gì thêm.",
             fontSize = 12.sp,
             color = TextSecondary
         )
@@ -198,29 +208,29 @@ private fun TikTokPermissionStep(variant: TikTokAppVariant, onBack: () -> Unit, 
 
         PermissionRow(
             title = "Hiển thị trên ứng dụng khác",
-            desc = "Để hiện nút \"Lưu @\" nổi trên app TikTok",
+            desc = "Để hiện trạng thái đang xử lý trên app TikTok",
             granted = overlayGranted,
             onClick = { TikTokAppLauncher.openOverlayPermissionSettings(context) }
         )
         Spacer(Modifier.height(10.dp))
         PermissionRow(
             title = "Trợ năng (Accessibility)",
-            desc = "Để đọc @ trên trang \"Tôi\" khi bạn bấm Lưu",
+            desc = "Để tool tự bấm tab \"Tôi\" và tự đọc @ giúp bạn",
             granted = accessibilityGranted,
             onClick = { TikTokAppLauncher.openAccessibilitySettings(context) }
         )
 
-        Spacer(Modifier.height(20.dp))
-        Button(
-            onClick = onGranted,
-            enabled = overlayGranted && accessibilityGranted,
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Primary),
-            modifier = Modifier.fillMaxWidth().height(50.dp)
-        ) {
-            Text("Tiếp tục và mở ${optionTitle(variant)}", color = CardWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Spacer(Modifier.height(18.dp))
+        if (overlayGranted && accessibilityGranted) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                CircularProgressIndicator(color = Primary, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Đã đủ quyền, đang tự mở ${optionTitle(variant)}...", fontSize = 12.sp, color = TextSecondary)
+            }
+        } else {
+            Text("Cấp đủ 2 quyền ở trên, tool sẽ tự chạy tiếp ngay, không cần bấm gì thêm.", fontSize = 12.sp, color = TextSecondary)
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Quay lại", color = TextSecondary, fontSize = 13.sp)
         }

@@ -25,6 +25,10 @@ import kotlinx.coroutines.launch
  * Lớp nổi (floating bubble) - CHỈ dùng cho luồng thêm tài khoản TikTok bằng cách check
  * trực tiếp trong app TikTok/TikTok Lite/TikTok Studio. Không đụng tới luồng của
  * các nền tảng khác trong app.
+ *
+ * Toàn bộ việc bấm tab "Tôi" và đọc @handle đều do TikTokAccessibilityService tự làm
+ * theo sự kiện (event-driven) - lớp nổi này CHỈ hiển thị trạng thái đang làm gì, người
+ * dùng không cần bấm nút nào để "lưu" cả.
  */
 class TikTokCaptureOverlayService : Service() {
 
@@ -37,21 +41,16 @@ class TikTokCaptureOverlayService : Service() {
     private var statusText: TextView? = null
     private val scope = CoroutineScope(Dispatchers.Main)
     private var watchJob: Job? = null
-    private var variant: TikTokAppVariant = TikTokAppVariant.LITE
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        variant = (intent?.getStringExtra(EXTRA_VARIANT))
+        val variant = (intent?.getStringExtra(EXTRA_VARIANT))
             ?.let { runCatching { TikTokAppVariant.valueOf(it) }.getOrNull() }
             ?: TikTokAppVariant.LITE
 
         if (bubbleView == null) {
             showBubble()
-            // Best-effort: sau khi app TikTok kịp mở lên, thử tự bấm sang tab "Tôi".
-            Handler(Looper.getMainLooper()).postDelayed({
-                TikTokAccessibilityService.requestGoToProfileTab()
-            }, 1200)
             observeBridge()
         }
         return START_NOT_STICKY
@@ -63,7 +62,7 @@ class TikTokCaptureOverlayService : Service() {
             TikTokCaptureBridge.state.collect { state ->
                 when (state) {
                     is TikTokCaptureState.Captured -> {
-                        statusText?.text = "Đã lấy được ${state.handle} — đang lưu..."
+                        statusText?.text = "Đã tự lấy được ${state.handle} — đang lưu..."
                         Handler(Looper.getMainLooper()).postDelayed({
                             TikTokAppLauncher.bringToolToFront(applicationContext)
                             stopSelf()
@@ -73,7 +72,7 @@ class TikTokCaptureOverlayService : Service() {
                         statusText?.text = state.reason
                     }
                     is TikTokCaptureState.Waiting -> {
-                        statusText?.text = "Vào TikTok, bấm tab \"Tôi\" rồi bấm Lưu @"
+                        statusText?.text = "Đang tự động mở TikTok và quét @, vui lòng chờ..."
                     }
                     TikTokCaptureState.Idle -> Unit
                 }
@@ -113,50 +112,37 @@ class TikTokCaptureOverlayService : Service() {
         }
 
         val title = TextView(this).apply {
-            text = "CâyXu • Lấy tài khoản TikTok"
+            text = "CâyXu • Đang tự động lấy tài khoản TikTok"
             setTextColor(Color.WHITE)
             textSize = 13f
         }
 
         val status = TextView(this).apply {
-            text = "Vào TikTok, bấm tab \"Tôi\" rồi bấm Lưu @"
+            text = "Đang tự động mở TikTok và quét @, vui lòng chờ..."
             setTextColor(Color.parseColor("#E6FFFFFF"))
             textSize = 12f
             setPadding(0, 6, 0, 14)
         }
         statusText = status
 
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-
-        val saveBtn = TextView(this).apply {
-            text = "  Lưu @  "
-            setTextColor(Color.parseColor("#2F5BFF"))
+        val closeBtn = TextView(this).apply {
+            text = "  Huỷ  "
+            setTextColor(Color.WHITE)
             textSize = 13f
             background = GradientDrawable().apply {
                 cornerRadius = 20f
-                setColor(Color.WHITE)
+                setColor(Color.parseColor("#33FFFFFF"))
             }
             setPadding(24, 14, 24, 14)
-            setOnClickListener { TikTokAccessibilityService.requestCapture(variant) }
-        }
-
-        val closeBtn = TextView(this).apply {
-            text = "  Đóng  "
-            setTextColor(Color.WHITE)
-            textSize = 13f
-            setPadding(24, 14, 8, 14)
             setOnClickListener {
                 TikTokCaptureBridge.reset()
                 stopSelf()
             }
         }
 
-        row.addView(saveBtn)
-        row.addView(closeBtn)
-
         container.addView(title)
         container.addView(status)
-        container.addView(row)
+        container.addView(closeBtn)
 
         // Cho phép kéo lớp nổi đi chỗ khác trên màn hình.
         var initialX = 0
