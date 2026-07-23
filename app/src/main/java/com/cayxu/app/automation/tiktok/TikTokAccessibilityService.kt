@@ -27,21 +27,45 @@ import kotlinx.coroutines.launch
 class TikTokAccessibilityService : AccessibilityService() {
 
     companion object {
-        private val PROFILE_TAB_LABELS = setOf("tôi", "me", "hồ sơ", "profile")
+        // "Hồ sơ" là nhãn tab TikTok bản mới hay dùng; vẫn giữ "tôi"/"me"/"profile" để không hỏng
+        // các bản TikTok cũ hơn dùng nhãn khác.
+        private val PROFILE_TAB_LABELS = setOf("hồ sơ", "tôi", "me", "profile")
         private const val POLL_INTERVAL_MS = 700L
         // Không có mốc cố định vì máy nhanh/chậm khác nhau - cho dò tới ~5 phút rồi mới
         // báo lỗi (chỉ để tránh treo dịch vụ mãi mãi, không phải để giới hạn thời gian chờ
         // TikTok load thật sự).
         private const val MAX_POLL_ATTEMPTS = 420 // ~5 phút
+        private const val MAX_MENU_TAP_ATTEMPTS = 5
+        private const val MAX_SETTINGS_TAP_ATTEMPTS = 5
+        private const val MAX_SCROLL_ATTEMPTS = 14
+        private const val MAX_SWITCH_ROW_TAP_ATTEMPTS = 5
 
-        // Tiêu đề sheet "Chuyển đổi tài khoản" mà TikTok bản chuẩn hiển thị khi bấm mũi tên
-        // cạnh tên ở trang "Tôi". Chỉ dùng để XÁC NHẬN sheet đã mở, không dùng để bấm gì.
+        // Mục "Cài đặt và quyền riêng tư" trong menu (☰) mở ra từ trang Hồ sơ.
+        private val SETTINGS_PRIVACY_LABELS = setOf("cài đặt và quyền riêng tư", "settings and privacy", "settings")
+
+        // Dòng "Chuyển đổi tài khoản" - xuất hiện Ở CẢ 2 nơi: (1) là 1 DÒNG trong màn Cài đặt
+        // (chỉ để bấm vào), và (2) là TIÊU ĐỀ của sheet hiện ra sau khi bấm. Chỉ dựa vào text
+        // này KHÔNG đủ để biết sheet đã mở hay chưa (đây chính là lý do trước đây tool quét
+        // nhầm cả màn Cài đặt, lưu luôn "Giải phóng dung lượng" làm tài khoản) - phải kết hợp
+        // thêm ADD_ACCOUNT_LABELS bên dưới, vì "Thêm tài khoản" CHỈ xuất hiện trong sheet.
         private val SWITCH_SHEET_TITLE = setOf("chuyển đổi tài khoản", "switch account", "switch accounts")
+        private val ADD_ACCOUNT_LABELS = setOf("thêm tài khoản", "add account")
         // Nhãn không phải là 1 dòng tài khoản trong sheet - loại các dòng này ra khi quét.
+        // Danh sách được mở rộng thêm các mục của menu ☰ và màn Cài đặt (Số dư, Trung tâm
+        // hoạt động, Giải phóng dung lượng...) làm lưới an toàn thứ 2, phòng khi vì lý do gì
+        // đó việc quét vẫn lỡ chạy nhầm màn khác - dù về logic giờ chỉ quét khi đã xác nhận
+        // đúng sheet.
         private val SWITCH_SHEET_IGNORE_LABELS = setOf(
             "chuyển đổi tài khoản", "switch account", "switch accounts",
-            "thêm tài khoản", "add account", "quản lý tài khoản", "manage accounts"
+            "thêm tài khoản", "add account", "quản lý tài khoản", "manage accounts",
+            "số dư", "trung tâm hoạt động", "video ngoại tuyến", "mã qr của bạn", "nhạc của bạn",
+            "tiktok studio", "tiktok shop cho nhà sáng tạo", "quảng bá",
+            "cài đặt và quyền riêng tư", "bộ nhớ đệm", "giải phóng dung lượng",
+            "trình tiết kiệm dữ liệu", "hình nền", "trung tâm trợ giúp", "trung tâm quyền riêng tư",
+            "điều khoản và chính sách", "đăng xuất", "đăng nhập"
         )
+        // Gợi ý nhận diện icon menu (☰) ở đầu trang Hồ sơ, khi không có contentDescription rõ ràng.
+        private val MENU_ICON_HINTS = listOf("menu", "more", "tùy chọn", "cài đặt")
     }
 
     private val scope = CoroutineScope(Dispatchers.Main)
@@ -143,17 +167,27 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * RIÊNG cho TikTok bản chuẩn: sau khi vào tab "Tôi", tự bấm vào khu vực tên/@ (có mũi tên)
-     * để mở sheet "Chuyển đổi tài khoản" - đây là sheet CÓ SẴN của chính app TikTok, liệt kê
-     * các tài khoản NGƯỜI DÙNG ĐÃ TỰ ĐĂNG NHẬP trên máy này (giống hệt việc người dùng bấm tay
-     * để xem, tool chỉ đọc lại chữ đang hiển thị). Sau khi sheet mở, quét toàn bộ các dòng tên
-     * trong đó rồi lưu hết một lượt, thay vì phải lặp lại thao tác cho từng acc.
+     * RIÊNG cho TikTok bản chuẩn: luồng THẬT trên TikTok hiện tại (không có mũi tên cạnh tên
+     * ở trang Hồ sơ như bản cũ) là:
+     *   1) Bấm tab "Hồ sơ" ở thanh dưới cùng, chờ tới khi thấy @handle (đã vào đúng trang).
+     *   2) Bấm icon menu (☰) ở góc trên bên phải trang Hồ sơ.
+     *   3) Trong menu vừa mở, bấm "Cài đặt và quyền riêng tư".
+     *   4) Ở màn Cài đặt, cuộn xuống tới cuối (mục "Đăng nhập") để thấy dòng "Chuyển đổi tài khoản".
+     *   5) Bấm dòng đó để mở sheet "Chuyển đổi tài khoản" THẬT (có avatar + tên từng acc +
+     *      nút "Thêm tài khoản") - CHỈ khi chắc chắn đây là sheet (không phải dòng text cùng
+     *      tên trong màn Cài đặt) mới quét và lưu, tránh lưu nhầm các mục cài đặt khác
+     *      ("Giải phóng dung lượng", "Trình Tiết Kiệm Dữ liệu"...) làm tài khoản.
      */
     private fun startPollingSwitchAccountList(variant: TikTokAppVariant) {
         pollingJob?.cancel()
         var hasTappedProfileTab = false
-        var hasTappedSwitcher = false
-        var switcherTapAttempts = 0
+        var hasTappedMenuIcon = false
+        var menuTapAttempts = 0
+        var hasTappedSettingsRow = false
+        var settingsTapAttempts = 0
+        var scrollAttempts = 0
+        var hasTappedSwitchRow = false
+        var switchRowTapAttempts = 0
         pollingJob = scope.launch {
             var attempt = 0
             while (attempt < MAX_POLL_ATTEMPTS) {
@@ -167,11 +201,14 @@ class TikTokAccessibilityService : AccessibilityService() {
                     continue
                 }
 
-                // Bước 3: nếu sheet "Chuyển đổi tài khoản" đã mở (do bước bấm mũi tên bên dưới),
-                // quét toàn bộ danh sách trong đó.
-                if (hasTappedSwitcher) {
+                // Bước 5: đã bấm dòng "Chuyển đổi tài khoản" trong màn Cài đặt - chờ sheet
+                // THẬT mở ra rồi mới quét. Chỉ coi là sheet thật khi có CẢ tiêu đề "Chuyển đổi
+                // tài khoản" LẪN nút "Thêm tài khoản" (nút này CHỈ có trong sheet, không có ở
+                // dòng cùng tên trong màn Cài đặt) - tránh lặp lại lỗi quét nhầm màn Cài đặt.
+                if (hasTappedSwitchRow) {
                     val sheetTitleNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
-                    if (sheetTitleNode != null) {
+                    val addAccountNode = findNodeByText(root, ADD_ACCOUNT_LABELS, exact = false)
+                    if (sheetTitleNode != null && addAccountNode != null) {
                         TikTokCaptureBridge.updateProgress("Đã mở danh sách tài khoản, đang quét...")
                         val entries = collectSwitchAccountEntries(root)
                         if (entries.isNotEmpty()) {
@@ -181,50 +218,96 @@ class TikTokAccessibilityService : AccessibilityService() {
                             TikTokAppLauncher.bringToolToFront(applicationContext)
                             return@launch
                         }
-                        // Sheet mở nhưng chưa kịp render danh sách bên trong - dò tiếp.
                         TikTokCaptureBridge.updateProgress("Đang chờ danh sách tài khoản hiện ra...")
-                    } else {
-                        // Có thể lần bấm trước bị trượt (chưa đúng vị trí mũi tên) - thử bấm lại
-                        // vài lần trước khi báo lỗi.
-                        if (switcherTapAttempts < 5) {
-                            val arrowNode = findSwitchAccountArrow(root)
-                            if (arrowNode != null) {
-                                TikTokCaptureBridge.updateProgress("Đang mở danh sách tài khoản...")
-                                clickNode(arrowNode)
-                                switcherTapAttempts++
-                            }
-                        } else {
-                            TikTokCaptureBridge.updateProgress("Đang chờ danh sách tài khoản hiện ra...")
+                    } else if (sheetTitleNode != null && addAccountNode == null) {
+                        // Thấy chữ "Chuyển đổi tài khoản" nhưng KHÔNG có "Thêm tài khoản" đi
+                        // kèm - đây vẫn là dòng trong màn Cài đặt, chưa phải sheet thật, chưa
+                        // bấm gì cả, chỉ chờ tiếp (sheet có thể đang trong lúc hiện animation).
+                        TikTokCaptureBridge.updateProgress("Đang mở danh sách tài khoản...")
+                    } else if (switchRowTapAttempts < MAX_SWITCH_ROW_TAP_ATTEMPTS) {
+                        // Chưa thấy gì cả - có thể bấm bị trượt, thử tìm lại đúng dòng và bấm lại.
+                        val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
+                        if (switchRowNode != null) {
+                            TikTokCaptureBridge.updateProgress("Đang mở danh sách tài khoản...")
+                            clickNode(switchRowNode)
+                            switchRowTapAttempts++
                         }
                     }
                     delay(POLL_INTERVAL_MS)
                     continue
                 }
 
-                // Bước 2: đã ở trang "Tôi" (thấy @handle) - bấm vào khu vực tên để mở sheet.
-                if (hasTappedProfileTab) {
-                    val handleNode = findHandleNode(root)
-                    if (handleNode != null) {
-                        val arrowNode = findSwitchAccountArrow(root) ?: handleNode
-                        TikTokCaptureBridge.updateProgress("Đã thấy @, đang mở danh sách tài khoản...")
-                        clickNode(arrowNode)
-                        hasTappedSwitcher = true
-                        switcherTapAttempts = 1
+                // Bước 4: đã ở màn Cài đặt (đã bấm "Cài đặt và quyền riêng tư") - cuộn xuống
+                // tới khi thấy dòng "Chuyển đổi tài khoản" rồi bấm vào.
+                if (hasTappedSettingsRow) {
+                    val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
+                    if (switchRowNode != null) {
+                        TikTokCaptureBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
+                        clickNode(switchRowNode)
+                        hasTappedSwitchRow = true
+                        switchRowTapAttempts = 1
+                    } else if (scrollAttempts < MAX_SCROLL_ATTEMPTS) {
+                        TikTokCaptureBridge.updateProgress("Đang cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
+                        scrollDown(root)
+                        scrollAttempts++
                     } else {
-                        TikTokCaptureBridge.updateProgress("Đang chờ trang \"Tôi\" hiện @...")
+                        TikTokCaptureBridge.updateProgress("Không tìm thấy \"Chuyển đổi tài khoản\", đang thử lại...")
                     }
                     delay(POLL_INTERVAL_MS)
                     continue
                 }
 
-                // Bước 1: bấm tab "Tôi" ở thanh dưới cùng.
+                // Bước 3: menu (☰) đã mở - tìm và bấm "Cài đặt và quyền riêng tư".
+                if (hasTappedMenuIcon) {
+                    val settingsRowNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
+                    if (settingsRowNode != null) {
+                        TikTokCaptureBridge.updateProgress("Đã thấy \"Cài đặt và quyền riêng tư\", đang bấm...")
+                        clickNode(settingsRowNode)
+                        hasTappedSettingsRow = true
+                        settingsTapAttempts = 1
+                    } else if (settingsTapAttempts < MAX_SETTINGS_TAP_ATTEMPTS) {
+                        TikTokCaptureBridge.updateProgress("Đang mở menu...")
+                        settingsTapAttempts++
+                    } else {
+                        TikTokCaptureBridge.updateProgress("Đang chờ menu hiện \"Cài đặt và quyền riêng tư\"...")
+                    }
+                    delay(POLL_INTERVAL_MS)
+                    continue
+                }
+
+                // Bước 2: đã ở trang Hồ sơ (thấy @handle) - bấm icon menu (☰) góc trên bên phải.
+                if (hasTappedProfileTab) {
+                    val handleNode = findHandleNode(root)
+                    if (handleNode != null) {
+                        if (menuTapAttempts < MAX_MENU_TAP_ATTEMPTS) {
+                            val menuNode = findMenuIcon(root, menuTapAttempts)
+                            if (menuNode != null) {
+                                TikTokCaptureBridge.updateProgress("Đã thấy @, đang mở menu...")
+                                clickNode(menuNode)
+                                menuTapAttempts++
+                                // Bấm xong coi như đã thử mở menu - bước sau tự kiểm tra menu
+                                // có thật sự mở hay chưa (tìm "Cài đặt và quyền riêng tư"); nếu
+                                // chưa thấy, quay lại bước này thử candidate khác.
+                                hasTappedMenuIcon = true
+                            }
+                        } else {
+                            TikTokCaptureBridge.updateProgress("Không tự mở được menu, đang thử lại...")
+                        }
+                    } else {
+                        TikTokCaptureBridge.updateProgress("Đang chờ trang Hồ sơ hiện @...")
+                    }
+                    delay(POLL_INTERVAL_MS)
+                    continue
+                }
+
+                // Bước 1: bấm tab "Hồ sơ" ở thanh dưới cùng.
                 val tabNode = findNodeByText(root, PROFILE_TAB_LABELS, exact = false)
                 if (tabNode != null) {
-                    TikTokCaptureBridge.updateProgress("Đã thấy tab \"Tôi\", đang bấm...")
+                    TikTokCaptureBridge.updateProgress("Đã thấy tab \"Hồ sơ\", đang bấm...")
                     clickNode(tabNode)
                     hasTappedProfileTab = true
                 } else {
-                    TikTokCaptureBridge.updateProgress("Đang tìm tab \"Tôi\" ở thanh dưới cùng...")
+                    TikTokCaptureBridge.updateProgress("Đang tìm tab \"Hồ sơ\" ở thanh dưới cùng...")
                 }
                 delay(POLL_INTERVAL_MS)
             }
@@ -235,63 +318,36 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Mũi tên/dropdown cạnh tên ở đầu trang "Tôi" thường không có text riêng - nó là node
-     * clickable NHỎ nhất bao quanh (hoặc ngay cạnh) node tên hiển thị/@ ở khu vực đầu trang
-     * (không phải trong thanh tab dưới cùng). Thử NHIỀU cách theo thứ tự ưu tiên, vì layout
-     * có thể khác nhau tuỳ máy/phiên bản TikTok:
-     *   1) Node clickable bao quanh TÊN HIỂN THỊ (thường cùng khối với mũi tên) - leo sâu
-     *      hơn (10 cấp thay vì 6) vì một số layout lồng nhiều lớp Compose/View hơn dự kiến.
-     *   2) Node clickable bao quanh @handle (fallback cũ).
-     *   3) Bất kỳ node clickable nào ở vùng ĐẦU màn hình (khoảng 22% trên cùng) có mô tả
-     *      icon kiểu mũi tên/dropdown - phòng trường hợp mũi tên là 1 icon con riêng biệt,
-     *      không nằm chung khối clickable với tên/@ nào cả.
-     * Nếu cả 3 đều không tìm được, trả về null để nơi gọi tự fallback bấm thẳng @handle.
+     * Icon menu (☰) ở góc trên bên phải trang Hồ sơ thường KHÔNG có contentDescription rõ
+     * ràng (khác các icon còn lại như share/bookmark). Thử theo thứ tự:
+     *   1) Node clickable có contentDescription gợi ý (menu/more/tùy chọn/cài đặt).
+     *   2) Nếu không có, gom tất cả icon clickable KHÔNG CÓ TEXT ở vùng đầu màn hình (top
+     *      ~10%), sắp theo thứ tự từ PHẢI qua TRÁI (☰ luôn là icon NGOÀI CÙNG bên phải trong
+     *      thanh trên của trang Hồ sơ) và chọn candidate thứ [attemptIndex] - để nếu lần bấm
+     *      trước trượt, lần sau tự thử candidate khác thay vì bấm lại đúng chỗ cũ.
      */
-    private fun findSwitchAccountArrow(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val handleNode = findHandleNode(root) ?: return null
-
-        findClickableAncestorOf(findDisplayNameNodeNear(handleNode), maxDepth = 10)?.let { return it }
-        findClickableAncestorOf(handleNode, maxDepth = 10)?.let { return it }
-        findHeaderDropdownIcon(root)?.let { return it }
-        return null
-    }
-
-    /** Leo lên tối đa [maxDepth] cấp cha kể từ [start] để tìm node clickable gần nhất. */
-    private fun findClickableAncestorOf(start: AccessibilityNodeInfo?, maxDepth: Int): AccessibilityNodeInfo? {
-        var node: AccessibilityNodeInfo? = start
-        var depth = 0
-        while (node != null && depth < maxDepth) {
-            if (node.isClickable) return node
-            node = node.parent
-            depth++
-        }
-        return null
-    }
-
-    /** Tìm node text (không phải @handle) là anh em gần nhất với @handle - đây là tên hiển thị. */
-    private fun findDisplayNameNodeNear(handleNode: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val parent = handleNode.parent ?: return null
-        for (i in 0 until parent.childCount) {
-            val sibling = parent.getChild(i) ?: continue
-            val text = sibling.text?.toString()?.trim()
-            if (!text.isNullOrBlank() && !text.startsWith("@")) return sibling
-        }
-        return null
-    }
-
-    /**
-     * Quét vùng ĐẦU màn hình (top ~22% chiều cao root) tìm 1 node clickable riêng biệt có
-     * contentDescription gợi ý icon mũi tên/dropdown (một số bản TikTok tách mũi tên thành
-     * icon button riêng, không lồng chung khối clickable với tên/@).
-     */
-    private fun findHeaderDropdownIcon(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+    private fun findMenuIcon(root: AccessibilityNodeInfo, attemptIndex: Int): AccessibilityNodeInfo? {
         val rootBounds = android.graphics.Rect()
         root.getBoundsInScreen(rootBounds)
         if (rootBounds.height() <= 0) return null
-        val headerBottomLimit = rootBounds.top + (rootBounds.height() * 0.22f).toInt()
-        return findClickableIconInRegion(root, headerBottomLimit)
+        val headerBottomLimit = rootBounds.top + (rootBounds.height() * 0.10f).toInt()
+
+        val byHint = findClickableIconInRegion(root, headerBottomLimit)
+        if (byHint != null) return byHint
+
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        collectHeaderIconCandidates(root, headerBottomLimit, candidates)
+        if (candidates.isEmpty()) return null
+        candidates.sortByDescending { node ->
+            val b = android.graphics.Rect()
+            node.getBoundsInScreen(b)
+            b.right
+        }
+        val index = attemptIndex.coerceIn(0, candidates.size - 1)
+        return candidates[index]
     }
 
+    /** Quét cây tìm 1 node clickable trong vùng đầu màn hình có contentDescription gợi ý menu. */
     private fun findClickableIconInRegion(
         node: AccessibilityNodeInfo,
         headerBottomLimit: Int,
@@ -303,13 +359,52 @@ class TikTokAccessibilityService : AccessibilityService() {
             node.getBoundsInScreen(bounds)
             if (bounds.bottom in 1..headerBottomLimit) {
                 val desc = node.contentDescription?.toString()?.lowercase().orEmpty()
-                val dropdownHints = listOf("arrow", "drop", "expand", "chevron", "mũi tên", "xổ")
-                if (dropdownHints.any { desc.contains(it) }) return node
+                if (MENU_ICON_HINTS.any { desc.contains(it) }) return node
             }
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             val found = findClickableIconInRegion(child, headerBottomLimit, depth + 1)
+            if (found != null) return found
+        }
+        return null
+    }
+
+    /** Gom các node clickable, KHÔNG CÓ text riêng (icon thuần), nằm trong vùng đầu màn hình. */
+    private fun collectHeaderIconCandidates(
+        node: AccessibilityNodeInfo,
+        headerBottomLimit: Int,
+        out: MutableList<AccessibilityNodeInfo>,
+        depth: Int = 0
+    ) {
+        if (depth > 40) return
+        if (node.isClickable) {
+            val bounds = android.graphics.Rect()
+            node.getBoundsInScreen(bounds)
+            if (bounds.bottom in 1..headerBottomLimit && node.text.isNullOrBlank()) {
+                out.add(node)
+                return
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectHeaderIconCandidates(child, headerBottomLimit, out, depth + 1)
+        }
+    }
+
+    /** Tìm node có thể cuộn (scrollable) rồi cuộn xuống 1 nấc; best-effort, không báo lỗi nếu không tìm thấy. */
+    private fun scrollDown(root: AccessibilityNodeInfo) {
+        val scrollable = findScrollableNode(root) ?: return
+        @Suppress("DEPRECATION")
+        scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+    }
+
+    private fun findScrollableNode(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
+        if (depth > 40) return null
+        if (node.isScrollable) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findScrollableNode(child, depth + 1)
             if (found != null) return found
         }
         return null

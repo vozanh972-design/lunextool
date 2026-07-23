@@ -106,40 +106,32 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
             Spacer(Modifier.height(20.dp))
 
-            // Menu 4 nút, xếp dạng lưới 2x2
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    MenuButton(
-                        icon = Icons.Filled.Widgets,
-                        label = "Tiện ích",
-                        subtitle = "Khám phá công cụ hữu ích",
-                        accentColor = Color(0xFF7C3AED),
-                        modifier = Modifier.weight(1f)
-                    ) { navController.navigate(com.cayxu.app.ui.navigation.Routes.UTILITIES) { launchSingleTop = true } }
-                    MenuButton(
-                        icon = Icons.Filled.Settings,
-                        label = "Cài đặt",
-                        subtitle = "Cấu hình ứng dụng",
-                        accentColor = Color(0xFF2563EB),
-                        modifier = Modifier.weight(1f)
-                    ) { navController.navigate(com.cayxu.app.ui.navigation.Routes.SETTINGS) }
-                }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    MenuButton(
-                        icon = Icons.Filled.Assignment,
-                        label = "Nhiệm vụ",
-                        subtitle = "Hoàn thành nhiệm vụ để nhận xu",
-                        accentColor = Color(0xFF16A34A),
-                        modifier = Modifier.weight(1f)
-                    ) { navController.navigate("tasks") { launchSingleTop = true } }
-                    MenuButton(
-                        icon = Icons.Filled.AccountBalanceWallet,
-                        label = "Ví",
-                        subtitle = "Quản lý xu và giao dịch",
-                        accentColor = Color(0xFFF97316),
-                        modifier = Modifier.weight(1f)
-                    ) { navController.navigate("wallet") { launchSingleTop = true } }
-                }
+            // Menu 4 nút, xếp thành 1 HÀNG DUY NHẤT (trước đây là lưới 2x2, giờ gọn hơn).
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MenuButton(
+                    icon = Icons.Filled.Widgets,
+                    label = "Tiện ích",
+                    accentColor = Color(0xFF7C3AED),
+                    modifier = Modifier.weight(1f)
+                ) { navController.navigate(com.cayxu.app.ui.navigation.Routes.UTILITIES) { launchSingleTop = true } }
+                MenuButton(
+                    icon = Icons.Filled.Settings,
+                    label = "Cài đặt",
+                    accentColor = Color(0xFF2563EB),
+                    modifier = Modifier.weight(1f)
+                ) { navController.navigate(com.cayxu.app.ui.navigation.Routes.SETTINGS) }
+                MenuButton(
+                    icon = Icons.Filled.Assignment,
+                    label = "Nhiệm vụ",
+                    accentColor = Color(0xFF16A34A),
+                    modifier = Modifier.weight(1f)
+                ) { navController.navigate("tasks") { launchSingleTop = true } }
+                MenuButton(
+                    icon = Icons.Filled.AccountBalanceWallet,
+                    label = "Ví",
+                    accentColor = Color(0xFFF97316),
+                    modifier = Modifier.weight(1f)
+                ) { navController.navigate("wallet") { launchSingleTop = true } }
             }
 
             Spacer(Modifier.height(20.dp))
@@ -222,54 +214,35 @@ private fun PremiumCard(info: com.cayxu.app.data.model.VerifyKeyResponse) {
 private fun MenuButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
-    subtitle: String,
     accentColor: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Column(
         modifier = modifier
-            .heightIn(min = 128.dp)
+            .heightIn(min = 88.dp)
             .background(CardWhite, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 14.dp),
+            .padding(horizontal = 4.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Top
+        verticalArrangement = Arrangement.Center
     ) {
         Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(40.dp)
                 .background(accentColor.copy(alpha = 0.12f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = label, tint = accentColor, modifier = Modifier.size(22.dp))
+            Icon(icon, contentDescription = label, tint = accentColor, modifier = Modifier.size(20.dp))
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
             label,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             color = TextPrimary,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
-        Spacer(Modifier.height(3.dp))
-        Text(
-            subtitle,
-            fontSize = 10.sp,
-            color = TextSecondary,
-            fontWeight = FontWeight.Normal,
-            maxLines = 2,
-            lineHeight = 12.sp,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            modifier = Modifier.heightIn(min = 24.dp)
-        )
-        Spacer(Modifier.height(8.dp))
-        Box(
-            modifier = Modifier
-                .width(22.dp)
-                .height(3.dp)
-                .background(accentColor, RoundedCornerShape(50))
         )
     }
 }

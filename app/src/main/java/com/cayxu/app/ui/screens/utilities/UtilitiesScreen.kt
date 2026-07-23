@@ -95,28 +95,17 @@ fun UtilitiesScreen(navController: NavController) {
 
         Spacer(Modifier.height(20.dp))
 
-        utilityTools.chunked(2).forEach { rowTools ->
-            Row(
+        utilityTools.forEach { tool ->
+            UtilityToolCard(
+                tool = tool,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                rowTools.forEach { tool ->
-                    UtilityToolCard(
-                        tool = tool,
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            when (tool.title) {
-                                "Cài đặt" -> navController.navigate(Routes.SETTINGS) { launchSingleTop = true }
-                                else -> { /* TODO: gắn màn hình tương ứng khi backend/tính năng sẵn sàng */ }
-                            }
-                        }
-                    )
+                onClick = {
+                    when (tool.title) {
+                        "Cài đặt" -> navController.navigate(Routes.SETTINGS) { launchSingleTop = true }
+                        else -> { /* TODO: gắn màn hình tương ứng khi backend/tính năng sẵn sàng */ }
+                    }
                 }
-                // Nếu hàng cuối lẻ 1 ô, thêm khoảng trống để giữ lưới cân đối 2 cột.
-                if (rowTools.size == 1) {
-                    Spacer(Modifier.weight(1f))
-                }
-            }
+            )
             Spacer(Modifier.height(12.dp))
         }
 
@@ -127,11 +116,11 @@ fun UtilitiesScreen(navController: NavController) {
 @Composable
 private fun UtilityToolCard(tool: UtilityTool, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Card(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         modifier = modifier
-            .height(150.dp)
+            .height(84.dp)
             .clickable(onClick = onClick)
     ) {
         Box(
@@ -139,35 +128,37 @@ private fun UtilityToolCard(tool: UtilityTool, modifier: Modifier = Modifier, on
                 .fillMaxSize()
                 .background(Brush.linearGradient(tool.gradientColors))
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
-                        .background(Color.White.copy(alpha = 0.22f), RoundedCornerShape(12.dp)),
+                        .size(46.dp)
+                        .background(Color.White.copy(alpha = 0.22f), RoundedCornerShape(14.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(tool.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    Icon(tool.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
                 }
-                Column {
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
                     Text(
                         tool.title,
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                        fontSize = 15.sp
                     )
-                    Spacer(Modifier.height(3.dp))
+                    Spacer(Modifier.height(2.dp))
                     Text(
                         tool.subtitle,
                         color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 11.sp,
-                        maxLines = 2
+                        fontSize = 12.sp,
+                        maxLines = 1
                     )
                 }
+                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(20.dp))
             }
         }
     }
