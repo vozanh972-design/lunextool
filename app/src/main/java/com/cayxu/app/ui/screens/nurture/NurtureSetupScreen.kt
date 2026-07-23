@@ -1,6 +1,5 @@
 package com.cayxu.app.ui.screens.nurture
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,6 +20,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import com.cayxu.app.data.local.NurtureConfig
 import com.cayxu.app.data.local.NurtureConfigStore
@@ -43,6 +44,7 @@ fun NurtureSetupScreen(navController: NavController) {
     var accounts by remember { mutableStateOf(listOf<TikTokAccount>()) }
     val selectedUids = remember { mutableStateListOf<String>() }
     var showConfigDialog by remember { mutableStateOf(false) }
+    var showOverlayPermissionDialog by remember { mutableStateOf(false) }
     var config by remember { mutableStateOf(NurtureConfig()) }
 
     LaunchedEffect(selectedVariant) {
@@ -172,7 +174,7 @@ fun NurtureSetupScreen(navController: NavController) {
 
         // Nút cấu hình + bắt đầu - CỐ ĐỊNH ở đáy màn hình (Surface riêng có elevation để tách
         // biệt rõ với danh sách acc cuộn ở trên, không bị trôi theo khi cuộn danh sách).
-        Surface(tonalElevation = 4.dp, shadowElevation = 8.dp, color = CardWhite) {
+        Surface(tonalElevation = 0.dp, shadowElevation = 8.dp, color = CardWhite) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -184,11 +186,11 @@ fun NurtureSetupScreen(navController: NavController) {
 
                 Button(
                     onClick = {
-                        Toast.makeText(
-                            context,
-                            "Tính năng \"Nuôi tài khoản\" đang được phát triển, sẽ cập nhật sau.",
-                            Toast.LENGTH_LONG
-                        ).show()
+                        if (!com.cayxu.app.automation.tiktok.TikTokAppLauncher.isOverlayPermissionGranted(context)) {
+                            showOverlayPermissionDialog = true
+                            return@Button
+                        }
+                        startNurture(context, selectedVariant, config.durationMinutes)
                     },
                     enabled = selectedUids.isNotEmpty(),
                     modifier = Modifier.weight(1f),
@@ -209,6 +211,66 @@ fun NurtureSetupScreen(navController: NavController) {
             }
         )
     }
+
+    if (showOverlayPermissionDialog) {
+        OverlayPermissionDialog(
+            onDismiss = { showOverlayPermissionDialog = false },
+            onGranted = {
+                showOverlayPermissionDialog = false
+                startNurture(context, selectedVariant, config.durationMinutes)
+            }
+        )
+    }
+}
+
+/**
+ * Xin quyền "Hiển thị trên ứng dụng khác" TRƯỚC khi mở lớp nổi Nuôi tài khoản. Tự động đóng
+ * dialog và chạy tiếp ngay khi quay lại app mà đã thấy quyền được cấp - không cần bấm thêm.
+ */
+@Composable
+private fun OverlayPermissionDialog(onDismiss: () -> Unit, onGranted: () -> Unit) {
+    val context = LocalContext.current
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME &&
+                com.cayxu.app.automation.tiktok.TikTokAppLauncher.isOverlayPermissionGranted(context)
+            ) {
+                onGranted()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Cần quyền hiển thị lớp nổi") },
+        text = {
+            Text(
+                "Nuôi tài khoản cần quyền \"Hiển thị trên ứng dụng khác\" để hiện đồng hồ đếm ngược, " +
+                    "hạn key và nút Dừng ngay trên màn hình TikTok. Cấp quyền xong quay lại app là tool tự chạy tiếp."
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                com.cayxu.app.automation.tiktok.TikTokAppLauncher.openOverlayPermissionSettings(context)
+            }) { Text("Cấp quyền") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Huỷ") }
+        }
+    )
+}
+
+/** Mở app TikTok theo phiên bản đang chọn rồi bật lớp nổi đếm giờ nuôi tài khoản. */
+private fun startNurture(context: android.content.Context, variant: TikTokAppVariant, durationMinutes: Int) {
+    com.cayxu.app.automation.tiktok.TikTokAppLauncher.launch(context, variant)
+    context.startService(
+        android.content.Intent(context, com.cayxu.app.automation.nurture.NurtureOverlayService::class.java)
+            .putExtra(com.cayxu.app.automation.nurture.NurtureOverlayService.EXTRA_DURATION_MINUTES, durationMinutes)
+    )
 }
 
 private val DURATION_PRESETS = listOf(15, 30, 60)

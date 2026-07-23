@@ -55,5 +55,10 @@
         <service
             android:name=".automation.tiktok.TikTokCaptureOverlayService"
             android:exported="false" />
+
+        <!-- Lớp nổi RIÊNG cho tính năng Nuôi tài khoản - không đụng lớp nổi thêm tài khoản. -->
+        <service
+            android:name=".automation.nurture.NurtureOverlayService"
+            android:exported="false" />
     </application>
 </manifest>
