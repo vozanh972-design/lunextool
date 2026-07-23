@@ -144,7 +144,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
 
                 if (!hasTappedProfileTab) {
-                    val tabNode = findNodeByText(root, PROFILE_TAB_LABELS, exact = false)
+                    val tabNode = findProfileTabNode(root)
                     if (tabNode != null) {
                         // Chỉ thấy tab "Tôi" (thanh dưới cùng) MỚI bấm, không bấm khi chưa thấy.
                         TikTokCaptureBridge.updateProgress("Đã thấy tab \"Tôi\", đang bấm...")
@@ -301,7 +301,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
 
                 // Bước 1: bấm tab "Hồ sơ" ở thanh dưới cùng.
-                val tabNode = findNodeByText(root, PROFILE_TAB_LABELS, exact = false)
+                val tabNode = findProfileTabNode(root)
                 if (tabNode != null) {
                     TikTokCaptureBridge.updateProgress("Đã thấy tab \"Hồ sơ\", đang bấm...")
                     clickNode(tabNode)
@@ -522,6 +522,33 @@ class TikTokAccessibilityService : AccessibilityService() {
             depth++
         }
         (target ?: node).performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    /**
+     * Dò riêng cho tab "Hồ sơ/Tôi" ở thanh dưới cùng - CHỈ khớp theo text HIỂN THỊ THẬT
+     * (node.text), KHÔNG dùng contentDescription như findNodeByText thông thường. Lý do:
+     * avatar (ảnh đại diện) làm icon cho tab này cũng thường có contentDescription trùng
+     * tên tab (vd "Hồ sơ") để hỗ trợ đọc màn hình, khiến findNodeByText có thể vô tình trả
+     * về node ẢNH thay vì node CHỮ - bấm vào node ảnh có thể không mở đúng tab (hoặc mở
+     * preview avatar) thay vì chuyển sang trang Hồ sơ. Text thật thì chỉ có ở TextView nhãn
+     * tab, không có ở ImageView avatar, nên tránh được nhầm lẫn này.
+     */
+    private fun findProfileTabNode(
+        node: AccessibilityNodeInfo,
+        depth: Int = 0
+    ): AccessibilityNodeInfo? {
+        if (depth > 40) return null
+        val text = node.text?.toString()?.trim()?.lowercase()
+        if (!text.isNullOrBlank()) {
+            val match = PROFILE_TAB_LABELS.any { text == it || (it.length >= 4 && text.contains(it)) }
+            if (match) return node
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findProfileTabNode(child, depth + 1)
+            if (found != null) return found
+        }
+        return null
     }
 
     private fun findNodeByText(

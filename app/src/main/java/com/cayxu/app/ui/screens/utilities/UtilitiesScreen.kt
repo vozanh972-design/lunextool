@@ -19,7 +19,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.navigation.goHome
 import com.cayxu.app.ui.theme.*
 
@@ -32,40 +31,10 @@ private data class UtilityTool(
 
 private val utilityTools = listOf(
     UtilityTool(
-        "Liên kết tài khoản",
-        "Thêm & quản lý tài khoản TikTok, Facebook",
-        Icons.Filled.Link,
-        listOf(Color(0xFF418DFC), Color(0xFF7950F6))
-    ),
-    UtilityTool(
-        "Kiểm tra tài khoản",
-        "Check nhanh trạng thái hoạt động",
-        Icons.Filled.FactCheck,
+        "Nuôi tài khoản",
+        "Tự động chăm sóc tài khoản mỗi ngày",
+        Icons.Filled.Spa,
         listOf(Color(0xFF34D399), Color(0xFF059669))
-    ),
-    UtilityTool(
-        "Bạn bè & Giới thiệu",
-        "Mời bạn bè, nhận thưởng giới thiệu",
-        Icons.Filled.Diversity3,
-        listOf(Color(0xFFF472B6), Color(0xFFEC4899))
-    ),
-    UtilityTool(
-        "Mã máy & Thiết bị",
-        "Xem thông tin thiết bị đang dùng",
-        Icons.Filled.PhoneAndroid,
-        listOf(Color(0xFFFBBF24), Color(0xFFF97316))
-    ),
-    UtilityTool(
-        "Trợ giúp & Hỗ trợ",
-        "Câu hỏi thường gặp, liên hệ hỗ trợ",
-        Icons.Filled.SupportAgent,
-        listOf(Color(0xFF9D5CE8), Color(0xFF7C3AED))
-    ),
-    UtilityTool(
-        "Cài đặt",
-        "Cấu hình ứng dụng, giao diện",
-        Icons.Filled.Tune,
-        listOf(Color(0xFF64748B), Color(0xFF334155))
     )
 )
 
@@ -99,12 +68,7 @@ fun UtilitiesScreen(navController: NavController) {
             UtilityToolCard(
                 tool = tool,
                 modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    when (tool.title) {
-                        "Cài đặt" -> navController.navigate(Routes.SETTINGS) { launchSingleTop = true }
-                        else -> { /* TODO: gắn màn hình tương ứng khi backend/tính năng sẵn sàng */ }
-                    }
-                }
+                onClick = { /* TODO: gắn màn hình "Nuôi tài khoản" khi tính năng sẵn sàng */ }
             )
             Spacer(Modifier.height(12.dp))
         }
