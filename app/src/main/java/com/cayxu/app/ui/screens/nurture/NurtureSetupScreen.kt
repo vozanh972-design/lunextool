@@ -170,28 +170,31 @@ fun NurtureSetupScreen(navController: NavController) {
             }
         }
 
-        // Nút cấu hình + bắt đầu
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            OutlinedButton(
-                onClick = { showConfigDialog = true },
-                modifier = Modifier.weight(1f)
-            ) { Text("Cấu hình nuôi") }
+        // Nút cấu hình + bắt đầu - CỐ ĐỊNH ở đáy màn hình (Surface riêng có elevation để tách
+        // biệt rõ với danh sách acc cuộn ở trên, không bị trôi theo khi cuộn danh sách).
+        Surface(tonalElevation = 4.dp, shadowElevation = 8.dp, color = CardWhite) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { showConfigDialog = true },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Cấu hình nuôi") }
 
-            Button(
-                onClick = {
-                    Toast.makeText(
-                        context,
-                        "Tính năng \"Nuôi tài khoản\" đang được phát triển, sẽ cập nhật sau.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                },
-                enabled = selectedUids.isNotEmpty(),
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Primary)
-            ) { Text("Nuôi tài khoản") }
+                Button(
+                    onClick = {
+                        Toast.makeText(
+                            context,
+                            "Tính năng \"Nuôi tài khoản\" đang được phát triển, sẽ cập nhật sau.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    },
+                    enabled = selectedUids.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                ) { Text("Nuôi tài khoản") }
+            }
         }
     }
 
@@ -208,6 +211,8 @@ fun NurtureSetupScreen(navController: NavController) {
     }
 }
 
+private val DURATION_PRESETS = listOf(15, 30, 60)
+
 @Composable
 private fun NurtureConfigDialog(
     initial: NurtureConfig,
@@ -215,35 +220,99 @@ private fun NurtureConfigDialog(
     onSave: (NurtureConfig) -> Unit
 ) {
     var autoWatch by remember { mutableStateOf(initial.autoWatch) }
-    var autoLike by remember { mutableStateOf(initial.autoLike) }
-    var autoFollow by remember { mutableStateOf(initial.autoFollow) }
-    var durationText by remember { mutableStateOf(initial.durationMinutes.toString()) }
+    var viewComments by remember { mutableStateOf(initial.viewComments) }
+    var copyLink by remember { mutableStateOf(initial.copyLink) }
+    var repost by remember { mutableStateOf(initial.repost) }
+
+    val initialIsPreset = initial.durationMinutes in DURATION_PRESETS
+    var selectedPreset by remember { mutableStateOf(if (initialIsPreset) initial.durationMinutes else null) }
+    var customMinutesText by remember { mutableStateOf(if (initialIsPreset) "" else initial.durationMinutes.toString()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Cấu hình nuôi tài khoản") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ConfigSwitchRow("Tự động xem video", autoWatch) { autoWatch = it }
-                ConfigSwitchRow("Tự động like", autoLike) { autoLike = it }
-                ConfigSwitchRow("Tự động follow gợi ý", autoFollow) { autoFollow = it }
-                OutlinedTextField(
-                    value = durationText,
-                    onValueChange = { v -> durationText = v.filter { it.isDigit() }.take(3) },
-                    label = { Text("Thời gian nuôi mỗi lần (phút)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                ConfigSwitchRow("Tự động xem video", autoWatch, null) { autoWatch = it }
+                ConfigSwitchRow(
+                    "Xem bình luận",
+                    viewComments,
+                    "Cứ vài video lại mở phần bình luận đọc thử rồi đóng"
+                ) { viewComments = it }
+                ConfigSwitchRow(
+                    "Sao chép liên kết",
+                    copyLink,
+                    "Thi thoảng mở chia sẻ rồi sao chép liên kết"
+                ) { copyLink = it }
+                ConfigSwitchRow(
+                    "Đăng lại",
+                    repost,
+                    "Thi thoảng đăng lại"
+                ) { repost = it }
+
+                Text("Thời gian nuôi mỗi lần", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    DURATION_PRESETS.forEach { minutes ->
+                        val selected = selectedPreset == minutes
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (selected) Primary else AppBackground)
+                                .clickable {
+                                    selectedPreset = minutes
+                                    customMinutesText = ""
+                                }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "$minutes phút",
+                                color = if (selected) Color.White else TextPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                    val isCustomSelected = selectedPreset == null
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isCustomSelected) Primary else AppBackground)
+                            .clickable { selectedPreset = null }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Khác",
+                            color = if (isCustomSelected) Color.White else TextPrimary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                if (selectedPreset == null) {
+                    OutlinedTextField(
+                        value = customMinutesText,
+                        onValueChange = { v -> customMinutesText = v.filter { it.isDigit() }.take(3) },
+                        label = { Text("Nhập số phút") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(onClick = {
+                val minutes = selectedPreset ?: (customMinutesText.toIntOrNull()?.coerceIn(1, 999) ?: 15)
                 onSave(
                     NurtureConfig(
                         autoWatch = autoWatch,
-                        autoLike = autoLike,
-                        autoFollow = autoFollow,
-                        durationMinutes = durationText.toIntOrNull()?.coerceIn(1, 999) ?: 10
+                        viewComments = viewComments,
+                        copyLink = copyLink,
+                        repost = repost,
+                        durationMinutes = minutes
                     )
                 )
             }) { Text("Lưu") }
@@ -255,13 +324,19 @@ private fun NurtureConfigDialog(
 }
 
 @Composable
-private fun ConfigSwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun ConfigSwitchRow(label: String, checked: Boolean, description: String?, onCheckedChange: (Boolean) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, fontSize = 14.sp, color = TextPrimary)
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+            if (description != null) {
+                Text(description, fontSize = 11.sp, color = TextSecondary)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
