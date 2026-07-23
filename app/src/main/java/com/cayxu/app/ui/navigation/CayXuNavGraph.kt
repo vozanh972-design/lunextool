@@ -31,6 +31,7 @@ object Routes {
     const val FRIENDS = "friends"
     const val ACCOUNT = "account"
     const val SETTINGS = "settings"
+    const val UTILITIES = "utilities"
     const val LINK_ACCOUNT = "link_account/{platform}/{iconRes}"
     const val ADD_ACCOUNT = "add_account/{platform}/{iconRes}"
 
@@ -50,6 +51,24 @@ object Routes {
 // Các route hiện thanh điều hướng dưới (bottom bar cố định, không nằm trong vùng chuyển
 // cảnh mờ dần, nên không bị "nẩy" hay animate theo nội dung mỗi lần chuyển màn).
 private val routesWithBottomBar = setOf(Routes.HOME, Routes.TASKS, Routes.WALLET, Routes.ACCOUNT, Routes.FRIENDS)
+
+/**
+ * Luôn đưa được về Trang chủ, dùng cho nút back thủ công ở các màn như Nhiệm vụ/Ví/Tiện ích
+ * (khác với navController.popBackStack() đơn thuần, cái đó CHỈ lùi lại đúng 1 bước và có thể
+ * "kẹt" không về Home nếu back stack ở trạng thái bất thường - vd màn được mở lại nhiều lần từ
+ * nhiều lối vào khác nhau). popBackStack(HOME, inclusive = false) sẽ lùi thẳng tới Home nếu
+ * Home còn trong back stack; nếu vì lý do gì đó Home không còn trong stack nữa (edge case),
+ * fallback sang navigate thẳng tới Home với back stack sạch.
+ */
+fun androidx.navigation.NavController.goHome() {
+    val reachedHome = popBackStack(Routes.HOME, false)
+    if (!reachedHome) {
+        navigate(Routes.HOME) {
+            popUpTo(0) { inclusive = true }
+            launchSingleTop = true
+        }
+    }
+}
 
 private const val FADE_DURATION_MS = 260
 
@@ -96,6 +115,9 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             composable(Routes.FRIENDS) { FriendsScreen(navController) }
             composable(Routes.ACCOUNT) { AccountScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
+            composable(Routes.UTILITIES) {
+                com.cayxu.app.ui.screens.utilities.UtilitiesScreen(navController)
+            }
             composable(
                 route = Routes.LINK_ACCOUNT,
                 arguments = listOf(

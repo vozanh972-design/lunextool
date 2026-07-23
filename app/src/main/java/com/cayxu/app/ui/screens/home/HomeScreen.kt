@@ -115,7 +115,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                         subtitle = "Khám phá công cụ hữu ích",
                         accentColor = Color(0xFF7C3AED),
                         modifier = Modifier.weight(1f)
-                    ) { }
+                    ) { navController.navigate(com.cayxu.app.ui.navigation.Routes.UTILITIES) { launchSingleTop = true } }
                     MenuButton(
                         icon = Icons.Filled.Settings,
                         label = "Cài đặt",
@@ -148,12 +148,21 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
             Spacer(Modifier.height(24.dp))
 
-            SectionHeader("Lịch sử gần đây") { navController.navigate("wallet") { launchSingleTop = true } }
+            SectionHeader("Hoạt động gần đây") { navController.navigate("wallet") { launchSingleTop = true } }
             Spacer(Modifier.height(10.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                HistoryRow(Icons.Filled.CheckCircle, SuccessGreen, "Hoàn thành nhiệm vụ", "Nhận thưởng nhiệm vụ", "+2.000 Xu", "Hôm nay, 09:30", true)
-                HistoryRow(Icons.Filled.EventAvailable, SuccessGreen, "Điểm danh hàng ngày", "Điểm danh ngày 7", "+500 Xu", "Hôm nay, 08:15", true)
-                HistoryRow(Icons.Filled.AccountBalanceWallet, DangerRed, "Rút tiền về ngân hàng", "Rút về MB Bank **** 1234", "-100.000 Xu", "Hôm qua, 21:45", false)
+            if (uiState.recentActivities.isEmpty()) {
+                EmptyActivityCard()
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    uiState.recentActivities.forEach { activity ->
+                        val icon = when (activity.kind) {
+                            RecentActivityKind.TIKTOK_LINKED -> Icons.Filled.MusicNote
+                            RecentActivityKind.FACEBOOK_LINKED -> Icons.Filled.Facebook
+                        }
+                        val color = if (activity.isHealthy) SuccessGreen else DangerRed
+                        HistoryRow(icon, color, activity.title, activity.subtitle, "", activity.timeLabel, activity.isHealthy)
+                    }
+                }
             }
 
             Spacer(Modifier.height(90.dp))
@@ -454,6 +463,25 @@ private fun TaskRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title
 }
 
 @Composable
+private fun EmptyActivityCard() {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(Icons.Filled.History, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.height(8.dp))
+            Text("Chưa có hoạt động nào gần đây", color = TextSecondary, fontSize = 13.sp)
+        }
+    }
+}
+
+@Composable
 private fun HistoryRow(icon: androidx.compose.ui.graphics.vector.ImageVector, iconColor: Color, title: String, subtitle: String, amount: String, time: String, isPositive: Boolean) {
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -474,7 +502,9 @@ private fun HistoryRow(icon: androidx.compose.ui.graphics.vector.ImageVector, ic
                 Text(subtitle, color = TextSecondary, fontSize = 12.sp)
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(amount, color = if (isPositive) SuccessGreen else DangerRed, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                if (amount.isNotBlank()) {
+                    Text(amount, color = if (isPositive) SuccessGreen else DangerRed, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                }
                 Text(time, color = TextSecondary, fontSize = 11.sp)
             }
         }

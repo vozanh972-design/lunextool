@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.cayxu.app.R
+import com.cayxu.app.ui.navigation.goHome
 import com.cayxu.app.ui.theme.*
 
 private data class WalletHistoryItem(
@@ -76,7 +77,7 @@ fun WalletScreen(navController: NavController) {
             Spacer(Modifier.height(14.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { navController.popBackStack() }, modifier = Modifier.size(32.dp)) {
+                IconButton(onClick = { navController.goHome() }, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Filled.ArrowBack, contentDescription = "Quay lại", tint = TextPrimary)
                 }
                 Spacer(Modifier.width(6.dp))

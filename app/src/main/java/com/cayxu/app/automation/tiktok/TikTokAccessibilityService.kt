@@ -237,19 +237,80 @@ class TikTokAccessibilityService : AccessibilityService() {
     /**
      * Mũi tên/dropdown cạnh tên ở đầu trang "Tôi" thường không có text riêng - nó là node
      * clickable NHỎ nhất bao quanh (hoặc ngay cạnh) node tên hiển thị/@ ở khu vực đầu trang
-     * (không phải trong thanh tab dưới cùng). Nếu không tìm được node clickable tách riêng,
-     * fallback: bấm thẳng vào node tên/@ (thường cả khối tên+mũi tên dùng chung 1 click target).
+     * (không phải trong thanh tab dưới cùng). Thử NHIỀU cách theo thứ tự ưu tiên, vì layout
+     * có thể khác nhau tuỳ máy/phiên bản TikTok:
+     *   1) Node clickable bao quanh TÊN HIỂN THỊ (thường cùng khối với mũi tên) - leo sâu
+     *      hơn (10 cấp thay vì 6) vì một số layout lồng nhiều lớp Compose/View hơn dự kiến.
+     *   2) Node clickable bao quanh @handle (fallback cũ).
+     *   3) Bất kỳ node clickable nào ở vùng ĐẦU màn hình (khoảng 22% trên cùng) có mô tả
+     *      icon kiểu mũi tên/dropdown - phòng trường hợp mũi tên là 1 icon con riêng biệt,
+     *      không nằm chung khối clickable với tên/@ nào cả.
+     * Nếu cả 3 đều không tìm được, trả về null để nơi gọi tự fallback bấm thẳng @handle.
      */
     private fun findSwitchAccountArrow(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         val handleNode = findHandleNode(root) ?: return null
-        // Tên hiển thị (không bắt đầu bằng @) thường nằm cùng khối với mũi tên chuyển đổi,
-        // và nằm PHÍA TRÊN @handle. Ưu tiên node clickable bao quanh tên hiển thị đó.
-        var node: AccessibilityNodeInfo? = handleNode.parent
+
+        findClickableAncestorOf(findDisplayNameNodeNear(handleNode), maxDepth = 10)?.let { return it }
+        findClickableAncestorOf(handleNode, maxDepth = 10)?.let { return it }
+        findHeaderDropdownIcon(root)?.let { return it }
+        return null
+    }
+
+    /** Leo lên tối đa [maxDepth] cấp cha kể từ [start] để tìm node clickable gần nhất. */
+    private fun findClickableAncestorOf(start: AccessibilityNodeInfo?, maxDepth: Int): AccessibilityNodeInfo? {
+        var node: AccessibilityNodeInfo? = start
         var depth = 0
-        while (node != null && depth < 6) {
+        while (node != null && depth < maxDepth) {
             if (node.isClickable) return node
             node = node.parent
             depth++
+        }
+        return null
+    }
+
+    /** Tìm node text (không phải @handle) là anh em gần nhất với @handle - đây là tên hiển thị. */
+    private fun findDisplayNameNodeNear(handleNode: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val parent = handleNode.parent ?: return null
+        for (i in 0 until parent.childCount) {
+            val sibling = parent.getChild(i) ?: continue
+            val text = sibling.text?.toString()?.trim()
+            if (!text.isNullOrBlank() && !text.startsWith("@")) return sibling
+        }
+        return null
+    }
+
+    /**
+     * Quét vùng ĐẦU màn hình (top ~22% chiều cao root) tìm 1 node clickable riêng biệt có
+     * contentDescription gợi ý icon mũi tên/dropdown (một số bản TikTok tách mũi tên thành
+     * icon button riêng, không lồng chung khối clickable với tên/@).
+     */
+    private fun findHeaderDropdownIcon(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val rootBounds = android.graphics.Rect()
+        root.getBoundsInScreen(rootBounds)
+        if (rootBounds.height() <= 0) return null
+        val headerBottomLimit = rootBounds.top + (rootBounds.height() * 0.22f).toInt()
+        return findClickableIconInRegion(root, headerBottomLimit)
+    }
+
+    private fun findClickableIconInRegion(
+        node: AccessibilityNodeInfo,
+        headerBottomLimit: Int,
+        depth: Int = 0
+    ): AccessibilityNodeInfo? {
+        if (depth > 40) return null
+        if (node.isClickable) {
+            val bounds = android.graphics.Rect()
+            node.getBoundsInScreen(bounds)
+            if (bounds.bottom in 1..headerBottomLimit) {
+                val desc = node.contentDescription?.toString()?.lowercase().orEmpty()
+                val dropdownHints = listOf("arrow", "drop", "expand", "chevron", "mũi tên", "xổ")
+                if (dropdownHints.any { desc.contains(it) }) return node
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findClickableIconInRegion(child, headerBottomLimit, depth + 1)
+            if (found != null) return found
         }
         return null
     }

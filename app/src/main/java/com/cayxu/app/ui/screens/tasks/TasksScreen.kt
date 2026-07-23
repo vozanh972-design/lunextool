@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.HelpOutline
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.cayxu.app.R
+import com.cayxu.app.ui.navigation.goHome
 import com.cayxu.app.ui.theme.AppBackground
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.InfoBlueBg
@@ -84,7 +86,13 @@ fun TasksScreen(navController: NavController) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Nhiệm vụ", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { navController.goHome() }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Về trang chủ", tint = TextPrimary)
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text("Nhiệm vụ", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                }
                 IconButton(onClick = { /* TODO: hướng dẫn làm nhiệm vụ */ }) {
                     Icon(Icons.Filled.HelpOutline, contentDescription = "Trợ giúp", tint = TextPrimary)
                 }

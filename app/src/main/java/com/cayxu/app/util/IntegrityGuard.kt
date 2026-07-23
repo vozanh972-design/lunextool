@@ -73,17 +73,24 @@ object IntegrityGuard {
     }
 
     /**
-     * Kiểm tra CỨNG, chỉ cục bộ (không gọi verify_key.php hay request mạng nào): chữ ký APK
-     * và tính toàn vẹn của key đã lưu (nếu có). Gọi càng SỚM càng tốt trong vòng đời app
-     * (trước khi vẽ UI) - nếu 1 trong 2 sai thì ném exception ngay để app dừng/crash tại chỗ,
+     * Kiểm tra CỨNG, chỉ cục bộ (không gọi verify_key.php hay request mạng nào): CHỈ xét
+     * chữ ký APK + debugger/hook. Nếu sai thì ném exception ngay để app dừng/crash tại chỗ,
      * không hiện màn hình giải thích gì. Cố tình gọi ở NHIỀU điểm khác nhau trong app (xem
      * CayXuApp và HomeScreen) thay vì chỉ 1 chỗ duy nhất, để việc patch/xoá 1 điểm gọi không
      * đủ để vô hiệu hoá toàn bộ - đây là lớp gây khó/tốn thời gian, KHÔNG PHẢI chống crack
      * tuyệt đối.
+     *
+     * LƯU Ý QUAN TRỌNG: KHÔNG còn xét fingerprint key ở đây nữa. Trước đây fingerprint sai
+     * (đổi máy/reset máy) cũng bị ném exception giống hệt tampered, khiến app crash ngay từ
+     * CayXuApp.onCreate() - kể cả khi user đổi máy HOÀN TOÀN HỢP LỆ (không phải bẻ khoá gì
+     * cả). Việc xác nhận "key có còn đúng với máy hiện tại không" giờ để server quyết định
+     * qua verify_key.php (xem LoginViewModel.checkSavedKey và KeyRecheckWorker) - nếu server
+     * không cho phép đổi máy, luồng đó tự đưa user quay lại màn Login một cách êm ái, không
+     * crash cứng. Fingerprint cục bộ vẫn được lưu/so sánh (xem isKeyFingerprintInvalid) chỉ
+     * để tham khảo, không dùng để chặn hay crash app nữa.
      */
     fun assertValidOrCrash(context: Context) {
-        val invalid = isTampered(context) || isKeyFingerprintInvalid(context)
-        if (invalid) {
+        if (isTampered(context)) {
             throw IllegalStateException()
         }
     }
