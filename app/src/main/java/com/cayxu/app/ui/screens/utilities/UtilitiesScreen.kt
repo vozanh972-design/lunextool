@@ -68,7 +68,7 @@ fun UtilitiesScreen(navController: NavController) {
             UtilityToolCard(
                 tool = tool,
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { /* TODO: gắn màn hình "Nuôi tài khoản" khi tính năng sẵn sàng */ }
+                onClick = { navController.navigate(com.cayxu.app.ui.navigation.Routes.NURTURE_SETUP) { launchSingleTop = true } }
             )
             Spacer(Modifier.height(12.dp))
         }

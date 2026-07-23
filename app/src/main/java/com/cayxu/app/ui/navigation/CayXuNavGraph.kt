@@ -32,6 +32,7 @@ object Routes {
     const val ACCOUNT = "account"
     const val SETTINGS = "settings"
     const val UTILITIES = "utilities"
+    const val NURTURE_SETUP = "nurture_setup"
     const val LINK_ACCOUNT = "link_account/{platform}/{iconRes}"
     const val ADD_ACCOUNT = "add_account/{platform}/{iconRes}"
 
@@ -117,6 +118,9 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.UTILITIES) {
                 com.cayxu.app.ui.screens.utilities.UtilitiesScreen(navController)
+            }
+            composable(Routes.NURTURE_SETUP) {
+                com.cayxu.app.ui.screens.nurture.NurtureSetupScreen(navController)
             }
             composable(
                 route = Routes.LINK_ACCOUNT,

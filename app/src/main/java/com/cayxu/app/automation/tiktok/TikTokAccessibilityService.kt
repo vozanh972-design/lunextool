@@ -330,21 +330,27 @@ class TikTokAccessibilityService : AccessibilityService() {
     private fun findMenuIcon(root: AccessibilityNodeInfo, attemptIndex: Int): AccessibilityNodeInfo? {
         val rootBounds = android.graphics.Rect()
         root.getBoundsInScreen(rootBounds)
-        if (rootBounds.height() <= 0) return null
-        val headerBottomLimit = rootBounds.top + (rootBounds.height() * 0.10f).toInt()
+        if (rootBounds.height() <= 0 || rootBounds.width() <= 0) return null
+        // Nới vùng đầu màn hình rộng hơn (14% thay vì 10%) - một số máy status bar/header
+        // cao hơn dự tính khiến icon nằm ngoài vùng cũ.
+        val headerBottomLimit = rootBounds.top + (rootBounds.height() * 0.14f).toInt()
+        val maxIconWidth = (rootBounds.width() * 0.16f).toInt()
+        val maxIconHeight = (rootBounds.height() * 0.07f).toInt()
 
         val byHint = findClickableIconInRegion(root, headerBottomLimit)
         if (byHint != null) return byHint
 
         val candidates = mutableListOf<AccessibilityNodeInfo>()
-        collectHeaderIconCandidates(root, headerBottomLimit, candidates)
+        collectHeaderIconCandidates(root, headerBottomLimit, maxIconWidth, maxIconHeight, candidates)
         if (candidates.isEmpty()) return null
         candidates.sortByDescending { node ->
             val b = android.graphics.Rect()
             node.getBoundsInScreen(b)
             b.right
         }
-        val index = attemptIndex.coerceIn(0, candidates.size - 1)
+        // Dùng modulo thay vì coerceIn: số lần thử giờ KHÔNG giới hạn (xem startPollingSwitchAccountList),
+        // nên phải quay vòng lại candidate đầu thay vì kẹt mãi ở candidate cuối cùng.
+        val index = attemptIndex % candidates.size
         return candidates[index]
     }
 
@@ -371,10 +377,18 @@ class TikTokAccessibilityService : AccessibilityService() {
         return null
     }
 
-    /** Gom các node clickable, KHÔNG CÓ text riêng (icon thuần), nằm trong vùng đầu màn hình. */
+    /**
+     * Gom các node clickable nằm trong vùng đầu màn hình, có kích thước NHỎ kiểu icon (không
+     * quá [maxWidth] x [maxHeight]). KHÔNG còn lọc theo "không có text" như trước - icon dạng
+     * font chữ (icon font, rất phổ biến trong app TikTok) vẫn có 1 ký tự riêng làm text, lọc
+     * theo text trống sẽ loại nhầm icon thật ra khỏi danh sách candidate. Dừng đệ quy ngay khi
+     * gặp 1 node clickable hợp lệ (lấy đúng vùng bấm ngoài cùng, không lặn sâu vào con của nó).
+     */
     private fun collectHeaderIconCandidates(
         node: AccessibilityNodeInfo,
         headerBottomLimit: Int,
+        maxWidth: Int,
+        maxHeight: Int,
         out: MutableList<AccessibilityNodeInfo>,
         depth: Int = 0
     ) {
@@ -382,14 +396,16 @@ class TikTokAccessibilityService : AccessibilityService() {
         if (node.isClickable) {
             val bounds = android.graphics.Rect()
             node.getBoundsInScreen(bounds)
-            if (bounds.bottom in 1..headerBottomLimit && node.text.isNullOrBlank()) {
+            val w = bounds.width()
+            val h = bounds.height()
+            if (bounds.bottom in 1..headerBottomLimit && w in 1..maxWidth && h in 1..maxHeight) {
                 out.add(node)
                 return
             }
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            collectHeaderIconCandidates(child, headerBottomLimit, out, depth + 1)
+            collectHeaderIconCandidates(child, headerBottomLimit, maxWidth, maxHeight, out, depth + 1)
         }
     }
 
