@@ -1,15 +1,21 @@
 package com.cayxu.app.automation.tiktok
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
 import android.content.Intent
+import android.graphics.Path
+import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.cayxu.app.automation.nurture.NurtureBridge
+import com.cayxu.app.automation.nurture.NurtureState
 import com.cayxu.app.data.local.TikTokAppVariant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 /**
  * Dịch vụ hỗ trợ - lo TOÀN BỘ việc tự động lấy tài khoản TikTok, KHÔNG cần người dùng
@@ -62,10 +68,17 @@ class TikTokAccessibilityService : AccessibilityService() {
         )
         // Gợi ý nhận diện icon menu (☰) ở đầu trang Hồ sơ, khi không có contentDescription rõ ràng.
         private val MENU_ICON_HINTS = listOf("menu", "more", "tùy chọn", "cài đặt")
+
+        // Nhãn cho tính năng "Nuôi tài khoản" - chỉ chạy ĐÚNG hành động nào cấu hình đã bật.
+        private val COMMENT_LABELS = setOf("bình luận", "comment", "comments")
+        private val SHARE_LABELS = setOf("chia sẻ", "share")
+        private val COPY_LINK_LABELS = setOf("sao chép liên kết", "copy link")
+        private val REPOST_LABELS = setOf("đăng lại", "repost")
     }
 
     private val scope = CoroutineScope(Dispatchers.Main)
     private var pollingJob: Job? = null
+    private var nurtureJob: Job? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -80,11 +93,23 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
             }
         }
+        // Theo dõi riêng phiên "Nuôi tài khoản" - tự lướt video/xem bình luận/sao chép liên
+        // kết/đăng lại ĐÚNG những gì cấu hình đã bật, tới khi hết giờ hoặc bị Dừng.
+        scope.launch {
+            NurtureBridge.state.collect { state ->
+                if (state is NurtureState.Running) {
+                    startNurtureLoop(state)
+                } else {
+                    nurtureJob?.cancel()
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         pollingJob?.cancel()
+        nurtureJob?.cancel()
     }
 
     // Không cần xử lý gì ở đây - toàn bộ logic tự động nằm ở vòng lặp polling để không phụ
@@ -92,6 +117,99 @@ class TikTokAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
     override fun onInterrupt() {}
+
+    /**
+     * Vòng lặp "Nuôi tài khoản" - CHỈ chạy đúng hành động nào cấu hình đã bật:
+     *   - autoWatch: lướt (vuốt) sang video kế tiếp sau khi "xem" một lúc.
+     *   - viewComments: thi thoảng mở bình luận đọc thử rồi đóng lại.
+     *   - copyLink: thi thoảng mở chia sẻ rồi bấm "Sao chép liên kết".
+     *   - repost: thi thoảng bấm "Đăng lại".
+     * Dừng khi hết mốc thời gian (endAtMillis) hoặc khi NurtureBridge chuyển về Idle (bấm "Dừng").
+     */
+    private fun startNurtureLoop(state: NurtureState.Running) {
+        nurtureJob?.cancel()
+        nurtureJob = scope.launch {
+            val pkg = TikTokAppLauncher.packageNameOf(state.variant)
+            var cycle = 0
+            while (
+                System.currentTimeMillis() < state.endAtMillis &&
+                NurtureBridge.state.value is NurtureState.Running
+            ) {
+                val root = findRootForPackage(pkg)
+                if (root == null) {
+                    delay(1000)
+                    continue
+                }
+                cycle++
+
+                if (state.viewComments && cycle % 3 == 0) {
+                    val commentNode = findNodeByText(root, COMMENT_LABELS, exact = false)
+                    if (commentNode != null) {
+                        clickNode(commentNode)
+                        delay(Random.nextLong(2500L, 4500L))
+                        performGlobalAction(GLOBAL_ACTION_BACK)
+                        delay(700)
+                    }
+                }
+
+                if (state.copyLink && cycle % 5 == 0) {
+                    val shareRoot = findRootForPackage(pkg)
+                    val shareNode = shareRoot?.let { findNodeByText(it, SHARE_LABELS, exact = false) }
+                    if (shareNode != null) {
+                        clickNode(shareNode)
+                        delay(900)
+                        val sheetRoot = findRootForPackage(pkg)
+                        val copyNode = sheetRoot?.let { findNodeByText(it, COPY_LINK_LABELS, exact = false) }
+                        if (copyNode != null) {
+                            clickNode(copyNode)
+                            delay(500)
+                        }
+                        performGlobalAction(GLOBAL_ACTION_BACK)
+                        delay(700)
+                    }
+                }
+
+                if (state.repost && cycle % 6 == 0) {
+                    val repostRoot = findRootForPackage(pkg)
+                    val repostNode = repostRoot?.let { findNodeByText(it, REPOST_LABELS, exact = false) }
+                    if (repostNode != null) {
+                        clickNode(repostNode)
+                        delay(1200)
+                    }
+                }
+
+                if (state.autoWatch) {
+                    // "Xem" một lúc như người thật rồi mới lướt tiếp, không lướt liên tục.
+                    delay(Random.nextLong(4000L, 9000L))
+                    swipeUpNextVideo()
+                    delay(600)
+                } else {
+                    delay(1500)
+                }
+            }
+            NurtureBridge.stop()
+        }
+    }
+
+    /** Vuốt lên để lướt sang video kế tiếp - gesture chuẩn của TikTok, không phụ thuộc tìm nút. */
+    private fun swipeUpNextVideo() {
+        val root = rootInActiveWindow ?: return
+        val bounds = Rect()
+        root.getBoundsInScreen(bounds)
+        if (bounds.width() <= 0 || bounds.height() <= 0) return
+
+        val startX = (bounds.left + bounds.right) / 2f
+        val startY = bounds.top + bounds.height() * 0.75f
+        val endY = bounds.top + bounds.height() * 0.25f
+        val path = Path().apply {
+            moveTo(startX, startY)
+            lineTo(startX, endY)
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 260))
+            .build()
+        dispatchGesture(gesture, null, null)
+    }
 
     private fun startPolling(variant: TikTokAppVariant) {
         if (variant == TikTokAppVariant.STANDARD) {

@@ -190,7 +190,7 @@ fun NurtureSetupScreen(navController: NavController) {
                             showOverlayPermissionDialog = true
                             return@Button
                         }
-                        startNurture(context, selectedVariant, config.durationMinutes)
+                        startNurture(context, selectedVariant, config)
                     },
                     enabled = selectedUids.isNotEmpty(),
                     modifier = Modifier.weight(1f),
@@ -217,7 +217,7 @@ fun NurtureSetupScreen(navController: NavController) {
             onDismiss = { showOverlayPermissionDialog = false },
             onGranted = {
                 showOverlayPermissionDialog = false
-                startNurture(context, selectedVariant, config.durationMinutes)
+                startNurture(context, selectedVariant, config)
             }
         )
     }
@@ -264,12 +264,17 @@ private fun OverlayPermissionDialog(onDismiss: () -> Unit, onGranted: () -> Unit
     )
 }
 
-/** Mở app TikTok theo phiên bản đang chọn rồi bật lớp nổi đếm giờ nuôi tài khoản. */
-private fun startNurture(context: android.content.Context, variant: TikTokAppVariant, durationMinutes: Int) {
+/** Mở app TikTok theo phiên bản đang chọn rồi bật lớp nổi đếm giờ + tự chạy đúng cấu hình đã bật. */
+private fun startNurture(context: android.content.Context, variant: TikTokAppVariant, config: NurtureConfig) {
     com.cayxu.app.automation.tiktok.TikTokAppLauncher.launch(context, variant)
     context.startService(
         android.content.Intent(context, com.cayxu.app.automation.nurture.NurtureOverlayService::class.java)
-            .putExtra(com.cayxu.app.automation.nurture.NurtureOverlayService.EXTRA_DURATION_MINUTES, durationMinutes)
+            .putExtra(com.cayxu.app.automation.nurture.NurtureOverlayService.EXTRA_DURATION_MINUTES, config.durationMinutes)
+            .putExtra(com.cayxu.app.automation.nurture.NurtureOverlayService.EXTRA_VARIANT, variant.name)
+            .putExtra(com.cayxu.app.automation.nurture.NurtureOverlayService.EXTRA_AUTO_WATCH, config.autoWatch)
+            .putExtra(com.cayxu.app.automation.nurture.NurtureOverlayService.EXTRA_VIEW_COMMENTS, config.viewComments)
+            .putExtra(com.cayxu.app.automation.nurture.NurtureOverlayService.EXTRA_COPY_LINK, config.copyLink)
+            .putExtra(com.cayxu.app.automation.nurture.NurtureOverlayService.EXTRA_REPOST, config.repost)
     )
 }
 

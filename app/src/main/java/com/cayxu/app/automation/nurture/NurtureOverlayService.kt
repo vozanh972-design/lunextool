@@ -16,6 +16,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.data.local.SecurePrefs
+import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.data.repository.AuthRepository
 import com.cayxu.app.data.repository.AuthResult
 import com.cayxu.app.util.DeviceUtils
@@ -35,6 +36,11 @@ class NurtureOverlayService : Service() {
 
     companion object {
         const val EXTRA_DURATION_MINUTES = "extra_duration_minutes"
+        const val EXTRA_VARIANT = "extra_variant"
+        const val EXTRA_AUTO_WATCH = "extra_auto_watch"
+        const val EXTRA_VIEW_COMMENTS = "extra_view_comments"
+        const val EXTRA_COPY_LINK = "extra_copy_link"
+        const val EXTRA_REPOST = "extra_repost"
         const val BUY_KEY_URL = "lunex.io.vn"
     }
 
@@ -49,10 +55,21 @@ class NurtureOverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val durationMinutes = intent?.getIntExtra(EXTRA_DURATION_MINUTES, 15) ?: 15
+        val variant = intent?.getStringExtra(EXTRA_VARIANT)
+            ?.let { runCatching { TikTokAppVariant.valueOf(it) }.getOrNull() }
+            ?: TikTokAppVariant.STANDARD
+        val autoWatch = intent?.getBooleanExtra(EXTRA_AUTO_WATCH, true) ?: true
+        val viewComments = intent?.getBooleanExtra(EXTRA_VIEW_COMMENTS, false) ?: false
+        val copyLink = intent?.getBooleanExtra(EXTRA_COPY_LINK, false) ?: false
+        val repost = intent?.getBooleanExtra(EXTRA_REPOST, false) ?: false
+
         if (bubbleView == null) {
             showBubble()
             loadKeyInfo()
             startCountdown(durationMinutes)
+            // Báo cho TikTokAccessibilityService biết ĐÚNG những hành động nào cần tự chạy -
+            // chỉ chạy cái nào cấu hình đã bật, không tự thêm hành động ngoài ý muốn.
+            NurtureBridge.start(variant, autoWatch, viewComments, copyLink, repost, durationMinutes)
         }
         return START_NOT_STICKY
     }
@@ -99,6 +116,8 @@ class NurtureOverlayService : Service() {
     }
 
     private fun stopAndReturn() {
+        // Dừng vòng lặp tự động (lướt video/xem bình luận/...) trong TikTokAccessibilityService.
+        NurtureBridge.stop()
         // Đưa tool trở lại đúng màn hình Nuôi tài khoản (đang nằm sẵn trên back stack vì
         // người dùng bấm "Nuôi tài khoản" từ chính màn đó, chỉ cần đưa app lên trước).
         TikTokAppLauncher.bringToolToFront(applicationContext)
@@ -132,7 +151,7 @@ class NurtureOverlayService : Service() {
             setPadding(28, 22, 28, 22)
             background = GradientDrawable().apply {
                 cornerRadius = 28f
-                setColor(Color.parseColor("#F016A085"))
+                setColor(Color.parseColor("#F0424242"))
             }
         }
 
@@ -167,7 +186,7 @@ class NurtureOverlayService : Service() {
 
         val stopBtn = TextView(this).apply {
             text = "  Dừng  "
-            setTextColor(Color.parseColor("#16A085"))
+            setTextColor(Color.parseColor("#424242"))
             textSize = 13f
             background = GradientDrawable().apply {
                 cornerRadius = 20f
@@ -214,6 +233,7 @@ class NurtureOverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         countDownTimer?.cancel()
+        NurtureBridge.stop()
         bubbleView?.let {
             runCatching { windowManager.removeView(it) }
         }
