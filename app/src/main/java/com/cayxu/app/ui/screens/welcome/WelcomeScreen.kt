@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -23,8 +24,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cayxu.app.R
@@ -39,8 +43,8 @@ import com.cayxu.app.ui.theme.*
  * khi vào màn nhập Key kích hoạt.
  *
  * Bố cục dựng theo ảnh mẫu do bên làm app (Lunex) cung cấp:
- *   [logo Lunex + nút chọn ngôn ngữ] -> [ảnh minh họa] -> [badge CâyXu] -> [tiêu đề] ->
- *   [mô tả] -> [nút Bắt đầu ngay] -> [chấm phân trang] -> [điều khoản].
+ *   [logo Lunex + nút chọn ngôn ngữ] -> [ảnh minh họa] -> [tiêu đề] -> [mô tả] ->
+ *   [nút Bắt đầu ngay] -> [điều khoản, "Điều khoản sử dụng"/"Chính sách bảo mật" bấm được].
  * Phần ảnh minh họa ở giữa là ảnh tĩnh cắt từ mẫu gốc (ill_welcome_hero) - không dựng lại
  * bằng code vì đây là ảnh dựng 3D phức tạp, đúng như yêu cầu "cắt gắn vô".
  */
@@ -48,6 +52,8 @@ import com.cayxu.app.ui.theme.*
 fun WelcomeScreen(onGetStarted: () -> Unit) {
     val context = LocalContext.current
     var languageMenuExpanded by remember { mutableStateOf(false) }
+    var showTermsDialog by remember { mutableStateOf(false) }
+    var showPrivacyDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -133,21 +139,7 @@ fun WelcomeScreen(onGetStarted: () -> Unit) {
                     .weight(1f, fill = false)
             )
 
-            Spacer(Modifier.height(4.dp))
-
-            // ---- Badge app CâyXu (app thật là CâyXu, Lunex là bên phát triển ở trên) ----
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Image(
-                    painter = painterResource(R.drawable.ic_app_logo),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(22.dp).clip(RoundedCornerShape(6.dp))
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(Str.welcomeAppBadge, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            }
-
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(20.dp))
 
             Text(
                 Str.welcomeTitleLine1,
@@ -197,23 +189,64 @@ fun WelcomeScreen(onGetStarted: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
 
-            // ---- Chấm phân trang (trang trí, giống mẫu) ----
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.size(8.dp).clip(CircleShape).background(Primary))
-                Box(Modifier.size(8.dp).clip(CircleShape).background(TextSecondary.copy(alpha = 0.3f)))
-                Box(Modifier.size(8.dp).clip(CircleShape).background(TextSecondary.copy(alpha = 0.3f)))
+            // ---- "Điều khoản sử dụng" / "Chính sách bảo mật" bấm vào mở bảng đọc nội dung ----
+            val termsPrefix = Str.welcomeTermsPrefix
+            val termsLink = Str.welcomeTermsLink
+            val termsMiddle = Str.welcomeTermsMiddle
+            val privacyLink = Str.welcomePrivacyLink
+            val termsSuffix = Str.welcomeTermsSuffix
+
+            val annotatedTerms = buildAnnotatedString {
+                append(termsPrefix)
+                pushStringAnnotation(tag = "terms", annotation = "terms")
+                withStyle(SpanStyle(color = Primary, fontWeight = FontWeight.SemiBold)) { append(termsLink) }
+                pop()
+                append(termsMiddle)
+                pushStringAnnotation(tag = "privacy", annotation = "privacy")
+                withStyle(SpanStyle(color = Primary, fontWeight = FontWeight.SemiBold)) { append(privacyLink) }
+                pop()
+                append(termsSuffix)
             }
 
-            Spacer(Modifier.height(14.dp))
-
-            Text(
-                Str.welcomeTerms,
-                fontSize = 11.sp,
-                color = TextSecondary,
-                textAlign = TextAlign.Center
+            ClickableText(
+                text = annotatedTerms,
+                style = androidx.compose.ui.text.TextStyle(
+                    fontSize = 11.sp,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center
+                ),
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { offset ->
+                    annotatedTerms.getStringAnnotations(tag = "terms", start = offset, end = offset)
+                        .firstOrNull()?.let { showTermsDialog = true }
+                    annotatedTerms.getStringAnnotations(tag = "privacy", start = offset, end = offset)
+                        .firstOrNull()?.let { showPrivacyDialog = true }
+                }
             )
 
             Spacer(Modifier.height(20.dp))
+        }
+
+        if (showTermsDialog) {
+            AlertDialog(
+                onDismissRequest = { showTermsDialog = false },
+                title = { Text(Str.termsDialogTitle, fontWeight = FontWeight.Bold) },
+                text = { Text(Str.termsDialogBody, fontSize = 13.sp, lineHeight = 19.sp) },
+                confirmButton = {
+                    TextButton(onClick = { showTermsDialog = false }) { Text(Str.dialogCloseButton) }
+                }
+            )
+        }
+
+        if (showPrivacyDialog) {
+            AlertDialog(
+                onDismissRequest = { showPrivacyDialog = false },
+                title = { Text(Str.privacyDialogTitle, fontWeight = FontWeight.Bold) },
+                text = { Text(Str.privacyDialogBody, fontSize = 13.sp, lineHeight = 19.sp) },
+                confirmButton = {
+                    TextButton(onClick = { showPrivacyDialog = false }) { Text(Str.dialogCloseButton) }
+                }
+            )
         }
     }
 }

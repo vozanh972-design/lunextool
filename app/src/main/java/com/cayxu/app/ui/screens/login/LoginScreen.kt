@@ -3,6 +3,7 @@ package com.cayxu.app.ui.screens.login
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -25,12 +26,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cayxu.app.R
 import com.cayxu.app.data.local.SecurePrefs
-import com.cayxu.app.data.repository.AuthRepository
-import com.cayxu.app.data.repository.AuthResult
 import com.cayxu.app.ui.theme.*
-import com.cayxu.app.util.DeviceUtils
 import com.cayxu.app.util.decodeText
-import kotlinx.coroutines.launch
 
 // Toàn bộ text hiển thị trên màn nhập Key được mã hoá XOR, chỉ giải mã lúc chạy,
 // để tránh lộ nguyên văn khi ai đó decompile APK rồi tìm chuỗi tĩnh.
@@ -41,12 +38,20 @@ private val TEXT_KEY_LABEL = decodeText(17, 63, 35, 122, 57, 7869, 59, 122, 56, 
 private val TEXT_KEY_PLACEHOLDER = decodeText(20, 50, 7927, 42, 122, 49, 63, 35, 122, 46, 7931, 51, 122, 331, 184, 35)
 private val TEXT_BTN_ACTIVATE = decodeText(17, 183, 57, 50, 122, 50, 53, 7931, 46, 122, 52, 61, 59, 35)
 private val TEXT_OR = decodeText(18, 53, 7917, 57)
-private val TEXT_CHECK_KEY_TITLE = decodeText(17, 51, 7833, 55, 122, 46, 40, 59, 122, 49, 63, 35, 122, 57, 7869, 59, 122, 56, 7931, 52)
-private val TEXT_CHECK_KEY_DESC = decodeText(17, 51, 7833, 55, 122, 46, 40, 59, 122, 49, 63, 35, 122, 57, 168, 52, 122, 50, 7931, 52, 122, 41, 7863, 122, 62, 7871, 52, 61, 122, 46, 40, 490, 7809, 57, 122, 49, 50, 51, 122, 49, 183, 57, 50, 122, 50, 53, 7931, 46, 116)
+private val TEXT_BUY_KEY_TITLE = "Chưa có key?"
+private val TEXT_BUY_KEY_DESC = "Bấm để mua key kích hoạt mới"
 private val TEXT_NOTE_TITLE = decodeText(22, 490, 47, 122, 167, 122, 43, 47, 59, 52, 122, 46, 40, 7831, 52, 61)
 private val TEXT_NOTE_1 = decodeText(23, 7821, 51, 122, 49, 63, 35, 122, 57, 50, 7827, 122, 62, 163, 52, 61, 122, 331, 7833, 122, 49, 183, 57, 50, 122, 50, 53, 7931, 46, 122, 107, 122, 46, 186, 51, 122, 49, 50, 53, 7929, 52, 116)
 private val TEXT_NOTE_2 = decodeText(17, 50, 174, 52, 61, 122, 57, 50, 51, 59, 122, 41, 7905, 122, 49, 63, 35, 122, 331, 7833, 122, 46, 40, 187, 52, 50, 122, 56, 7825, 122, 49, 50, 53, 187, 116)
 private val TEXT_NOTE_3 = decodeText(22, 51, 176, 52, 122, 50, 7837, 122, 50, 7821, 122, 46, 40, 7865, 122, 52, 7909, 47, 122, 61, 7917, 42, 122, 44, 7935, 52, 122, 331, 7835, 122, 49, 50, 51, 122, 49, 183, 57, 50, 122, 50, 53, 7931, 46, 116)
+
+// Nội dung bảng "Hướng dẫn" khi bấm nút góc trên phải màn Nhập Key.
+private val TEXT_GUIDE_TITLE = "Hướng dẫn kích hoạt"
+private val TEXT_GUIDE_STEP_1 = "1. Mua key kích hoạt tại lunex.io.vn (bấm \"Chưa có key?\" bên dưới ô nhập key)."
+private val TEXT_GUIDE_STEP_2 = "2. Dán key bạn nhận được vào ô \"Key của bạn\"."
+private val TEXT_GUIDE_STEP_3 = "3. Bấm \"Kích hoạt ngay\" để xác thực và bắt đầu sử dụng ứng dụng."
+private val TEXT_GUIDE_STEP_4 = "4. Mỗi key chỉ dùng để kích hoạt 1 tài khoản/thiết bị - không chia sẻ key cho người khác để tránh bị khoá."
+private val TEXT_GUIDE_STEP_5 = "5. Gặp vấn đề khi kích hoạt? Liên hệ hỗ trợ qua lunex.io.vn để được trợ giúp."
 
 @Composable
 fun LoginScreen(
@@ -55,7 +60,7 @@ fun LoginScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
+    var showGuideDialog by remember { mutableStateOf(false) }
 
     // Splash check: nếu key đã lưu hợp lệ -> tự động vào Home
     LaunchedEffect(uiState.isCheckingSavedKey) {
@@ -106,6 +111,7 @@ fun LoginScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
                         .background(CardWhite)
+                        .clickable { showGuideDialog = true }
                         .padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -188,18 +194,21 @@ fun LoginScreen(
                     }
                     Spacer(Modifier.height(12.dp))
 
-                    // "Kiểm tra key của bạn": KHÔNG đụng logic đăng nhập - chỉ tự xác nhận key
-                    // đang gõ trong ô ở trên với server (verify_key.php) rồi báo kết quả, không
-                    // lưu/không tự đăng nhập. Đúng như bạn dặn: không thay logic key gì cả.
-                    var checkingKeyOnly by remember { mutableStateOf(false) }
+                    // "Chưa có key? Mua ngay": chuyển từ nút riêng ở dưới lên đây (đúng vị trí
+                    // "Kiểm tra key của bạn" cũ, giờ đã bỏ). Không hiển thị URL trên giao diện -
+                    // bấm vào mới mở trình duyệt tới lunex.io.vn, URL không lộ ra ngoài.
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
                             .background(AppBackground)
-                            .then(
-                                if (!checkingKeyOnly) Modifier else Modifier
-                            )
+                            .clickable {
+                                val intent = android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse("https://lunex.io.vn")
+                                )
+                                runCatching { context.startActivity(intent) }
+                            }
                             .padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -207,43 +216,14 @@ fun LoginScreen(
                             modifier = Modifier.size(36.dp).clip(CircleShape).background(InfoBlueBg),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.VerifiedUser, contentDescription = null, tint = Primary, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.ShoppingBag, contentDescription = null, tint = Primary, modifier = Modifier.size(18.dp))
                         }
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(TEXT_CHECK_KEY_TITLE, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                            Text(TEXT_CHECK_KEY_DESC, fontSize = 11.sp, color = TextSecondary)
+                            Text(TEXT_BUY_KEY_TITLE, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                            Text(TEXT_BUY_KEY_DESC, fontSize = 11.sp, color = TextSecondary)
                         }
-                        IconButton(
-                            enabled = !checkingKeyOnly,
-                            onClick = {
-                                val typedKey = uiState.keyInput.trim()
-                                if (typedKey.isEmpty()) {
-                                    Toast.makeText(context, "Nhập key vào ô ở trên trước đã", Toast.LENGTH_SHORT).show()
-                                    return@IconButton
-                                }
-                                checkingKeyOnly = true
-                                coroutineScope.launch {
-                                    val deviceId = DeviceUtils.getAndroidId(context)
-                                    when (val result = AuthRepository().verifyKey(typedKey, deviceId)) {
-                                        is AuthResult.Success -> {
-                                            val days = result.data.daysLeft
-                                            val msg = if (days != null) "Key hợp lệ, còn $days ngày" else "Key hợp lệ"
-                                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                                        }
-                                        is AuthResult.ApiError -> Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
-                                        is AuthResult.NetworkError -> Toast.makeText(context, "Không thể kết nối tới máy chủ", Toast.LENGTH_LONG).show()
-                                    }
-                                    checkingKeyOnly = false
-                                }
-                            }
-                        ) {
-                            if (checkingKeyOnly) {
-                                CircularProgressIndicator(color = Primary, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                            } else {
-                                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = TextSecondary)
-                            }
-                        }
+                        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = TextSecondary)
                     }
                 }
             }
@@ -272,25 +252,30 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-
-            OutlinedButton(
-                onClick = {
-                    val intent = android.content.Intent(
-                        android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse("https://lunex.io.vn")
-                    )
-                    runCatching { context.startActivity(intent) }
-                },
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth().height(48.dp)
-            ) {
-                Icon(Icons.Filled.ShoppingBag, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Chưa có key? Mua key tại lunex.io.vn")
-            }
-
             Spacer(Modifier.height(24.dp))
+        }
+
+        if (showGuideDialog) {
+            AlertDialog(
+                onDismissRequest = { showGuideDialog = false },
+                title = { Text(TEXT_GUIDE_TITLE, fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        listOf(
+                            TEXT_GUIDE_STEP_1,
+                            TEXT_GUIDE_STEP_2,
+                            TEXT_GUIDE_STEP_3,
+                            TEXT_GUIDE_STEP_4,
+                            TEXT_GUIDE_STEP_5
+                        ).forEach { step ->
+                            Text(step, fontSize = 13.sp, color = TextSecondary, lineHeight = 19.sp, modifier = Modifier.padding(bottom = 10.dp))
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showGuideDialog = false }) { Text("Đã hiểu") }
+                }
+            )
         }
     }
 }
