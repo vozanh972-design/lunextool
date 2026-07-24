@@ -21,9 +21,11 @@ import com.cayxu.app.ui.screens.login.LoginScreen
 import com.cayxu.app.ui.screens.settings.SettingsScreen
 import com.cayxu.app.ui.screens.tasks.TasksScreen
 import com.cayxu.app.ui.screens.wallet.WalletScreen
+import com.cayxu.app.ui.screens.welcome.WelcomeScreen
 import com.cayxu.app.ui.theme.AppBackground
 
 object Routes {
+    const val WELCOME = "welcome"
     const val LOGIN = "login"
     const val HOME = "home"
     const val TASKS = "tasks"
@@ -91,7 +93,11 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = Routes.LOGIN,
+            startDestination = if (com.cayxu.app.data.local.SecurePrefs(androidx.compose.ui.platform.LocalContext.current).hasSeenWelcome()) {
+                Routes.LOGIN
+            } else {
+                Routes.WELCOME
+            },
             modifier = Modifier.padding(innerPadding),
             // Chỉ mờ dần nội dung cũ -> hiện nội dung mới, KHÔNG trượt ngang trái/phải.
             enterTransition = { fadeIn(animationSpec = tween(FADE_DURATION_MS)) },
@@ -99,6 +105,21 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             popEnterTransition = { fadeIn(animationSpec = tween(FADE_DURATION_MS)) },
             popExitTransition = { fadeOut(animationSpec = tween(FADE_DURATION_MS)) }
         ) {
+
+            // CHỈ hiện đúng 1 lần ở lần mở app đầu tiên (xem SecurePrefs.hasSeenWelcome).
+            // Những lần sau (kể cả khi key hết hạn/đổi máy) vào thẳng Routes.LOGIN, không
+            // hiện lại màn này nữa - đúng yêu cầu.
+            composable(Routes.WELCOME) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                WelcomeScreen(
+                    onGetStarted = {
+                        com.cayxu.app.data.local.SecurePrefs(context).setSeenWelcome()
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(Routes.WELCOME) { inclusive = true }
+                        }
+                    }
+                )
+            }
 
             composable(Routes.LOGIN) {
                 LoginScreen(

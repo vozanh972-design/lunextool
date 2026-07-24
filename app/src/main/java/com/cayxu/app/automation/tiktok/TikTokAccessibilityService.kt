@@ -13,6 +13,7 @@ import com.cayxu.app.data.local.TikTokAppVariant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -64,7 +65,8 @@ class TikTokAccessibilityService : AccessibilityService() {
             "tiktok studio", "tiktok shop cho nhà sáng tạo", "quảng bá",
             "cài đặt và quyền riêng tư", "bộ nhớ đệm", "giải phóng dung lượng",
             "trình tiết kiệm dữ liệu", "hình nền", "trung tâm trợ giúp", "trung tâm quyền riêng tư",
-            "điều khoản và chính sách", "đăng xuất", "đăng nhập"
+            "điều khoản và chính sách", "đăng xuất", "đăng nhập",
+            "đóng", "close", "huỷ", "hủy", "cancel", "quay lại", "back", "ok", "đồng ý"
         )
         // Gợi ý nhận diện icon menu (☰) ở đầu trang Hồ sơ, khi không có contentDescription rõ ràng.
         private val MENU_ICON_HINTS = listOf("menu", "more", "tùy chọn", "cài đặt")
@@ -76,7 +78,14 @@ class TikTokAccessibilityService : AccessibilityService() {
         private val REPOST_LABELS = setOf("đăng lại", "repost")
     }
 
-    private val scope = CoroutineScope(Dispatchers.Main)
+    // QUAN TRỌNG: dùng SupervisorJob thay vì Job thường. Nếu không, một lỗi bất ngờ (crash)
+    // ở NHÁNH NÀY (vd luồng check tài khoản gặp lỗi khi dò node lạ) sẽ làm HUỶ LUÔN toàn bộ
+    // scope, kéo theo nhánh "Nuôi tài khoản" cũng bị dừng ngầm dù không liên quan gì - đây
+    // chính là lý do trước đó có lúc nuôi tài khoản không tự lướt video / không chạy hành
+    // động nào dù cấu hình đã bật đúng: một lỗi ở phiên check acc trước đó đã "giết" luôn
+    // coroutine đang theo dõi NurtureBridge, tới khi service khởi động lại (mở lại app) mới
+    // sống lại được. SupervisorJob đảm bảo lỗi ở nhánh này KHÔNG lan sang nhánh khác.
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var pollingJob: Job? = null
     private var nurtureJob: Job? = null
 
@@ -142,49 +151,55 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
                 cycle++
 
-                if (state.viewComments && cycle % 3 == 0) {
-                    val commentNode = findNodeByText(root, COMMENT_LABELS, exact = false)
-                    if (commentNode != null) {
-                        clickNode(commentNode)
-                        delay(Random.nextLong(2500L, 4500L))
-                        performGlobalAction(GLOBAL_ACTION_BACK)
-                        delay(700)
-                    }
-                }
-
-                if (state.copyLink && cycle % 5 == 0) {
-                    val shareRoot = findRootForPackage(pkg)
-                    val shareNode = shareRoot?.let { findNodeByText(it, SHARE_LABELS, exact = false) }
-                    if (shareNode != null) {
-                        clickNode(shareNode)
-                        delay(900)
-                        val sheetRoot = findRootForPackage(pkg)
-                        val copyNode = sheetRoot?.let { findNodeByText(it, COPY_LINK_LABELS, exact = false) }
-                        if (copyNode != null) {
-                            clickNode(copyNode)
-                            delay(500)
+                // Bọc try-catch quanh MỖI vòng: lỗi lẻ tẻ (node lạ, view đổi cấu trúc...) chỉ
+                // bỏ qua vòng đó, KHÔNG được phép làm chết cả phiên nuôi đang chạy dở.
+                try {
+                    if (state.viewComments && cycle % 3 == 0) {
+                        val commentNode = findNodeByText(root, COMMENT_LABELS, exact = false)
+                        if (commentNode != null) {
+                            clickNode(commentNode)
+                            delay(Random.nextLong(2500L, 4500L))
+                            performGlobalAction(GLOBAL_ACTION_BACK)
+                            delay(700)
                         }
-                        performGlobalAction(GLOBAL_ACTION_BACK)
-                        delay(700)
                     }
-                }
 
-                if (state.repost && cycle % 6 == 0) {
-                    val repostRoot = findRootForPackage(pkg)
-                    val repostNode = repostRoot?.let { findNodeByText(it, REPOST_LABELS, exact = false) }
-                    if (repostNode != null) {
-                        clickNode(repostNode)
-                        delay(1200)
+                    if (state.copyLink && cycle % 5 == 0) {
+                        val shareRoot = findRootForPackage(pkg)
+                        val shareNode = shareRoot?.let { findNodeByText(it, SHARE_LABELS, exact = false) }
+                        if (shareNode != null) {
+                            clickNode(shareNode)
+                            delay(900)
+                            val sheetRoot = findRootForPackage(pkg)
+                            val copyNode = sheetRoot?.let { findNodeByText(it, COPY_LINK_LABELS, exact = false) }
+                            if (copyNode != null) {
+                                clickNode(copyNode)
+                                delay(500)
+                            }
+                            performGlobalAction(GLOBAL_ACTION_BACK)
+                            delay(700)
+                        }
                     }
-                }
 
-                if (state.autoWatch) {
-                    // "Xem" một lúc như người thật rồi mới lướt tiếp, không lướt liên tục.
-                    delay(Random.nextLong(4000L, 9000L))
-                    swipeUpNextVideo()
-                    delay(600)
-                } else {
-                    delay(1500)
+                    if (state.repost && cycle % 6 == 0) {
+                        val repostRoot = findRootForPackage(pkg)
+                        val repostNode = repostRoot?.let { findNodeByText(it, REPOST_LABELS, exact = false) }
+                        if (repostNode != null) {
+                            clickNode(repostNode)
+                            delay(1200)
+                        }
+                    }
+
+                    if (state.autoWatch) {
+                        // "Xem" một lúc như người thật rồi mới lướt tiếp, không lướt liên tục.
+                        delay(Random.nextLong(4000L, 9000L))
+                        swipeUpNextVideo()
+                        delay(600)
+                    } else {
+                        delay(1500)
+                    }
+                } catch (e: Exception) {
+                    delay(1000)
                 }
             }
             NurtureBridge.stop()
@@ -303,6 +318,9 @@ class TikTokAccessibilityService : AccessibilityService() {
             var attempt = 0
             while (attempt < MAX_POLL_ATTEMPTS) {
                 attempt++
+                // Bọc try-catch quanh CẢ vòng dò: lỗi lẻ tẻ (node lạ/màn hình đổi cấu trúc)
+                // chỉ bỏ qua vòng đó rồi thử lại, KHÔNG được phép làm chết cả coroutine.
+                try {
                 val expectedPkg = TikTokAppLauncher.packageNameOf(variant)
                 val root = findRootForPackage(expectedPkg)
 
@@ -429,6 +447,9 @@ class TikTokAccessibilityService : AccessibilityService() {
                     TikTokCaptureBridge.updateProgress("Đang tìm tab \"Hồ sơ\" ở thanh dưới cùng...")
                 }
                 delay(POLL_INTERVAL_MS)
+                } catch (e: Exception) {
+                    delay(POLL_INTERVAL_MS)
+                }
             }
             if (TikTokCaptureBridge.state.value is TikTokCaptureState.Waiting) {
                 TikTokCaptureBridge.onFailed("Không tự mở được danh sách tài khoản sau nhiều lần thử, hãy mở lại và thử lại")
@@ -649,7 +670,22 @@ class TikTokAccessibilityService : AccessibilityService() {
      * = true. Bấm thẳng vào TextView không có tác dụng, nên phải leo lên tìm node cha
      * clickable rồi mới performAction ở đó.
      */
+    /**
+     * Bấm bằng CHẠM THẬT (gesture tap qua toạ độ trên màn hình) thay vì chỉ dựa vào
+     * performAction(ACTION_CLICK). Lý do: nhiều nút icon (vd nút 3 gạch ☰) chỉ xử lý sự kiện
+     * chạm thật (onTouch) chứ không có click-listener chuẩn mà accessibility framework nhận
+     * ra được - bấm tay thì ăn nhưng gọi ACTION_CLICK qua node thì im re, đúng hiện tượng đã
+     * gặp. Chạm thật mô phỏng đúng một cú chạm ngón tay nên chắc ăn hơn nhiều.
+     */
     private fun clickNode(node: AccessibilityNodeInfo) {
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        if (bounds.width() > 0 && bounds.height() > 0) {
+            tapAt(bounds.exactCenterX(), bounds.exactCenterY())
+            return
+        }
+        // Không lấy được toạ độ hợp lệ (node ẩn/0px) -> fallback về ACTION_CLICK như cũ,
+        // leo lên node cha gần nhất clickable rồi mới bấm.
         var target: AccessibilityNodeInfo? = node
         var depth = 0
         while (target != null && !target.isClickable && depth < 10) {
@@ -657,6 +693,15 @@ class TikTokAccessibilityService : AccessibilityService() {
             depth++
         }
         (target ?: node).performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    /** Chạm thật tại 1 toạ độ màn hình - dùng gesture, mô phỏng đúng 1 cú chạm ngón tay. */
+    private fun tapAt(x: Float, y: Float) {
+        val path = Path().apply { moveTo(x, y) }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 60))
+            .build()
+        dispatchGesture(gesture, null, null)
     }
 
     /**

@@ -1,7 +1,6 @@
 package com.cayxu.app.ui.screens.login
 
 import android.widget.Toast
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -16,40 +15,38 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cayxu.app.R
+import com.cayxu.app.data.local.SecurePrefs
+import com.cayxu.app.data.repository.AuthRepository
+import com.cayxu.app.data.repository.AuthResult
 import com.cayxu.app.ui.theme.*
+import com.cayxu.app.util.DeviceUtils
 import com.cayxu.app.util.decodeText
+import kotlinx.coroutines.launch
 
-// Toàn bộ text hiển thị trên màn Login được mã hoá XOR, chỉ giải mã lúc chạy,
+// Toàn bộ text hiển thị trên màn nhập Key được mã hoá XOR, chỉ giải mã lúc chạy,
 // để tránh lộ nguyên văn khi ai đó decompile APK rồi tìm chuỗi tĩnh.
-private val TEXT_TITLE = decodeText(25, 186, 35, 122, 2, 47)
-private val TEXT_SUBTITLE = decodeText(25, 186, 35, 122, 34, 47, 122, 55, 7821, 51, 122, 52, 61, 186, 35, 122, 119, 122, 17, 51, 7909, 55, 122, 46, 51, 7835, 52, 122, 62, 7839, 122, 62, 186, 52, 61)
-private val TEXT_LOGIN_HEADING = decodeText(330, 345, 52, 61, 122, 52, 50, 7927, 42, 122, 56, 7915, 52, 61, 122, 17, 63, 35)
-private val TEXT_LOGIN_DESC = decodeText(20, 50, 7927, 42, 122, 49, 63, 35, 122, 57, 7869, 59, 122, 56, 7931, 52, 122, 331, 7833, 122, 331, 345, 52, 61, 122, 52, 50, 7927, 42, 122, 44, 186, 122, 41, 7863, 122, 62, 7871, 52, 61, 122, 50, 7837, 122, 46, 50, 7819, 52, 61)
-private val TEXT_KEY_PLACEHOLDER = decodeText(20, 50, 7927, 42, 122, 49, 63, 35, 122, 57, 7869, 59, 122, 56, 7931, 52)
-private val TEXT_SECURITY_TITLE = decodeText(17, 63, 35, 122, 57, 7869, 59, 122, 56, 7931, 52, 122, 331, 490, 7865, 57, 122, 56, 7929, 53, 122, 55, 7927, 46, 122, 46, 47, 35, 7837, 46, 122, 331, 7819, 51)
-private val TEXT_SECURITY_DESC = decodeText(23, 7821, 51, 122, 49, 63, 35, 122, 57, 50, 7827, 122, 41, 7863, 122, 62, 7871, 52, 61, 122, 331, 490, 7865, 57, 122, 46, 40, 176, 52, 122, 107, 122, 46, 50, 51, 7909, 46, 122, 56, 7825, 122, 46, 7931, 51, 122, 55, 7811, 46, 122, 46, 50, 7815, 51, 122, 331, 51, 7833, 55, 116)
-private val TEXT_BTN_LOGIN = decodeText(330, 345, 52, 61, 122, 52, 50, 7927, 42)
-private val TEXT_NO_KEY_TITLE = decodeText(25, 50, 490, 59, 122, 57, 169, 122, 49, 63, 35, 101)
-private val TEXT_NO_KEY_DESC = decodeText(23, 47, 59, 122, 49, 63, 35, 122, 331, 7833, 122, 46, 40, 7929, 51, 122, 52, 61, 50, 51, 7837, 55, 122, 331, 7933, 35, 122, 331, 7869, 122, 46, 183, 52, 50, 122, 52, 345, 52, 61, 122, 57, 7869, 59, 122, 25, 186, 35, 122, 2, 47, 116)
-private val TEXT_BTN_BUY = decodeText(23, 47, 59, 122, 52, 61, 59, 35)
-private val TEXT_FEAT1_TITLE = decodeText(24, 7929, 53, 122, 55, 7927, 46, 122, 46, 47, 35, 7837, 46, 122, 331, 7819, 51)
-private val TEXT_FEAT1_DESC = decodeText(17, 63, 35, 122, 331, 490, 7865, 57, 122, 55, 185, 122, 50, 169, 59, 80, 44, 186, 122, 56, 7929, 53, 122, 44, 7837, 122, 104, 110, 117, 109)
-private val TEXT_FEAT2_TITLE = decodeText(17, 183, 57, 50, 122, 50, 53, 7931, 46, 122, 52, 50, 59, 52, 50, 122, 57, 50, 169, 52, 61)
-private val TEXT_FEAT2_DESC = decodeText(20, 50, 7927, 52, 122, 49, 63, 35, 122, 52, 61, 59, 35, 122, 41, 59, 47, 80, 49, 50, 51, 122, 46, 50, 59, 52, 50, 122, 46, 53, 187, 52)
-private val TEXT_FEAT3_TITLE = decodeText(9, 7863, 122, 62, 7871, 52, 61, 122, 62, 7839, 122, 62, 186, 52, 61)
-private val TEXT_FEAT3_DESC = decodeText(330, 345, 52, 61, 122, 52, 50, 7927, 42, 122, 52, 50, 59, 52, 50, 118, 80, 61, 51, 59, 53, 122, 62, 51, 7837, 52, 122, 46, 50, 184, 52, 122, 46, 50, 51, 7837, 52)
-private val TEXT_FOOTER = decodeText(243, 122, 104, 106, 104, 110, 122, 25, 186, 35, 122, 2, 47, 116, 122, 27, 54, 54, 122, 40, 51, 61, 50, 46, 41, 122, 40, 63, 41, 63, 40, 44, 63, 62, 116)
+private val TEXT_LOGIN_HEADING_1 = decodeText(20, 50, 7927, 42, 122, 17, 63, 35)
+private val TEXT_LOGIN_HEADING_2 = decodeText(49, 183, 57, 50, 122, 50, 53, 7931, 46)
+private val TEXT_LOGIN_DESC = decodeText(20, 50, 7927, 42, 122, 49, 63, 35, 122, 56, 7931, 52, 122, 331, 185, 122, 55, 47, 59, 122, 331, 7833, 122, 49, 183, 57, 50, 122, 50, 53, 7931, 46, 122, 46, 186, 51, 122, 49, 50, 53, 7929, 52, 122, 44, 186, 122, 41, 7863, 122, 62, 7871, 52, 61, 122, 57, 187, 57, 122, 46, 183, 52, 50, 122, 52, 345, 52, 61, 122, 57, 59, 53, 122, 57, 7935, 42, 116)
+private val TEXT_KEY_LABEL = decodeText(17, 63, 35, 122, 57, 7869, 59, 122, 56, 7931, 52)
+private val TEXT_KEY_PLACEHOLDER = decodeText(20, 50, 7927, 42, 122, 49, 63, 35, 122, 46, 7931, 51, 122, 331, 184, 35)
+private val TEXT_BTN_ACTIVATE = decodeText(17, 183, 57, 50, 122, 50, 53, 7931, 46, 122, 52, 61, 59, 35)
+private val TEXT_OR = decodeText(18, 53, 7917, 57)
+private val TEXT_CHECK_KEY_TITLE = decodeText(17, 51, 7833, 55, 122, 46, 40, 59, 122, 49, 63, 35, 122, 57, 7869, 59, 122, 56, 7931, 52)
+private val TEXT_CHECK_KEY_DESC = decodeText(17, 51, 7833, 55, 122, 46, 40, 59, 122, 49, 63, 35, 122, 57, 168, 52, 122, 50, 7931, 52, 122, 41, 7863, 122, 62, 7871, 52, 61, 122, 46, 40, 490, 7809, 57, 122, 49, 50, 51, 122, 49, 183, 57, 50, 122, 50, 53, 7931, 46, 116)
+private val TEXT_NOTE_TITLE = decodeText(22, 490, 47, 122, 167, 122, 43, 47, 59, 52, 122, 46, 40, 7831, 52, 61)
+private val TEXT_NOTE_1 = decodeText(23, 7821, 51, 122, 49, 63, 35, 122, 57, 50, 7827, 122, 62, 163, 52, 61, 122, 331, 7833, 122, 49, 183, 57, 50, 122, 50, 53, 7931, 46, 122, 107, 122, 46, 186, 51, 122, 49, 50, 53, 7929, 52, 116)
+private val TEXT_NOTE_2 = decodeText(17, 50, 174, 52, 61, 122, 57, 50, 51, 59, 122, 41, 7905, 122, 49, 63, 35, 122, 331, 7833, 122, 46, 40, 187, 52, 50, 122, 56, 7825, 122, 49, 50, 53, 187, 116)
+private val TEXT_NOTE_3 = decodeText(22, 51, 176, 52, 122, 50, 7837, 122, 50, 7821, 122, 46, 40, 7865, 122, 52, 7909, 47, 122, 61, 7917, 42, 122, 44, 7935, 52, 122, 331, 7835, 122, 49, 50, 51, 122, 49, 183, 57, 50, 122, 50, 53, 7931, 46, 116)
 
 @Composable
 fun LoginScreen(
@@ -58,6 +55,7 @@ fun LoginScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     // Splash check: nếu key đã lưu hợp lệ -> tự động vào Home
     LaunchedEffect(uiState.isCheckingSavedKey) {
@@ -79,264 +77,220 @@ fun LoginScreen(
         return
     }
 
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(AppBackground)
-    ) {
-        // Kích thước ảnh ví tính theo % chiều rộng màn hình thật (responsive):
-        // máy màn hình to -> ảnh to hơn, máy màn hình nhỏ -> ảnh nhỏ lại theo tỉ lệ,
-        // có chặn min/max để không bị quá bé hoặc quá to bất hợp lý.
-        val walletImageSize = (maxWidth * 0.42f).coerceIn(110.dp, 220.dp)
-
-        // Canvas trang trí bên dưới chạy trong DrawScope (không phải @Composable), nên phải
-        // đọc màu theo theme ở ĐÂY rồi truyền vào, không gọi thẳng InfoBlueBg/Primary trong Canvas { ... }.
-        val decorGlowColor = InfoBlueBg
-        val decorLineColor = Primary
-
+    Box(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = 24.dp)
         ) {
-        Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(20.dp))
 
-        // Logo + tiêu đề, kèm hình minh hoạ ví bên phải cho sinh động hơn
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) {
-                Image(
-                    painter = painterResource(R.drawable.ic_app_logo),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(64.dp)
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(TEXT_TITLE, style = MaterialTheme.typography.headlineMedium, color = TextPrimary)
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    TEXT_SUBTITLE,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .width(walletImageSize)
-                    .height(walletImageSize * 0.82f),
-                contentAlignment = Alignment.Center
-            ) {
-                // Nền mềm (radial gradient nhạt) phía sau ảnh ví, giống ảnh mẫu,
-                // giúp ảnh hoà vào layout thay vì trông như dán rời.
-                Canvas(modifier = Modifier.matchParentSize()) {
-                    val w = size.width
-                    val h = size.height
-
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(decorGlowColor.copy(alpha = 0.9f), decorGlowColor.copy(alpha = 0f)),
-                            radius = w * 0.6f
-                        ),
-                        radius = w * 0.6f,
-                        center = androidx.compose.ui.geometry.Offset(w * 0.55f, h * 0.5f)
-                    )
-
-                    // Đường cong đứt nét trang trí
-                    val dashPath = androidx.compose.ui.graphics.Path().apply {
-                        moveTo(w * 0.05f, h * 0.4f)
-                        quadraticBezierTo(w * 0.25f, h * 0.02f, w * 0.48f, h * 0.16f)
-                    }
-                    drawPath(
-                        path = dashPath,
-                        color = decorLineColor.copy(alpha = 0.25f),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(
-                            width = 3f,
-                            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
-                        )
-                    )
-
-                    // Vài chấm tròn nhỏ trang trí
-                    drawCircle(color = decorLineColor.copy(alpha = 0.35f), radius = 5f, center = androidx.compose.ui.geometry.Offset(w * 0.04f, h * 0.65f))
-                    drawCircle(color = Color(0xFFFFC83D).copy(alpha = 0.55f), radius = 4f, center = androidx.compose.ui.geometry.Offset(w * 0.9f, h * 0.08f))
-                }
-
-                // Crop thay vì Fit + khung thấp hơn ảnh gốc một chút -> đồng xu góc
-                // dưới-phải bị khuất nhẹ, đúng hiệu ứng "tràn khung" như ảnh mẫu,
-                // thay vì gói gọn vừa khít trông cứng nhắc.
-                Image(
-                    painter = painterResource(R.drawable.ill_wallet_growth),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    alignment = Alignment.TopCenter,
-                    modifier = Modifier
-                        .width(walletImageSize)
-                        .height(walletImageSize)
-                )
-            }
-        }
-
-        Spacer(Modifier.height(20.dp))
-
-        // Card đăng nhập
-        Card(
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = CardWhite),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ill_key_3d),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    TEXT_LOGIN_HEADING,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = TextPrimary
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    TEXT_LOGIN_DESC,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(Modifier.height(20.dp))
-
-                OutlinedTextField(
-                    value = uiState.keyInput,
-                    onValueChange = viewModel::onKeyInputChange,
-                    placeholder = { Text(TEXT_KEY_PLACEHOLDER) },
-                    leadingIcon = { Icon(Icons.Filled.VpnKey, contentDescription = null) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(InfoBlueBg, RoundedCornerShape(14.dp))
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Icon(Icons.Filled.Shield, contentDescription = null, tint = Primary, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text(TEXT_SECURITY_TITLE, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                        Text(TEXT_SECURITY_DESC, style = MaterialTheme.typography.bodyMedium, color = TextSecondary, fontSize = 12.sp)
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                Button(
-                    onClick = { viewModel.login(onLoginSuccess) },
-                    enabled = !uiState.isLoading,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                ) {
-                    if (uiState.isLoading) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text(TEXT_BTN_LOGIN, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.width(6.dp))
-                        Icon(Icons.Filled.ChevronRight, contentDescription = null)
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(14.dp))
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = CardWhite),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
+            // Không có nơi nào để "quay lại" trước màn này khi chưa đăng nhập -> icon back
+            // chỉ mang tính thị giác cho khớp ảnh mẫu, bấm vào không làm gì (đã ở đầu luồng).
             Row(
-                modifier = Modifier.padding(18.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Image(
-                    painter = painterResource(R.drawable.ill_key_3d),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
+                Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(40.dp)
                         .clip(RoundedCornerShape(12.dp))
-                )
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(TEXT_NO_KEY_TITLE, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                    Text(TEXT_NO_KEY_DESC, style = MaterialTheme.typography.bodyMedium, color = TextSecondary, fontSize = 12.sp)
-                }
-                Spacer(Modifier.width(8.dp))
-                OutlinedButton(
-                    onClick = {
-                        val intent = android.content.Intent(
-                            android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse("https://lunex.io.vn")
-                        )
-                        runCatching { context.startActivity(intent) }
-                    },
-                    shape = RoundedCornerShape(12.dp)
+                        .background(CardWhite),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Filled.ShoppingBag, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(TEXT_BTN_BUY)
+                    Icon(Icons.Filled.ChevronLeft, contentDescription = null, tint = TextPrimary)
+                }
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(CardWhite)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.HelpOutline, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Hướng dẫn", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 }
             }
-        }
 
-        Spacer(Modifier.height(18.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            FeatureItem(Icons.Filled.Shield, TEXT_FEAT1_TITLE, TEXT_FEAT1_DESC, Modifier.weight(1f))
-            FeatureItem(Icons.Filled.CheckCircle, TEXT_FEAT2_TITLE, TEXT_FEAT2_DESC, Modifier.weight(1f))
-            FeatureItem(Icons.Filled.Autorenew, TEXT_FEAT3_TITLE, TEXT_FEAT3_DESC, Modifier.weight(1f))
-        }
+            Spacer(Modifier.height(24.dp))
 
-        Spacer(Modifier.height(20.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text(TEXT_LOGIN_HEADING_1, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = TextPrimary, lineHeight = 32.sp)
+                    Text(TEXT_LOGIN_HEADING_2, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = Primary, lineHeight = 32.sp)
+                    Spacer(Modifier.height(10.dp))
+                    Text(TEXT_LOGIN_DESC, fontSize = 13.sp, color = TextSecondary, lineHeight = 18.sp)
+                }
+                Image(
+                    painter = painterResource(R.drawable.ic_mascot_coin),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(96.dp)
+                )
+            }
 
-        Text(
-            TEXT_FOOTER,
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary,
-            fontSize = 12.sp,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(20.dp))
-        }
-    }
-}
+            Spacer(Modifier.height(20.dp))
 
-@Composable
-private fun FeatureItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, desc: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .background(InfoBlueBg, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, tint = Primary)
+            Card(
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = CardWhite),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.VpnKey, contentDescription = null, tint = Primary, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(TEXT_KEY_LABEL, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    }
+                    Spacer(Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = uiState.keyInput,
+                        onValueChange = viewModel::onKeyInputChange,
+                        placeholder = { Text(TEXT_KEY_PLACEHOLDER) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Button(
+                        onClick = { viewModel.login(onLoginSuccess) },
+                        enabled = !uiState.isLoading,
+                        shape = RoundedCornerShape(28.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                        modifier = Modifier.fillMaxWidth().height(54.dp)
+                    ) {
+                        if (uiState.isLoading) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text(TEXT_BTN_ACTIVATE, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier.size(24.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.ArrowForward, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        HorizontalDivider(modifier = Modifier.weight(1f), color = TextSecondary.copy(alpha = 0.2f))
+                        Text("  $TEXT_OR  ", color = TextSecondary, fontSize = 12.sp)
+                        HorizontalDivider(modifier = Modifier.weight(1f), color = TextSecondary.copy(alpha = 0.2f))
+                    }
+                    Spacer(Modifier.height(12.dp))
+
+                    // "Kiểm tra key của bạn": KHÔNG đụng logic đăng nhập - chỉ tự xác nhận key
+                    // đang gõ trong ô ở trên với server (verify_key.php) rồi báo kết quả, không
+                    // lưu/không tự đăng nhập. Đúng như bạn dặn: không thay logic key gì cả.
+                    var checkingKeyOnly by remember { mutableStateOf(false) }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(AppBackground)
+                            .then(
+                                if (!checkingKeyOnly) Modifier else Modifier
+                            )
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier.size(36.dp).clip(CircleShape).background(InfoBlueBg),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.VerifiedUser, contentDescription = null, tint = Primary, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(TEXT_CHECK_KEY_TITLE, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                            Text(TEXT_CHECK_KEY_DESC, fontSize = 11.sp, color = TextSecondary)
+                        }
+                        IconButton(
+                            enabled = !checkingKeyOnly,
+                            onClick = {
+                                val typedKey = uiState.keyInput.trim()
+                                if (typedKey.isEmpty()) {
+                                    Toast.makeText(context, "Nhập key vào ô ở trên trước đã", Toast.LENGTH_SHORT).show()
+                                    return@IconButton
+                                }
+                                checkingKeyOnly = true
+                                coroutineScope.launch {
+                                    val deviceId = DeviceUtils.getAndroidId(context)
+                                    when (val result = AuthRepository().verifyKey(typedKey, deviceId)) {
+                                        is AuthResult.Success -> {
+                                            val days = result.data.daysLeft
+                                            val msg = if (days != null) "Key hợp lệ, còn $days ngày" else "Key hợp lệ"
+                                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                        }
+                                        is AuthResult.ApiError -> Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                                        is AuthResult.NetworkError -> Toast.makeText(context, "Không thể kết nối tới máy chủ", Toast.LENGTH_LONG).show()
+                                    }
+                                    checkingKeyOnly = false
+                                }
+                            }
+                        ) {
+                            if (checkingKeyOnly) {
+                                CircularProgressIndicator(color = Primary, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                            } else {
+                                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = TextSecondary)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = InfoBlueBg),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Lightbulb, contentDescription = null, tint = Primary, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(TEXT_NOTE_TITLE, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    listOf(TEXT_NOTE_1, TEXT_NOTE_2, TEXT_NOTE_3).forEach { note ->
+                        Row(modifier = Modifier.padding(vertical = 2.dp)) {
+                            Text("•  ", color = Primary, fontSize = 12.sp)
+                            Text(note, color = TextSecondary, fontSize = 12.sp, lineHeight = 16.sp)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            OutlinedButton(
+                onClick = {
+                    val intent = android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://lunex.io.vn")
+                    )
+                    runCatching { context.startActivity(intent) }
+                },
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp)
+            ) {
+                Icon(Icons.Filled.ShoppingBag, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Chưa có key? Mua key tại lunex.io.vn")
+            }
+
+            Spacer(Modifier.height(24.dp))
         }
-        Spacer(Modifier.height(8.dp))
-        Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary, textAlign = TextAlign.Center, fontSize = 12.sp)
-        Text(desc, style = MaterialTheme.typography.bodyMedium, color = TextSecondary, textAlign = TextAlign.Center, fontSize = 11.sp)
     }
 }

@@ -73,11 +73,23 @@ class SecurePrefs(context: Context) {
 
     fun getAvatarUri(): String? = prefs.getString(KEY_AVATAR_URI, null)
 
+    /**
+     * Đánh dấu người dùng đã xem qua màn "Chào mừng" (welcome) lần đầu tiên. Chỉ hiện màn
+     * chào mừng ở lần mở app ĐẦU TIÊN sau khi cài; những lần sau (kể cả khi key hết hạn/đổi
+     * máy phải nhập lại key) sẽ vào thẳng màn nhập Key, không hiện lại màn chào mừng nữa.
+     */
+    fun hasSeenWelcome(): Boolean = prefs.getBoolean(KEY_SEEN_WELCOME, false)
+
+    fun setSeenWelcome() {
+        prefs.edit().putBoolean(KEY_SEEN_WELCOME, true).apply()
+    }
+
     companion object {
         private const val KEY_LOGIN_KEY = "login_key"
         private const val KEY_FINGERPRINT = "login_key_fingerprint"
         private const val KEY_BLOCKED = "permanently_blocked"
         private const val KEY_ACCOUNT_ID = "account_id"
         private const val KEY_AVATAR_URI = "avatar_uri"
+        private const val KEY_SEEN_WELCOME = "has_seen_welcome"
     }
 }
