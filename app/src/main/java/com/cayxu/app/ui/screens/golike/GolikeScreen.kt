@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -17,21 +18,68 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.navigation.goHome
 import com.cayxu.app.ui.theme.*
 
-private data class GolikePlatform(
+internal data class GolikePlatform(
     val name: String,
     val icon: ImageVector,
     val accentColor: Color
 )
 
-private val golikePlatforms = listOf(
+internal val golikePlatforms = listOf(
     GolikePlatform("Facebook", Icons.Filled.Facebook, Color(0xFF1877F2)),
     GolikePlatform("YouTube", Icons.Filled.PlayCircleFilled, Color(0xFFFF0000)),
     GolikePlatform("TikTok", Icons.Filled.MusicNote, Color(0xFF010101)),
     GolikePlatform("Instagram", Icons.Filled.CameraAlt, Color(0xFFE1306C))
 )
+
+/**
+ * Card trạng thái đăng nhập Golike - dùng CHUNG cho mọi màn thuộc Golike (không vẽ lại card
+ * mới riêng ở từng màn). To hơn bản cũ (padding/icon/chữ đều lớn hơn). Đọc trực tiếp từ
+ * GolikeSession nên trạng thái luôn nhất quán dù đứng ở màn nào.
+ */
+@Composable
+internal fun GolikeStatusCard(navController: NavController) {
+    val isLoggedIn by GolikeSession.isLoggedIn
+
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(22.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .background(Color(0xFF7C3AED).copy(alpha = 0.12f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.ThumbUp, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(30.dp))
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Tài khoản Golike", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 17.sp)
+                Text(
+                    if (isLoggedIn) "Đã đăng nhập" else "Chưa đăng nhập",
+                    color = TextSecondary,
+                    fontSize = 14.sp
+                )
+            }
+            if (!isLoggedIn) {
+                Button(
+                    onClick = { navController.navigate(Routes.GOLIKE_LOGIN) { launchSingleTop = true } },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                ) { Text("Đăng nhập") }
+            }
+        }
+    }
+}
 
 @Composable
 fun GolikeScreen(navController: NavController) {
@@ -48,37 +96,7 @@ fun GolikeScreen(navController: NavController) {
         }
 
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-            // Card trạng thái đăng nhập Golike - hiện tại chưa có API Golike thật nên chỉ hiện
-            // trạng thái tĩnh "Chưa đăng nhập" + nút placeholder, chưa gắn đăng nhập thật.
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = CardWhite),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(Color(0xFF7C3AED).copy(alpha = 0.12f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Filled.ThumbUp, contentDescription = null, tint = Color(0xFF7C3AED))
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Tài khoản Golike", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 15.sp)
-                        Text("Chưa đăng nhập", color = TextSecondary, fontSize = 13.sp)
-                    }
-                    Button(
-                        onClick = { /* TODO: gắn đăng nhập Golike thật khi có API */ },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
-                    ) { Text("Đăng nhập") }
-                }
-            }
+            GolikeStatusCard(navController)
 
             Spacer(Modifier.height(20.dp))
             Text("Nền tảng liên kết", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
@@ -90,8 +108,10 @@ fun GolikeScreen(navController: NavController) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(CardWhite, RoundedCornerShape(14.dp))
-                            .clickable { /* TODO: điều hướng liên kết acc theo từng nền tảng khi có API Golike */ }
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                            .clickable {
+                                navController.navigate(Routes.golikePlatform(platform.name)) { launchSingleTop = true }
+                            }
+                            .padding(horizontal = 14.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
@@ -103,10 +123,7 @@ fun GolikeScreen(navController: NavController) {
                             Icon(platform.icon, contentDescription = null, tint = platform.accentColor, modifier = Modifier.size(20.dp))
                         }
                         Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(platform.name, fontWeight = FontWeight.SemiBold, color = TextPrimary, fontSize = 14.sp)
-                            Text("Chưa liên kết", color = TextSecondary, fontSize = 12.sp)
-                        }
+                        Text(platform.name, fontWeight = FontWeight.SemiBold, color = TextPrimary, fontSize = 14.sp, modifier = Modifier.weight(1f))
                         Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = TextSecondary)
                     }
                 }

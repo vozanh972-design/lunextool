@@ -41,6 +41,10 @@ object Routes {
     const val UTILITIES = "utilities"
     const val NURTURE_SETUP = "nurture_setup"
     const val GOLIKE = "golike"
+    const val GOLIKE_LOGIN = "golike_login"
+    const val GOLIKE_PLATFORM = "golike_platform/{platform}"
+
+    fun golikePlatform(platform: String) = "golike_platform/$platform"
     const val LINK_ACCOUNT = "link_account/{platform}/{iconRes}"
     const val ADD_ACCOUNT = "add_account/{platform}/{iconRes}"
 
@@ -178,6 +182,16 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             }
             composable(Routes.GOLIKE) {
                 com.cayxu.app.ui.screens.golike.GolikeScreen(navController)
+            }
+            composable(Routes.GOLIKE_LOGIN) {
+                com.cayxu.app.ui.screens.golike.GolikeLoginScreen(navController)
+            }
+            composable(
+                Routes.GOLIKE_PLATFORM,
+                arguments = listOf(androidx.navigation.navArgument("platform") { type = androidx.navigation.NavType.StringType })
+            ) { backStackEntry ->
+                val platform = backStackEntry.arguments?.getString("platform").orEmpty()
+                com.cayxu.app.ui.screens.golike.GolikePlatformScreen(navController, platform)
             }
             composable(
                 route = Routes.LINK_ACCOUNT,
