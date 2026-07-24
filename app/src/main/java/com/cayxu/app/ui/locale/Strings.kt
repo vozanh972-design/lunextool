@@ -13,10 +13,9 @@ import androidx.compose.runtime.Composable
  */
 object Str {
 
-    private val lang: AppLanguage @Composable get() = LanguageState.language
-
-    private fun pick(vi: String, en: String): String
-        @Composable get() = if (lang == AppLanguage.VI) vi else en
+    @Composable
+    private fun pick(vi: String, en: String): String =
+        if (LanguageState.language == AppLanguage.VI) vi else en
 
     // ---- Màn Welcome ----
 
