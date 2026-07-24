@@ -112,7 +112,12 @@ fun TasksScreen(navController: NavController) {
                     PlatformRow(
                         option = option,
                         selected = index == selectedPlatform,
-                        onClick = { selectedPlatform = index }
+                        onClick = {
+                            selectedPlatform = index
+                            if (option.name == "Golike") {
+                                navController.navigate(com.cayxu.app.ui.navigation.Routes.GOLIKE) { launchSingleTop = true }
+                            }
+                        }
                     )
                 }
             }

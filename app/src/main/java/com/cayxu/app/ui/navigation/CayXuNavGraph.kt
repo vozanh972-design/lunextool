@@ -35,6 +35,7 @@ object Routes {
     const val SETTINGS = "settings"
     const val UTILITIES = "utilities"
     const val NURTURE_SETUP = "nurture_setup"
+    const val GOLIKE = "golike"
     const val LINK_ACCOUNT = "link_account/{platform}/{iconRes}"
     const val ADD_ACCOUNT = "add_account/{platform}/{iconRes}"
 
@@ -142,6 +143,9 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             }
             composable(Routes.NURTURE_SETUP) {
                 com.cayxu.app.ui.screens.nurture.NurtureSetupScreen(navController)
+            }
+            composable(Routes.GOLIKE) {
+                com.cayxu.app.ui.screens.golike.GolikeScreen(navController)
             }
             composable(
                 route = Routes.LINK_ACCOUNT,
