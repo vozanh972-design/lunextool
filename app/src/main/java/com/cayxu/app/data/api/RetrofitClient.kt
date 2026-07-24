@@ -1,5 +1,6 @@
 package com.cayxu.app.data.api
 
+import okhttp3.CertificatePinner
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -37,11 +38,28 @@ object RetrofitClient {
         }
     }
 
+    // Ghim chứng chỉ (certificate pinning) - chặn việc bắt gói tin qua Charles/Fiddler/
+    // mitmproxy/Frida-unpin ngay cả khi máy đã cài CA giả làm root trust (rất phổ biến khi
+    // ai đó cố dò API bằng proxy trên máy họ tự root). App sẽ TỪ CHỐI kết nối nếu chứng chỉ
+    // server không khớp đúng các hash đã ghim dưới đây, bất kể máy có tin CA nào khác.
+    //
+    // ⚠️ BẮT BUỘC thay 2 hash placeholder dưới đây bằng hash THẬT trước khi build bản phát
+    // hành - xem hướng dẫn lấy hash thật ở cuối file. Ghim ÍT NHẤT 2 hash (chứng chỉ hiện tại
+    // + 1 hash dự phòng) để tránh app ngừng hoạt động khi Cloudflare tự động đổi chứng chỉ.
+    private val certificatePinner = CertificatePinner.Builder()
+        .add("lunex.io.vn", "sha256/ZJC5IGL/O/c6TSM+rsSyheuIh/Akc/GmM+dyizIpUGA=")
+        .add("lunex.io.vn", "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=")
+        .build()
+
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
+        .certificatePinner(certificatePinner)
+        // SecureApiInterceptor PHẢI thêm sau loggingInterceptor để log (nếu debug) vẫn thấy
+        // được request gốc trước khi mã hoá, dễ debug hơn.
         .addInterceptor(loggingInterceptor)
+        .addInterceptor(SecureApiInterceptor())
         .build()
 
     val apiService: ApiService by lazy {
@@ -53,3 +71,30 @@ object RetrofitClient {
             .create(ApiService::class.java)
     }
 }
+
+/*
+================================================================================================
+ HƯỚNG DẪN LẤY HASH CHỨNG CHỈ THẬT (certificate pin) CHO lunex.io.vn:
+
+ Chạy lệnh này trên máy tính (Linux/Mac, hoặc WSL/Git Bash trên Windows):
+
+     openssl s_client -connect lunex.io.vn:443 -servername lunex.io.vn </dev/null 2>/dev/null \
+       | openssl x509 -pubkey -noout \
+       | openssl pkey -pubin -outform der \
+       | openssl dgst -sha256 -binary \
+       | openssl enc -base64
+
+ Kết quả in ra là 1 chuỗi base64 - đó chính là giá trị điền vào sau "sha256/" ở pin THỨ NHẤT.
+
+ Vì Cloudflare tự động xoay vòng chứng chỉ theo thời gian, bạn nên ghim THÊM 1 pin dự phòng là
+ public key của chứng chỉ TRUNG GIAN (intermediate CA) mà Cloudflare đang dùng cho domain này -
+ pin này ổn định lâu hơn pin của chứng chỉ lá (leaf), giảm rủi ro app ngừng hoạt động đột ngột
+ khi Cloudflare đổi chứng chỉ lá định kỳ. Cloudflare Dashboard > SSL/TLS > Edge Certificates sẽ
+ cho bạn xem chuỗi chứng chỉ hiện tại để lấy đúng CA trung gian đang áp dụng.
+
+ ⚠️ LƯU Ý QUAN TRỌNG: certificate pinning là con dao 2 lưỡi - nếu bạn quên cập nhật pin khi
+ Cloudflare đổi chứng chỉ, TOÀN BỘ app sẽ mất kết nối server (không phải bug, mà pinning đang
+ làm đúng việc của nó là từ chối chứng chỉ lạ). Nên theo dõi hạn chứng chỉ hiện tại và có kế
+ hoạch cập nhật pin trước khi hết hạn.
+================================================================================================
+*/
