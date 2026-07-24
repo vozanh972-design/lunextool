@@ -3,6 +3,11 @@ package com.cayxu.app.ui.navigation
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -76,6 +81,21 @@ fun androidx.navigation.NavController.goHome() {
 
 private const val FADE_DURATION_MS = 260
 
+// Animation RIÊNG, rõ ràng hơn fade thường - chỉ áp dụng cho đúng cặp Welcome -> Nhập Key,
+// tạo cảm giác "nối tiếp" (nội dung Welcome trượt/mờ dần sang trái thu nhỏ lại, đồng thời
+// nội dung màn Key trượt vào từ phải phóng to lên) thay vì chỉ crossfade như mọi màn khác.
+private const val WELCOME_TO_LOGIN_DURATION_MS = 450
+
+private fun welcomeToLoginEnter() =
+    slideInHorizontally(animationSpec = tween(WELCOME_TO_LOGIN_DURATION_MS)) { fullWidth -> fullWidth / 3 } +
+        fadeIn(animationSpec = tween(WELCOME_TO_LOGIN_DURATION_MS)) +
+        scaleIn(initialScale = 0.94f, animationSpec = tween(WELCOME_TO_LOGIN_DURATION_MS))
+
+private fun welcomeToLoginExit() =
+    slideOutHorizontally(animationSpec = tween(WELCOME_TO_LOGIN_DURATION_MS)) { fullWidth -> -fullWidth / 4 } +
+        fadeOut(animationSpec = tween(WELCOME_TO_LOGIN_DURATION_MS)) +
+        scaleOut(targetScale = 1.06f, animationSpec = tween(WELCOME_TO_LOGIN_DURATION_MS))
+
 @Composable
 fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -110,7 +130,13 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             // CHỈ hiện đúng 1 lần ở lần mở app đầu tiên (xem SecurePrefs.hasSeenWelcome).
             // Những lần sau (kể cả khi key hết hạn/đổi máy) vào thẳng Routes.LOGIN, không
             // hiện lại màn này nữa - đúng yêu cầu.
-            composable(Routes.WELCOME) {
+            composable(
+                Routes.WELCOME,
+                exitTransition = {
+                    if (targetState.destination.route == Routes.LOGIN) welcomeToLoginExit()
+                    else fadeOut(animationSpec = tween(FADE_DURATION_MS))
+                }
+            ) {
                 val context = androidx.compose.ui.platform.LocalContext.current
                 WelcomeScreen(
                     onGetStarted = {
@@ -122,7 +148,13 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
                 )
             }
 
-            composable(Routes.LOGIN) {
+            composable(
+                Routes.LOGIN,
+                enterTransition = {
+                    if (initialState.destination.route == Routes.WELCOME) welcomeToLoginEnter()
+                    else fadeIn(animationSpec = tween(FADE_DURATION_MS))
+                }
+            ) {
                 LoginScreen(
                     onLoginSuccess = {
                         navController.navigate(Routes.HOME) {
