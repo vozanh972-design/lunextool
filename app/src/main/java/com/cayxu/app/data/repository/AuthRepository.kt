@@ -29,7 +29,7 @@ class AuthRepository {
                     AuthResult.ApiError(body.message ?: "Đã có lỗi xảy ra")
                 }
             } else {
-                AuthResult.ApiError("Không thể kết nối tới máy chủ")
+                AuthResult.ApiError("Không thể kết nối tới máy chủ (mã lỗi HTTP: ${response.code()})")
             }
         } catch (e: Exception) {
             AuthResult.NetworkError(e.message ?: "Lỗi kết nối mạng")
