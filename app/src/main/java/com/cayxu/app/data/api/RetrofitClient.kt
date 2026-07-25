@@ -56,10 +56,10 @@ object RetrofitClient {
         .readTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
         .certificatePinner(certificatePinner)
-        // SecureApiInterceptor PHẢI thêm sau loggingInterceptor để log (nếu debug) vẫn thấy
-        // được request gốc trước khi mã hoá, dễ debug hơn.
+        // Đã bỏ SecureApiInterceptor (lớp mã hoá dành cho Cloudflare Worker) vì không còn
+        // dùng Worker trung gian nữa. Request gửi thẳng dạng form-urlencoded gốc
+        // (key=...&device_id=...) tới verify_key.php trên server chính.
         .addInterceptor(loggingInterceptor)
-        .addInterceptor(SecureApiInterceptor())
         .build()
 
     val apiService: ApiService by lazy {
