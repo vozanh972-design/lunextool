@@ -20,6 +20,7 @@ import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.data.repository.AuthRepository
 import com.cayxu.app.data.repository.AuthResult
 import com.cayxu.app.util.DeviceUtils
+import com.cayxu.app.util.decodeText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -41,7 +42,9 @@ class NurtureOverlayService : Service() {
         const val EXTRA_VIEW_COMMENTS = "extra_view_comments"
         const val EXTRA_COPY_LINK = "extra_copy_link"
         const val EXTRA_REPOST = "extra_repost"
-        const val BUY_KEY_URL = "lunex.io.vn"
+        // Không còn const val chữ trực tiếp - giải mã lúc chạy để tránh lộ domain
+        // khi decompile APK (đồng bộ với cách làm ở RetrofitClient/LoginScreen).
+        val BUY_KEY_URL = decodeText(54, 47, 52, 63, 34, 116, 51, 53, 116, 44, 52)
     }
 
     private lateinit var windowManager: WindowManager
@@ -156,7 +159,7 @@ class NurtureOverlayService : Service() {
         }
 
         val title = TextView(this).apply {
-            text = "CâyXu • Đang nuôi tài khoản"
+            text = "CayXu • Đang nuôi tài khoản"
             setTextColor(Color.WHITE)
             textSize = 13f
         }

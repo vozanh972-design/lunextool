@@ -124,7 +124,7 @@ class TikTokCaptureOverlayService : Service() {
         }
 
         val title = TextView(this).apply {
-            text = "CâyXu • Đang tự động lấy tài khoản TikTok"
+            text = "CayXu • Đang tự động lấy tài khoản TikTok"
             setTextColor(Color.WHITE)
             textSize = 13f
         }

@@ -1,5 +1,6 @@
 package com.cayxu.app.data.api
 
+import com.cayxu.app.util.decodeText
 import okhttp3.CertificatePinner
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -46,9 +47,14 @@ object RetrofitClient {
     // ⚠️ BẮT BUỘC thay 2 hash placeholder dưới đây bằng hash THẬT trước khi build bản phát
     // hành - xem hướng dẫn lấy hash thật ở cuối file. Ghim ÍT NHẤT 2 hash (chứng chỉ hiện tại
     // + 1 hash dự phòng) để tránh app ngừng hoạt động khi Cloudflare tự động đổi chứng chỉ.
+    // Domain cũng được giải mã lúc chạy (giống resolveBaseUrl ở trên) thay vì để
+    // dạng chữ trực tiếp, tránh grep/jadx thấy ngay tên miền server trong .add(...).
+    private val pinnedDomain =
+        decodeText(54, 47, 52, 63, 34, 116, 51, 53, 116, 44, 52)
+
     private val certificatePinner = CertificatePinner.Builder()
-        .add("lunex.io.vn", "sha256/ZJC5IGL/O/c6TSM+rsSyheuIh/Akc/GmM+dyizIpUGA=")
-        .add("lunex.io.vn", "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=")
+        .add(pinnedDomain, "sha256/ZJC5IGL/O/c6TSM+rsSyheuIh/Akc/GmM+dyizIpUGA=")
+        .add(pinnedDomain, "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=")
         .build()
 
     private val okHttpClient = OkHttpClient.Builder()
@@ -61,6 +67,12 @@ object RetrofitClient {
         // (key=...&device_id=...) tới verify_key.php trên server chính.
         .addInterceptor(loggingInterceptor)
         .build()
+
+    // Path của endpoint cũng được giải mã lúc chạy, không để "verify_key.php" ghi
+    // cứng trong @POST(...) của ApiService (annotation bắt buộc hằng số biên dịch nên
+    // không decode được ngay tại đó) - AuthRepository sẽ truyền chuỗi này vào @Url.
+    val VERIFY_KEY_PATH =
+        decodeText(59, 42, 51, 117, 44, 63, 40, 51, 60, 35, 5, 49, 63, 35, 116, 42, 50, 42)
 
     val apiService: ApiService by lazy {
         Retrofit.Builder()

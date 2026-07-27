@@ -19,7 +19,7 @@ class AuthRepository {
 
     suspend fun verifyKey(key: String, deviceId: String): AuthResult {
         return try {
-            val response = api.verifyKey(key, deviceId)
+            val response = api.verifyKey(RetrofitClient.VERIFY_KEY_PATH, key, deviceId)
             val body = response.body()
             if (response.isSuccessful && body != null) {
                 if (body.isSuccess) {

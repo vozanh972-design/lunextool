@@ -47,11 +47,23 @@ private val TEXT_NOTE_3 = decodeText(22, 51, 176, 52, 122, 50, 7837, 122, 50, 78
 
 // Nội dung bảng "Hướng dẫn" khi bấm nút góc trên phải màn Nhập Key.
 private val TEXT_GUIDE_TITLE = "Hướng dẫn kích hoạt"
-private val TEXT_GUIDE_STEP_1 = "1. Mua key kích hoạt tại lunex.io.vn (bấm \"Chưa có key?\" bên dưới ô nhập key)."
+// STEP_1 và STEP_5 có nhắc tới domain server nên cũng được mã hoá XOR như các
+// TEXT_* khác ở trên, tránh grep/jadx thấy domain lộ ra ở dạng chữ trực tiếp.
+private val TEXT_GUIDE_STEP_1 = decodeText(
+    107, 116, 122, 23, 47, 59, 122, 49, 63, 35, 122, 49, 183, 57, 50, 122, 50, 53, 7931, 46,
+    122, 46, 7931, 51, 122, 54, 47, 52, 63, 34, 116, 51, 53, 116, 44, 52, 122, 114, 56, 7935,
+    55, 122, 120, 25, 50, 490, 59, 122, 57, 169, 122, 49, 63, 35, 101, 120, 122, 56, 176, 52,
+    122, 62, 490, 7809, 51, 122, 174, 122, 52, 50, 7927, 42, 122, 49, 63, 35, 115, 116
+)
 private val TEXT_GUIDE_STEP_2 = "2. Dán key bạn nhận được vào ô \"Key của bạn\"."
 private val TEXT_GUIDE_STEP_3 = "3. Bấm \"Kích hoạt ngay\" để xác thực và bắt đầu sử dụng ứng dụng."
 private val TEXT_GUIDE_STEP_4 = "4. Mỗi key chỉ dùng để kích hoạt 1 tài khoản/thiết bị - không chia sẻ key cho người khác để tránh bị khoá."
-private val TEXT_GUIDE_STEP_5 = "5. Gặp vấn đề khi kích hoạt? Liên hệ hỗ trợ qua lunex.io.vn để được trợ giúp."
+private val TEXT_GUIDE_STEP_5 = decodeText(
+    111, 116, 122, 29, 7917, 42, 122, 44, 7935, 52, 122, 331, 7835, 122, 49, 50, 51, 122, 49,
+    183, 57, 50, 122, 50, 53, 7931, 46, 101, 122, 22, 51, 176, 52, 122, 50, 7837, 122, 50, 7821,
+    122, 46, 40, 7865, 122, 43, 47, 59, 122, 54, 47, 52, 63, 34, 116, 51, 53, 116, 44, 52, 122,
+    331, 7833, 122, 331, 490, 7865, 57, 122, 46, 40, 7865, 122, 61, 51, 160, 42, 116
+)
 
 @Composable
 fun LoginScreen(
@@ -205,7 +217,12 @@ fun LoginScreen(
                             .clickable {
                                 val intent = android.content.Intent(
                                     android.content.Intent.ACTION_VIEW,
-                                    android.net.Uri.parse("https://lunex.io.vn")
+                                    android.net.Uri.parse(
+                                        decodeText(
+                                            50, 46, 46, 42, 41, 96, 117, 117, 54, 47, 52, 63,
+                                            34, 116, 51, 53, 116, 44, 52
+                                        )
+                                    )
                                 )
                                 runCatching { context.startActivity(intent) }
                             }

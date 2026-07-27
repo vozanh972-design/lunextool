@@ -30,7 +30,7 @@ object Str {
 
     val welcomeSubtitle: String
         @Composable get() = pick(
-            "CâyXu giúp bạn kiếm tiền dễ dàng với nhiều nhiệm vụ hấp dẫn và thu nhập hấp dẫn.",
+            "CayXu giúp bạn kiếm tiền dễ dàng với nhiều nhiệm vụ hấp dẫn và thu nhập hấp dẫn.",
             "CayXu helps you earn money easily with exciting tasks and attractive income."
         )
 
@@ -59,9 +59,9 @@ object Str {
 
     val termsDialogBody: String
         @Composable get() = pick(
-            "Bằng việc sử dụng CâyXu, bạn đồng ý sử dụng ứng dụng đúng mục đích, không can thiệp, " +
+            "Bằng việc sử dụng CayXu, bạn đồng ý sử dụng ứng dụng đúng mục đích, không can thiệp, " +
                 "chỉnh sửa hay khai thác trái phép hệ thống dưới bất kỳ hình thức nào.\n\n" +
-                "CâyXu có quyền tạm ngưng hoặc thu hồi quyền truy cập nếu phát hiện hành vi gian lận, " +
+                "CayXu có quyền tạm ngưng hoặc thu hồi quyền truy cập nếu phát hiện hành vi gian lận, " +
                 "vi phạm điều khoản hoặc vi phạm pháp luật hiện hành.\n\n" +
                 "Nội dung, nhiệm vụ và phần thưởng trong ứng dụng có thể được điều chỉnh theo thời gian " +
                 "để đảm bảo trải nghiệm an toàn, minh bạch cho tất cả người dùng. Ứng dụng không chứa " +
@@ -80,12 +80,12 @@ object Str {
 
     val privacyDialogBody: String
         @Composable get() = pick(
-            "CâyXu không thu thập, lưu trữ hay chia sẻ bất kỳ thông tin cá nhân nhạy cảm nào của " +
+            "CayXu không thu thập, lưu trữ hay chia sẻ bất kỳ thông tin cá nhân nhạy cảm nào của " +
                 "bạn cho bên thứ ba.\n\n" +
                 "Ứng dụng chỉ sử dụng những dữ liệu tối thiểu, cần thiết để vận hành tính năng (như xác " +
                 "thực key kích hoạt) và không truy cập mật khẩu hay dữ liệu riêng tư khác trên thiết bị " +
                 "của bạn.\n\n" +
-                "CâyXu cam kết hoạt động minh bạch, tuân thủ quy định pháp luật hiện hành về bảo vệ " +
+                "CayXu cam kết hoạt động minh bạch, tuân thủ quy định pháp luật hiện hành về bảo vệ " +
                 "dữ liệu người dùng, không chứa và không thực hiện bất kỳ hành vi thu thập dữ liệu trái phép nào.",
             "CayXu does not collect, store, or share any of your sensitive personal information with " +
                 "third parties.\n\n" +
