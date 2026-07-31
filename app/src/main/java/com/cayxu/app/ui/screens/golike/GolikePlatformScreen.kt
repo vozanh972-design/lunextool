@@ -18,9 +18,18 @@ import com.cayxu.app.ui.theme.*
  * Màn hình khi bấm vào 1 nền tảng trong Golike (Facebook/YouTube/TikTok/Instagram).
  * Card trạng thái đăng nhập Golike ở đây dùng LẠI đúng GolikeStatusCard (component chung với
  * GolikeScreen) - không vẽ card mới riêng cho màn này, đúng yêu cầu "điểm cố định dùng chung".
+ *
+ * Riêng TikTok có màn riêng (GolikeTikTokScreen) hiển thị 3 loại TikTok/TikTok Lite/TikTok
+ * Studio kèm 2 nút Cấu hình chạy/Chạy, các nền tảng còn lại KHÔNG bị đụng vào, vẫn hiện
+ * placeholder như cũ.
  */
 @Composable
 fun GolikePlatformScreen(navController: NavController, platform: String) {
+    if (platform.equals("TikTok", ignoreCase = true)) {
+        GolikeTikTokScreen(navController)
+        return
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
