@@ -20,6 +20,7 @@ data class CayXuColorPalette(
     val textPrimary: Color,
     val textSecondary: Color,
     val successGreen: Color,
+    val warningOrange: Color,
     val dangerRed: Color,
     val infoBlueBg: Color
 )
@@ -32,6 +33,7 @@ private val LightPalette = CayXuColorPalette(
     textPrimary = Color(0xFF0F172A),
     textSecondary = Color(0xFF64748B),
     successGreen = Color(0xFF16A34A),
+    warningOrange = Color(0xFFD97706),
     dangerRed = Color(0xFFDC2626),
     infoBlueBg = Color(0xFFEFF4FF)
 )
@@ -44,6 +46,7 @@ private val DarkPalette = CayXuColorPalette(
     textPrimary = Color(0xFFF1F5F9),
     textSecondary = Color(0xFF94A3B8),
     successGreen = Color(0xFF4ADE80),
+    warningOrange = Color(0xFFFBBF24),
     dangerRed = Color(0xFFF87171),
     infoBlueBg = Color(0xFF23324A)
 )

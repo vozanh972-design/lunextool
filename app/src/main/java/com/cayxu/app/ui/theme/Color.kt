@@ -15,5 +15,6 @@ val CardWhite: Color @Composable get() = LocalCayXuColors.current.cardWhite
 val TextPrimary: Color @Composable get() = LocalCayXuColors.current.textPrimary
 val TextSecondary: Color @Composable get() = LocalCayXuColors.current.textSecondary
 val SuccessGreen: Color @Composable get() = LocalCayXuColors.current.successGreen
+val WarningOrange: Color @Composable get() = LocalCayXuColors.current.warningOrange
 val DangerRed: Color @Composable get() = LocalCayXuColors.current.dangerRed
 val InfoBlueBg: Color @Composable get() = LocalCayXuColors.current.infoBlueBg

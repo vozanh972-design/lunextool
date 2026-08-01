@@ -1,6 +1,7 @@
 package com.cayxu.app.ui.screens.golike
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -9,7 +10,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -26,9 +31,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.cayxu.app.data.local.TikTokAccount
+import com.cayxu.app.data.local.TikTokAccountStatus
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.ui.theme.*
+import java.util.concurrent.TimeUnit
 
 /**
  * Màn Golike riêng cho TikTok.
@@ -55,6 +63,21 @@ fun GolikeTikTokScreen(navController: NavController) {
 
     var selectedTab by remember { mutableStateOf(TikTokTab.STANDARD) }
     val accountsForSelectedTab = enabledAccounts.filter { it.variant == selectedTab.variant }
+
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredAccounts = accountsForSelectedTab.filter { account ->
+        searchQuery.isBlank() ||
+            account.displayName.contains(searchQuery, ignoreCase = true) ||
+            account.handle.contains(searchQuery, ignoreCase = true)
+    }
+
+    var selectedAccountId by remember(selectedTab) { mutableStateOf<String?>(null) }
+    val effectiveSelectedId = selectedAccountId ?: filteredAccounts.firstOrNull()?.uid
+
+    val totalCount = accountsForSelectedTab.size
+    val activeCount = accountsForSelectedTab.count { it.status == TikTokAccountStatus.ACTIVE }
+    val checkingCount = accountsForSelectedTab.count { it.status == TikTokAccountStatus.CHECKING }
+    val lockedCount = accountsForSelectedTab.count { it.status == TikTokAccountStatus.LOCKED }
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Row(
@@ -89,7 +112,7 @@ fun GolikeTikTokScreen(navController: NavController) {
             )
             Spacer(Modifier.height(12.dp))
 
-            // 3 loại TikTok cùng 1 hàng.
+            // 3 loại TikTok cùng 1 hàng - GIỮ NGUYÊN như cũ, không đổi.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -127,41 +150,103 @@ fun GolikeTikTokScreen(navController: NavController) {
 
             Spacer(Modifier.height(16.dp))
 
-            // Phần giữa: danh sách tài khoản đã check của loại đang chọn.
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = CardWhite),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(
-                        "Tài khoản ${selectedTab.label}",
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                        fontSize = 14.sp
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    if (accountsForSelectedTab.isEmpty()) {
+            if (accountsForSelectedTab.isEmpty()) {
+                // Không có tài khoản nào được bật cho loại này - giữ thông báo đơn giản.
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardWhite),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            "Tài khoản ${selectedTab.label}",
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary,
+                            fontSize = 14.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
                         Text(
                             "Chưa có tài khoản nào được bật cho loại này.",
                             color = TextSecondary,
                             fontSize = 12.sp
                         )
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            accountsForSelectedTab.forEach { account ->
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(modifier = Modifier.size(6.dp).background(SuccessGreen, CircleShape))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        account.displayName.ifBlank { account.handle.ifBlank { "Chưa xác định" } },
-                                        color = TextPrimary,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
-                        }
+                    }
+                }
+            } else {
+                // ---- Ô tìm kiếm ----
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Tìm theo tên hoặc handle", color = TextSecondary) },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextSecondary) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = CardWhite,
+                        unfocusedContainerColor = CardWhite,
+                        focusedBorderColor = Primary,
+                        unfocusedBorderColor = TextSecondary.copy(alpha = 0.2f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // ---- 4 ô thống kê: Tổng / Hoạt động / Kiểm tra / Khoá ----
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    StatBox(label = "TỔNG", value = totalCount, color = TextPrimary, modifier = Modifier.weight(1f))
+                    StatBox(label = "HOẠT ĐỘNG", value = activeCount, color = SuccessGreen, modifier = Modifier.weight(1f))
+                    StatBox(label = "KIỂM TRA", value = checkingCount, color = WarningOrange, modifier = Modifier.weight(1f))
+                    StatBox(label = "KHOÁ", value = lockedCount, color = DangerRed, modifier = Modifier.weight(1f))
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // ---- Banner bản miễn phí ----
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(WarningOrange.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = WarningOrange, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Bản miễn phí chạy 1 tài khoản",
+                            color = TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "Nâng cấp Pro để chọn nhiều acc và tự động đổi nick.",
+                            color = TextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Text(
+                        "Nâng cấp",
+                        color = WarningOrange,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { /* Chưa gắn logic - chỉ hiển thị */ }
+                    )
+                }
+
+                Spacer(Modifier.height(14.dp))
+                Text("Bấm vào 1 acc để bắt đầu chạy ngay.", color = TextSecondary, fontSize = 12.sp)
+                Spacer(Modifier.height(8.dp))
+
+                // ---- Danh sách tài khoản ----
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    filteredAccounts.forEach { account ->
+                        TikTokAccountCard(
+                            account = account,
+                            isSelected = account.uid == effectiveSelectedId,
+                            onClick = { selectedAccountId = account.uid }
+                        )
                     }
                 }
             }
@@ -195,6 +280,145 @@ fun GolikeTikTokScreen(navController: NavController) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Chạy")
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatBox(label: String, value: Int, color: Color, modifier: Modifier = Modifier) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = modifier
+    ) {
+        Column(modifier = Modifier.padding(vertical = 12.dp, horizontal = 8.dp)) {
+            Text(label, color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(2.dp))
+            Text("$value", color = color, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+/** Bảng màu avatar để tô theo từng tài khoản - chọn theo hash(uid), không dùng logic thật. */
+private val AvatarColors = listOf(
+    Color(0xFF2563EB), Color(0xFF7C3AED), Color(0xFF16A34A),
+    Color(0xFFDB2777), Color(0xFFEA580C), Color(0xFF0891B2)
+)
+
+private fun avatarColorFor(uid: String): Color {
+    val index = (uid.hashCode().let { if (it < 0) -it else it }) % AvatarColors.size
+    return AvatarColors[index]
+}
+
+private fun monthsAgoText(createdAt: Long): String {
+    val months = TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - createdAt).toInt() / 30
+    return if (months <= 0) "mới tạo" else "tạo $months tháng"
+}
+
+private fun statusLabel(status: TikTokAccountStatus): String = when (status) {
+    TikTokAccountStatus.ACTIVE -> "Hoạt động"
+    TikTokAccountStatus.CHECKING -> "Đang kiểm tra"
+    TikTokAccountStatus.LOCKED -> "Bị khoá"
+}
+
+@Composable
+private fun statusColor(status: TikTokAccountStatus): Color = when (status) {
+    TikTokAccountStatus.ACTIVE -> SuccessGreen
+    TikTokAccountStatus.CHECKING -> WarningOrange
+    TikTokAccountStatus.LOCKED -> DangerRed
+}
+
+@Composable
+private fun TikTokAccountCard(account: TikTokAccount, isSelected: Boolean, onClick: () -> Unit) {
+    val avatarColor = avatarColorFor(account.uid)
+    val initials = (account.displayName.ifBlank { account.handle.ifBlank { "?" } })
+        .trim()
+        .split(" ")
+        .filter { it.isNotBlank() }
+        .take(2)
+        .joinToString("") { it.first().uppercase() }
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 2.dp else 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = if (isSelected) 2.dp else 1.dp,
+                color = if (isSelected) SuccessGreen else TextSecondary.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .clickable(onClick = onClick)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier.size(40.dp).background(avatarColor, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(initials, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        account.displayName.ifBlank { account.handle },
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "@${account.handle} (${monthsAgoText(account.createdAt)})",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
+                }
+                Text("+0đ", color = SuccessGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .border(1.dp, TextSecondary.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+                        .clickable { /* Chưa gắn logic - chỉ hiển thị nút */ }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.Label, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        account.subName.ifBlank { "Thêm tên phụ" },
+                        color = TextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Icon(Icons.Filled.ArrowForward, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier
+                        .background(statusColor(account.status).copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.size(6.dp).background(statusColor(account.status), CircleShape))
+                    Spacer(Modifier.width(6.dp))
+                    Text(statusLabel(account.status), color = statusColor(account.status), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "${account.taskCount} N.vụ · Chưa chạy",
+                    color = TextSecondary,
+                    fontSize = 11.sp
+                )
             }
         }
     }
