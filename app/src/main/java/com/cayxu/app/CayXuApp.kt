@@ -20,6 +20,7 @@ class CayXuApp : Application() {
         // patch/ký lại (chữ ký APK sai) hoặc đang bị debug/hook -> khoá vĩnh viễn.
         if (IntegrityGuard.isTampered(this)) {
             prefs.setPermanentlyBlocked()
+            com.cayxu.app.data.local.AppLockState.markBlocked()
         }
 
         // Bắt đầu chuỗi tự re-check key định kỳ (ngẫu nhiên 3-10 tiếng/lần) với

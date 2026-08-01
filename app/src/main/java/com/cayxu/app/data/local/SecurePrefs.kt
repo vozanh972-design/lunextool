@@ -40,10 +40,14 @@ class SecurePrefs(context: Context) {
     }
 
     /**
-     * Đánh dấu app bị khoá VĨNH VIỄN (phát hiện bị patch/bypass, hoặc key bị
-     * server thu hồi khi re-check định kỳ). Một khi đã set, app sẽ luôn mở
-     * thẳng vào màn "Đã bị khoá" mỗi lần mở app, không cách nào quay lại luồng
-     * bình thường ngoài việc gỡ cài đặt và cài lại bản gốc chưa bị sửa.
+     * Đánh dấu app bị khoá VĨNH VIỄN - CHỈ dùng khi phát hiện bị patch/bypass
+     * (xem IntegrityGuard). Một khi đã set, app sẽ luôn mở thẳng vào màn "Đã bị
+     * khoá" mỗi lần mở app, không cách nào quay lại luồng bình thường ngoài việc
+     * gỡ cài đặt và cài lại bản gốc chưa bị sửa.
+     *
+     * LƯU Ý: trường hợp key hết hạn/bị server thu hồi (re-check định kỳ) KHÔNG
+     * gọi hàm này nữa - xem KeyRecheckWorker/AppLockState.markKeyRevoked, trường
+     * hợp đó chỉ xoá key và đưa về màn nhập Key, không khoá chết.
      */
     fun setPermanentlyBlocked() {
         prefs.edit().putBoolean(KEY_BLOCKED, true).apply()

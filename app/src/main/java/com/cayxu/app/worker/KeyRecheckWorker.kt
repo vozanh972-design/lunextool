@@ -20,7 +20,9 @@ import kotlin.random.Random
  * chạy độc lập, không phụ thuộc vào màn hình Login có bị bypass hay không.
  *
  * Nếu server trả về lỗi (key hết hạn/bị thu hồi/dùng sai thiết bị...), app sẽ
- * bị khoá NGAY - kể cả khi màn hình đăng nhập đã bị patch để bypass.
+ * XOÁ key và đưa NGAY người dùng về màn nhập Key để họ tự nhập key mới/gia hạn
+ * - đây KHÔNG phải khoá vĩnh viễn, khác với trường hợp phát hiện app bị patch/
+ * bypass (xem IntegrityGuard/CayXuApp.onCreate, trường hợp đó mới khoá chết).
  *
  * Mỗi lần chạy xong tự đặt lịch lần kế tiếp với độ trễ NGẪU NHIÊN 3-10 tiếng
  * (random riêng theo từng máy, không đồng bộ) để hàng loạt máy không cùng gọi
@@ -32,7 +34,8 @@ class KeyRecheckWorker(appContext: Context, params: WorkerParameters) : Coroutin
         val prefs = SecurePrefs(applicationContext)
         val key = prefs.getKey()
 
-        // Nếu chưa đăng nhập (chưa có key lưu) thì không có gì để kiểm tra.
+        // Nếu chưa đăng nhập (chưa có key lưu) hoặc app đã bị khoá vĩnh viễn (crack/
+        // patch) thì không có gì để kiểm tra nữa.
         if (!key.isNullOrBlank() && !prefs.isPermanentlyBlocked()) {
             val deviceId = DeviceUtils.getAndroidId(applicationContext)
             val repository = AuthRepository()
@@ -42,9 +45,12 @@ class KeyRecheckWorker(appContext: Context, params: WorkerParameters) : Coroutin
                 }
                 is AuthResult.ApiError -> {
                     // Server xác nhận key không còn hợp lệ (hết hạn / bị thu hồi /
-                    // đang dùng ở thiết bị khác...) -> khoá app, xoá key.
+                    // đang dùng ở thiết bị khác...) -> xoá key NGAY, không giữ lại
+                    // trong tool nữa. KHÔNG khoá vĩnh viễn (không phải phát hiện
+                    // crack) - báo cho UI đưa người dùng về màn nhập Key ngay lập
+                    // tức để họ tự nhập key mới/gia hạn.
                     prefs.clearKey()
-                    prefs.setPermanentlyBlocked()
+                    com.cayxu.app.data.local.AppLockState.markKeyRevoked()
                 }
                 is AuthResult.NetworkError -> {
                     // Lỗi mạng tạm thời (mất mạng, server bảo trì...) - KHÔNG khoá

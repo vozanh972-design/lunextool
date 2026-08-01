@@ -18,8 +18,11 @@ import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
 
 /**
- * Màn hình duy nhất được phép hiển thị khi app bị khoá vĩnh viễn (phát hiện
- * app bị patch/bypass, hoặc key đã bị server thu hồi khi re-check định kỳ).
+ * Màn hình duy nhất được phép hiển thị khi app bị khoá vĩnh viễn - CHỈ xảy ra khi
+ * phát hiện app bị patch/bypass (xem IntegrityGuard). Trường hợp key hết hạn/bị
+ * server thu hồi KHÔNG dẫn tới màn này nữa - trường hợp đó đưa thẳng về màn nhập
+ * Key (xem AppLockState.markKeyRevoked / KeyRecheckWorker) để người dùng tự nhập
+ * key mới, không khoá chết.
  * KHÔNG có nút "thử lại" hay đường quay về Login - đúng theo yêu cầu "lỗi app
  * không thể sử dụng thêm" khi phát hiện bị crack.
  */
@@ -48,8 +51,8 @@ fun BlockedScreen() {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Hệ thống phát hiện bất thường hoặc key đã hết hiệu lực. " +
-                    "Vui lòng gỡ cài đặt và cài lại ứng dụng, hoặc liên hệ hỗ trợ để được cấp key mới.",
+                "Hệ thống phát hiện ứng dụng đã bị can thiệp/sửa đổi trái phép. " +
+                    "Vui lòng gỡ cài đặt và cài lại bản gốc, hoặc liên hệ hỗ trợ nếu bạn cho rằng đây là nhầm lẫn.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 textAlign = TextAlign.Center

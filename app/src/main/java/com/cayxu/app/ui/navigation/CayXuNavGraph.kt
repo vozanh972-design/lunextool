@@ -11,15 +11,21 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.cayxu.app.data.local.AppLockState
+import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.ui.components.CayXuBottomBar
 import com.cayxu.app.ui.screens.account.AccountScreen
+import com.cayxu.app.ui.screens.blocked.BlockedScreen
 import com.cayxu.app.ui.screens.friends.FriendsScreen
 import com.cayxu.app.ui.screens.home.HomeScreen
 import com.cayxu.app.ui.screens.login.LoginScreen
@@ -32,6 +38,7 @@ import com.cayxu.app.ui.theme.AppBackground
 object Routes {
     const val WELCOME = "welcome"
     const val LOGIN = "login"
+    const val BLOCKED = "blocked"
     const val HOME = "home"
     const val TASKS = "tasks"
     const val WALLET = "wallet"
@@ -104,6 +111,35 @@ private fun welcomeToLoginExit() =
 fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    val context = LocalContext.current
+
+    // Ngay khi worker/tamper-check báo "đã bị khoá" (key vừa bị server reset, hoặc
+    // phát hiện app bị patch) trong lúc app ĐANG MỞ, văng người dùng ra khỏi bất kỳ
+    // màn nào họ đang đứng, thẳng tới BlockedScreen, xoá sạch back stack - không giữ
+    // họ ở lại phiên đang dùng dở nữa.
+    val isBlockedNow by AppLockState.blocked.collectAsState()
+    LaunchedEffect(isBlockedNow) {
+        if (isBlockedNow && currentRoute != Routes.BLOCKED) {
+            navController.navigate(Routes.BLOCKED) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+    }
+
+    // Key bị server thu hồi/hết hạn khi worker re-check định kỳ (KHÁC với bị khoá
+    // vĩnh viễn ở trên) -> đưa NGAY người dùng về màn nhập Key để họ tự nhập key
+    // mới/gia hạn, dù đang đứng ở màn nào (Golike, Home...). consumeKeyRevoked()
+    // reset lại tín hiệu ngay sau khi điều hướng để không lặp lại nếu currentRoute
+    // đổi qua lại.
+    val isKeyRevokedNow by AppLockState.keyRevoked.collectAsState()
+    LaunchedEffect(isKeyRevokedNow) {
+        if (isKeyRevokedNow && currentRoute != Routes.LOGIN) {
+            navController.navigate(Routes.LOGIN) {
+                popUpTo(0) { inclusive = true }
+            }
+            AppLockState.consumeKeyRevoked()
+        }
+    }
 
     // Scaffold + thanh điều hướng dưới nằm CỐ ĐỊNH ở đây, bên NGOÀI NavHost.
     // -> Khi chuyển màn, chỉ phần nội dung bên trong NavHost mờ dần (crossfade),
@@ -116,12 +152,15 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             }
         }
     ) { innerPadding ->
+        val securePrefs = SecurePrefs(context)
         NavHost(
             navController = navController,
-            startDestination = if (com.cayxu.app.data.local.SecurePrefs(androidx.compose.ui.platform.LocalContext.current).hasSeenWelcome()) {
-                Routes.LOGIN
-            } else {
-                Routes.WELCOME
+            startDestination = when {
+                // Đã bị khoá từ TRƯỚC (ví dụ worker phát hiện lúc app đang tắt) ->
+                // mở app lên là vào thẳng màn khoá, không qua Welcome/Login nữa.
+                securePrefs.isPermanentlyBlocked() -> Routes.BLOCKED
+                securePrefs.hasSeenWelcome() -> Routes.LOGIN
+                else -> Routes.WELCOME
             },
             modifier = Modifier.padding(innerPadding),
             // Chỉ mờ dần nội dung cũ -> hiện nội dung mới, KHÔNG trượt ngang trái/phải.
@@ -167,6 +206,8 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
                     }
                 )
             }
+
+            composable(Routes.BLOCKED) { BlockedScreen() }
 
             composable(Routes.HOME) { HomeScreen(navController) }
             composable(Routes.TASKS) { TasksScreen(navController) }
