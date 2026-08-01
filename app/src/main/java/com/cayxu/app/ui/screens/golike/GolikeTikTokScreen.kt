@@ -11,7 +11,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -203,39 +202,6 @@ fun GolikeTikTokScreen(navController: NavController) {
 
                 Spacer(Modifier.height(12.dp))
 
-                // ---- Banner bản miễn phí ----
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(WarningOrange.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = WarningOrange, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Bản miễn phí chạy 1 tài khoản",
-                            color = TextPrimary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            "Nâng cấp Pro để chọn nhiều acc và tự động đổi nick.",
-                            color = TextSecondary,
-                            fontSize = 11.sp
-                        )
-                    }
-                    Text(
-                        "Nâng cấp",
-                        color = WarningOrange,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable { /* Chưa gắn logic - chỉ hiển thị */ }
-                    )
-                }
-
-                Spacer(Modifier.height(14.dp))
                 Text("Bấm vào 1 acc để bắt đầu chạy ngay.", color = TextSecondary, fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
 

@@ -1,5 +1,6 @@
 package com.cayxu.app.ui.screens.golike
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,12 +21,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
+import com.cayxu.app.data.local.TikTokRunConfig
+import com.cayxu.app.data.local.TikTokRunConfigStore
 import com.cayxu.app.ui.theme.*
 
 /**
@@ -38,8 +42,10 @@ import com.cayxu.app.ui.theme.*
  * RangeEditDialog (chỉnh khoảng min-max) và SingleEditDialog (chỉnh 1 số).
  * Các nút Bật/Tắt (badge) vẫn bấm là gạt bật/tắt ngay, KHÔNG mở popup.
  *
- * CHỈ là giao diện: state cục bộ trong Compose, CHƯA gắn logic chạy/lưu cấu hình
- * thật - nút "Bắt đầu hoạt động" chưa có logic.
+ * Nút "LƯU CẤU HÌNH" đã có logic THẬT: lưu toàn bộ giá trị xuống
+ * TikTokRunConfigStore (SharedPreferences, riêng theo từng loại TikTok/Lite/
+ * Studio), báo Toast xác nhận rồi quay lại màn trước. Mở lại màn này sẽ đọc
+ * đúng cấu hình đã lưu lần trước, không bị mất khi tắt/mở lại app.
  */
 private fun variantLabel(variant: String): String = when (variant) {
     "LITE" -> "TikTok Lite"
@@ -57,42 +63,47 @@ private sealed class EditTarget {
 
 @Composable
 fun GolikeTikTokConfigScreen(navController: NavController, variant: String) {
+    val context = LocalContext.current
+    // Đọc lại cấu hình đã lưu trước đó cho đúng loại (TikTok/Lite/Studio) này -
+    // chưa lưu lần nào thì TikTokRunConfigStore tự trả về giá trị mặc định.
+    val savedConfig = remember(variant) { TikTokRunConfigStore.getConfig(context, variant) }
+
     // ---- Thời gian ngẫu nhiên (khoảng min-max, đơn vị giây) ----
-    var timeBetweenActions by remember { mutableStateOf(RangeValue(5, 15)) }
-    var timeBetweenTasks by remember { mutableStateOf(RangeValue(10, 20)) }
-    var timeNoTask by remember { mutableStateOf(RangeValue(20, 40)) }
-    var randomPauseRange by remember { mutableStateOf(RangeValue(40, 60)) }
+    var timeBetweenActions by remember { mutableStateOf(RangeValue(savedConfig.timeBetweenActionsMin, savedConfig.timeBetweenActionsMax)) }
+    var timeBetweenTasks by remember { mutableStateOf(RangeValue(savedConfig.timeBetweenTasksMin, savedConfig.timeBetweenTasksMax)) }
+    var timeNoTask by remember { mutableStateOf(RangeValue(savedConfig.timeNoTaskMin, savedConfig.timeNoTaskMax)) }
+    var randomPauseRange by remember { mutableStateOf(RangeValue(savedConfig.randomPauseMin, savedConfig.randomPauseMax)) }
 
     // ---- Toggle hành vi ----
-    var randomTapBeforeAction by remember { mutableStateOf(true) }
-    var randomViewContent by remember { mutableStateOf(true) }
-    var randomSwipe by remember { mutableStateOf(true) }
-    var occasionallyBackHome by remember { mutableStateOf(true) }
-    var waitBeforeBackHome by remember { mutableStateOf(5) }
-    var backHomeAfterFinish by remember { mutableStateOf(true) }
+    var randomTapBeforeAction by remember { mutableStateOf(savedConfig.randomTapBeforeAction) }
+    var randomViewContent by remember { mutableStateOf(savedConfig.randomViewContent) }
+    var randomSwipe by remember { mutableStateOf(savedConfig.randomSwipe) }
+    var occasionallyBackHome by remember { mutableStateOf(savedConfig.occasionallyBackHome) }
+    var waitBeforeBackHome by remember { mutableStateOf(savedConfig.waitBeforeBackHome) }
+    var backHomeAfterFinish by remember { mutableStateOf(savedConfig.backHomeAfterFinish) }
 
     // ---- Thông báo & làm mới ----
-    var showNotifyNewContent by remember { mutableStateOf(true) }
-    var periodicContentCheck by remember { mutableStateOf(true) }
-    var reloadUiOnUpdate by remember { mutableStateOf(true) }
-    var waitBeforeReload by remember { mutableStateOf(5) }
-    var backHomeAfterComplete by remember { mutableStateOf(true) }
-    var waitBeforeBackHomeComplete by remember { mutableStateOf(3) }
-    var repeatBackHomeComplete by remember { mutableStateOf(1) }
+    var showNotifyNewContent by remember { mutableStateOf(savedConfig.showNotifyNewContent) }
+    var periodicContentCheck by remember { mutableStateOf(savedConfig.periodicContentCheck) }
+    var reloadUiOnUpdate by remember { mutableStateOf(savedConfig.reloadUiOnUpdate) }
+    var waitBeforeReload by remember { mutableStateOf(savedConfig.waitBeforeReload) }
+    var backHomeAfterComplete by remember { mutableStateOf(savedConfig.backHomeAfterComplete) }
+    var waitBeforeBackHomeComplete by remember { mutableStateOf(savedConfig.waitBeforeBackHomeComplete) }
+    var repeatBackHomeComplete by remember { mutableStateOf(savedConfig.repeatBackHomeComplete) }
 
     // ---- Khác & tuỳ chọn ----
-    var randomPauseEnabled by remember { mutableStateOf(true) }
-    var rotateAccountsEnabled by remember { mutableStateOf(true) }
-    var rotateAfterCount by remember { mutableStateOf(50) }
-    var rotateRestMinutes by remember { mutableStateOf(5) }
+    var randomPauseEnabled by remember { mutableStateOf(savedConfig.randomPauseEnabled) }
+    var rotateAccountsEnabled by remember { mutableStateOf(savedConfig.rotateAccountsEnabled) }
+    var rotateAfterCount by remember { mutableStateOf(savedConfig.rotateAfterCount) }
+    var rotateRestMinutes by remember { mutableStateOf(savedConfig.rotateRestMinutes) }
 
     // 3 mục trước là "Tắt" - giờ mặc định BẬT, kèm "Sau 10 nv".
-    var reduceSystemLoadEnabled by remember { mutableStateOf(true) }
-    var reduceSystemLoadAfterCount by remember { mutableStateOf(10) }
-    var stopOnErrorEnabled by remember { mutableStateOf(true) }
-    var stopOnErrorAfterCount by remember { mutableStateOf(10) }
-    var stopOnTasksDoneEnabled by remember { mutableStateOf(true) }
-    var stopOnTasksDoneAfterCount by remember { mutableStateOf(100) }
+    var reduceSystemLoadEnabled by remember { mutableStateOf(savedConfig.reduceSystemLoadEnabled) }
+    var reduceSystemLoadAfterCount by remember { mutableStateOf(savedConfig.reduceSystemLoadAfterCount) }
+    var stopOnErrorEnabled by remember { mutableStateOf(savedConfig.stopOnErrorEnabled) }
+    var stopOnErrorAfterCount by remember { mutableStateOf(savedConfig.stopOnErrorAfterCount) }
+    var stopOnTasksDoneEnabled by remember { mutableStateOf(savedConfig.stopOnTasksDoneEnabled) }
+    var stopOnTasksDoneAfterCount by remember { mutableStateOf(savedConfig.stopOnTasksDoneAfterCount) }
 
     var editTarget by remember { mutableStateOf<EditTarget?>(null) }
 
@@ -352,7 +363,44 @@ fun GolikeTikTokConfigScreen(navController: NavController, variant: String) {
             Spacer(Modifier.height(20.dp))
 
             Button(
-                onClick = { /* Chưa gắn logic - chỉ hiển thị nút */ },
+                onClick = {
+                    val config = TikTokRunConfig(
+                        timeBetweenActionsMin = timeBetweenActions.min,
+                        timeBetweenActionsMax = timeBetweenActions.max,
+                        timeBetweenTasksMin = timeBetweenTasks.min,
+                        timeBetweenTasksMax = timeBetweenTasks.max,
+                        timeNoTaskMin = timeNoTask.min,
+                        timeNoTaskMax = timeNoTask.max,
+                        randomTapBeforeAction = randomTapBeforeAction,
+                        randomViewContent = randomViewContent,
+                        randomSwipe = randomSwipe,
+                        occasionallyBackHome = occasionallyBackHome,
+                        waitBeforeBackHome = waitBeforeBackHome,
+                        backHomeAfterFinish = backHomeAfterFinish,
+                        showNotifyNewContent = showNotifyNewContent,
+                        periodicContentCheck = periodicContentCheck,
+                        reloadUiOnUpdate = reloadUiOnUpdate,
+                        waitBeforeReload = waitBeforeReload,
+                        backHomeAfterComplete = backHomeAfterComplete,
+                        waitBeforeBackHomeComplete = waitBeforeBackHomeComplete,
+                        repeatBackHomeComplete = repeatBackHomeComplete,
+                        randomPauseEnabled = randomPauseEnabled,
+                        randomPauseMin = randomPauseRange.min,
+                        randomPauseMax = randomPauseRange.max,
+                        rotateAccountsEnabled = rotateAccountsEnabled,
+                        rotateAfterCount = rotateAfterCount,
+                        rotateRestMinutes = rotateRestMinutes,
+                        reduceSystemLoadEnabled = reduceSystemLoadEnabled,
+                        reduceSystemLoadAfterCount = reduceSystemLoadAfterCount,
+                        stopOnErrorEnabled = stopOnErrorEnabled,
+                        stopOnErrorAfterCount = stopOnErrorAfterCount,
+                        stopOnTasksDoneEnabled = stopOnTasksDoneEnabled,
+                        stopOnTasksDoneAfterCount = stopOnTasksDoneAfterCount
+                    )
+                    TikTokRunConfigStore.saveConfig(context, variant, config)
+                    Toast.makeText(context, "Đã lưu cấu hình ${variantLabel(variant)}", Toast.LENGTH_SHORT).show()
+                    navController.popBackStack()
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth().height(52.dp)
