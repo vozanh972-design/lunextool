@@ -3,8 +3,10 @@ package com.cayxu.app.ui.screens.golike
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
@@ -66,7 +68,15 @@ fun GolikeTikTokScreen(navController: NavController) {
             Text("TikTok", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         }
 
-        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        // Phần nội dung cuộn riêng - chiều cao co giãn (weight), để 2 nút bên dưới
+        // LUÔN cố định ở cuối màn hình, không phụ thuộc nội dung dài/ngắn hay có
+        // tài khoản hay không (kể cả "Chưa có tài khoản nào được bật cho loại này").
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+        ) {
             GolikeStatusCard(navController)
 
             Spacer(Modifier.height(20.dp))
@@ -157,33 +167,35 @@ fun GolikeTikTokScreen(navController: NavController) {
             }
 
             Spacer(Modifier.height(16.dp))
+        }
 
-            // 2 nút dùng chung ở dưới cùng - CHƯA gắn logic.
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(
-                    onClick = {
-                        navController.navigate(
-                            com.cayxu.app.ui.navigation.Routes.golikeTikTokConfig(selectedTab.name)
-                        )
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Cấu hình chạy")
-                }
-                Button(
-                    onClick = { /* Chưa gắn logic - chỉ hiển thị nút */ },
-                    colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Chạy")
-                }
+        // 2 nút CỐ ĐỊNH ở cuối màn hình - luôn hiện dù không có tài khoản TikTok
+        // nào được bật, không nằm trong phần cuộn ở trên nữa. CHƯA gắn logic.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)
+        ) {
+            OutlinedButton(
+                onClick = {
+                    navController.navigate(
+                        com.cayxu.app.ui.navigation.Routes.golikeTikTokConfig(selectedTab.name)
+                    )
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Cấu hình chạy")
             }
-
-            Spacer(Modifier.height(24.dp))
+            Button(
+                onClick = { /* Chưa gắn logic - chỉ hiển thị nút */ },
+                colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Chạy")
+            }
         }
     }
 }

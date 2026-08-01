@@ -9,7 +9,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -89,10 +89,10 @@ fun GolikeTikTokConfigScreen(navController: NavController, variant: String) {
     // 3 mục trước là "Tắt" - giờ mặc định BẬT, kèm "Sau 10 nv".
     var reduceSystemLoadEnabled by remember { mutableStateOf(true) }
     var reduceSystemLoadAfterCount by remember { mutableStateOf(10) }
-    var stopOnNoNetworkEnabled by remember { mutableStateOf(true) }
-    var stopOnNoNetworkAfterCount by remember { mutableStateOf(10) }
+    var stopOnErrorEnabled by remember { mutableStateOf(true) }
+    var stopOnErrorAfterCount by remember { mutableStateOf(10) }
     var stopOnTasksDoneEnabled by remember { mutableStateOf(true) }
-    var stopOnTasksDoneAfterCount by remember { mutableStateOf(10) }
+    var stopOnTasksDoneAfterCount by remember { mutableStateOf(100) }
 
     var editTarget by remember { mutableStateOf<EditTarget?>(null) }
 
@@ -323,15 +323,15 @@ fun GolikeTikTokConfigScreen(navController: NavController, variant: String) {
                 }
                 RowDivider()
                 ToggleBadgeRowWithBelowValue(
-                    title = "Dừng khi mất kết nối mạng",
-                    subtitle = "Tự động dừng khi không có mạng",
-                    isOn = stopOnNoNetworkEnabled,
-                    onToggle = { stopOnNoNetworkEnabled = !stopOnNoNetworkEnabled }
+                    title = "Dừng khi gặp lỗi",
+                    subtitle = "Tự động dừng khi gặp sự cố trong quá trình chạy",
+                    isOn = stopOnErrorEnabled,
+                    onToggle = { stopOnErrorEnabled = !stopOnErrorEnabled }
                 ) {
                     Text("Sau", color = TextSecondary, fontSize = 12.sp)
                     Spacer(Modifier.width(6.dp))
-                    EditableValuePill("$stopOnNoNetworkAfterCount nv") {
-                        editTarget = EditTarget.SingleTarget("stopNoNetworkCount", "Có hiệu lực sau bao nhiêu nhiệm vụ", "nv", stopOnNoNetworkAfterCount)
+                    EditableValuePill("$stopOnErrorAfterCount nv") {
+                        editTarget = EditTarget.SingleTarget("stopOnErrorCount", "Có hiệu lực sau bao nhiêu nhiệm vụ", "nv", stopOnErrorAfterCount)
                     }
                 }
                 RowDivider()
@@ -361,9 +361,9 @@ fun GolikeTikTokConfigScreen(navController: NavController, variant: String) {
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White)
+                    Icon(Icons.Filled.Save, contentDescription = null, tint = Color.White)
                     Spacer(Modifier.width(6.dp))
-                    Text("BẮT ĐẦU HOẠT ĐỘNG", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("LƯU CẤU HÌNH", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     Text("1 tài khoản", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp)
                 }
             }
@@ -432,7 +432,7 @@ fun GolikeTikTokConfigScreen(navController: NavController, variant: String) {
                         "rotateCount" -> rotateAfterCount = newValue
                         "rotateMinutes" -> rotateRestMinutes = newValue
                         "reduceLoadCount" -> reduceSystemLoadAfterCount = newValue
-                        "stopNoNetworkCount" -> stopOnNoNetworkAfterCount = newValue
+                        "stopOnErrorCount" -> stopOnErrorAfterCount = newValue
                         "stopTasksDoneCount" -> stopOnTasksDoneAfterCount = newValue
                     }
                     editTarget = null
