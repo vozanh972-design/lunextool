@@ -161,7 +161,11 @@ fun GolikeTikTokScreen(navController: NavController) {
             // 2 nút dùng chung ở dưới cùng - CHƯA gắn logic.
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(
-                    onClick = { /* Chưa gắn logic - chỉ hiển thị nút */ },
+                    onClick = {
+                        navController.navigate(
+                            com.cayxu.app.ui.navigation.Routes.golikeTikTokConfig(selectedTab.name)
+                        )
+                    },
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(16.dp))

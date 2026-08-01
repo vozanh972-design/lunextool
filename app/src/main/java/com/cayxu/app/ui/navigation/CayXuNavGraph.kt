@@ -52,6 +52,14 @@ object Routes {
     const val GOLIKE_PLATFORM = "golike_platform/{platform}"
 
     fun golikePlatform(platform: String) = "golike_platform/$platform"
+
+    // Màn "Cấu hình hoạt động" mở ra khi bấm nút Cấu hình chạy ở Golike TikTok -
+    // nhận theo tên loại (TikTok/TikTok Lite/TikTok Studio) để hiển thị đúng loại
+    // đang được chọn sẵn khi mở màn cấu hình.
+    const val GOLIKE_TIKTOK_CONFIG = "golike_tiktok_config/{variant}"
+
+    fun golikeTikTokConfig(variant: String) = "golike_tiktok_config/$variant"
+
     const val LINK_ACCOUNT = "link_account/{platform}/{iconRes}"
     const val ADD_ACCOUNT = "add_account/{platform}/{iconRes}"
 
@@ -226,6 +234,13 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             }
             composable(Routes.GOLIKE_LOGIN) {
                 com.cayxu.app.ui.screens.golike.GolikeLoginScreen(navController)
+            }
+            composable(
+                Routes.GOLIKE_TIKTOK_CONFIG,
+                arguments = listOf(androidx.navigation.navArgument("variant") { type = androidx.navigation.NavType.StringType })
+            ) { backStackEntry ->
+                val variant = backStackEntry.arguments?.getString("variant").orEmpty()
+                com.cayxu.app.ui.screens.golike.GolikeTikTokConfigScreen(navController, variant)
             }
             composable(
                 Routes.GOLIKE_PLATFORM,
