@@ -13,8 +13,10 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.cayxu.app.R
 import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.ui.screens.golike.openTikTokProfile
 import kotlin.math.min
@@ -181,14 +183,14 @@ class GolikeAddAccountOverlayService : Service() {
         })
         headerRow.addView(spacerDp(8))
         headerRow.addView(circleIconButton("\u2715", Color.parseColor("#3DFF5252"), Color.parseColor("#FF6B6B")) {
-            stopSelf()
+            exitToolCompletely()
         })
 
         root.addView(headerRow)
         root.addView(dividerView())
 
         root.addView(infoRow("Chế độ", "Liên kết", Color.parseColor("#4C8DFF")))
-        val ageText = if (monthsAgo <= 0) "mới tạo" else "tạo $monthsAgo tháng"
+        val ageText = "tạo $monthsAgo tháng"
         root.addView(infoRow("Tài khoản", "@$handle ($ageText)", Color.WHITE))
 
         root.addView(dividerView())
@@ -223,7 +225,7 @@ class GolikeAddAccountOverlayService : Service() {
         }
         root.addView(stopBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
-        makeDraggable(headerRow, params)
+        makeDraggable(root, params)
 
         windowManager.addView(root, params)
         fullPanel = root
@@ -255,14 +257,16 @@ class GolikeAddAccountOverlayService : Service() {
                 setStroke(dp(1.5f), Color.parseColor("#4C8DFF"))
             }
         }
-        val label = TextView(this).apply {
-            text = "Cx"
-            setTextColor(Color.WHITE)
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        val logo = ImageView(this).apply {
+            setImageResource(R.mipmap.ic_launcher_round)
         }
-        bubble.addView(label, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        bubble.addView(
+            logo,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply {
+                val inset = dp(6)
+                setMargins(inset, inset, inset, inset)
+            }
+        )
 
         var isDrag = false
         var initialX = 0
@@ -298,6 +302,14 @@ class GolikeAddAccountOverlayService : Service() {
 
         windowManager.addView(bubble, params)
         miniBubble = bubble
+    }
+
+    /** Nút X: đóng HẲN tool (không chỉ đóng lớp nổi, không quay lại tool) - khác với nút
+     *  mũi tên (quay lại tool) và nút trừ (chỉ ẩn thành icon). */
+    private fun exitToolCompletely() {
+        fullPanel?.let { runCatching { windowManager.removeView(it) } }
+        miniBubble?.let { runCatching { windowManager.removeView(it) } }
+        android.os.Process.killProcess(android.os.Process.myPid())
     }
 
     private fun circleIconButton(symbol: String, bgColor: Int, fgColor: Int, onClick: () -> Unit): View {
