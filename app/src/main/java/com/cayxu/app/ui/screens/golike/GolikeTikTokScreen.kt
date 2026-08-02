@@ -3,12 +3,14 @@ package com.cayxu.app.ui.screens.golike
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Label
@@ -17,23 +19,26 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.cayxu.app.data.local.GolikeAccountStore
 import com.cayxu.app.data.local.TikTokAccount
 import com.cayxu.app.data.local.TikTokAccountStatus
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
+import com.cayxu.app.data.repository.GolikeTikTokAccountRepository
+import com.cayxu.app.data.repository.GolikeTikTokAccountsResult
 import com.cayxu.app.ui.theme.*
 import java.util.concurrent.TimeUnit
 
@@ -78,6 +83,25 @@ fun GolikeTikTokScreen(navController: NavController) {
     val checkingCount = accountsForSelectedTab.count { it.status == TikTokAccountStatus.CHECKING }
     val lockedCount = accountsForSelectedTab.count { it.status == TikTokAccountStatus.LOCKED }
 
+    // Đọc THẬT danh sách acc TikTok đã có trong GoLike (GET /api/tiktok-account, dùng
+    // token đã đăng nhập sẵn - không hỏi lại) - để biết acc nào CHƯA có trong GoLike thì
+    // hiện nút "+ Thêm" cho acc đó. Chỉ gọi khi đã đăng nhập Golike.
+    val isGolikeLoggedIn by GolikeSession.isLoggedIn
+    var golikeLinkedHandles by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(isGolikeLoggedIn) {
+        if (isGolikeLoggedIn) {
+            val token = GolikeAccountStore.getToken(context)
+            if (!token.isNullOrBlank()) {
+                when (val result = GolikeTikTokAccountRepository.fetchLinkedHandles(token)) {
+                    is GolikeTikTokAccountsResult.Success -> golikeLinkedHandles = result.handles
+                    is GolikeTikTokAccountsResult.Error -> Unit // giữ danh sách rỗng, coi như chưa xác định được
+                }
+            }
+        } else {
+            golikeLinkedHandles = emptySet()
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -111,39 +135,21 @@ fun GolikeTikTokScreen(navController: NavController) {
             )
             Spacer(Modifier.height(12.dp))
 
-            // 3 loại TikTok cùng 1 hàng - GIỮ NGUYÊN như cũ, không đổi.
+            // 3 loại TikTok - đổi sang dạng pill nhỏ, cuộn ngang (theo mẫu), vẫn giữ đúng
+            // 3 loại như cũ, chỉ đổi kiểu hiển thị nhỏ gọn hơn.
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(CardWhite, RoundedCornerShape(14.dp))
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 TikTokTab.entries.forEach { tab ->
                     val isSelected = tab == selectedTab
                     val countForTab = enabledAccounts.count { it.variant == tab.variant }
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSelected) Primary else CardWhite)
-                            .clickable { selectedTab = tab }
-                            .padding(vertical = 10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            tab.label,
-                            color = if (isSelected) Color.White else TextPrimary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            "$countForTab tài khoản",
-                            color = if (isSelected) Color.White.copy(alpha = 0.85f) else TextSecondary,
-                            fontSize = 10.sp
-                        )
-                    }
+                    TikTokTabChip(
+                        label = tab.label,
+                        count = countForTab,
+                        isSelected = isSelected,
+                        onClick = { selectedTab = tab }
+                    )
                 }
             }
 
@@ -211,6 +217,7 @@ fun GolikeTikTokScreen(navController: NavController) {
                         TikTokAccountCard(
                             account = account,
                             isSelected = account.uid == effectiveSelectedId,
+                            isLinkedToGolike = account.handle.lowercase() in golikeLinkedHandles,
                             onClick = { selectedAccountId = account.uid }
                         )
                     }
@@ -247,6 +254,39 @@ fun GolikeTikTokScreen(navController: NavController) {
                 Spacer(Modifier.width(6.dp))
                 Text("Chạy")
             }
+        }
+    }
+}
+
+@Composable
+private fun TikTokTabChip(label: String, count: Int, isSelected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .background(
+                if (isSelected) Primary.copy(alpha = 0.10f) else CardWhite,
+                RoundedCornerShape(50)
+            )
+            .border(
+                width = if (isSelected) 1.5.dp else 1.dp,
+                color = if (isSelected) Primary else TextSecondary.copy(alpha = 0.25f),
+                shape = RoundedCornerShape(50)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = if (isSelected) Primary else TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.width(6.dp))
+        Box(
+            modifier = Modifier
+                .background(
+                    if (isSelected) Primary.copy(alpha = 0.18f) else TextSecondary.copy(alpha = 0.12f),
+                    CircleShape
+                )
+                .padding(horizontal = 7.dp, vertical = 1.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("$count", color = if (isSelected) Primary else TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -297,7 +337,12 @@ private fun statusColor(status: TikTokAccountStatus): Color = when (status) {
 }
 
 @Composable
-private fun TikTokAccountCard(account: TikTokAccount, isSelected: Boolean, onClick: () -> Unit) {
+private fun TikTokAccountCard(
+    account: TikTokAccount,
+    isSelected: Boolean,
+    isLinkedToGolike: Boolean,
+    onClick: () -> Unit
+) {
     val avatarColor = avatarColorFor(account.uid)
     val initials = (account.displayName.ifBlank { account.handle.ifBlank { "?" } })
         .trim()
@@ -341,7 +386,21 @@ private fun TikTokAccountCard(account: TikTokAccount, isSelected: Boolean, onCli
                         fontSize = 11.sp
                     )
                 }
-                Text("+0đ", color = SuccessGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                if (isLinkedToGolike) {
+                    Text("+0đ", color = SuccessGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .background(WarningOrange.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                            .clickable { /* Chưa gắn logic thêm acc vào GoLike - chỉ hiển thị nút */ }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null, tint = WarningOrange, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Thêm", color = WarningOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
 
             Spacer(Modifier.height(10.dp))
