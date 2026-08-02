@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Cày Xu</string>
+    <string name="tiktok_accessibility_service_description">Cho phép Cày Xu tự bấm tab "Tôi" và tự đọc @handle hiển thị trên trang đó trong TikTok/TikTok Lite/TikTok Studio khi bạn chọn thêm tài khoản, để tự điền tài khoản vào danh sách trong tool mà không cần thao tác tay. Không đọc mật khẩu hay dữ liệu nào khác.</string>
+</resources>
