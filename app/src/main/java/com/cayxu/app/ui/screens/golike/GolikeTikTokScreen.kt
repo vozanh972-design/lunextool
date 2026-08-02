@@ -336,7 +336,7 @@ private fun TikTokAccountCard(
                         modifier = Modifier
                             .background(WarningOrange.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
                             .clickable {
-                                openTikTokProfile(context, "gosen.vietnam", account.variant.packageName)
+                                startAddToGolikeOverlay(context, account)
                             }
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
