@@ -80,7 +80,7 @@ private fun LoggedOutGolikeCard(navController: NavController) {
                 .background(WarningOrange.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.AutoMirrored.Filled.Login, contentDescription = null, tint = WarningOrange, modifier = Modifier.size(22.dp))
+            Icon(Icons.Filled.Login, contentDescription = null, tint = WarningOrange, modifier = Modifier.size(22.dp))
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
