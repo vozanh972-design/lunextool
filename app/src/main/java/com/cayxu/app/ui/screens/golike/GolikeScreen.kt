@@ -48,7 +48,7 @@ internal val golikePlatforms = listOf(
  * GolikeSession nên trạng thái luôn nhất quán dù đứng ở màn nào.
  */
 @Composable
-internal fun GolikeStatusCard(navController: NavController) {
+internal fun GolikeStatusCard(navController: NavController, showStats: Boolean = true) {
     val isLoggedIn by GolikeSession.isLoggedIn
 
     Card(
@@ -58,7 +58,7 @@ internal fun GolikeStatusCard(navController: NavController) {
         modifier = Modifier.fillMaxWidth()
     ) {
         if (isLoggedIn) {
-            LoggedInGolikeCard()
+            LoggedInGolikeCard(showStats = showStats)
         } else {
             LoggedOutGolikeCard(navController)
         }
@@ -68,32 +68,39 @@ internal fun GolikeStatusCard(navController: NavController) {
 @Composable
 private fun LoggedOutGolikeCard(navController: NavController) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(22.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { navController.navigate(Routes.GOLIKE_LOGIN) { launchSingleTop = true } }
+            .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(64.dp)
-                .background(Color(0xFF7C3AED).copy(alpha = 0.12f), CircleShape),
+                .size(44.dp)
+                .background(WarningOrange.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Filled.ThumbUp, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(30.dp))
+            Icon(Icons.AutoMirrored.Filled.Login, contentDescription = null, tint = WarningOrange, modifier = Modifier.size(22.dp))
         }
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text("Tài khoản Golike", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 17.sp)
-            Text("Chưa đăng nhập", color = TextSecondary, fontSize = 14.sp)
+            Text("Chưa đăng nhập GoLike", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 15.sp)
+            Text(
+                "Bấm để đăng nhập GoLike",
+                color = TextSecondary,
+                fontSize = 12.sp
+            )
         }
-        Button(
-            onClick = { navController.navigate(Routes.GOLIKE_LOGIN) { launchSingleTop = true } },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
-        ) { Text("Đăng nhập") }
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = TextSecondary)
     }
 }
 
-/** Card khi đã đăng nhập - đúng layout: tên/handle + đăng xuất, số dư + làm mới, 3 ô thống kê. */
+/** Card khi đã đăng nhập - đúng layout: tên/handle + đăng xuất, số dư + làm mới, 3 ô thống kê.
+ *  [showStats] = false ở màn Golike chính (chưa vào nền tảng nào) - chỉ hiện tên/số dư,
+ *  KHÔNG hiện "NV hôm nay/Thưởng hôm nay/Đã liên kết" (3 ô đó chỉ có ý nghĩa khi đã vào
+ *  đúng 1 nền tảng cụ thể, ví dụ TikTok). */
 @Composable
-private fun LoggedInGolikeCard() {
+private fun LoggedInGolikeCard(showStats: Boolean = true) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -103,12 +110,6 @@ private fun LoggedInGolikeCard() {
     val tasksToday by GolikeSession.tasksToday
     val rewardToday by GolikeSession.rewardToday
     var isRefreshing by remember { mutableStateOf(false) }
-
-    // "Đã liên kết" = tổng số tài khoản TikTok đã bật (loại duy nhất app đang quản lý tài
-    // khoản thật cho tới nay) - khi có thêm Facebook/YouTube/Instagram thật, cộng thêm ở đây.
-    val linkedAccountsCount = remember {
-        TikTokAccountsStore.getAccounts(context).count { it.enabled }
-    }
 
     Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -173,34 +174,43 @@ private fun LoggedInGolikeCard() {
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-        HorizontalDivider(color = TextSecondary.copy(alpha = 0.12f))
-        Spacer(Modifier.height(14.dp))
+        if (showStats) {
+            // "Đã liên kết" = tổng số tài khoản TikTok đã bật (loại duy nhất app đang quản lý
+            // tài khoản thật cho tới nay) - khi có thêm Facebook/YouTube/Instagram thật, cộng
+            // thêm ở đây. Chỉ tính khi thực sự cần hiện (showStats = true).
+            val linkedAccountsCount = remember {
+                TikTokAccountsStore.getAccounts(context).count { it.enabled }
+            }
 
-        Row(modifier = Modifier.fillMaxWidth()) {
-            GolikeStatItem(
-                icon = Icons.Filled.Checklist,
-                iconTint = SuccessGreen,
-                value = tasksToday,
-                label = "NV hôm nay",
-                modifier = Modifier.weight(1f)
-            )
-            GolikeStatItem(
-                icon = Icons.Filled.StarBorder,
-                iconTint = DangerRed,
-                value = "+${rewardToday}đ",
-                valueColor = DangerRed,
-                label = "Thưởng hôm nay",
-                modifier = Modifier.weight(1f)
-            )
-            GolikeStatItem(
-                icon = Icons.Filled.Person,
-                iconTint = Primary,
-                value = "$linkedAccountsCount",
-                valueColor = Primary,
-                label = "Đã liên kết",
-                modifier = Modifier.weight(1f)
-            )
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = TextSecondary.copy(alpha = 0.12f))
+            Spacer(Modifier.height(14.dp))
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                GolikeStatItem(
+                    icon = Icons.Filled.Checklist,
+                    iconTint = SuccessGreen,
+                    value = tasksToday,
+                    label = "NV hôm nay",
+                    modifier = Modifier.weight(1f)
+                )
+                GolikeStatItem(
+                    icon = Icons.Filled.StarBorder,
+                    iconTint = DangerRed,
+                    value = "+${rewardToday}đ",
+                    valueColor = DangerRed,
+                    label = "Thưởng hôm nay",
+                    modifier = Modifier.weight(1f)
+                )
+                GolikeStatItem(
+                    icon = Icons.Filled.Person,
+                    iconTint = Primary,
+                    value = "$linkedAccountsCount",
+                    valueColor = Primary,
+                    label = "Đã liên kết",
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
     }
 }
@@ -238,7 +248,7 @@ fun GolikeScreen(navController: NavController) {
         }
 
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-            GolikeStatusCard(navController)
+            GolikeStatusCard(navController, showStats = false)
 
             Spacer(Modifier.height(20.dp))
             Text("Nền tảng liên kết", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
