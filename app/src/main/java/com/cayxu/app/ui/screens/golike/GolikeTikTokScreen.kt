@@ -15,7 +15,6 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -68,20 +67,8 @@ fun GolikeTikTokScreen(navController: NavController) {
     var selectedTab by remember { mutableStateOf(TikTokTab.STANDARD) }
     val accountsForSelectedTab = enabledAccounts.filter { it.variant == selectedTab.variant }
 
-    var searchQuery by remember { mutableStateOf("") }
-    val filteredAccounts = accountsForSelectedTab.filter { account ->
-        searchQuery.isBlank() ||
-            account.displayName.contains(searchQuery, ignoreCase = true) ||
-            account.handle.contains(searchQuery, ignoreCase = true)
-    }
-
     var selectedAccountId by remember(selectedTab) { mutableStateOf<String?>(null) }
-    val effectiveSelectedId = selectedAccountId ?: filteredAccounts.firstOrNull()?.uid
-
-    val totalCount = accountsForSelectedTab.size
-    val activeCount = accountsForSelectedTab.count { it.status == TikTokAccountStatus.ACTIVE }
-    val checkingCount = accountsForSelectedTab.count { it.status == TikTokAccountStatus.CHECKING }
-    val lockedCount = accountsForSelectedTab.count { it.status == TikTokAccountStatus.LOCKED }
+    val effectiveSelectedId = selectedAccountId ?: accountsForSelectedTab.firstOrNull()?.uid
 
     // Đọc THẬT danh sách acc TikTok đã có trong GoLike (GET /api/tiktok-account, dùng
     // token đã đăng nhập sẵn - không hỏi lại) - để biết acc nào CHƯA có trong GoLike thì
@@ -179,41 +166,12 @@ fun GolikeTikTokScreen(navController: NavController) {
                     }
                 }
             } else {
-                // ---- Ô tìm kiếm ----
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Tìm theo tên hoặc handle", color = TextSecondary) },
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextSecondary) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CardWhite,
-                        unfocusedContainerColor = CardWhite,
-                        focusedBorderColor = Primary,
-                        unfocusedBorderColor = TextSecondary.copy(alpha = 0.2f)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                // ---- 4 ô thống kê: Tổng / Hoạt động / Kiểm tra / Khoá ----
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    StatBox(label = "TỔNG", value = totalCount, color = TextPrimary, modifier = Modifier.weight(1f))
-                    StatBox(label = "HOẠT ĐỘNG", value = activeCount, color = SuccessGreen, modifier = Modifier.weight(1f))
-                    StatBox(label = "KIỂM TRA", value = checkingCount, color = WarningOrange, modifier = Modifier.weight(1f))
-                    StatBox(label = "KHOÁ", value = lockedCount, color = DangerRed, modifier = Modifier.weight(1f))
-                }
-
-                Spacer(Modifier.height(12.dp))
-
                 Text("Bấm vào 1 acc để bắt đầu chạy ngay.", color = TextSecondary, fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
 
                 // ---- Danh sách tài khoản ----
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    filteredAccounts.forEach { account ->
+                    accountsForSelectedTab.forEach { account ->
                         TikTokAccountCard(
                             account = account,
                             isSelected = account.uid == effectiveSelectedId,
@@ -287,22 +245,6 @@ private fun TikTokTabChip(label: String, count: Int, isSelected: Boolean, onClic
             contentAlignment = Alignment.Center
         ) {
             Text("$count", color = if (isSelected) Primary else TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-private fun StatBox(label: String, value: Int, color: Color, modifier: Modifier = Modifier) {
-    Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = CardWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        modifier = modifier
-    ) {
-        Column(modifier = Modifier.padding(vertical = 12.dp, horizontal = 8.dp)) {
-            Text(label, color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(2.dp))
-            Text("$value", color = color, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

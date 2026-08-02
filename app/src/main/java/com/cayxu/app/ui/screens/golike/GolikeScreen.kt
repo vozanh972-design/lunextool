@@ -207,7 +207,7 @@ private fun LoggedInGolikeCard(showStats: Boolean = true) {
                     iconTint = Primary,
                     value = "$linkedAccountsCount",
                     valueColor = Primary,
-                    label = "Đã liên kết",
+                    label = "Tài khoản",
                     modifier = Modifier.weight(1f)
                 )
             }
