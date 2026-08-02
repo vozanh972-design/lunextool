@@ -10,17 +10,24 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.navigation.goHome
 import com.cayxu.app.ui.theme.*
+import kotlinx.coroutines.launch
 
 internal data class GolikePlatform(
     val name: String,
@@ -43,9 +50,6 @@ internal val golikePlatforms = listOf(
 @Composable
 internal fun GolikeStatusCard(navController: NavController) {
     val isLoggedIn by GolikeSession.isLoggedIn
-    val name by GolikeSession.name
-    val coin by GolikeSession.coin
-    val context = androidx.compose.ui.platform.LocalContext.current
 
     Card(
         shape = RoundedCornerShape(22.dp),
@@ -53,44 +57,169 @@ internal fun GolikeStatusCard(navController: NavController) {
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(22.dp),
-            verticalAlignment = Alignment.CenterVertically
+        if (isLoggedIn) {
+            LoggedInGolikeCard()
+        } else {
+            LoggedOutGolikeCard(navController)
+        }
+    }
+}
+
+@Composable
+private fun LoggedOutGolikeCard(navController: NavController) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(22.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .background(Color(0xFF7C3AED).copy(alpha = 0.12f), CircleShape),
+            contentAlignment = Alignment.Center
         ) {
+            Icon(Icons.Filled.ThumbUp, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(30.dp))
+        }
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Tài khoản Golike", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 17.sp)
+            Text("Chưa đăng nhập", color = TextSecondary, fontSize = 14.sp)
+        }
+        Button(
+            onClick = { navController.navigate(Routes.GOLIKE_LOGIN) { launchSingleTop = true } },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+        ) { Text("Đăng nhập") }
+    }
+}
+
+/** Card khi đã đăng nhập - đúng layout: tên/handle + đăng xuất, số dư + làm mới, 3 ô thống kê. */
+@Composable
+private fun LoggedInGolikeCard() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val name by GolikeSession.name
+    val handle by GolikeSession.handle
+    val coin by GolikeSession.coin
+    val tasksToday by GolikeSession.tasksToday
+    val rewardToday by GolikeSession.rewardToday
+    var isRefreshing by remember { mutableStateOf(false) }
+
+    // "Đã liên kết" = tổng số tài khoản TikTok đã bật (loại duy nhất app đang quản lý tài
+    // khoản thật cho tới nay) - khi có thêm Facebook/YouTube/Instagram thật, cộng thêm ở đây.
+    val linkedAccountsCount = remember {
+        TikTokAccountsStore.getAccounts(context).count { it.enabled }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(64.dp)
-                    .background(Color(0xFF7C3AED).copy(alpha = 0.12f), CircleShape),
+                    .size(56.dp)
+                    .background(Color(0xFF7C3AED).copy(alpha = 0.12f), RoundedCornerShape(16.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.ThumbUp, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(30.dp))
+                Icon(Icons.Filled.Person, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(28.dp))
             }
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    if (isLoggedIn) name.ifBlank { "Tài khoản Golike" } else "Tài khoản Golike",
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
-                    fontSize = 17.sp
-                )
-                Text(
-                    if (isLoggedIn) "$coin xu" else "Chưa đăng nhập",
-                    color = if (isLoggedIn) SuccessGreen else TextSecondary,
-                    fontWeight = if (isLoggedIn) FontWeight.SemiBold else FontWeight.Normal,
-                    fontSize = 14.sp
-                )
-            }
-            if (isLoggedIn) {
-                TextButton(onClick = { GolikeSession.logout(context) }) {
-                    Text("Đăng xuất", color = DangerRed)
+                Text(name.ifBlank { "Tài khoản Golike" }, fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 19.sp)
+                if (handle.isNotBlank()) {
+                    Text("@$handle", color = TextSecondary, fontSize = 14.sp)
                 }
-            } else {
-                Button(
-                    onClick = { navController.navigate(Routes.GOLIKE_LOGIN) { launchSingleTop = true } },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
-                ) { Text("Đăng nhập") }
+            }
+            IconButton(onClick = { GolikeSession.logout(context) }) {
+                Icon(Icons.Filled.Logout, contentDescription = "Đăng xuất", tint = DangerRed)
             }
         }
+
+        Spacer(Modifier.height(16.dp))
+
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier.size(30.dp).background(SuccessGreen, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.AttachMoney, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "Số dư: $coin xu",
+                color = SuccessGreen,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .background(Primary.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                    .clickable(enabled = !isRefreshing) {
+                        isRefreshing = true
+                        scope.launch {
+                            val ok = GolikeSession.refresh(context)
+                            isRefreshing = false
+                            if (!ok) {
+                                android.widget.Toast.makeText(context, "Không thể làm mới, thử lại sau", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                if (isRefreshing) {
+                    CircularProgressIndicator(color = Primary, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                } else {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Làm mới", tint = Primary, modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider(color = TextSecondary.copy(alpha = 0.12f))
+        Spacer(Modifier.height(14.dp))
+
+        Row(modifier = Modifier.fillMaxWidth()) {
+            GolikeStatItem(
+                icon = Icons.Filled.Checklist,
+                iconTint = SuccessGreen,
+                value = tasksToday,
+                label = "NV hôm nay",
+                modifier = Modifier.weight(1f)
+            )
+            GolikeStatItem(
+                icon = Icons.Filled.StarBorder,
+                iconTint = DangerRed,
+                value = "+${rewardToday}đ",
+                valueColor = DangerRed,
+                label = "Thưởng hôm nay",
+                modifier = Modifier.weight(1f)
+            )
+            GolikeStatItem(
+                icon = Icons.Filled.Person,
+                iconTint = Primary,
+                value = "$linkedAccountsCount",
+                valueColor = Primary,
+                label = "Đã liên kết",
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun GolikeStatItem(
+    icon: ImageVector,
+    iconTint: Color,
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = TextPrimary
+) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(value, color = valueColor, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Spacer(Modifier.height(2.dp))
+        Text(label, color = TextSecondary, fontSize = 11.sp)
     }
 }
 

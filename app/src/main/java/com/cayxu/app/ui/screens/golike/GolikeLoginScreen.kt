@@ -121,8 +121,11 @@ fun GolikeLoginScreen(navController: NavController) {
                                     context = context,
                                     token = token.trim(),
                                     userName = result.info.name,
+                                    userHandle = result.info.handle,
                                     userEmail = result.info.email,
-                                    userCoin = result.info.coin
+                                    userCoin = result.info.coin,
+                                    userTasksToday = result.info.tasksToday,
+                                    userRewardToday = result.info.rewardToday
                                 )
                                 isLoading = false
                                 Toast.makeText(context, "Đăng nhập Golike thành công", Toast.LENGTH_SHORT).show()

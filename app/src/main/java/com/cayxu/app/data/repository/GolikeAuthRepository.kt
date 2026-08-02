@@ -3,7 +3,14 @@ package com.cayxu.app.data.repository
 import com.cayxu.app.data.api.GolikeRetrofitClient
 import com.google.gson.JsonObject
 
-data class GolikeUserInfo(val name: String, val email: String, val coin: String)
+data class GolikeUserInfo(
+    val name: String,
+    val handle: String,
+    val email: String,
+    val coin: String,
+    val tasksToday: String,
+    val rewardToday: String
+)
 
 sealed class GolikeLoginResult {
     data class Success(val info: GolikeUserInfo) : GolikeLoginResult()
@@ -16,9 +23,10 @@ sealed class GolikeLoginResult {
  * riêng của app CayXu, không liên quan gì tới Golike).
  *
  * Vì không có tài liệu chính thức về đúng cấu trúc JSON trả về, hàm đọc dữ liệu bên dưới
- * thử NHIỀU tên field phổ biến (name/full_name/username, email, money/coin/balance/xu...)
- * và tự bóc lớp "data" bọc ngoài nếu có, để vẫn hoạt động được dù response bọc dữ liệu
- * theo cấu trúc nào trong 2 kiểu phổ biến nhất.
+ * thử NHIỀU tên field phổ biến (name/full_name, username/handle/nickname, email,
+ * money/coin/balance/xu, tasks_today, reward_today...) và tự bóc lớp "data" bọc ngoài nếu
+ * có. "NV hôm nay"/"Thưởng hôm nay" mặc định "0" nếu API không trả field tương ứng - CẦN
+ * xem JSON thật trả về để chỉnh đúng tên field nếu 2 số này hiện sai.
  */
 object GolikeAuthRepository {
 
@@ -33,12 +41,17 @@ object GolikeAuthRepository {
             val body = response.body()
             if (response.isSuccessful && body != null) {
                 val data = unwrapData(body)
-                val name = firstNonBlank(data, listOf("name", "full_name", "fullname", "username", "display_name"))
+                val name = firstNonBlank(data, listOf("name", "full_name", "fullname", "display_name"))
                     ?: "Tài khoản Golike"
+                val handle = firstNonBlank(data, listOf("username", "handle", "nickname")).orEmpty()
                 val email = firstNonBlank(data, listOf("email")).orEmpty()
                 val coin = firstNonBlank(data, listOf("money", "coin", "coins", "balance", "xu", "wallet"))
                     ?: "0"
-                GolikeLoginResult.Success(GolikeUserInfo(name, email, coin))
+                val tasksToday = firstNonBlank(data, listOf("tasks_today", "task_today", "today_tasks", "nv_hom_nay"))
+                    ?: "0"
+                val rewardToday = firstNonBlank(data, listOf("reward_today", "bonus_today", "today_reward", "thuong_hom_nay"))
+                    ?: "0"
+                GolikeLoginResult.Success(GolikeUserInfo(name, handle, email, coin, tasksToday, rewardToday))
             } else {
                 val message = when (response.code()) {
                     401, 403 -> "Token không hợp lệ hoặc đã hết hạn"
