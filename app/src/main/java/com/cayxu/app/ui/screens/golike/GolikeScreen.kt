@@ -43,6 +43,9 @@ internal val golikePlatforms = listOf(
 @Composable
 internal fun GolikeStatusCard(navController: NavController) {
     val isLoggedIn by GolikeSession.isLoggedIn
+    val name by GolikeSession.name
+    val coin by GolikeSession.coin
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Card(
         shape = RoundedCornerShape(22.dp),
@@ -64,14 +67,24 @@ internal fun GolikeStatusCard(navController: NavController) {
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text("Tài khoản Golike", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 17.sp)
                 Text(
-                    if (isLoggedIn) "Đã đăng nhập" else "Chưa đăng nhập",
-                    color = TextSecondary,
+                    if (isLoggedIn) name.ifBlank { "Tài khoản Golike" } else "Tài khoản Golike",
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    fontSize = 17.sp
+                )
+                Text(
+                    if (isLoggedIn) "$coin xu" else "Chưa đăng nhập",
+                    color = if (isLoggedIn) SuccessGreen else TextSecondary,
+                    fontWeight = if (isLoggedIn) FontWeight.SemiBold else FontWeight.Normal,
                     fontSize = 14.sp
                 )
             }
-            if (!isLoggedIn) {
+            if (isLoggedIn) {
+                TextButton(onClick = { GolikeSession.logout(context) }) {
+                    Text("Đăng xuất", color = DangerRed)
+                }
+            } else {
                 Button(
                     onClick = { navController.navigate(Routes.GOLIKE_LOGIN) { launchSingleTop = true } },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))

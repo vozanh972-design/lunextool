@@ -27,5 +27,9 @@ class CayXuApp : Application() {
         // server thật - hoạt động độc lập với UI nên không bị ảnh hưởng nếu màn
         // Login bị bypass.
         KeyRecheckWorker.scheduleNext(this)
+
+        // Khôi phục phiên đăng nhập Golike đã lưu trước đó (nếu có) - để mở lại
+        // app vẫn còn đăng nhập, không phải dán token lại từ đầu mỗi lần mở app.
+        com.cayxu.app.ui.screens.golike.GolikeSession.restore(this)
     }
 }
