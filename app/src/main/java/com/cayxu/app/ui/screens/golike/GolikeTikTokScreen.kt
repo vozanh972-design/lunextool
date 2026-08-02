@@ -331,10 +331,13 @@ private fun TikTokAccountCard(
                 if (isLinkedToGolike) {
                     Text("+0đ", color = SuccessGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 } else {
+                    val context = LocalContext.current
                     Row(
                         modifier = Modifier
                             .background(WarningOrange.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
-                            .clickable { /* Chưa gắn logic thêm acc vào GoLike - chỉ hiển thị nút */ }
+                            .clickable {
+                                openTikTokProfile(context, "gosen.vietnam", account.variant.packageName)
+                            }
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
