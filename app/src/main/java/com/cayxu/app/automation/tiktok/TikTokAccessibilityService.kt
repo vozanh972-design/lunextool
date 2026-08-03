@@ -76,6 +76,13 @@ class TikTokAccessibilityService : AccessibilityService() {
         private val SHARE_LABELS = setOf("chia sẻ", "share")
         private val COPY_LINK_LABELS = setOf("sao chép liên kết", "copy link")
         private val REPOST_LABELS = setOf("đăng lại", "repost")
+
+        // Nhãn nút Follow - dùng so sánh TUYỆT ĐỐI (không contains) để không dính nhầm
+        // "Đang theo dõi"/"Following" (trạng thái đã follow rồi, bấm vào sẽ là unfollow).
+        private val FOLLOW_EXACT_LABELS = setOf("theo dõi", "follow")
+        private const val FOLLOW_WAIT_BEFORE_MS = 5000L
+        private const val FOLLOW_WAIT_AFTER_RELOAD_MS = 1800L
+        private const val FOLLOW_MAX_ATTEMPTS = 15
     }
 
     // QUAN TRỌNG: dùng SupervisorJob thay vì Job thường. Nếu không, một lỗi bất ngờ (crash)
@@ -88,6 +95,7 @@ class TikTokAccessibilityService : AccessibilityService() {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var pollingJob: Job? = null
     private var nurtureJob: Job? = null
+    private var followJob: Job? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -123,12 +131,22 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
             }
         }
+        // Theo dõi yêu cầu "tự bấm Follow" từ luồng Thêm acc vào GoLike: đợi 1 nhịp cho
+        // TikTok tải xong, kéo xuống tải lại, rồi tìm và bấm nút Follow.
+        scope.launch {
+            GolikeFollowBridge.state.collect { state ->
+                if (state is GolikeFollowState.Pending) {
+                    startFollowFlow(state)
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         pollingJob?.cancel()
         nurtureJob?.cancel()
+        followJob?.cancel()
     }
 
     // Không cần xử lý gì ở đây - toàn bộ logic tự động nằm ở vòng lặp polling để không phụ
@@ -257,6 +275,64 @@ class TikTokAccessibilityService : AccessibilityService() {
             .addStroke(GestureDescription.StrokeDescription(path, 0, 300))
             .build()
         dispatchGesture(gesture, null, null)
+    }
+
+    /**
+     * Luồng tự bấm Follow sau khi mở link trang cá nhân TikTok từ GoLike:
+     *   1) Đợi ~5 giây cho TikTok kịp mở/tải xong.
+     *   2) Kéo xuống 1 lần để ép tải lại (dùng lại đúng cử chỉ performPullToRefresh).
+     *   3) Đợi trang load lại rồi dò tìm nút "Theo dõi"/"Follow" và bấm.
+     * Không tìm thấy sau nhiều lần thử thì bỏ qua (có thể đã follow rồi hoặc UI khác dự kiến),
+     * không báo lỗi làm phiền người dùng.
+     */
+    private fun startFollowFlow(state: GolikeFollowState.Pending) {
+        followJob?.cancel()
+        followJob = scope.launch {
+            try {
+                delay(FOLLOW_WAIT_BEFORE_MS)
+
+                performPullToRefresh()
+                delay(FOLLOW_WAIT_AFTER_RELOAD_MS)
+
+                var attempt = 0
+                while (attempt < FOLLOW_MAX_ATTEMPTS) {
+                    attempt++
+                    val root = findRootForPackage(state.packageName)
+                    if (root == null) {
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
+                    val followNode = findFollowButton(root)
+                    if (followNode != null) {
+                        clickNode(followNode)
+                        break
+                    }
+                    delay(POLL_INTERVAL_MS)
+                }
+            } catch (e: Exception) {
+                // Bỏ qua - không được phép làm crash service.
+            } finally {
+                GolikeFollowBridge.clear()
+            }
+        }
+    }
+
+    /** Tìm nút Follow bằng so khớp TUYỆT ĐỐI (không contains) để tránh bấm nhầm "Đang theo dõi". */
+    private fun findFollowButton(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
+        if (depth > 40) return null
+        if (node.isClickable) {
+            val text = (node.text?.toString() ?: node.contentDescription?.toString())
+                ?.trim()?.lowercase()
+            if (text != null && text in FOLLOW_EXACT_LABELS) {
+                return node
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findFollowButton(child, depth + 1)
+            if (found != null) return found
+        }
+        return null
     }
 
     private fun startPolling(variant: TikTokAppVariant) {

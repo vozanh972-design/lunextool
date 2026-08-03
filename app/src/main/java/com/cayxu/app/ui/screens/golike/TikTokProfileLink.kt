@@ -15,9 +15,9 @@ private const val GOLIKE_LINK_TARGET_USERNAME = "gosen.vietnam"
 
 /**
  * Bấm "Thêm" ở acc chưa có trong GoLike -> xin quyền "Hiển thị trên ứng dụng khác" (nếu
- * chưa có) rồi khởi chạy lớp nổi (GolikeAddAccountOverlayService). Lớp nổi CHỈ hiển thị
- * thông tin + tự mở link trang cá nhân TikTok - KHÔNG dùng Accessibility Service, KHÔNG tự
- * bấm Follow hay bất kỳ thao tác nào thay người dùng.
+ * chưa có) rồi khởi chạy lớp nổi (GolikeAddAccountOverlayService). Lớp nổi hiển thị thông
+ * tin + tự mở link trang cá nhân TikTok, và (nếu người dùng đã bật Accessibility Service
+ * của tool) sẽ tự đợi ~5 giây, tải lại rồi tự bấm Follow.
  */
 fun startAddToGolikeOverlay(context: Context, account: TikTokAccount) {
     if (!Settings.canDrawOverlays(context)) {
