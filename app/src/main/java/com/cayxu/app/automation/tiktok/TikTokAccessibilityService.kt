@@ -113,6 +113,16 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
             }
         }
+        // Theo dõi yêu cầu "vuốt xuống để tải lại" từ luồng Thêm acc vào GoLike (một số máy
+        // bị lag/đứng hình sau khi mở link, không tự load được) - CHỈ 1 cử chỉ vuốt, không
+        // phải tự động hoá tương tác gì khác.
+        scope.launch {
+            GolikeReloadBridge.requestTick.collect { tick ->
+                if (tick > 0) {
+                    performPullToRefresh()
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -222,6 +232,28 @@ class TikTokAccessibilityService : AccessibilityService() {
         }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, 260))
+            .build()
+        dispatchGesture(gesture, null, null)
+    }
+
+    /** Vuốt từ giữa màn hình xuống dưới cùng - CHỈ để ép TikTok tải lại khi bị lag/đứng hình
+     *  sau khi mở link (một số máy load chậm hơn máy khác), y hệt cử chỉ người dùng tự vuốt
+     *  tay để refresh. Không phải Follow/Like/Comment hay bất kỳ thao tác tương tác nào. */
+    private fun performPullToRefresh() {
+        val root = rootInActiveWindow ?: return
+        val bounds = Rect()
+        root.getBoundsInScreen(bounds)
+        if (bounds.width() <= 0 || bounds.height() <= 0) return
+
+        val startX = (bounds.left + bounds.right) / 2f
+        val startY = bounds.top + bounds.height() * 0.35f
+        val endY = bounds.top + bounds.height() * 0.85f
+        val path = Path().apply {
+            moveTo(startX, startY)
+            lineTo(startX, endY)
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 300))
             .build()
         dispatchGesture(gesture, null, null)
     }
