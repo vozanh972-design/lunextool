@@ -4,12 +4,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Cầu nối để yêu cầu TikTokAccessibilityService thực hiện 1 lần "vuốt từ giữa màn hình
- * xuống dưới cùng" để ép TikTok tải lại - một số máy sau khi mở link/chuyển sang TikTok bị
- * lag/đứng hình, không tự load được gì, phải tự vuốt tay mới tải lại - thao tác này làm y
- * hệt đúng cử chỉ đó.
+ * Cầu nối để yêu cầu TikTokAccessibilityService thực hiện 1 lần "kéo từ trên màn hình
+ * xuống" (đúng kiểu pull-to-refresh) để ép TikTok tải lại - một số máy sau khi mở link/
+ * chuyển sang TikTok bị lag/đứng hình, không tự load được gì, phải tự kéo tay mới tải lại -
+ * thao tác này làm y hệt đúng cử chỉ đó.
  *
- * CHỈ thực hiện đúng 1 cử chỉ vuốt xuống để tải lại - KHÔNG follow/like/comment hay bất kỳ
+ * CHỈ thực hiện đúng 1 cử chỉ kéo xuống để tải lại - KHÔNG follow/like/comment hay bất kỳ
  * thao tác nào khác. Đây là cách khắc phục lỗi tải chậm/lag, không phải tự động hoá tương tác.
  */
 object GolikeReloadBridge {

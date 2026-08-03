@@ -25,7 +25,7 @@ import kotlin.math.min
  * Lớp nổi hiện khi bấm "Thêm" ở acc TikTok chưa có trong GoLike.
  *
  * CHỈ hiển thị thông tin (chế độ/tài khoản/URL) + tự mở link trang cá nhân TikTok lên, sau
- * đó tự vuốt xuống 1 lần để ép tải lại (workaround máy bị lag/đứng hình không tự load) -
+ * đó tự kéo từ trên xuống 1 lần để ép tải lại (workaround máy bị lag/đứng hình không tự load) -
  * KHÔNG dùng Accessibility Service để bấm Follow hay bất kỳ thao tác tương tác nào khác
  * thay người dùng. Người dùng tự tay bấm Follow nếu muốn, y hệt việc họ tự mở link đó.
  * Bấm "DỪNG" chỉ đóng lớp nổi lại, không có tiến trình tự động nào đang chạy để dừng.
@@ -63,7 +63,7 @@ class GolikeAddAccountOverlayService : Service() {
             // Chỉ MỞ trang lên - không thao tác gì thêm bên trong TikTok.
             openTikTokProfile(applicationContext, targetUsername, packageName)
 
-            // Đợi 1 nhịp cho TikTok kịp mở/tải, rồi yêu cầu vuốt xuống 1 lần để ép tải lại -
+            // Đợi 1 nhịp cho TikTok kịp mở/tải, rồi yêu cầu kéo từ trên xuống 1 lần để ép tải lại -
             // một số máy sau khi mở link bị lag/đứng hình, không tự load được gì, phải tự
             // vuốt tay mới tải lại. Chỉ có tác dụng nếu người dùng đã bật Accessibility Service
             // của tool; nếu chưa bật thì không có gì xảy ra, không lỗi gì cả.

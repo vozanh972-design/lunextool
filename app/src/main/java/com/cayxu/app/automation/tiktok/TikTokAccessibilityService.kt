@@ -236,9 +236,10 @@ class TikTokAccessibilityService : AccessibilityService() {
         dispatchGesture(gesture, null, null)
     }
 
-    /** Vuốt từ giữa màn hình xuống dưới cùng - CHỈ để ép TikTok tải lại khi bị lag/đứng hình
-     *  sau khi mở link (một số máy load chậm hơn máy khác), y hệt cử chỉ người dùng tự vuốt
-     *  tay để refresh. Không phải Follow/Like/Comment hay bất kỳ thao tác tương tác nào. */
+    /** Kéo từ TRÊN màn hình xuống (đúng kiểu pull-to-refresh) - CHỈ để ép TikTok tải lại khi
+     *  bị lag/đứng hình sau khi mở link (một số máy load chậm hơn máy khác), y hệt cử chỉ
+     *  người dùng tự kéo tay từ mép trên xuống để refresh. Không phải Follow/Like/Comment
+     *  hay bất kỳ thao tác tương tác nào. */
     private fun performPullToRefresh() {
         val root = rootInActiveWindow ?: return
         val bounds = Rect()
@@ -246,8 +247,8 @@ class TikTokAccessibilityService : AccessibilityService() {
         if (bounds.width() <= 0 || bounds.height() <= 0) return
 
         val startX = (bounds.left + bounds.right) / 2f
-        val startY = bounds.top + bounds.height() * 0.35f
-        val endY = bounds.top + bounds.height() * 0.85f
+        val startY = bounds.top + bounds.height() * 0.15f
+        val endY = bounds.top + bounds.height() * 0.75f
         val path = Path().apply {
             moveTo(startX, startY)
             lineTo(startX, endY)
