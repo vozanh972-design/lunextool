@@ -107,8 +107,8 @@ private fun LoggedInGolikeCard(showStats: Boolean = true) {
     val name by GolikeSession.name
     val handle by GolikeSession.handle
     val coin by GolikeSession.coin
-    val tasksToday by GolikeSession.tasksToday
-    val rewardToday by GolikeSession.rewardToday
+    val todayIncome by GolikeSession.todayIncome
+    val platformStats by GolikeSession.platformStats
     var isRefreshing by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
@@ -188,18 +188,19 @@ private fun LoggedInGolikeCard(showStats: Boolean = true) {
 
             Row(modifier = Modifier.fillMaxWidth()) {
                 GolikeStatItem(
-                    icon = Icons.Filled.Checklist,
+                    icon = Icons.Filled.AttachMoney,
                     iconTint = SuccessGreen,
-                    value = tasksToday,
-                    label = "NV hôm nay",
+                    value = "+${todayIncome}đ",
+                    valueColor = SuccessGreen,
+                    label = "Thu nhập hôm nay",
                     modifier = Modifier.weight(1f)
                 )
                 GolikeStatItem(
                     icon = Icons.Filled.StarBorder,
                     iconTint = DangerRed,
-                    value = "+${rewardToday}đ",
+                    value = "${platformStats.count { it.pendingCoin > 0 }}",
                     valueColor = DangerRed,
-                    label = "Thưởng hôm nay",
+                    label = "Nền tảng đang có",
                     modifier = Modifier.weight(1f)
                 )
                 GolikeStatItem(

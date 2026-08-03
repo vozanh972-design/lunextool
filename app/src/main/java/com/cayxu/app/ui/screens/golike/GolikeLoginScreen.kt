@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.cayxu.app.data.repository.GolikeAuthRepository
 import com.cayxu.app.data.repository.GolikeLoginResult
+import com.cayxu.app.data.repository.GolikeStatisticsRepository
+import com.cayxu.app.data.repository.GolikeStatisticsResult
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -123,10 +125,15 @@ fun GolikeLoginScreen(navController: NavController) {
                                     userName = result.info.name,
                                     userHandle = result.info.handle,
                                     userEmail = result.info.email,
-                                    userCoin = result.info.coin,
-                                    userTasksToday = result.info.tasksToday,
-                                    userRewardToday = result.info.rewardToday
+                                    userCoin = result.info.coin
                                 )
+                                // Lấy luôn thu nhập hôm nay theo từng nền tảng ngay sau khi
+                                // đăng nhập thành công, để có dữ liệu thật hiện ngay, không
+                                // phải đợi người dùng tự bấm làm mới.
+                                when (val statsResult = GolikeStatisticsRepository.fetchReport(token.trim())) {
+                                    is GolikeStatisticsResult.Success -> GolikeSession.updateStatistics(context, statsResult.report)
+                                    is GolikeStatisticsResult.Error -> Unit
+                                }
                                 isLoading = false
                                 Toast.makeText(context, "Đăng nhập Golike thành công", Toast.LENGTH_SHORT).show()
                                 navController.popBackStack()

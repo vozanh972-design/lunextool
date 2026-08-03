@@ -24,4 +24,9 @@ interface GolikeApiService {
      *  thẳng mảng hay bọc trong object "data". */
     @GET("api/tiktok-account")
     suspend fun getTikTokAccounts(@Header("Authorization") authorization: String): Response<JsonElement>
+
+    /** Số dư + thu nhập hôm nay theo TỪNG nền tảng (facebook/instagram/tiktok/...) - dùng
+     *  cho "Thu nhập hôm nay" và biểu đồ phân bổ theo nền tảng ở Wallet/Home. */
+    @GET("api/statistics/report")
+    suspend fun getStatisticsReport(@Header("Authorization") authorization: String): Response<JsonObject>
 }

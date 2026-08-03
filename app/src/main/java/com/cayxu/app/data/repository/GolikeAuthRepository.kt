@@ -7,9 +7,7 @@ data class GolikeUserInfo(
     val name: String,
     val handle: String,
     val email: String,
-    val coin: String,
-    val tasksToday: String,
-    val rewardToday: String
+    val coin: String
 )
 
 sealed class GolikeLoginResult {
@@ -24,9 +22,11 @@ sealed class GolikeLoginResult {
  *
  * Vì không có tài liệu chính thức về đúng cấu trúc JSON trả về, hàm đọc dữ liệu bên dưới
  * thử NHIỀU tên field phổ biến (name/full_name, username/handle/nickname, email,
- * money/coin/balance/xu, tasks_today, reward_today...) và tự bóc lớp "data" bọc ngoài nếu
- * có. "NV hôm nay"/"Thưởng hôm nay" mặc định "0" nếu API không trả field tương ứng - CẦN
- * xem JSON thật trả về để chỉnh đúng tên field nếu 2 số này hiện sai.
+ * money/coin/balance/xu...) và tự bóc lớp "data" bọc ngoài nếu có.
+ *
+ * "Thu nhập hôm nay" theo từng nền tảng KHÔNG nằm ở endpoint này - xem
+ * GolikeStatisticsRepository (GET /api/statistics/report), gọi riêng ngay sau khi đăng
+ * nhập thành công (xem GolikeLoginScreen) và mỗi lần GolikeSession.refresh().
  */
 object GolikeAuthRepository {
 
@@ -47,11 +47,7 @@ object GolikeAuthRepository {
                 val email = firstNonBlank(data, listOf("email")).orEmpty()
                 val coin = firstNonBlank(data, listOf("money", "coin", "coins", "balance", "xu", "wallet"))
                     ?: "0"
-                val tasksToday = firstNonBlank(data, listOf("tasks_today", "task_today", "today_tasks", "nv_hom_nay"))
-                    ?: "0"
-                val rewardToday = firstNonBlank(data, listOf("reward_today", "bonus_today", "today_reward", "thuong_hom_nay"))
-                    ?: "0"
-                GolikeLoginResult.Success(GolikeUserInfo(name, handle, email, coin, tasksToday, rewardToday))
+                GolikeLoginResult.Success(GolikeUserInfo(name, handle, email, coin))
             } else {
                 val message = when (response.code()) {
                     401, 403 -> "Token không hợp lệ hoặc đã hết hạn"
