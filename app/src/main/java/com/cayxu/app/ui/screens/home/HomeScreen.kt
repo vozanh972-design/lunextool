@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,10 +18,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -136,7 +133,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
             Spacer(Modifier.height(20.dp))
 
-            IncomeCard()
+            IncomeCard(navController)
 
             Spacer(Modifier.height(24.dp))
 
@@ -248,21 +245,14 @@ private fun MenuButton(
 }
 
 @Composable
-private fun IncomeCard() {
-    // TODO: các giá trị Xu bên dưới vẫn là dữ liệu mẫu vì backend hiện chỉ có
-    // endpoint verify_key.php, chưa có API trả về thu nhập thật theo ngày.
-    // Khi có API thu nhập, thay `points` bằng dữ liệu lấy từ ViewModel/API.
-    val points = remember { listOf(52000f, 91000f, 38000f, 70000f, 55000f, 92000f, 128500f) }
-    val dayLabels = remember { last7DayLabels() }
-
-    var rangeMenuExpanded by remember { mutableStateOf(false) }
-    var selectedRange by remember { mutableStateOf("7 ngày") }
-
-    // Canvas vẽ biểu đồ bên dưới chạy trong DrawScope (không phải @Composable), nên phải
-    // đọc màu theo theme hiện tại ở ĐÂY (trong hàm Composable) rồi truyền giá trị đã lấy
-    // vào trong, chứ không được gọi thẳng SuccessGreen/CardWhite bên trong Canvas { ... }.
-    val chartLineColor = SuccessGreen
-    val chartDotColor = CardWhite
+private fun IncomeCard(navController: NavController) {
+    // "Thu nhập hôm nay" + biểu đồ theo nền tảng giờ lấy THẬT từ GolikeSession.todayIncome/
+    // platformStats (đọc từ GET /api/statistics/report) - không còn số liệu mẫu/biểu đồ giả
+    // 7 ngày nữa. Biểu đồ giờ là cột ngang theo TỪNG nền tảng (facebook/tiktok/...) vì GoLike
+    // trả thu nhập hôm nay theo nền tảng, không trả theo từng ngày trong quá khứ.
+    val isGolikeLoggedIn by com.cayxu.app.ui.screens.golike.GolikeSession.isLoggedIn
+    val todayIncome by com.cayxu.app.ui.screens.golike.GolikeSession.todayIncome
+    val platformStats by com.cayxu.app.ui.screens.golike.GolikeSession.platformStats
 
     Card(
         shape = RoundedCornerShape(20.dp),
@@ -275,114 +265,73 @@ private fun IncomeCard() {
                 Text("Thu nhập hôm nay", color = TextSecondary, fontSize = 13.sp)
                 Spacer(Modifier.width(4.dp))
                 Icon(Icons.Filled.Info, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.weight(1f))
-                Box {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .background(AppBackground, RoundedCornerShape(8.dp))
-                            .clickable { rangeMenuExpanded = true }
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                    ) {
-                        Text(selectedRange, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.width(2.dp))
-                        Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
-                    }
-                    DropdownMenu(expanded = rangeMenuExpanded, onDismissRequest = { rangeMenuExpanded = false }) {
-                        listOf("7 ngày", "14 ngày", "30 ngày").forEach { option ->
-                            DropdownMenuItem(text = { Text(option) }, onClick = {
-                                selectedRange = option
-                                rangeMenuExpanded = false
-                            })
-                        }
-                    }
-                }
             }
-            Spacer(Modifier.height(4.dp))
-            Text("+128.500 Xu", color = SuccessGreen, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text("↑ 12.5% so với hôm qua", color = SuccessGreen, fontSize = 12.sp)
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(8.dp))
 
-            val maxValue = ((points.max() / 50000f).let { kotlin.math.ceil(it) } * 50000f).coerceAtLeast(50000f)
-
-            Row(Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.width(34.dp).height(110.dp),
-                    verticalArrangement = Arrangement.SpaceBetween
+            if (!isGolikeLoggedIn) {
+                Text(
+                    "Cần đăng nhập GoLike để xem thu nhập hôm nay",
+                    color = TextSecondary,
+                    fontSize = 13.sp
+                )
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        navController.navigate(com.cayxu.app.ui.navigation.Routes.GOLIKE_LOGIN) { launchSingleTop = true }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
                 ) {
-                    Text(formatCompactXu(maxValue), color = TextSecondary, fontSize = 9.sp)
-                    Text(formatCompactXu(maxValue * 2 / 3), color = TextSecondary, fontSize = 9.sp)
-                    Text(formatCompactXu(maxValue / 3), color = TextSecondary, fontSize = 9.sp)
-                    Text("0", color = TextSecondary, fontSize = 9.sp)
+                    Text("Đăng nhập GoLike")
                 }
-                Canvas(modifier = Modifier.weight(1f).height(110.dp)) {
-                    val stepX = size.width / (points.size - 1)
-                    val gridColor = androidx.compose.ui.graphics.Color(0xFFE5E9F0)
-                    // Lưới ngang tại 0%, 33%, 66%, 100%
-                    for (i in 0..3) {
-                        val y = size.height * (1f - i / 3f)
-                        drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.5f)
-                    }
+            } else {
+                Text("+${todayIncome}đ", color = SuccessGreen, fontSize = 24.sp, fontWeight = FontWeight.Bold)
 
-                    val linePath = Path()
-                    val fillPath = Path()
-                    val coords = points.mapIndexed { i, v ->
-                        Offset(stepX * i, size.height * (1f - v / maxValue))
-                    }
-                    coords.forEachIndexed { i, p ->
-                        if (i == 0) {
-                            linePath.moveTo(p.x, p.y)
-                            fillPath.moveTo(p.x, size.height)
-                            fillPath.lineTo(p.x, p.y)
-                        } else {
-                            linePath.lineTo(p.x, p.y)
-                            fillPath.lineTo(p.x, p.y)
+                val earningPlatforms = platformStats.filter { it.pendingCoin > 0 }.sortedByDescending { it.pendingCoin }
+                if (earningPlatforms.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    val maxCoin = earningPlatforms.first().pendingCoin.coerceAtLeast(1)
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        earningPlatforms.forEach { stat ->
+                            PlatformIncomeBar(
+                                platform = com.cayxu.app.ui.screens.golike.golikePlatformDisplayName(stat.platform),
+                                color = com.cayxu.app.ui.screens.golike.golikePlatformColor(stat.platform),
+                                amount = stat.pendingCoin,
+                                fraction = stat.pendingCoin.toFloat() / maxCoin.toFloat()
+                            )
                         }
                     }
-                    fillPath.lineTo(coords.last().x, size.height)
-                    fillPath.close()
-
-                    drawPath(
-                        fillPath,
-                        brush = Brush.verticalGradient(
-                            listOf(chartLineColor.copy(alpha = 0.28f), chartLineColor.copy(alpha = 0f))
-                        )
-                    )
-                    drawPath(linePath, color = chartLineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f))
-                    coords.forEach { p ->
-                        drawCircle(color = chartDotColor, radius = 7f, center = p)
-                        drawCircle(color = chartLineColor, radius = 4.5f, center = p)
-                    }
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 34.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                dayLabels.forEach { label ->
-                    Text(label, color = TextSecondary, fontSize = 10.sp)
+                } else {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Chưa có nền tảng nào có thu nhập hôm nay", color = TextSecondary, fontSize = 12.sp)
                 }
             }
         }
     }
 }
 
-private fun last7DayLabels(): List<String> {
-    val fmt = java.text.SimpleDateFormat("dd/MM", java.util.Locale.getDefault())
-    val cal = java.util.Calendar.getInstance()
-    val labels = mutableListOf<String>()
-    repeat(7) {
-        labels.add(0, fmt.format(cal.time))
-        cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
+/** 1 dòng trong biểu đồ cột ngang - tên nền tảng + thanh màu dài theo tỉ lệ + số tiền thật. */
+@Composable
+private fun PlatformIncomeBar(platform: String, color: Color, amount: Long, fraction: Float) {
+    Column {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(platform, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Text("+${amount}đ", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(4.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .background(color.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction.coerceIn(0.04f, 1f))
+                    .height(8.dp)
+                    .background(color, RoundedCornerShape(4.dp))
+            )
+        }
     }
-    return labels
-}
-
-private fun formatCompactXu(value: Float): String {
-    if (value <= 0f) return "0"
-    val k = value / 1000f
-    return if (k == k.toLong().toFloat()) "${k.toLong()}K" else String.format(java.util.Locale.getDefault(), "%.1fK", k)
 }
 
 @Composable

@@ -31,6 +31,8 @@ import com.cayxu.app.R
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.navigation.goHome
 import com.cayxu.app.ui.screens.golike.GolikeSession
+import com.cayxu.app.ui.screens.golike.golikePlatformColor
+import com.cayxu.app.ui.screens.golike.golikePlatformDisplayName
 import com.cayxu.app.ui.theme.*
 
 private data class WalletHistoryItem(
@@ -135,8 +137,7 @@ fun WalletScreen(navController: NavController) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 val isGolikeLoggedIn by GolikeSession.isLoggedIn
-                val tasksToday by GolikeSession.tasksToday
-                val rewardToday by GolikeSession.rewardToday
+                val platformStats by GolikeSession.platformStats
 
                 if (!isGolikeLoggedIn) {
                     Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -155,25 +156,35 @@ fun WalletScreen(navController: NavController) {
                         }
                     }
                 } else {
-                    // GoLike hiện chưa có API trả về danh sách lịch sử giao dịch đầy đủ (chỉ
-                    // có GET /api/users/me cho số liệu "hôm nay") - nên CHỈ hiện đúng 1 dòng
-                    // thật duy nhất có dữ liệu thật, KHÔNG bịa thêm các dòng lịch sử cũ hơn.
-                    // Khi có API lịch sử đầy đủ, thay Column này bằng danh sách nhiều dòng thật.
-                    val realHistory = listOf(
-                        WalletHistoryItem(
-                            Icons.Filled.Assignment,
-                            Color(0xFF7C3AED),
-                            "Nhiệm vụ hoàn thành hôm nay",
-                            "$tasksToday nhiệm vụ",
-                            "+${rewardToday}đ",
-                            true
-                        )
-                    )
-                    Column {
-                        realHistory.forEachIndexed { index, item ->
-                            WalletHistoryRow(item)
-                            if (index != realHistory.lastIndex) {
-                                HorizontalDivider(color = AppBackground, thickness = 1.dp)
+                    // GoLike hiện chưa có API trả về danh sách lịch sử giao dịch dạng nhiều
+                    // dòng theo thời gian (data: [] trống trong response thật) - CHỈ có
+                    // breakdown thu nhập hôm nay theo TỪNG nền tảng (GET /api/statistics/
+                    // report) - nên hiện đúng breakdown thật đó, mỗi nền tảng đang có thu
+                    // nhập hôm nay là 1 dòng, KHÔNG bịa thêm các dòng lịch sử cũ hơn.
+                    val realHistory = platformStats
+                        .filter { it.pendingCoin > 0 }
+                        .sortedByDescending { it.pendingCoin }
+
+                    if (realHistory.isEmpty()) {
+                        Column(Modifier.padding(20.dp)) {
+                            Text("Chưa có thu nhập hôm nay trên nền tảng nào", color = TextSecondary, fontSize = 13.sp)
+                        }
+                    } else {
+                        Column {
+                            realHistory.forEachIndexed { index, stat ->
+                                WalletHistoryRow(
+                                    WalletHistoryItem(
+                                        icon = Icons.Filled.Bolt,
+                                        iconColor = golikePlatformColor(stat.platform),
+                                        title = golikePlatformDisplayName(stat.platform),
+                                        time = "Hôm nay",
+                                        amount = "+${stat.pendingCoin}đ",
+                                        isPositive = true
+                                    )
+                                )
+                                if (index != realHistory.lastIndex) {
+                                    HorizontalDivider(color = AppBackground, thickness = 1.dp)
+                                }
                             }
                         }
                     }
