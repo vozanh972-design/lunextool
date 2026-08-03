@@ -28,7 +28,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.cayxu.app.R
+import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.navigation.goHome
+import com.cayxu.app.ui.screens.golike.GolikeSession
 import com.cayxu.app.ui.theme.*
 
 private data class WalletHistoryItem(
@@ -40,24 +42,10 @@ private data class WalletHistoryItem(
     val isPositive: Boolean
 )
 
-// TODO: backend hiện chỉ có endpoint verify_key.php, chưa có API lịch sử giao dịch/số dư Xu thật.
-// Khi có API, thay `balanceXu` và `historyItems` bằng dữ liệu lấy từ ViewModel/API tương ứng.
-private const val balanceXu = "128.500"
-
-private val historyItems = listOf(
-    WalletHistoryItem(Icons.Filled.CheckCircle, Color(0xFF16A34A), "Check-in hàng ngày", "Hôm nay, 09:30", "+500 Xu", true),
-    WalletHistoryItem(Icons.Filled.PlayCircle, Color(0xFF2563EB), "Xem quảng cáo", "Hôm nay, 08:15", "+500 Xu", true),
-    WalletHistoryItem(Icons.Filled.SportsEsports, Color(0xFFF97316), "Chơi game: Lucky Spin", "Hôm qua, 21:10", "+2.000 Xu", true),
-    WalletHistoryItem(Icons.Filled.Assignment, Color(0xFF7C3AED), "Hoàn thành nhiệm vụ", "Hôm qua, 20:05", "+1.500 Xu", true),
-    WalletHistoryItem(Icons.Filled.Group, Color(0xFFDB2777), "Giới thiệu bạn bè", "08/05/2026, 15:45", "+5.000 Xu", true),
-    WalletHistoryItem(Icons.Filled.CardGiftcard, Color(0xFFF97316), "Đổi quà: Thẻ cào 10.000đ", "07/05/2026, 14:20", "-10.000 Xu", false),
-    WalletHistoryItem(Icons.Filled.ArrowUpward, Color(0xFF2563EB), "Chuyển Xu cho bạn bè", "07/05/2026, 11:30", "-2.000 Xu", false)
-)
-
-private data class WalletTab(val title: String, val gradientColors: List<Color>)
+private data class WalletTab(val title: String, val gradientColors: List<Color>, val isGolike: Boolean = false)
 
 private val walletTabs = listOf(
-    WalletTab("Ví Golike", listOf(Color(0xFF9D5CE8), Color(0xFF7C3AED))),
+    WalletTab("Ví Golike", listOf(Color(0xFF9D5CE8), Color(0xFF7C3AED)), isGolike = true),
     WalletTab("Ví Traodoisub", listOf(Color(0xFF418DFC), Color(0xFF7950F6))),
     WalletTab("Ví Tuongtaccheo", listOf(Color(0xFFF472B6), Color(0xFFEC4899)))
 )
@@ -86,10 +74,9 @@ fun WalletScreen(navController: NavController) {
 
             Spacer(Modifier.height(14.dp))
 
-            // 3 ví riêng theo từng nền tảng, dạng vuốt ngang (carousel) như thẻ
-            // ngân hàng, thay vì xếp chồng dọc. Hiện dùng chung 1 số dư demo vì
-            // backend chỉ có endpoint verify_key.php, chưa có API số dư riêng
-            // theo từng nền tảng.
+            // 3 ví riêng theo từng nền tảng, dạng vuốt ngang (carousel) như thẻ ngân hàng.
+            // Ví Golike đã lấy SỐ DƯ THẬT từ GolikeSession (đăng nhập bằng token Bearer) -
+            // 2 ví còn lại (Traodoisub/Tuongtaccheo) chưa có backend nên vẫn chỉ hiện "--".
             val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { walletTabs.size })
             androidx.compose.foundation.pager.HorizontalPager(
                 state = pagerState,
@@ -99,8 +86,10 @@ fun WalletScreen(navController: NavController) {
                 WalletBalanceCard(
                     title = tab.title,
                     gradientColors = tab.gradientColors,
+                    isGolike = tab.isGolike,
                     balanceVisible = balanceVisible,
-                    onToggleVisibility = { balanceVisible = !balanceVisible }
+                    onToggleVisibility = { balanceVisible = !balanceVisible },
+                    navController = navController
                 )
             }
             Spacer(Modifier.height(10.dp))
@@ -145,11 +134,47 @@ fun WalletScreen(navController: NavController) {
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column {
-                    historyItems.forEachIndexed { index, item ->
-                        WalletHistoryRow(item)
-                        if (index != historyItems.lastIndex) {
-                            HorizontalDivider(color = AppBackground, thickness = 1.dp)
+                val isGolikeLoggedIn by GolikeSession.isLoggedIn
+                val tasksToday by GolikeSession.tasksToday
+                val rewardToday by GolikeSession.rewardToday
+
+                if (!isGolikeLoggedIn) {
+                    Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "Cần đăng nhập GoLike để xem lịch sử cày Xu",
+                            color = TextSecondary,
+                            fontSize = 13.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Button(
+                            onClick = { navController.navigate(Routes.GOLIKE_LOGIN) { launchSingleTop = true } },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                        ) {
+                            Text("Đăng nhập GoLike")
+                        }
+                    }
+                } else {
+                    // GoLike hiện chưa có API trả về danh sách lịch sử giao dịch đầy đủ (chỉ
+                    // có GET /api/users/me cho số liệu "hôm nay") - nên CHỈ hiện đúng 1 dòng
+                    // thật duy nhất có dữ liệu thật, KHÔNG bịa thêm các dòng lịch sử cũ hơn.
+                    // Khi có API lịch sử đầy đủ, thay Column này bằng danh sách nhiều dòng thật.
+                    val realHistory = listOf(
+                        WalletHistoryItem(
+                            Icons.Filled.Assignment,
+                            Color(0xFF7C3AED),
+                            "Nhiệm vụ hoàn thành hôm nay",
+                            "$tasksToday nhiệm vụ",
+                            "+${rewardToday}đ",
+                            true
+                        )
+                    )
+                    Column {
+                        realHistory.forEachIndexed { index, item ->
+                            WalletHistoryRow(item)
+                            if (index != realHistory.lastIndex) {
+                                HorizontalDivider(color = AppBackground, thickness = 1.dp)
+                            }
                         }
                     }
                 }
@@ -167,9 +192,14 @@ fun WalletScreen(navController: NavController) {
 private fun WalletBalanceCard(
     title: String,
     gradientColors: List<Color>,
+    isGolike: Boolean,
     balanceVisible: Boolean,
-    onToggleVisibility: () -> Unit
+    onToggleVisibility: () -> Unit,
+    navController: NavController
 ) {
+    val isGolikeLoggedIn by GolikeSession.isLoggedIn
+    val golikeCoin by GolikeSession.coin
+
     Card(
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -193,29 +223,54 @@ private fun WalletBalanceCard(
             Column(modifier = Modifier.padding(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(title, color = Color(0xFFE5DCFF), fontSize = 13.sp)
-                    Spacer(Modifier.width(6.dp))
-                    Icon(
-                        if (balanceVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
-                        contentDescription = "Ẩn/hiện số dư",
-                        tint = Color(0xFFE5DCFF),
-                        modifier = Modifier
-                            .size(16.dp)
-                            .clickable(onClick = onToggleVisibility)
-                    )
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        if (balanceVisible) balanceXu else "••••••",
-                        color = Color.White,
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (balanceVisible) {
+                    if (isGolike && isGolikeLoggedIn) {
                         Spacer(Modifier.width(6.dp))
-                        Text("Xu", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 5.dp))
+                        Icon(
+                            if (balanceVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                            contentDescription = "Ẩn/hiện số dư",
+                            tint = Color(0xFFE5DCFF),
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clickable(onClick = onToggleVisibility)
+                        )
                     }
                 }
+                Spacer(Modifier.height(6.dp))
+
+                if (isGolike && !isGolikeLoggedIn) {
+                    // Không còn hardcode số dư nữa - chưa đăng nhập GoLike thì báo cần đăng
+                    // nhập thay vì hiện số giả.
+                    Text(
+                        "Cần đăng nhập để xem số dư",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            navController.navigate(Routes.GOLIKE_LOGIN) { launchSingleTop = true }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+                    ) {
+                        Text("Đăng nhập GoLike", color = gradientColors.last())
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        val displayBalance = if (isGolike) golikeCoin else "--"
+                        Text(
+                            if (balanceVisible) displayBalance else "••••••",
+                            color = Color.White,
+                            fontSize = 34.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (balanceVisible) {
+                            Spacer(Modifier.width(6.dp))
+                            Text("Xu", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 5.dp))
+                        }
+                    }
+                }
+
                 Spacer(Modifier.height(12.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
