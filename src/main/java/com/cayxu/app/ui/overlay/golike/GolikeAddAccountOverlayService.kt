@@ -8,6 +8,7 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -72,10 +73,13 @@ class GolikeAddAccountOverlayService : Service() {
             openTikTokProfile(applicationContext, targetUsername, packageName)
 
             if (!packageName.isNullOrBlank()) {
+                Log.d("GolikeFollow", "Đã gọi requestFollow: username=$targetUsername pkg=$packageName")
                 com.cayxu.app.automation.tiktok.GolikeFollowBridge.requestFollow(
                     targetUsername = targetUsername,
                     packageName = packageName
                 )
+            } else {
+                Log.w("GolikeFollow", "BỎ QUA requestFollow vì packageName null/rỗng (targetUsername=$targetUsername)")
             }
         }
         return START_NOT_STICKY
