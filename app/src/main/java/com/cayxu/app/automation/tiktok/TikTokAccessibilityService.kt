@@ -83,6 +83,8 @@ class TikTokAccessibilityService : AccessibilityService() {
         private const val FOLLOW_WAIT_BEFORE_MS = 5000L
         private const val FOLLOW_WAIT_AFTER_RELOAD_MS = 1800L
         private const val FOLLOW_MAX_ATTEMPTS = 15
+        private const val FOLLOW_RELOAD_SWIPE_COUNT = 3
+        private const val FOLLOW_SWIPE_INTERVAL_MS = 1000L
     }
 
     // QUAN TRỌNG: dùng SupervisorJob thay vì Job thường. Nếu không, một lỗi bất ngờ (crash)
@@ -280,7 +282,8 @@ class TikTokAccessibilityService : AccessibilityService() {
     /**
      * Luồng tự bấm Follow sau khi mở link trang cá nhân TikTok từ GoLike:
      *   1) Đợi ~5 giây cho TikTok kịp mở/tải xong.
-     *   2) Kéo xuống 1 lần để ép tải lại (dùng lại đúng cử chỉ performPullToRefresh).
+     *   2) Vuốt từ trên xuống 3 LẦN (cách nhau ~1 giây) để ép tải lại - vuốt 1 lần đôi khi
+     *      không ăn (bị TikTok bỏ qua do đang trong lúc load, hoặc do độ nhạy máy khác nhau).
      *   3) Đợi trang load lại rồi dò tìm nút "Theo dõi"/"Follow" và bấm.
      * Không tìm thấy sau nhiều lần thử thì bỏ qua (có thể đã follow rồi hoặc UI khác dự kiến),
      * không báo lỗi làm phiền người dùng.
@@ -291,7 +294,12 @@ class TikTokAccessibilityService : AccessibilityService() {
             try {
                 delay(FOLLOW_WAIT_BEFORE_MS)
 
-                performPullToRefresh()
+                repeat(FOLLOW_RELOAD_SWIPE_COUNT) { index ->
+                    performPullToRefresh()
+                    if (index < FOLLOW_RELOAD_SWIPE_COUNT - 1) {
+                        delay(FOLLOW_SWIPE_INTERVAL_MS)
+                    }
+                }
                 delay(FOLLOW_WAIT_AFTER_RELOAD_MS)
 
                 var attempt = 0
