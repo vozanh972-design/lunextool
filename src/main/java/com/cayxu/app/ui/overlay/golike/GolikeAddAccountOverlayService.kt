@@ -21,6 +21,19 @@ import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.ui.screens.golike.openTikTokProfile
 import kotlin.math.min
 
+/**
+ * Lớp nổi hiện khi bấm "Thêm" ở acc TikTok chưa có trong GoLike.
+ *
+ * Hiển thị thông tin (chế độ/tài khoản/URL) + tự mở link trang cá nhân TikTok lên, sau đó
+ * yêu cầu TikTokAccessibilityService (qua GolikeFollowBridge) tự đợi ~5 giây, kéo xuống tải
+ * lại, rồi tìm và bấm nút Follow - CHỈ có tác dụng nếu người dùng đã bật Accessibility
+ * Service của tool; nếu chưa bật thì không có gì xảy ra, người dùng vẫn có thể tự tay bấm
+ * Follow như bình thường. Bấm "DỪNG" chỉ đóng lớp nổi lại, không huỷ luồng tự bấm Follow
+ * đang chờ trong Accessibility Service (vì đó là 1 lần chạy ngắn, tự dừng sau khi xong).
+ *
+ * Kích thước lớp nổi tự tính theo % chiều rộng màn hình thật của máy (giới hạn 1 mức tối
+ * đa) để máy nhỏ hay to đều hiển thị cân đối, không dùng số px cứng.
+ */
 class GolikeAddAccountOverlayService : Service() {
 
     companion object {
@@ -48,13 +61,41 @@ class GolikeAddAccountOverlayService : Service() {
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             showFullPanel(handle, monthsAgo, targetUsername)
 
+            // Kéo lớp nổi xuống dưới cùng màn hình ngay - để nó không nằm đè lên vùng
+            // giữa màn hình, tránh chặn mất cử chỉ vuốt xuống (reload) mà accessibility
+            // service sắp thực hiện bên dưới.
+            fullPanel?.post { moveOverlayToBottom() }
+
+            // Mở trang lên, rồi yêu cầu tự bấm Follow (đợi ~5 giây, vuốt xuống tải lại vài
+            // lần, tìm và bấm nút Follow). Chỉ có tác dụng nếu người dùng đã bật Accessibility
+            // Service của tool; nếu chưa bật thì không có gì xảy ra, không lỗi gì cả.
             openTikTokProfile(applicationContext, targetUsername, packageName)
+
+            if (!packageName.isNullOrBlank()) {
+                com.cayxu.app.automation.tiktok.GolikeFollowBridge.requestFollow(
+                    targetUsername = targetUsername,
+                    packageName = packageName
+                )
+            }
         }
         return START_NOT_STICKY
     }
 
+    // ---- Helper quy đổi dp -> px để hiển thị đúng tỉ lệ trên mọi máy ----
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
     private fun dp(value: Float): Int = (value * resources.displayMetrics.density).toInt()
+
+    /** Đưa lớp nổi đang hiển thị (panel đầy đủ hoặc bubble thu nhỏ) xuống sát đáy màn hình.
+     *  Gọi sau khi view đã layout xong (dùng view.post) để lấy đúng chiều cao thật, tránh
+     *  lớp nổi che vùng giữa màn hình làm chặn mất cử chỉ vuốt reload/follow bên dưới. */
+    private fun moveOverlayToBottom() {
+        val view = fullPanel ?: miniBubble ?: return
+        val params = panelParams ?: bubbleParams ?: return
+        val screenHeight = resources.displayMetrics.heightPixels
+        val viewHeight = view.height.takeIf { it > 0 } ?: dp(220)
+        params.y = (screenHeight - viewHeight - dp(32)).coerceAtLeast(0)
+        runCatching { windowManager.updateViewLayout(view, params) }
+    }
 
     private fun overlayType(): Int =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -99,6 +140,8 @@ class GolikeAddAccountOverlayService : Service() {
         miniBubble?.let { runCatching { windowManager.removeView(it) } }
         miniBubble = null
 
+        // Rộng theo % màn hình thật (86%), tối đa 360dp - máy nhỏ hay to đều cân đối,
+        // không quá to cũng không quá nhỏ.
         val screenWidthPx = resources.displayMetrics.widthPixels
         val panelWidthPx = min((screenWidthPx * 0.86f).toInt(), dp(360))
 
@@ -125,6 +168,7 @@ class GolikeAddAccountOverlayService : Service() {
             }
         }
 
+        // ---- Hàng tiêu đề: chấm xanh + tên app + version thật + 3 nút icon ----
         val headerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -215,6 +259,7 @@ class GolikeAddAccountOverlayService : Service() {
         fullPanel = root
     }
 
+    /** Thu nhỏ lại thành 1 bong bóng tròn nhỏ, bấm vào để mở lại panel đầy đủ. */
     private fun showMiniBubble(handle: String, monthsAgo: Int, targetUsername: String) {
         fullPanel?.let { runCatching { windowManager.removeView(it) } }
         fullPanel = null
@@ -287,6 +332,8 @@ class GolikeAddAccountOverlayService : Service() {
         miniBubble = bubble
     }
 
+    /** Nút X: đóng HẲN tool (không chỉ đóng lớp nổi, không quay lại tool) - khác với nút
+     *  mũi tên (quay lại tool) và nút trừ (chỉ ẩn thành icon). */
     private fun exitToolCompletely() {
         fullPanel?.let { runCatching { windowManager.removeView(it) } }
         miniBubble?.let { runCatching { windowManager.removeView(it) } }
