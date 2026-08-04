@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.util.Log
 import kotlin.random.Random
 
 /**
@@ -85,6 +86,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         private const val FOLLOW_MAX_ATTEMPTS = 15
         private const val FOLLOW_RELOAD_SWIPE_COUNT = 3
         private const val FOLLOW_SWIPE_INTERVAL_MS = 1000L
+        private const val TAG = "GolikeFollow"
     }
 
     // QUAN TRỌNG: dùng SupervisorJob thay vì Job thường. Nếu không, một lỗi bất ngờ (crash)
@@ -101,6 +103,7 @@ class TikTokAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        Log.d(TAG, "onServiceConnected - AccessibilityService đã kết nối, bắt đầu lắng nghe các bridge")
         // Theo dõi bridge: hễ chuyển sang "Waiting" là tự bắt đầu dò; chuyển sang trạng
         // thái khác thì dừng dò lại.
         scope.launch {
@@ -138,6 +141,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         scope.launch {
             GolikeFollowBridge.state.collect { state ->
                 if (state is GolikeFollowState.Pending) {
+                    Log.d(TAG, "Nhận yêu cầu follow: username=${state.targetUsername} pkg=${state.packageName} requestId=${state.requestId}")
                     startFollowFlow(state)
                 }
             }
@@ -292,33 +296,47 @@ class TikTokAccessibilityService : AccessibilityService() {
         followJob?.cancel()
         followJob = scope.launch {
             try {
+                Log.d(TAG, "Bắt đầu đợi ${FOLLOW_WAIT_BEFORE_MS}ms trước khi thao tác...")
                 delay(FOLLOW_WAIT_BEFORE_MS)
 
+                Log.d(TAG, "Bắt đầu vuốt xuống $FOLLOW_RELOAD_SWIPE_COUNT lần để reload...")
                 repeat(FOLLOW_RELOAD_SWIPE_COUNT) { index ->
+                    val rootBeforeSwipe = rootInActiveWindow
+                    Log.d(TAG, "Vuốt lần ${index + 1}: rootInActiveWindow.packageName=${rootBeforeSwipe?.packageName}")
                     performPullToRefresh()
                     if (index < FOLLOW_RELOAD_SWIPE_COUNT - 1) {
                         delay(FOLLOW_SWIPE_INTERVAL_MS)
                     }
                 }
+                Log.d(TAG, "Đã vuốt xong, đợi ${FOLLOW_WAIT_AFTER_RELOAD_MS}ms cho trang load lại...")
                 delay(FOLLOW_WAIT_AFTER_RELOAD_MS)
 
                 var attempt = 0
+                var clicked = false
                 while (attempt < FOLLOW_MAX_ATTEMPTS) {
                     attempt++
                     val root = findRootForPackage(state.packageName)
                     if (root == null) {
+                        Log.d(TAG, "Lần $attempt/$FOLLOW_MAX_ATTEMPTS: không tìm thấy root cho package ${state.packageName}")
                         delay(POLL_INTERVAL_MS)
                         continue
                     }
                     val followNode = findFollowButton(root)
                     if (followNode != null) {
+                        Log.d(TAG, "Lần $attempt: TÌM THẤY nút Follow, đang bấm...")
                         clickNode(followNode)
+                        clicked = true
                         break
+                    } else {
+                        Log.d(TAG, "Lần $attempt/$FOLLOW_MAX_ATTEMPTS: có root nhưng KHÔNG tìm thấy nút Follow trong cây UI")
                     }
                     delay(POLL_INTERVAL_MS)
                 }
+                if (!clicked) {
+                    Log.d(TAG, "KẾT THÚC: không tìm thấy/bấm được nút Follow sau $FOLLOW_MAX_ATTEMPTS lần thử")
+                }
             } catch (e: Exception) {
-                // Bỏ qua - không được phép làm crash service.
+                Log.e(TAG, "Lỗi trong startFollowFlow: ${e.message}", e)
             } finally {
                 GolikeFollowBridge.clear()
             }
