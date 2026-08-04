@@ -325,15 +325,18 @@ class TikTokAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Tìm nút Follow bằng so khớp TUYỆT ĐỐI (không contains) để tránh bấm nhầm "Đang theo dõi". */
+    /** Tìm nút Follow bằng so khớp TUYỆT ĐỐI text (không contains) để tránh bấm nhầm "Đang
+     *  theo dõi". KHÔNG yêu cầu chính node này phải isClickable - trên TikTok, chữ "Follow"
+     *  thường nằm trong 1 TextView con bên trong nút bấm (Button/ViewGroup cha mới thực sự
+     *  clickable), nên nếu bắt buộc isClickable ngay trên node chứa text sẽ bị bỏ sót, không
+     *  bao giờ tìm thấy. Việc bấm (tap theo toạ độ hoặc leo lên cha clickable) do clickNode()
+     *  xử lý riêng ở bước gọi. */
     private fun findFollowButton(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
         if (depth > 40) return null
-        if (node.isClickable) {
-            val text = (node.text?.toString() ?: node.contentDescription?.toString())
-                ?.trim()?.lowercase()
-            if (text != null && text in FOLLOW_EXACT_LABELS) {
-                return node
-            }
+        val text = (node.text?.toString() ?: node.contentDescription?.toString())
+            ?.trim()?.lowercase()
+        if (text != null && text in FOLLOW_EXACT_LABELS) {
+            return node
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
