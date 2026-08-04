@@ -8,8 +8,10 @@ import android.net.Uri
 import android.provider.Settings
 import android.text.TextUtils
 import android.widget.Toast
+import androidx.navigation.NavController
 import com.cayxu.app.automation.tiktok.TikTokAccessibilityService
 import com.cayxu.app.data.local.TikTokAccount
+import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.overlay.golike.GolikeAddAccountOverlayService
 import java.util.concurrent.TimeUnit
 
@@ -17,13 +19,21 @@ import java.util.concurrent.TimeUnit
 private const val GOLIKE_LINK_TARGET_USERNAME = "gosen.vietnam"
 
 /**
- * Bấm "Thêm" ở acc chưa có trong GoLike -> kiểm tra ĐỦ 2 quyền: (1) "Hiển thị trên ứng dụng
- * khác" và (2) "Trợ năng" (Accessibility) cho tool - THIẾU 1 TRONG 2 sẽ KHÔNG mở lớp nổi,
- * mà tự mở đúng màn Cài đặt tương ứng để người dùng bật, rồi họ bấm "Thêm" lại sau khi bật
- * xong. Đủ cả 2 mới khởi chạy lớp nổi (GolikeAddAccountOverlayService): hiển thị thông tin +
- * tự mở link trang cá nhân TikTok, tự đợi ~5 giây, tải lại rồi tự bấm Follow.
+ * Bấm "Thêm" ở acc chưa có trong GoLike -> BẮT BUỘC đã đăng nhập GoLike trước (chưa đăng
+ * nhập thì KHÔNG làm gì thêm, tự chuyển sang màn Đăng nhập GoLike luôn) -> rồi kiểm tra ĐỦ
+ * 2 quyền: (1) "Hiển thị trên ứng dụng khác" và (2) "Trợ năng" (Accessibility) cho tool -
+ * THIẾU 1 TRONG 2 sẽ KHÔNG mở lớp nổi, mà tự mở đúng màn Cài đặt tương ứng để người dùng
+ * bật, rồi họ bấm "Thêm" lại sau khi bật xong. Đủ điều kiện mới khởi chạy lớp nổi
+ * (GolikeAddAccountOverlayService): hiển thị thông tin + tự mở link trang cá nhân TikTok,
+ * tự đợi ~5 giây, tải lại rồi tự bấm Follow.
  */
-fun startAddToGolikeOverlay(context: Context, account: TikTokAccount) {
+fun startAddToGolikeOverlay(context: Context, navController: NavController, account: TikTokAccount) {
+    if (!GolikeSession.isLoggedIn.value) {
+        Toast.makeText(context, "Cần đăng nhập GoLike trước khi thêm tài khoản", Toast.LENGTH_LONG).show()
+        navController.navigate(Routes.GOLIKE_LOGIN)
+        return
+    }
+
     if (!Settings.canDrawOverlays(context)) {
         Toast.makeText(context, "Cần cấp quyền hiển thị trên ứng dụng khác để dùng tính năng này", Toast.LENGTH_LONG).show()
         try {

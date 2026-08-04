@@ -199,6 +199,7 @@ fun GolikeTikTokScreen(navController: NavController) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     accountsForSelectedTab.forEach { account ->
                         TikTokAccountCard(
+                            navController = navController,
                             account = account,
                             isSelected = account.uid == effectiveSelectedId,
                             isLinkedToGolike = account.handle.lowercase() in golikeLinkedHandles,
@@ -306,6 +307,7 @@ private fun statusColor(status: TikTokAccountStatus): Color = when (status) {
 
 @Composable
 private fun TikTokAccountCard(
+    navController: NavController,
     account: TikTokAccount,
     isSelected: Boolean,
     isLinkedToGolike: Boolean,
@@ -362,7 +364,7 @@ private fun TikTokAccountCard(
                         modifier = Modifier
                             .background(WarningOrange.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
                             .clickable {
-                                startAddToGolikeOverlay(context, account)
+                                startAddToGolikeOverlay(context, navController, account)
                             }
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
