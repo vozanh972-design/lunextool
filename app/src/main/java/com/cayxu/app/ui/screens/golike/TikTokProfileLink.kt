@@ -1,11 +1,14 @@
 package com.cayxu.app.ui.screens.golike
 
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.text.TextUtils
 import android.widget.Toast
+import com.cayxu.app.automation.tiktok.TikTokAccessibilityService
 import com.cayxu.app.data.local.TikTokAccount
 import com.cayxu.app.ui.overlay.golike.GolikeAddAccountOverlayService
 import java.util.concurrent.TimeUnit
@@ -14,10 +17,11 @@ import java.util.concurrent.TimeUnit
 private const val GOLIKE_LINK_TARGET_USERNAME = "gosen.vietnam"
 
 /**
- * Bấm "Thêm" ở acc chưa có trong GoLike -> xin quyền "Hiển thị trên ứng dụng khác" (nếu
- * chưa có) rồi khởi chạy lớp nổi (GolikeAddAccountOverlayService). Lớp nổi hiển thị thông
- * tin + tự mở link trang cá nhân TikTok, và (nếu người dùng đã bật Accessibility Service
- * của tool) sẽ tự đợi ~5 giây, tải lại rồi tự bấm Follow.
+ * Bấm "Thêm" ở acc chưa có trong GoLike -> kiểm tra ĐỦ 2 quyền: (1) "Hiển thị trên ứng dụng
+ * khác" và (2) "Trợ năng" (Accessibility) cho tool - THIẾU 1 TRONG 2 sẽ KHÔNG mở lớp nổi,
+ * mà tự mở đúng màn Cài đặt tương ứng để người dùng bật, rồi họ bấm "Thêm" lại sau khi bật
+ * xong. Đủ cả 2 mới khởi chạy lớp nổi (GolikeAddAccountOverlayService): hiển thị thông tin +
+ * tự mở link trang cá nhân TikTok, tự đợi ~5 giây, tải lại rồi tự bấm Follow.
  */
 fun startAddToGolikeOverlay(context: Context, account: TikTokAccount) {
     if (!Settings.canDrawOverlays(context)) {
@@ -26,6 +30,22 @@ fun startAddToGolikeOverlay(context: Context, account: TikTokAccount) {
             context.startActivity(
                 Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(context, "Máy không hỗ trợ mở màn cấp quyền này", Toast.LENGTH_SHORT).show()
+        }
+        return
+    }
+
+    if (!isAccessibilityServiceEnabled(context)) {
+        Toast.makeText(
+            context,
+            "Cần bật quyền Trợ năng (Accessibility) cho CayXu để tự bấm Follow - hãy tìm và bật CayXu trong danh sách",
+            Toast.LENGTH_LONG
+        ).show()
+        try {
+            context.startActivity(
+                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
         } catch (e: ActivityNotFoundException) {
             Toast.makeText(context, "Máy không hỗ trợ mở màn cấp quyền này", Toast.LENGTH_SHORT).show()
@@ -42,6 +62,24 @@ fun startAddToGolikeOverlay(context: Context, account: TikTokAccount) {
         putExtra(GolikeAddAccountOverlayService.EXTRA_PACKAGE_NAME, account.variant.packageName)
     }
     context.startService(intent)
+}
+
+/** Kiểm tra Accessibility Service của tool (TikTokAccessibilityService) đã được người dùng
+ *  bật trong Cài đặt máy chưa - đọc danh sách "enabled_accessibility_services" của hệ thống
+ *  (cách chuẩn của Android, không có API kiểu isEnabled() trực tiếp). */
+private fun isAccessibilityServiceEnabled(context: Context): Boolean {
+    val expected = ComponentName(context, TikTokAccessibilityService::class.java).flattenToString()
+    val enabledServices = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+    ) ?: return false
+
+    val splitter = TextUtils.SimpleStringSplitter(':')
+    splitter.setString(enabledServices)
+    while (splitter.hasNext()) {
+        if (splitter.next().equals(expected, ignoreCase = true)) return true
+    }
+    return false
 }
 
 /**

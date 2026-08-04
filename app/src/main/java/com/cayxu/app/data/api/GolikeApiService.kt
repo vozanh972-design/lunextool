@@ -3,8 +3,10 @@ package com.cayxu.app.data.api
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import retrofit2.Response
+import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.POST
 
 /**
  * API RIÊNG của Golike (gateway.golike.net) - HOÀN TOÀN ĐỘC LẬP với ApiService/
@@ -29,4 +31,13 @@ interface GolikeApiService {
      *  cho "Thu nhập hôm nay" và biểu đồ phân bổ theo nền tảng ở Wallet/Home. */
     @GET("api/statistics/report")
     suspend fun getStatisticsReport(@Header("Authorization") authorization: String): Response<JsonObject>
+
+    /** Hỏi GoLike xem 1 tài khoản TikTok đã follow đúng kênh chỉ định hay chưa - gọi SAU
+     *  KHI đã tự bấm Follow, để xác nhận với server trước khi coi acc đủ điều kiện thêm vào
+     *  GoLike. Xem GolikeVerifyAccountRepository để rõ cấu trúc body. */
+    @POST("api/tiktok-account/verify-account-id")
+    suspend fun verifyTikTokAccountId(
+        @Header("Authorization") authorization: String,
+        @Body body: JsonObject
+    ): Response<JsonObject>
 }

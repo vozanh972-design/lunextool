@@ -16,10 +16,17 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import com.cayxu.app.R
 import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.ui.screens.golike.openTikTokProfile
 import kotlin.math.min
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Lớp nổi hiện khi bấm "Thêm" ở acc TikTok chưa có trong GoLike.
@@ -41,6 +48,11 @@ class GolikeAddAccountOverlayService : Service() {
         const val EXTRA_CREATED_MONTHS_AGO = "extra_created_months_ago"
         const val EXTRA_TARGET_USERNAME = "extra_target_username"
         const val EXTRA_PACKAGE_NAME = "extra_package_name"
+
+        /** Đợi đủ lâu cho luồng tự bấm Follow (đợi 5s + vuốt 3 lần cách nhau 1s + đợi 1.8s
+         *  + dò tìm nút Follow) chạy gần xong trước khi hỏi GoLike xác minh - không cần
+         *  chính xác tuyệt đối, chỉ cần đủ trễ để không hỏi quá sớm lúc chưa kịp bấm Follow. */
+        private const val VERIFY_DELAY_MS = 16000L
     }
 
     private lateinit var windowManager: WindowManager
@@ -48,6 +60,7 @@ class GolikeAddAccountOverlayService : Service() {
     private var miniBubble: View? = null
     private var panelParams: WindowManager.LayoutParams? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -76,6 +89,28 @@ class GolikeAddAccountOverlayService : Service() {
                     targetUsername = targetUsername,
                     packageName = packageName
                 )
+            }
+
+            // Đợi đủ lâu cho luồng tự bấm Follow ở trên chạy xong (đợi 5s + vuốt 3 lần +
+            // dò tìm nút Follow), rồi hỏi GoLike xem acc @$handle đã follow đúng kênh
+            // $targetUsername chưa - hiện kết quả (thành công/lý do lỗi) bằng Toast.
+            serviceScope.launch {
+                delay(VERIFY_DELAY_MS)
+                val token = com.cayxu.app.data.local.GolikeAccountStore.getToken(applicationContext)
+                if (token.isNullOrBlank()) return@launch
+                val result = com.cayxu.app.data.repository.GolikeVerifyAccountRepository
+                    .verifyAccountId(token, handle)
+                val message = when (result) {
+                    is com.cayxu.app.data.repository.GolikeVerifyAccountResult.Success -> {
+                        val extra = listOfNotNull(
+                            result.uniqueUsername?.let { "@$it" },
+                            result.nickname
+                        ).joinToString(" - ")
+                        if (extra.isBlank()) result.message else "${result.message} ($extra)"
+                    }
+                    is com.cayxu.app.data.repository.GolikeVerifyAccountResult.Error -> result.message
+                }
+                Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
             }
         }
         return START_NOT_STICKY
@@ -392,6 +427,7 @@ class GolikeAddAccountOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        serviceScope.cancel()
         fullPanel?.let { runCatching { windowManager.removeView(it) } }
         miniBubble?.let { runCatching { windowManager.removeView(it) } }
         fullPanel = null
