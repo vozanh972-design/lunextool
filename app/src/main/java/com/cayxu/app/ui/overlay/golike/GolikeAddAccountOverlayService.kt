@@ -25,8 +25,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 
 /**
  * Lớp nổi hiện khi bấm "Thêm" ở acc TikTok chưa có trong GoLike.
@@ -49,10 +51,11 @@ class GolikeAddAccountOverlayService : Service() {
         const val EXTRA_TARGET_USERNAME = "extra_target_username"
         const val EXTRA_PACKAGE_NAME = "extra_package_name"
 
-        /** Đợi đủ lâu cho luồng tự bấm Follow (đợi 5s + vuốt 3 lần cách nhau 1s + đợi 1.8s
-         *  + dò tìm nút Follow) chạy gần xong trước khi hỏi GoLike xác minh - không cần
-         *  chính xác tuyệt đối, chỉ cần đủ trễ để không hỏi quá sớm lúc chưa kịp bấm Follow. */
-        private const val VERIFY_DELAY_MS = 16000L
+        /** Timeout AN TOÀN chờ kết quả thật từ GolikeFollowResultBridge - không phải khoảng
+         *  đợi cố định, chỉ là giới hạn tối đa phòng khi Accessibility Service không phản
+         *  hồi gì (ví dụ người dùng chưa bật quyền). Luồng follow thật thường xong trong
+         *  khoảng 5s (đợi ban đầu) + vài giây vuốt/tìm nút, nên 25s là dư dả. */
+        private const val FOLLOW_RESULT_TIMEOUT_MS = 25000L
     }
 
     private lateinit var windowManager: WindowManager
@@ -91,11 +94,20 @@ class GolikeAddAccountOverlayService : Service() {
                 )
             }
 
-            // Đợi đủ lâu cho luồng tự bấm Follow ở trên chạy xong (đợi 5s + vuốt 3 lần +
-            // dò tìm nút Follow), rồi hỏi GoLike xem acc @$handle đã follow đúng kênh
-            // $targetUsername chưa - hiện kết quả (thành công/lý do lỗi) bằng Toast.
+            // Đợi KẾT QUẢ THẬT của luồng tự follow (không phải đợi 1 khoảng cố định đoán
+            // chừng) - "đã follow sẵn từ trước" (thấy nút Nhắn tin) hoặc "vừa bấm Follow
+            // xong" đều coi là xong, gọi ngay API xác nhận với GoLike. Có timeout an toàn
+            // phòng khi Accessibility Service không phản hồi gì (vẫn thử gọi verify, vì
+            // GoLike tự kiểm tra thật trên TikTok, không phụ thuộc vào việc mình có tự tin
+            // phát hiện được nút hay không).
             serviceScope.launch {
-                delay(VERIFY_DELAY_MS)
+                withTimeoutOrNull(FOLLOW_RESULT_TIMEOUT_MS) {
+                    com.cayxu.app.automation.tiktok.GolikeFollowResultBridge.result
+                        .filter { it !is com.cayxu.app.automation.tiktok.GolikeFollowResult.Idle }
+                        .first()
+                }
+                com.cayxu.app.automation.tiktok.GolikeFollowResultBridge.clear()
+
                 val token = com.cayxu.app.data.local.GolikeAccountStore.getToken(applicationContext)
                 if (token.isNullOrBlank()) return@launch
                 val result = com.cayxu.app.data.repository.GolikeVerifyAccountRepository
@@ -111,6 +123,13 @@ class GolikeAddAccountOverlayService : Service() {
                     is com.cayxu.app.data.repository.GolikeVerifyAccountResult.Error -> result.message
                 }
                 Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
+
+                if (result is com.cayxu.app.data.repository.GolikeVerifyAccountResult.Success) {
+                    // Đã thêm thành công - tự quay lại tool luôn, không cần người dùng tự
+                    // bấm nút "↩". Màn danh sách acc TikTok sẽ tự làm mới và ẩn nút "Thêm".
+                    TikTokAppLauncher.bringToolToFront(applicationContext)
+                    stopSelf()
+                }
             }
         }
         return START_NOT_STICKY

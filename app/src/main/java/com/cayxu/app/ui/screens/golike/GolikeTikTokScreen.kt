@@ -18,18 +18,23 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import com.cayxu.app.data.local.GolikeAccountStore
 import com.cayxu.app.data.local.TikTokAccount
@@ -40,6 +45,7 @@ import com.cayxu.app.data.repository.GolikeTikTokAccountRepository
 import com.cayxu.app.data.repository.GolikeTikTokAccountsResult
 import com.cayxu.app.ui.theme.*
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.launch
 
 /**
  * Màn Golike riêng cho TikTok.
@@ -75,18 +81,38 @@ fun GolikeTikTokScreen(navController: NavController) {
     // hiện nút "+ Thêm" cho acc đó. Chỉ gọi khi đã đăng nhập Golike.
     val isGolikeLoggedIn by GolikeSession.isLoggedIn
     var golikeLinkedHandles by remember { mutableStateOf<Set<String>>(emptySet()) }
-    LaunchedEffect(isGolikeLoggedIn) {
-        if (isGolikeLoggedIn) {
-            val token = GolikeAccountStore.getToken(context)
-            if (!token.isNullOrBlank()) {
-                when (val result = GolikeTikTokAccountRepository.fetchLinkedHandles(token)) {
-                    is GolikeTikTokAccountsResult.Success -> golikeLinkedHandles = result.handles
-                    is GolikeTikTokAccountsResult.Error -> Unit // giữ danh sách rỗng, coi như chưa xác định được
-                }
-            }
-        } else {
+    val coroutineScope = rememberCoroutineScope()
+
+    suspend fun refreshGolikeLinkedHandles() {
+        if (!isGolikeLoggedIn) {
             golikeLinkedHandles = emptySet()
+            return
         }
+        val token = GolikeAccountStore.getToken(context)
+        if (!token.isNullOrBlank()) {
+            when (val result = GolikeTikTokAccountRepository.fetchLinkedHandles(token)) {
+                is GolikeTikTokAccountsResult.Success -> golikeLinkedHandles = result.handles
+                is GolikeTikTokAccountsResult.Error -> Unit // giữ danh sách cũ, coi như chưa xác định được
+            }
+        }
+    }
+
+    LaunchedEffect(isGolikeLoggedIn) {
+        refreshGolikeLinkedHandles()
+    }
+
+    // Sau khi bấm "Thêm" -> mở lớp nổi -> TikTok -> tự follow -> tự quay lại app (màn này
+    // resume lại) - lúc đó tự làm mới danh sách để acc vừa thêm xong biến mất nút "Thêm"
+    // luôn, không cần người dùng tự kéo refresh hay thoát vào lại màn.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                coroutineScope.launch { refreshGolikeLinkedHandles() }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
