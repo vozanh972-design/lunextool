@@ -95,6 +95,10 @@ class TikTokAccessibilityService : AccessibilityService() {
         private const val FOLLOW_MAX_ATTEMPTS = 15
         private const val FOLLOW_RELOAD_SWIPE_COUNT = 3
         private const val FOLLOW_SWIPE_INTERVAL_MS = 1000L
+
+        /** Đợi TikTok tải lại HOÀN TOÀN sau khi vừa chuyển tài khoản, TRƯỚC KHI mở deep
+         *  link - mở sớm quá (lúc TikTok còn đang load acc mới) dễ bị lỗi/vào sai trang. */
+        private const val SWITCH_ACCOUNT_SETTLE_MS = 5000L
     }
 
     // QUAN TRỌNG: dùng SupervisorJob thay vì Job thường. Nếu không, một lỗi bất ngờ (crash)
@@ -564,8 +568,12 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
 
                 if (switched) {
-                    GolikeFollowStatusBridge.update("Đã chuyển tài khoản, đang mở trang cần follow...")
-                    delay(1800L) // đợi TikTok load lại sau khi vừa chuyển tài khoản
+                    GolikeFollowStatusBridge.update("Đã chuyển tài khoản, đang đợi TikTok tải lại...")
+                    // Đợi ĐỦ LÂU cho TikTok tải lại hoàn toàn sau khi chuyển tài khoản (mở
+                    // deep link sớm quá lúc TikTok còn đang load sẽ bị lỗi/không vào đúng
+                    // trang) - đợi lâu hơn hẳn so với các bước chờ khác trong flow.
+                    delay(SWITCH_ACCOUNT_SETTLE_MS)
+                    GolikeFollowStatusBridge.update("Đang mở trang cần follow...")
                     com.cayxu.app.ui.screens.golike.openTikTokProfile(
                         applicationContext, state.followTargetUsername, state.packageName
                     )

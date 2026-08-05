@@ -92,10 +92,14 @@ class GolikeAddAccountOverlayService : Service() {
                 }
             }
 
-            // Kéo lớp nổi xuống dưới cùng màn hình ngay - để nó không nằm đè lên vùng
-            // giữa màn hình, tránh chặn mất cử chỉ vuốt xuống (reload) mà accessibility
-            // service sắp thực hiện bên dưới.
-            fullPanel?.post { moveOverlayToBottom() }
+            // Cho người dùng thấy thông tin đầy đủ 1 chút, rồi TỰ THU NHỎ thành bong bóng
+            // nhỏ ở góc trái - bong bóng nhỏ (52dp) nằm sát mép trái không che tab "Hồ sơ"
+            // ở thanh điều hướng dưới cùng (mình sắp cần bấm tab đó), cũng không che vùng
+            // GIỮA màn hình mà cử chỉ vuốt xuống (reload) sắp thực hiện sau này - khác với
+            // trước đây kéo cả lớp nổi lớn xuống đáy, vô tình đè luôn lên tab Hồ sơ.
+            fullPanel?.postDelayed({
+                showMiniBubble(handle, monthsAgo, targetUsername)
+            }, 1200L)
 
             // Bản TikTok chuẩn (STANDARD) hỗ trợ "Chuyển đổi tài khoản" trong app - nên mở
             // TikTok BÌNH THƯỜNG (không deep link thẳng), rồi tự đi: Hồ sơ -> menu -> Cài đặt
@@ -170,18 +174,6 @@ class GolikeAddAccountOverlayService : Service() {
     // ---- Helper quy đổi dp -> px để hiển thị đúng tỉ lệ trên mọi máy ----
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
     private fun dp(value: Float): Int = (value * resources.displayMetrics.density).toInt()
-
-    /** Đưa lớp nổi đang hiển thị (panel đầy đủ hoặc bubble thu nhỏ) xuống sát đáy màn hình.
-     *  Gọi sau khi view đã layout xong (dùng view.post) để lấy đúng chiều cao thật, tránh
-     *  lớp nổi che vùng giữa màn hình làm chặn mất cử chỉ vuốt reload/follow bên dưới. */
-    private fun moveOverlayToBottom() {
-        val view = fullPanel ?: miniBubble ?: return
-        val params = panelParams ?: bubbleParams ?: return
-        val screenHeight = resources.displayMetrics.heightPixels
-        val viewHeight = view.height.takeIf { it > 0 } ?: dp(220)
-        params.y = (screenHeight - viewHeight - dp(32)).coerceAtLeast(0)
-        runCatching { windowManager.updateViewLayout(view, params) }
-    }
 
     private fun overlayType(): Int =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
