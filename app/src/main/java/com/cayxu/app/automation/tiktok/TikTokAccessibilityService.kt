@@ -108,6 +108,7 @@ class TikTokAccessibilityService : AccessibilityService() {
     private var pollingJob: Job? = null
     private var nurtureJob: Job? = null
     private var followJob: Job? = null
+    private var switchAccountJob: Job? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -152,6 +153,13 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
             }
         }
+        scope.launch {
+            GolikeSwitchAccountBridge.state.collect { state ->
+                if (state is GolikeSwitchAccountState.Pending) {
+                    startSwitchAccountThenFollow(state)
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -159,6 +167,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         pollingJob?.cancel()
         nurtureJob?.cancel()
         followJob?.cancel()
+        switchAccountJob?.cancel()
     }
 
     // Không cần xử lý gì ở đây - toàn bộ logic tự động nằm ở vòng lặp polling để không phụ
@@ -435,6 +444,146 @@ class TikTokAccessibilityService : AccessibilityService() {
             if (found != null) return found
         }
         return null
+    }
+
+    /**
+     * Luồng MỚI cho nút "Thêm" trong GoLike: TÁI SỬ DỤNG (gọi lại y nguyên, KHÔNG sửa) các
+     * hàm dò UI đã dùng cho luồng "check acc tiktok" (findProfileTabNode, findMenuIcon,
+     * findNodeByText, scrollDown, findClickableRowsWithText, firstMeaningfulText...) để đi
+     * đúng đường: Hồ sơ -> menu (3 gạch) -> "Cài đặt và quyền riêng tư" -> cuộn xuống ->
+     * "Chuyển đổi tài khoản" -> rồi tìm ĐÚNG dòng khớp [targetHandle] trong danh sách và bấm
+     * chọn (khác "check acc" ở chỗ: không đọc/lưu TOÀN BỘ danh sách, mà tìm 1 dòng cụ thể để
+     * BẤM CHỌN). Chuyển xong mới mở deep link tới trang cần follow, rồi gọi lại
+     * GolikeFollowBridge.requestFollow(...) - tái sử dụng NGUYÊN luồng tự bấm Follow đã có,
+     * không viết lại.
+     */
+    private fun startSwitchAccountThenFollow(state: GolikeSwitchAccountState.Pending) {
+        switchAccountJob?.cancel()
+        switchAccountJob = scope.launch {
+            var hasTappedProfileTab = false
+            var hasTappedMenuIcon = false
+            var menuTapAttempts = 0
+            var hasTappedSettingsRow = false
+            var hasTappedSwitchRow = false
+            var switched = false
+            try {
+                var attempt = 0
+                while (attempt < MAX_POLL_ATTEMPTS && !switched) {
+                    attempt++
+                    val root = findRootForPackage(state.packageName)
+                    if (root == null) {
+                        GolikeFollowStatusBridge.update("Đang đợi TikTok tải xong...")
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
+
+                    if (hasTappedSwitchRow) {
+                        val sheetTitleNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
+                        val addAccountNode = findNodeByText(root, ADD_ACCOUNT_LABELS, exact = false)
+                        if (sheetTitleNode != null && addAccountNode != null) {
+                            GolikeFollowStatusBridge.update("Đang tìm tài khoản @${state.targetHandle}...")
+                            val rows = mutableListOf<AccessibilityNodeInfo>()
+                            findClickableRowsWithText(root, rows)
+                            val matchRow = rows.firstOrNull { row ->
+                                val label = firstMeaningfulText(row)?.lowercase().orEmpty()
+                                label.isNotBlank() && label.contains(state.targetHandle.lowercase())
+                            }
+                            if (matchRow != null) {
+                                GolikeFollowStatusBridge.update("Đã thấy @${state.targetHandle}, đang chuyển sang...")
+                                clickNode(matchRow)
+                                switched = true
+                                continue
+                            }
+                            GolikeFollowStatusBridge.update("Đang cuộn tìm @${state.targetHandle}...")
+                            scrollDown(root)
+                        } else if (sheetTitleNode == null) {
+                            val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
+                            if (switchRowNode != null) clickNode(switchRowNode)
+                        }
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
+
+                    if (hasTappedSettingsRow) {
+                        val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
+                        if (switchRowNode != null) {
+                            GolikeFollowStatusBridge.update("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
+                            clickNode(switchRowNode)
+                            hasTappedSwitchRow = true
+                        } else {
+                            GolikeFollowStatusBridge.update("Đang cuộn tìm \"Chuyển đổi tài khoản\"...")
+                            scrollDown(root)
+                        }
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
+
+                    if (hasTappedMenuIcon) {
+                        val settingsRowNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
+                        if (settingsRowNode != null) {
+                            GolikeFollowStatusBridge.update("Đang mở \"Cài đặt và quyền riêng tư\"...")
+                            clickNode(settingsRowNode)
+                            hasTappedSettingsRow = true
+                        } else {
+                            val menuNode = findMenuIcon(root, menuTapAttempts)
+                            if (menuNode != null) {
+                                clickNode(menuNode)
+                                menuTapAttempts++
+                            }
+                        }
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
+
+                    if (hasTappedProfileTab) {
+                        val handleNode = findHandleNode(root)
+                        if (handleNode != null) {
+                            val menuNode = findMenuIcon(root, menuTapAttempts)
+                            if (menuNode != null) {
+                                GolikeFollowStatusBridge.update("Đang mở menu...")
+                                clickNode(menuNode)
+                                menuTapAttempts++
+                                hasTappedMenuIcon = true
+                            }
+                        } else {
+                            GolikeFollowStatusBridge.update("Đang chờ trang Hồ sơ...")
+                        }
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
+
+                    val tabNode = findProfileTabNode(root)
+                    if (tabNode != null) {
+                        GolikeFollowStatusBridge.update("Đang mở Hồ sơ...")
+                        clickNode(tabNode)
+                        hasTappedProfileTab = true
+                    } else {
+                        GolikeFollowStatusBridge.update("Đang tìm tab Hồ sơ...")
+                    }
+                    delay(POLL_INTERVAL_MS)
+                }
+
+                if (switched) {
+                    GolikeFollowStatusBridge.update("Đã chuyển tài khoản, đang mở trang cần follow...")
+                    delay(1800L) // đợi TikTok load lại sau khi vừa chuyển tài khoản
+                    com.cayxu.app.ui.screens.golike.openTikTokProfile(
+                        applicationContext, state.followTargetUsername, state.packageName
+                    )
+                    // Tái sử dụng NGUYÊN luồng tự bấm Follow đã có (startFollowFlow) - không
+                    // viết lại logic tìm/bấm Follow ở đây.
+                    GolikeFollowBridge.requestFollow(state.followTargetUsername, state.packageName)
+                } else {
+                    GolikeFollowStatusBridge.update("Không tìm được tài khoản @${state.targetHandle} để chuyển")
+                    GolikeFollowResultBridge.publish(
+                        GolikeFollowResult.NotFound(state.followTargetUsername, state.packageName)
+                    )
+                }
+            } catch (e: Exception) {
+                // Bỏ qua - không được phép làm crash service.
+            } finally {
+                GolikeSwitchAccountBridge.clear()
+            }
+        }
     }
 
     private fun startPolling(variant: TikTokAppVariant) {

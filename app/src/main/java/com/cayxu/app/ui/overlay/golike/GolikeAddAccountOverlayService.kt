@@ -50,12 +50,14 @@ class GolikeAddAccountOverlayService : Service() {
         const val EXTRA_CREATED_MONTHS_AGO = "extra_created_months_ago"
         const val EXTRA_TARGET_USERNAME = "extra_target_username"
         const val EXTRA_PACKAGE_NAME = "extra_package_name"
+        const val EXTRA_VARIANT = "extra_variant"
 
         /** Timeout AN TOÀN chờ kết quả thật từ GolikeFollowResultBridge - không phải khoảng
          *  đợi cố định, chỉ là giới hạn tối đa phòng khi Accessibility Service không phản
-         *  hồi gì (ví dụ người dùng chưa bật quyền). Luồng follow thật thường xong trong
-         *  khoảng 5s (đợi ban đầu) + vài giây vuốt/tìm nút, nên 25s là dư dả. */
-        private const val FOLLOW_RESULT_TIMEOUT_MS = 25000L
+         *  hồi gì (ví dụ người dùng chưa bật quyền). Với bản STANDARD phải đi qua thêm các
+         *  bước Hồ sơ -> menu -> Cài đặt -> Chuyển đổi tài khoản trước khi tới bước follow,
+         *  nên để dư dả 60s (thay vì 25s như luồng deep link thẳng trước đây). */
+        private const val FOLLOW_RESULT_TIMEOUT_MS = 60000L
     }
 
     private lateinit var windowManager: WindowManager
@@ -74,6 +76,8 @@ class GolikeAddAccountOverlayService : Service() {
             val monthsAgo = intent?.getIntExtra(EXTRA_CREATED_MONTHS_AGO, 0) ?: 0
             val targetUsername = intent?.getStringExtra(EXTRA_TARGET_USERNAME).orEmpty()
             val packageName = intent?.getStringExtra(EXTRA_PACKAGE_NAME)
+            val variant = intent?.getStringExtra(EXTRA_VARIANT)
+                ?.let { runCatching { com.cayxu.app.data.local.TikTokAppVariant.valueOf(it) }.getOrNull() }
 
             com.cayxu.app.automation.tiktok.GolikeFollowStatusBridge.clear()
 
@@ -93,16 +97,32 @@ class GolikeAddAccountOverlayService : Service() {
             // service sắp thực hiện bên dưới.
             fullPanel?.post { moveOverlayToBottom() }
 
-            // Mở trang lên, rồi yêu cầu tự bấm Follow (đợi ~5 giây, vuốt xuống tải lại vài
-            // lần, tìm và bấm nút Follow). Chỉ có tác dụng nếu người dùng đã bật Accessibility
-            // Service của tool; nếu chưa bật thì không có gì xảy ra, không lỗi gì cả.
-            openTikTokProfile(applicationContext, targetUsername, packageName)
-
-            if (!packageName.isNullOrBlank()) {
-                com.cayxu.app.automation.tiktok.GolikeFollowBridge.requestFollow(
-                    targetUsername = targetUsername,
-                    packageName = packageName
+            // Bản TikTok chuẩn (STANDARD) hỗ trợ "Chuyển đổi tài khoản" trong app - nên mở
+            // TikTok BÌNH THƯỜNG (không deep link thẳng), rồi tự đi: Hồ sơ -> menu -> Cài đặt
+            // và quyền riêng tư -> Chuyển đổi tài khoản -> chọn ĐÚNG acc @$handle -> mới mở
+            // deep link để follow (tái sử dụng nguyên luồng dò UI của "check acc tiktok").
+            // Các bản khác (Lite/Studio) không có màn này -> giữ hành vi cũ: mở deep link
+            // thẳng rồi tự bấm Follow luôn.
+            if (variant == com.cayxu.app.data.local.TikTokAppVariant.STANDARD && !packageName.isNullOrBlank()) {
+                TikTokAppLauncher.launch(applicationContext, variant)
+                com.cayxu.app.automation.tiktok.GolikeSwitchAccountBridge.requestSwitch(
+                    targetHandle = handle,
+                    followTargetUsername = targetUsername,
+                    packageName = packageName,
+                    variant = variant
                 )
+            } else {
+                // Mở trang lên, rồi yêu cầu tự bấm Follow (đợi ~5 giây, vuốt xuống tải lại vài
+                // lần, tìm và bấm nút Follow). Chỉ có tác dụng nếu người dùng đã bật Accessibility
+                // Service của tool; nếu chưa bật thì không có gì xảy ra, không lỗi gì cả.
+                openTikTokProfile(applicationContext, targetUsername, packageName)
+
+                if (!packageName.isNullOrBlank()) {
+                    com.cayxu.app.automation.tiktok.GolikeFollowBridge.requestFollow(
+                        targetUsername = targetUsername,
+                        packageName = packageName
+                    )
+                }
             }
 
             // Đợi KẾT QUẢ THẬT của luồng tự follow (không phải đợi 1 khoảng cố định đoán
@@ -462,6 +482,7 @@ class GolikeAddAccountOverlayService : Service() {
         super.onDestroy()
         serviceScope.cancel()
         com.cayxu.app.automation.tiktok.GolikeFollowStatusBridge.clear()
+        com.cayxu.app.automation.tiktok.GolikeSwitchAccountBridge.clear()
         fullPanel?.let { runCatching { windowManager.removeView(it) } }
         miniBubble?.let { runCatching { windowManager.removeView(it) } }
         fullPanel = null

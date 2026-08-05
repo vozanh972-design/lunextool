@@ -70,6 +70,7 @@ fun startAddToGolikeOverlay(context: Context, navController: NavController, acco
         putExtra(GolikeAddAccountOverlayService.EXTRA_CREATED_MONTHS_AGO, monthsAgo)
         putExtra(GolikeAddAccountOverlayService.EXTRA_TARGET_USERNAME, GOLIKE_LINK_TARGET_USERNAME)
         putExtra(GolikeAddAccountOverlayService.EXTRA_PACKAGE_NAME, account.variant.packageName)
+        putExtra(GolikeAddAccountOverlayService.EXTRA_VARIANT, account.variant.name)
     }
     context.startService(intent)
 }
