@@ -63,6 +63,7 @@ class GolikeAddAccountOverlayService : Service() {
     private var miniBubble: View? = null
     private var panelParams: WindowManager.LayoutParams? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
+    private var statusValueView: TextView? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -74,8 +75,18 @@ class GolikeAddAccountOverlayService : Service() {
             val targetUsername = intent?.getStringExtra(EXTRA_TARGET_USERNAME).orEmpty()
             val packageName = intent?.getStringExtra(EXTRA_PACKAGE_NAME)
 
+            com.cayxu.app.automation.tiktok.GolikeFollowStatusBridge.clear()
+
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             showFullPanel(handle, monthsAgo, targetUsername)
+
+            // Hiện LIVE từng bước của luồng tự follow ngay tại chỗ trước đây hiện URL tĩnh -
+            // "Đang vuốt tải lại (2/3)...", "Đã bấm Follow, đang xác nhận..." v.v.
+            serviceScope.launch {
+                com.cayxu.app.automation.tiktok.GolikeFollowStatusBridge.status.collect { text ->
+                    statusValueView?.text = text.ifBlank { "tiktok.com/@$targetUsername" }
+                }
+            }
 
             // Kéo lớp nổi xuống dưới cùng màn hình ngay - để nó không nằm đè lên vùng
             // giữa màn hình, tránh chặn mất cử chỉ vuốt xuống (reload) mà accessibility
@@ -123,6 +134,7 @@ class GolikeAddAccountOverlayService : Service() {
                     is com.cayxu.app.data.repository.GolikeVerifyAccountResult.Error -> result.message
                 }
                 Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
+                com.cayxu.app.automation.tiktok.GolikeFollowStatusBridge.update(message)
 
                 if (result is com.cayxu.app.data.repository.GolikeVerifyAccountResult.Success) {
                     // Đã thêm thành công - tự quay lại tool luôn, không cần người dùng tự
@@ -277,20 +289,22 @@ class GolikeAddAccountOverlayService : Service() {
 
         root.addView(dividerView())
 
-        val urlLabel = TextView(this).apply {
-            text = "URL"
+        val statusLabel = TextView(this).apply {
+            text = "Trạng thái"
             setTextColor(Color.parseColor("#8A93A6"))
             textSize = 12f
             setPadding(0, dp(4), 0, dp(4))
         }
-        root.addView(urlLabel)
-        val urlValue = TextView(this).apply {
-            text = "tiktok.com/@$targetUsername"
+        root.addView(statusLabel)
+        val statusValue = TextView(this).apply {
+            text = com.cayxu.app.automation.tiktok.GolikeFollowStatusBridge.status.value
+                .ifBlank { "tiktok.com/@$targetUsername" }
             setTextColor(Color.parseColor("#C7CBD4"))
             textSize = 12f
             setPadding(0, 0, 0, dp(14))
         }
-        root.addView(urlValue)
+        root.addView(statusValue)
+        statusValueView = statusValue
 
         val stopBtn = TextView(this).apply {
             text = "\u25A0  DỪNG"
@@ -447,6 +461,7 @@ class GolikeAddAccountOverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
+        com.cayxu.app.automation.tiktok.GolikeFollowStatusBridge.clear()
         fullPanel?.let { runCatching { windowManager.removeView(it) } }
         miniBubble?.let { runCatching { windowManager.removeView(it) } }
         fullPanel = null

@@ -81,8 +81,13 @@ class TikTokAccessibilityService : AccessibilityService() {
         // "Đang theo dõi"/"Following" (trạng thái đã follow rồi, bấm vào sẽ là unfollow).
         private val FOLLOW_EXACT_LABELS = setOf("theo dõi", "follow")
 
-        // Nút "Nhắn tin"/"Message" chỉ xuất hiện SAU KHI đã follow (với đa số acc TikTok) -
-        // dùng làm dấu hiệu nhận biết "đã follow sẵn từ trước", khỏi cần tìm/bấm nút Follow.
+        // Dùng để LOẠI TRỪ khi dò nút Follow theo resource-id (cách 2) - id có thể vẫn còn
+        // chữ "follow" dù nút đã chuyển sang trạng thái "đã follow" (bấm vào lúc đó sẽ là
+        // unfollow), nên phải dựa vào TEXT hiển thị thật để loại trừ trường hợp này.
+        private val FOLLOWING_STATE_LABELS = setOf("đang theo dõi", "following", "bạn bè", "friends")
+
+        // Nút "Nhắn tin"/"Message" LUÔN hiển thị song song với Follow ngay cả khi CHƯA
+        // follow - CHỈ dùng làm dấu hiệu phụ (đã follow sẵn) khi không còn thấy Follow nữa.
         private val MESSAGE_EXACT_LABELS = setOf("nhắn tin", "message")
 
         private const val FOLLOW_WAIT_BEFORE_MS = 5000L
@@ -289,25 +294,31 @@ class TikTokAccessibilityService : AccessibilityService() {
      *   1) Đợi ~5 giây cho TikTok kịp mở/tải xong.
      *   2) Vuốt từ trên xuống 3 LẦN (cách nhau ~1 giây) để ép tải lại - vuốt 1 lần đôi khi
      *      không ăn (bị TikTok bỏ qua do đang trong lúc load, hoặc do độ nhạy máy khác nhau).
-     *   3) Đợi trang load lại, rồi ở MỖI lần thử: ưu tiên kiểm tra nút "Nhắn tin"/"Message"
-     *      trước - nếu có nghĩa acc ĐÃ follow sẵn từ trước, khỏi cần bấm gì, coi như xong
-     *      ngay. Không có thì mới tìm nút "Follow"/"Theo dõi" để bấm.
-     * Kết quả (đã follow sẵn / vừa bấm xong / không tìm thấy gì) được phát qua
-     * GolikeFollowResultBridge để nơi khác (overlay service) biết CHÍNH XÁC lúc nào xong,
-     * không phải đợi 1 khoảng thời gian cố định đoán chừng.
+     *   3) Đợi trang load lại, rồi ở MỖI lần thử: ưu tiên tìm nút "Follow"/"Theo dõi" TRƯỚC
+     *      (nút "Nhắn tin" luôn hiển thị song song với Follow NGAY CẢ KHI CHƯA follow, nên
+     *      KHÔNG được coi là dấu hiệu đã follow nếu Follow vẫn còn đó). Chỉ khi KHÔNG còn
+     *      thấy nút Follow nữa (đã bị thay bằng "Đang theo dõi"/ẩn đi) mà vẫn thấy "Nhắn tin"
+     *      thì mới coi là "đã follow sẵn từ trước".
+     * Mỗi bước đều phát text mô tả qua GolikeFollowStatusBridge để lớp nổi hiện trực tiếp
+     * (thay cho URL tĩnh trước đây). Kết quả cuối (đã follow sẵn / vừa bấm xong / không tìm
+     * thấy gì) được phát qua GolikeFollowResultBridge để nơi khác biết CHÍNH XÁC lúc nào
+     * xong, không phải đợi 1 khoảng thời gian cố định đoán chừng.
      */
     private fun startFollowFlow(state: GolikeFollowState.Pending) {
         followJob?.cancel()
         followJob = scope.launch {
             try {
+                GolikeFollowStatusBridge.update("Đang đợi TikTok mở trang...")
                 delay(FOLLOW_WAIT_BEFORE_MS)
 
                 repeat(FOLLOW_RELOAD_SWIPE_COUNT) { index ->
+                    GolikeFollowStatusBridge.update("Đang vuốt tải lại (${index + 1}/$FOLLOW_RELOAD_SWIPE_COUNT)...")
                     performPullToRefresh()
                     if (index < FOLLOW_RELOAD_SWIPE_COUNT - 1) {
                         delay(FOLLOW_SWIPE_INTERVAL_MS)
                     }
                 }
+                GolikeFollowStatusBridge.update("Đang chờ trang tải lại...")
                 delay(FOLLOW_WAIT_AFTER_RELOAD_MS)
 
                 var attempt = 0
@@ -316,22 +327,16 @@ class TikTokAccessibilityService : AccessibilityService() {
                     attempt++
                     val root = findRootForPackage(state.packageName)
                     if (root == null) {
+                        GolikeFollowStatusBridge.update("Đang tìm nút Follow ($attempt/$FOLLOW_MAX_ATTEMPTS)...")
                         delay(POLL_INTERVAL_MS)
-                        continue
-                    }
-
-                    if (findMessageButton(root) != null) {
-                        // Acc đã follow sẵn từ trước - không cần bấm gì cả.
-                        GolikeFollowResultBridge.publish(
-                            GolikeFollowResult.AlreadyFollowed(state.targetUsername, state.packageName)
-                        )
-                        finished = true
                         continue
                     }
 
                     val followNode = findFollowButton(root)
                     if (followNode != null) {
+                        GolikeFollowStatusBridge.update("Đã tìm thấy nút Follow, đang bấm...")
                         clickNode(followNode)
+                        GolikeFollowStatusBridge.update("Đã bấm Follow, đang xác nhận với GoLike...")
                         GolikeFollowResultBridge.publish(
                             GolikeFollowResult.Clicked(state.targetUsername, state.packageName)
                         )
@@ -339,9 +344,22 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
+                    if (findMessageButton(root) != null) {
+                        // KHÔNG còn thấy nút Follow nữa (đã thử findFollowButton ở trên,
+                        // không thấy) mà vẫn thấy "Nhắn tin" -> đã follow sẵn từ trước.
+                        GolikeFollowStatusBridge.update("Acc đã follow sẵn, đang xác nhận với GoLike...")
+                        GolikeFollowResultBridge.publish(
+                            GolikeFollowResult.AlreadyFollowed(state.targetUsername, state.packageName)
+                        )
+                        finished = true
+                        continue
+                    }
+
+                    GolikeFollowStatusBridge.update("Đang tìm nút Follow ($attempt/$FOLLOW_MAX_ATTEMPTS)...")
                     delay(POLL_INTERVAL_MS)
                 }
                 if (!finished) {
+                    GolikeFollowStatusBridge.update("Không tìm thấy nút Follow sau $FOLLOW_MAX_ATTEMPTS lần thử")
                     GolikeFollowResultBridge.publish(
                         GolikeFollowResult.NotFound(state.targetUsername, state.packageName)
                     )
@@ -354,8 +372,9 @@ class TikTokAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Tìm nút "Nhắn tin"/"Message" bằng so khớp TUYỆT ĐỐI text - dấu hiệu acc đã follow
-     *  sẵn từ trước. Không yêu cầu isClickable trên chính node (lý do y hệt findFollowButton). */
+    /** Tìm nút "Nhắn tin"/"Message" bằng so khớp TUYỆT ĐỐI text - CHỈ dùng làm dấu hiệu phụ
+     *  (đã follow sẵn) khi KHÔNG còn tìm thấy nút Follow nữa, vì nút này luôn hiển thị song
+     *  song với Follow ngay cả khi CHƯA follow. */
     private fun findMessageButton(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
         if (depth > 40) return null
         val text = (node.text?.toString() ?: node.contentDescription?.toString())
@@ -371,13 +390,20 @@ class TikTokAccessibilityService : AccessibilityService() {
         return null
     }
 
-    /** Tìm nút Follow bằng so khớp TUYỆT ĐỐI text (không contains) để tránh bấm nhầm "Đang
-     *  theo dõi". KHÔNG yêu cầu chính node này phải isClickable - trên TikTok, chữ "Follow"
-     *  thường nằm trong 1 TextView con bên trong nút bấm (Button/ViewGroup cha mới thực sự
-     *  clickable), nên nếu bắt buộc isClickable ngay trên node chứa text sẽ bị bỏ sót, không
-     *  bao giờ tìm thấy. Việc bấm (tap theo toạ độ hoặc leo lên cha clickable) do clickNode()
-     *  xử lý riêng ở bước gọi. */
-    private fun findFollowButton(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
+    /** Tìm nút Follow bằng NHIỀU CÁCH khác nhau, thử lần lượt tới khi ra kết quả:
+     *   Cách 1: so khớp TUYỆT ĐỐI text/contentDescription ("follow"/"theo dõi") - chính xác
+     *           nhất nếu giao diện TikTok đúng như dự đoán.
+     *   Cách 2: so theo viewIdResourceName (id của view, vd "...:id/tv_follow") có chứa
+     *           "follow" - id ít khi đổi giữa các bản TikTok dù chữ hiển thị có khác đi,
+     *           NHƯNG phải loại trừ node đang hiện chữ "Đang theo dõi"/"Following" (tức đã
+     *           follow rồi, id vẫn còn "follow" nhưng lúc này bấm vào sẽ là unfollow). */
+    private fun findFollowButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        findFollowButtonByExactText(root)?.let { return it }
+        findFollowButtonByResourceId(root)?.let { return it }
+        return null
+    }
+
+    private fun findFollowButtonByExactText(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
         if (depth > 40) return null
         val text = (node.text?.toString() ?: node.contentDescription?.toString())
             ?.trim()?.lowercase()
@@ -386,7 +412,26 @@ class TikTokAccessibilityService : AccessibilityService() {
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            val found = findFollowButton(child, depth + 1)
+            val found = findFollowButtonByExactText(child, depth + 1)
+            if (found != null) return found
+        }
+        return null
+    }
+
+    private fun findFollowButtonByResourceId(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
+        if (depth > 40) return null
+        val resId = node.viewIdResourceName?.lowercase()
+        if (resId != null && resId.contains("follow") && !resId.contains("unfollow")) {
+            val text = (node.text?.toString() ?: node.contentDescription?.toString())
+                ?.trim()?.lowercase()
+            val looksAlreadyFollowing = text != null && FOLLOWING_STATE_LABELS.any { text.contains(it) }
+            if (!looksAlreadyFollowing) {
+                return node
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findFollowButtonByResourceId(child, depth + 1)
             if (found != null) return found
         }
         return null
