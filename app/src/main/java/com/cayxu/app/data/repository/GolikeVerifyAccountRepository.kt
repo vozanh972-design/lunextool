@@ -2,6 +2,7 @@ package com.cayxu.app.data.repository
 
 import com.cayxu.app.data.api.GolikeRetrofitClient
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 
 sealed class GolikeVerifyAccountResult {
     data class Success(
@@ -30,6 +31,14 @@ sealed class GolikeVerifyAccountResult {
  * Username gửi lên có tiền tố "@" (vd "@minhkha124") - đúng định dạng GoLike dùng để hiển
  * thị trong message lỗi mẫu ("kênh https://www.tiktok.com/@gosen.vietnam"). Nếu API thực ra
  * cần "@@" (2 dấu @) hoặc KHÔNG cần dấu @ nào, chỉnh lại ở hàm buildAccountIdValue().
+ *
+ * QUAN TRỌNG - LỖI (400 và các mã lỗi khác) PHẢI ĐỌC "errorBody()", KHÔNG PHẢI "body()":
+ * Retrofit chỉ điền "body()" khi request THÀNH CÔNG (2xx) - với response lỗi như 400, nội
+ * dung JSON thật (vd { "message": "Account này đã được thêm với tài khoản losslo*** !" })
+ * nằm trong "errorBody()", "body()" lúc đó LUÔN LÀ NULL. Trước đây code chỉ đọc "body()" nên
+ * gặp lỗi 400 là không lấy được message thật, rơi vào 1 câu chung chung không rõ ràng. Giờ
+ * đọc đúng "errorBody()" khi response không thành công để luôn hiện đúng message thật từ
+ * GoLike, không còn tình trạng "không biết nên làm gì" nữa - lỗi gì hiện đúng lỗi đó.
  */
 object GolikeVerifyAccountRepository {
 
@@ -49,27 +58,44 @@ object GolikeVerifyAccountRepository {
 
         return try {
             val response = GolikeRetrofitClient.api.verifyTikTokAccountId(authHeader, body)
-            val json = response.body()
-            val message = json?.get("message")
-                ?.takeIf { it.isJsonPrimitive }
-                ?.asString
-            val success = json?.get("success")
-                ?.takeIf { it.isJsonPrimitive }
-                ?.asBoolean == true
 
-            if (response.isSuccessful && success) {
-                // Ví dụ response thật lúc thành công (200):
-                // { "success": true, "message": "Thành công !",
-                //   "data": { "nickname": "gmn", "unique_username": "theanhgmn", ... } }
-                val data = json?.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-                val nickname = data?.get("nickname")?.takeIf { it.isJsonPrimitive }?.asString
-                val uniqueUsername = data?.get("unique_username")?.takeIf { it.isJsonPrimitive }?.asString
-                GolikeVerifyAccountResult.Success(
-                    message = message ?: "Xác minh follow thành công",
-                    nickname = nickname,
-                    uniqueUsername = uniqueUsername
-                )
+            if (response.isSuccessful) {
+                val json = response.body()
+                val message = json?.get("message")
+                    ?.takeIf { it.isJsonPrimitive }
+                    ?.asString
+                val success = json?.get("success")
+                    ?.takeIf { it.isJsonPrimitive }
+                    ?.asBoolean == true
+
+                if (success) {
+                    // Ví dụ response thật lúc thành công (200):
+                    // { "success": true, "message": "Thành công !",
+                    //   "data": { "nickname": "gmn", "unique_username": "theanhgmn", ... } }
+                    val data = json?.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
+                    val nickname = data?.get("nickname")?.takeIf { it.isJsonPrimitive }?.asString
+                    val uniqueUsername = data?.get("unique_username")?.takeIf { it.isJsonPrimitive }?.asString
+                    GolikeVerifyAccountResult.Success(
+                        message = message ?: "Xác minh follow thành công",
+                        nickname = nickname,
+                        uniqueUsername = uniqueUsername
+                    )
+                } else {
+                    // HTTP 200 nhưng "success": false - vẫn hiện đúng message thật nếu có.
+                    GolikeVerifyAccountResult.Error(message ?: "Xác minh thất bại (không rõ lý do)")
+                }
             } else {
+                // response lỗi (400/401/500...) - PHẢI đọc errorBody(), không phải body()
+                // (body() luôn null ở đây). Ví dụ thật (400):
+                // { "success": false, "message": "Account này đã được thêm với tài khoản
+                //   losslo*** !", "data": [], "error": [] }
+                val errorText = response.errorBody()?.string()
+                val message = errorText?.let { text ->
+                    runCatching {
+                        JsonParser.parseString(text).asJsonObject
+                            .get("message")?.takeIf { it.isJsonPrimitive }?.asString
+                    }.getOrNull()
+                }
                 val fallback = "Xác minh thất bại (mã lỗi HTTP: ${response.code()})"
                 GolikeVerifyAccountResult.Error(message ?: fallback)
             }
