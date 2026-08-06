@@ -16,10 +16,10 @@ sealed class GolikeTikTokAccountsResult {
  * khớp với acc TikTok trong máy: acc nào KHÔNG có trong danh sách này thì hiện nút
  * "+ Thêm" bên cạnh (xem TikTokAccountCard trong GolikeTikTokScreen.kt).
  *
- * Vì không có tài liệu chính thức về cấu trúc JSON trả về, hàm bên dưới thử NHIỀU kiểu
- * bọc phổ biến (mảng thẳng ở gốc / bọc trong "data" / bọc kiểu phân trang Laravel
- * "data.data") và thử NHIỀU tên field định danh acc (username/unique_id/nickname/handle...).
- * Nếu so khớp sai, cần xem JSON thật trả về để chỉnh lại tên field.
+ * ĐÃ XÁC NHẬN QUA RESPONSE THẬT: field đúng để so khớp @handle TikTok là "unique_username"
+ * (vd "thu.ha4217", "kjkio8"). Field "username" trong response này KHÔNG PHẢI @handle TikTok
+ * - đó là TÊN ĐĂNG NHẬP GOLIKE, giống hệt nhau ở MỌI dòng (vd "losslow12" lặp lại ở tất cả
+ * acc) - nếu match theo field đó sẽ luôn sai/không bao giờ khớp đúng acc nào.
  */
 object GolikeTikTokAccountRepository {
 
@@ -37,7 +37,10 @@ object GolikeTikTokAccountRepository {
                 val handles = items.mapNotNull { el ->
                     if (!el.isJsonObject) return@mapNotNull null
                     val obj = el.asJsonObject
-                    firstNonBlank(obj, listOf("username", "unique_id", "handle", "nickname", "tiktok_username"))
+                    // "unique_username" là field ĐÚNG (đã xác nhận qua response thật) - các
+                    // field còn lại chỉ là dự phòng cho trường hợp API đổi cấu trúc sau này.
+                    // KHÔNG dùng "username" (đó là tên đăng nhập GoLike, không phải TikTok).
+                    firstNonBlank(obj, listOf("unique_username", "handle", "tiktok_username"))
                         ?.removePrefix("@")
                         ?.lowercase()
                 }.toSet()
