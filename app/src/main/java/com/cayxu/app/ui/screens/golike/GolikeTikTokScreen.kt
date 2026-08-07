@@ -231,7 +231,29 @@ fun GolikeTikTokScreen(navController: NavController) {
                 Text("Cấu hình chạy")
             }
             Button(
-                onClick = { /* Chưa gắn logic - chỉ hiển thị nút */ },
+                onClick = {
+                    val selectedAccount = accountsForSelectedTab.firstOrNull { it.uid == effectiveSelectedId }
+                    if (selectedAccount == null) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Chưa có tài khoản nào để chạy - hãy bật tài khoản ở phần Quản lý tài khoản TikTok trước",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        // CHỈ có phần tài khoản là dữ liệu THẬT (lấy từ acc đang chọn). Các
+                        // trường job (jobId/jobType/jobPrice/success/fail/earned/link) để
+                        // trống vì CHƯA có API lấy job thật - màn nổi sẽ tự ẩn các dòng đó.
+                        com.cayxu.app.ui.overlay.golike.startJobRunnerOverlay(
+                            context = context,
+                            navController = navController,
+                            data = com.cayxu.app.ui.overlay.golike.JobRunData(
+                                modeLabel = selectedTab.label,
+                                accountHandle = selectedAccount.handle,
+                                accountTaskCount = selectedAccount.taskCount
+                            )
+                        )
+                    }
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = Primary),
                 modifier = Modifier.weight(1f)
             ) {
