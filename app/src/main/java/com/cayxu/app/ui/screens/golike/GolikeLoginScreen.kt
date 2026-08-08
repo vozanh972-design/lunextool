@@ -3,8 +3,10 @@ package com.cayxu.app.ui.screens.golike
 import android.annotation.SuppressLint
 import android.os.Handler
 import android.os.Looper
+import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -145,6 +147,17 @@ private fun GolikeLoginWebView(onTokenCaptured: (String) -> Unit) {
 
     AndroidView(
         factory = { ctx ->
+            // XOÁ SẠCH cookie + dữ liệu web cũ (localStorage/sessionStorage) TRƯỚC KHI tải
+            // trang - WebView giữ phiên đăng nhập của chính nó ĐỘC LẬP với việc app đã
+            // "Đăng xuất" hay chưa (đăng xuất trong app chỉ xoá token app tự lưu, không đụng
+            // tới cookie/local storage của WebView), nên nếu không xoá sẽ bị web tự dùng lại
+            // phiên/token GoLike cũ (có thể đã hết hạn) thay vì cho đăng nhập mới thật sự.
+            CookieManager.getInstance().apply {
+                removeAllCookies(null)
+                flush()
+            }
+            WebStorage.getInstance().deleteAllData()
+
             WebView(ctx).apply {
                 // "Siêu nhẹ" - chỉ bật đúng 2 thứ BẮT BUỘC để trang SPA của GoLike chạy được
                 // (thiếu JS/DOM storage là trắng trang), không bật gì thêm ngoài ra.
