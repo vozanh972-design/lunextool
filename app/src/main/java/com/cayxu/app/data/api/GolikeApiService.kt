@@ -7,6 +7,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.Query
 
 /**
  * API RIÊNG của Golike (gateway.golike.net) - HOÀN TOÀN ĐỘC LẬP với ApiService/
@@ -39,5 +40,16 @@ interface GolikeApiService {
     suspend fun verifyTikTokAccountId(
         @Header("Authorization") authorization: String,
         @Body body: JsonObject
+    ): Response<JsonObject>
+
+    /** Lấy job (nhiệm vụ) TIẾP THEO cho 1 tài khoản TikTok đã liên kết GoLike - [accountId]
+     *  là ID NỘI BỘ của GoLike (field "id" trong response GET /api/tiktok-account, KHÔNG
+     *  phải @handle hay unique_id của TikTok). Query "data=null" giữ nguyên y hệt request
+     *  thật quan sát được (chưa rõ mục đích, có thể server yêu cầu tham số này tồn tại). */
+    @GET("api/advertising/publishers/tiktok/jobs")
+    suspend fun getNextTikTokJob(
+        @Header("Authorization") authorization: String,
+        @Query("account_id") accountId: Long,
+        @Query("data") data: String = "null"
     ): Response<JsonObject>
 }

@@ -40,7 +40,10 @@ data class JobRunAccount(
     val handle: String,
     val packageName: String,
     val variant: TikTokAppVariant,
-    val taskCount: Int = 0
+    val taskCount: Int = 0,
+    /** ID NỘI BỘ của GoLike (field "id" trong GET /api/tiktok-account) - dùng để gọi API
+     *  lấy job (?account_id=...). 0 nghĩa là chưa xác định được (không gọi API job được). */
+    val golikeAccountId: Long = 0L
 )
 
 /**
@@ -112,6 +115,8 @@ fun startJobRunnerOverlay(
         putExtra(GolikeJobRunnerOverlayService.EXTRA_JOB_EARNED, data.jobEarned)
         putExtra(GolikeJobRunnerOverlayService.EXTRA_JOB_LINK, data.jobLink)
         putExtra(GolikeJobRunnerOverlayService.EXTRA_INITIAL_STATUS, data.initialStatus)
+        putExtra(GolikeJobRunnerOverlayService.EXTRA_ACCOUNT_PACKAGE_NAME, accountsQueue.firstOrNull()?.packageName.orEmpty())
+        putExtra(GolikeJobRunnerOverlayService.EXTRA_ACCOUNT_GOLIKE_ID, accountsQueue.firstOrNull()?.golikeAccountId ?: 0L)
     }
     context.startService(intent)
 

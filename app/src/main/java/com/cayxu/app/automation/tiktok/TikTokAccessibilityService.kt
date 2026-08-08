@@ -570,10 +570,14 @@ class TikTokAccessibilityService : AccessibilityService() {
                 if (switched) {
                     if (state.skipFollow) {
                         // Dùng cho "Làm NV" - CHỈ cần chuyển đúng acc, KHÔNG mở deep link,
-                        // KHÔNG follow gì cả. Đợi 1 nhịp cho TikTok tải lại xong rồi dừng.
+                        // KHÔNG follow gì cả. Đợi 1 nhịp cho TikTok tải lại xong rồi báo
+                        // "sẵn sàng" qua bridge RIÊNG (không lẫn với luồng follow "Thêm").
                         GolikeFollowStatusBridge.update("Đã chuyển tài khoản, đang đợi TikTok tải lại...")
                         delay(SWITCH_ACCOUNT_SETTLE_MS)
-                        GolikeFollowStatusBridge.update("Đã chuyển sang @${state.targetHandle} - sẵn sàng")
+                        GolikeFollowStatusBridge.update("Đã chuyển sang @${state.targetHandle} - đang lấy job...")
+                        GolikeSwitchOnlyResultBridge.publish(
+                            GolikeSwitchOnlyResult.Ready(state.targetHandle, state.packageName)
+                        )
                     } else {
                         GolikeFollowStatusBridge.update("Đã chuyển tài khoản, đang đợi TikTok tải lại...")
                         // Đợi ĐỦ LÂU cho TikTok tải lại hoàn toàn sau khi chuyển tài khoản (mở
@@ -590,9 +594,15 @@ class TikTokAccessibilityService : AccessibilityService() {
                     }
                 } else {
                     GolikeFollowStatusBridge.update("Không tìm được tài khoản @${state.targetHandle} để chuyển")
-                    GolikeFollowResultBridge.publish(
-                        GolikeFollowResult.NotFound(state.followTargetUsername, state.packageName)
-                    )
+                    if (state.skipFollow) {
+                        GolikeSwitchOnlyResultBridge.publish(
+                            GolikeSwitchOnlyResult.NotFound(state.targetHandle)
+                        )
+                    } else {
+                        GolikeFollowResultBridge.publish(
+                            GolikeFollowResult.NotFound(state.followTargetUsername, state.packageName)
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 // Bỏ qua - không được phép làm crash service.

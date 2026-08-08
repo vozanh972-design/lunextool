@@ -86,17 +86,22 @@ fun GolikeTikTokScreen(navController: NavController) {
     // hiện nút "+ Thêm" cho acc đó. Chỉ gọi khi đã đăng nhập Golike.
     val isGolikeLoggedIn by GolikeSession.isLoggedIn
     var golikeLinkedHandles by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var golikeIdsByHandle by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     val coroutineScope = rememberCoroutineScope()
 
     suspend fun refreshGolikeLinkedHandles() {
         if (!isGolikeLoggedIn) {
             golikeLinkedHandles = emptySet()
+            golikeIdsByHandle = emptyMap()
             return
         }
         val token = GolikeAccountStore.getToken(context)
         if (!token.isNullOrBlank()) {
             when (val result = GolikeTikTokAccountRepository.fetchLinkedHandles(token)) {
-                is GolikeTikTokAccountsResult.Success -> golikeLinkedHandles = result.handles
+                is GolikeTikTokAccountsResult.Success -> {
+                    golikeLinkedHandles = result.handles
+                    golikeIdsByHandle = result.idsByHandle
+                }
                 is GolikeTikTokAccountsResult.Error -> Unit // giữ danh sách cũ, coi như chưa xác định được
             }
         }
@@ -270,7 +275,8 @@ fun GolikeTikTokScreen(navController: NavController) {
                                     handle = it.handle,
                                     packageName = it.variant.packageName,
                                     variant = it.variant,
-                                    taskCount = it.taskCount
+                                    taskCount = it.taskCount,
+                                    golikeAccountId = golikeIdsByHandle[it.handle.lowercase()] ?: 0L
                                 )
                             }
                         )

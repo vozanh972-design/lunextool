@@ -76,6 +76,15 @@ class GolikeJobRunnerOverlayService : Service() {
 
         /** Trạng thái/lỗi ban đầu (có thể để trống, cập nhật sau qua GolikeJobStatusBridge). */
         const val EXTRA_INITIAL_STATUS = "extra_initial_status"
+
+        /** Package name TikTok của acc đang chạy - cần để biết tín hiệu "đã chuyển acc xong"
+         *  (GolikeSwitchOnlyResultBridge) có phải của acc này không. */
+        const val EXTRA_ACCOUNT_PACKAGE_NAME = "extra_account_package_name"
+
+        /** ID NỘI BỘ của GoLike (field "id" trong GET /api/tiktok-account) - dùng để gọi API
+         *  lấy job (?account_id=...) SAU KHI đã chuyển đúng acc trong TikTok. 0 = chưa xác
+         *  định được, sẽ không tự gọi API job. */
+        const val EXTRA_ACCOUNT_GOLIKE_ID = "extra_account_golike_id"
     }
 
     private lateinit var windowManager: WindowManager
@@ -86,30 +95,45 @@ class GolikeJobRunnerOverlayService : Service() {
     private var statusValueView: TextView? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
+    // ---- Dữ liệu hiện tại đang hiển thị - lưu bằng biến (không phải tham số cố định) để
+    // có thể CẬP NHẬT LẠI khi job thật lấy về xong rồi vẽ lại panel, không cần đóng/mở lại. ----
+    private var modeLabel = "Làm NV"
+    private var accountHandle = ""
+    private var accountTaskCount = 0
+    private var accountSecondaryId = ""
+    private var accountPackageName = ""
+    private var golikeAccountId = 0L
+    private var jobId = ""
+    private var jobType = ""
+    private var jobPrice = ""
+    private var jobSuccessCount = 0
+    private var jobFailCount = 0
+    private var jobEarned = ""
+    private var jobLink = ""
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (fullPanel == null && miniBubble == null) {
-            val modeLabel = intent?.getStringExtra(EXTRA_MODE_LABEL).orEmpty().ifBlank { "Làm NV" }
-            val accountHandle = intent?.getStringExtra(EXTRA_ACCOUNT_HANDLE).orEmpty()
-            val accountTaskCount = intent?.getIntExtra(EXTRA_ACCOUNT_TASK_COUNT, 0) ?: 0
-            val accountSecondaryId = intent?.getStringExtra(EXTRA_ACCOUNT_SECONDARY_ID).orEmpty()
-            val jobId = intent?.getStringExtra(EXTRA_JOB_ID).orEmpty()
-            val jobType = intent?.getStringExtra(EXTRA_JOB_TYPE).orEmpty()
-            val jobPrice = intent?.getStringExtra(EXTRA_JOB_PRICE).orEmpty()
-            val jobSuccessCount = intent?.getIntExtra(EXTRA_JOB_SUCCESS_COUNT, 0) ?: 0
-            val jobFailCount = intent?.getIntExtra(EXTRA_JOB_FAIL_COUNT, 0) ?: 0
-            val jobEarned = intent?.getStringExtra(EXTRA_JOB_EARNED).orEmpty()
-            val jobLink = intent?.getStringExtra(EXTRA_JOB_LINK).orEmpty()
+            modeLabel = intent?.getStringExtra(EXTRA_MODE_LABEL).orEmpty().ifBlank { "Làm NV" }
+            accountHandle = intent?.getStringExtra(EXTRA_ACCOUNT_HANDLE).orEmpty()
+            accountTaskCount = intent?.getIntExtra(EXTRA_ACCOUNT_TASK_COUNT, 0) ?: 0
+            accountSecondaryId = intent?.getStringExtra(EXTRA_ACCOUNT_SECONDARY_ID).orEmpty()
+            accountPackageName = intent?.getStringExtra(EXTRA_ACCOUNT_PACKAGE_NAME).orEmpty()
+            golikeAccountId = intent?.getLongExtra(EXTRA_ACCOUNT_GOLIKE_ID, 0L) ?: 0L
+            jobId = intent?.getStringExtra(EXTRA_JOB_ID).orEmpty()
+            jobType = intent?.getStringExtra(EXTRA_JOB_TYPE).orEmpty()
+            jobPrice = intent?.getStringExtra(EXTRA_JOB_PRICE).orEmpty()
+            jobSuccessCount = intent?.getIntExtra(EXTRA_JOB_SUCCESS_COUNT, 0) ?: 0
+            jobFailCount = intent?.getIntExtra(EXTRA_JOB_FAIL_COUNT, 0) ?: 0
+            jobEarned = intent?.getStringExtra(EXTRA_JOB_EARNED).orEmpty()
+            jobLink = intent?.getStringExtra(EXTRA_JOB_LINK).orEmpty()
             val initialStatus = intent?.getStringExtra(EXTRA_INITIAL_STATUS).orEmpty()
 
             GolikeJobStatusBridge.update(initialStatus)
 
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-            showFullPanel(
-                modeLabel, accountHandle, accountTaskCount, accountSecondaryId,
-                jobId, jobType, jobPrice, jobSuccessCount, jobFailCount, jobEarned, jobLink
-            )
+            showFullPanel()
 
             // Hiện LIVE trạng thái/lỗi ngay tại dòng dưới link job - cùng cơ chế
             // GolikeFollowStatusBridge đã dùng cho màn nổi "Thêm".
@@ -131,8 +155,63 @@ class GolikeJobRunnerOverlayService : Service() {
                     }
                 }
             }
+            // Khi luồng chuyển acc (skipFollow) báo "đã chuyển xong" ĐÚNG acc đang chạy ở
+            // đây -> tự gọi API lấy job cho acc đó.
+            serviceScope.launch {
+                com.cayxu.app.automation.tiktok.GolikeSwitchOnlyResultBridge.result.collect { result ->
+                    when (result) {
+                        is com.cayxu.app.automation.tiktok.GolikeSwitchOnlyResult.Ready -> {
+                            if (result.packageName == accountPackageName) {
+                                com.cayxu.app.automation.tiktok.GolikeSwitchOnlyResultBridge.clear()
+                                fetchJobForCurrentAccount()
+                            }
+                        }
+                        is com.cayxu.app.automation.tiktok.GolikeSwitchOnlyResult.NotFound -> {
+                            if (result.handle.equals(accountHandle, ignoreCase = true)) {
+                                com.cayxu.app.automation.tiktok.GolikeSwitchOnlyResultBridge.clear()
+                                GolikeJobStatusBridge.update("Không tìm được tài khoản @${result.handle} trong TikTok để chuyển")
+                            }
+                        }
+                        else -> Unit
+                    }
+                }
+            }
         }
         return START_NOT_STICKY
+    }
+
+    /** Gọi API lấy job thật cho acc đang chạy (SAU KHI đã chuyển đúng acc trong TikTok), rồi
+     *  cập nhật panel với job thật (link hiện màu xanh dương như ảnh mẫu). */
+    private fun fetchJobForCurrentAccount() {
+        if (golikeAccountId <= 0L) {
+            GolikeJobStatusBridge.update("Không xác định được ID GoLike của acc @$accountHandle nên chưa lấy được job")
+            return
+        }
+        serviceScope.launch {
+            GolikeJobStatusBridge.update("Đang lấy job cho @$accountHandle...")
+            val token = com.cayxu.app.data.local.GolikeAccountStore.getToken(applicationContext)
+            if (token.isNullOrBlank()) {
+                GolikeJobStatusBridge.update("Chưa đăng nhập GoLike")
+                return@launch
+            }
+            when (val result = com.cayxu.app.data.repository.GolikeTikTokJobRepository.fetchNextJob(token, golikeAccountId)) {
+                is com.cayxu.app.data.repository.GolikeTikTokJobResult.Success -> {
+                    val job = result.job
+                    jobId = job.jobId
+                    jobType = job.type
+                    jobPrice = if (job.fixCoinJob > 0) "${job.fixCoinJob}đ" else ""
+                    jobLink = job.link
+                    GolikeJobStatusBridge.update("")
+                    showFullPanel()
+                }
+                is com.cayxu.app.data.repository.GolikeTikTokJobResult.NoJobAvailable -> {
+                    GolikeJobStatusBridge.update("Hiện chưa có job nào cho @$accountHandle, thử lại sau")
+                }
+                is com.cayxu.app.data.repository.GolikeTikTokJobResult.Error -> {
+                    GolikeJobStatusBridge.update("Lỗi lấy job: ${result.message}")
+                }
+            }
+        }
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -179,19 +258,9 @@ class GolikeJobRunnerOverlayService : Service() {
         }
     }
 
-    private fun showFullPanel(
-        modeLabel: String,
-        accountHandle: String,
-        accountTaskCount: Int,
-        accountSecondaryId: String,
-        jobId: String,
-        jobType: String,
-        jobPrice: String,
-        jobSuccessCount: Int,
-        jobFailCount: Int,
-        jobEarned: String,
-        jobLink: String
-    ) {
+    private fun showFullPanel() {
+        fullPanel?.let { runCatching { windowManager.removeView(it) } }
+        fullPanel = null
         miniBubble?.let { runCatching { windowManager.removeView(it) } }
         miniBubble = null
 
@@ -258,10 +327,7 @@ class GolikeJobRunnerOverlayService : Service() {
         })
         headerRow.addView(spacerDp(8))
         headerRow.addView(circleIconButton("\u2013", Color.parseColor("#2E2E38"), Color.parseColor("#C7CBD4")) {
-            showMiniBubble(
-                modeLabel, accountHandle, accountTaskCount, accountSecondaryId,
-                jobId, jobType, jobPrice, jobSuccessCount, jobFailCount, jobEarned, jobLink
-            )
+            showMiniBubble()
         })
         headerRow.addView(spacerDp(8))
         headerRow.addView(circleIconButton("\u2715", Color.parseColor("#3DFF5252"), Color.parseColor("#FF6B6B")) {
@@ -430,19 +496,7 @@ class GolikeJobRunnerOverlayService : Service() {
         fullPanel = root
     }
 
-    private fun showMiniBubble(
-        modeLabel: String,
-        accountHandle: String,
-        accountTaskCount: Int,
-        accountSecondaryId: String,
-        jobId: String,
-        jobType: String,
-        jobPrice: String,
-        jobSuccessCount: Int,
-        jobFailCount: Int,
-        jobEarned: String,
-        jobLink: String
-    ) {
+    private fun showMiniBubble() {
         fullPanel?.let { runCatching { windowManager.removeView(it) } }
         fullPanel = null
 
@@ -504,10 +558,7 @@ class GolikeJobRunnerOverlayService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!isDrag) {
-                        showFullPanel(
-                            modeLabel, accountHandle, accountTaskCount, accountSecondaryId,
-                            jobId, jobType, jobPrice, jobSuccessCount, jobFailCount, jobEarned, jobLink
-                        )
+                        showFullPanel()
                     }
                     true
                 }

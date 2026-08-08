@@ -6,7 +6,10 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 
 sealed class GolikeTikTokAccountsResult {
-    data class Success(val handles: Set<String>) : GolikeTikTokAccountsResult()
+    /** [idsByHandle]: map @handle (lowercase, không @) -> ID NỘI BỘ của GoLike (field "id"
+     *  trong response, KHÁC với unique_id của TikTok) - cần để gọi API lấy job
+     *  (?account_id=...). */
+    data class Success(val handles: Set<String>, val idsByHandle: Map<String, Long>) : GolikeTikTokAccountsResult()
     data class Error(val message: String) : GolikeTikTokAccountsResult()
 }
 
@@ -34,17 +37,23 @@ object GolikeTikTokAccountRepository {
             val body = response.body()
             if (response.isSuccessful && body != null) {
                 val items = unwrapArray(body)
-                val handles = items.mapNotNull { el ->
-                    if (!el.isJsonObject) return@mapNotNull null
+                val handles = mutableSetOf<String>()
+                val idsByHandle = mutableMapOf<String, Long>()
+                items.forEach { el ->
+                    if (!el.isJsonObject) return@forEach
                     val obj = el.asJsonObject
                     // "unique_username" là field ĐÚNG (đã xác nhận qua response thật) - các
                     // field còn lại chỉ là dự phòng cho trường hợp API đổi cấu trúc sau này.
                     // KHÔNG dùng "username" (đó là tên đăng nhập GoLike, không phải TikTok).
-                    firstNonBlank(obj, listOf("unique_username", "handle", "tiktok_username"))
+                    val handle = firstNonBlank(obj, listOf("unique_username", "handle", "tiktok_username"))
                         ?.removePrefix("@")
                         ?.lowercase()
-                }.toSet()
-                GolikeTikTokAccountsResult.Success(handles)
+                        ?: return@forEach
+                    handles.add(handle)
+                    val id = obj.get("id")?.takeIf { it.isJsonPrimitive }?.asLong
+                    if (id != null) idsByHandle[handle] = id
+                }
+                GolikeTikTokAccountsResult.Success(handles, idsByHandle)
             } else {
                 val message = when (response.code()) {
                     401, 403 -> "Token không hợp lệ hoặc đã hết hạn"
