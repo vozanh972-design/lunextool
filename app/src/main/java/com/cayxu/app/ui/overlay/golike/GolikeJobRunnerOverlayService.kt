@@ -120,6 +120,17 @@ class GolikeJobRunnerOverlayService : Service() {
                         if (text.isBlank()) View.GONE else View.VISIBLE
                 }
             }
+            // Luồng CHUYỂN TÀI KHOẢN (tái sử dụng từ "Thêm") phát trạng thái qua
+            // GolikeFollowStatusBridge (bridge chung của TikTokAccessibilityService) - mirror
+            // sang cùng dòng trạng thái trên màn nổi này luôn, không cần bridge riêng.
+            serviceScope.launch {
+                com.cayxu.app.automation.tiktok.GolikeFollowStatusBridge.status.collect { text ->
+                    if (text.isNotBlank()) {
+                        statusValueView?.text = text
+                        (statusValueView?.parent as? View)?.visibility = View.VISIBLE
+                    }
+                }
+            }
         }
         return START_NOT_STICKY
     }
@@ -293,7 +304,7 @@ class GolikeJobRunnerOverlayService : Service() {
 
         // ---- Job: ✓ thành công (xanh) · ✗ thất bại (đỏ) ..... tiền kiếm được (xanh lá) ----
         val jobLabel = TextView(this).apply {
-            text = "Job"
+            text = "NV"
             setTextColor(Color.parseColor("#8A93A6"))
             textSize = 12f
             setPadding(0, dp(4), 0, dp(4))

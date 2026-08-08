@@ -76,6 +76,11 @@ fun GolikeTikTokScreen(navController: NavController) {
     var selectedAccountId by remember(selectedTab) { mutableStateOf<String?>(null) }
     val effectiveSelectedId = selectedAccountId ?: accountsForSelectedTab.firstOrNull()?.uid
 
+    // Tick chọn NHIỀU acc để "Chạy" cùng lúc (khác với effectiveSelectedId ở trên - đó chỉ
+    // là acc đang xem/khoanh sáng, không liên quan tới việc chọn chạy). Chỉ acc ĐÃ liên kết
+    // GoLike mới tick được (chưa liên kết thì phải bấm "Thêm" trước).
+    var selectedForRunIds by remember(selectedTab) { mutableStateOf<Set<String>>(emptySet()) }
+
     // Đọc THẬT danh sách acc TikTok đã có trong GoLike (GET /api/tiktok-account, dùng
     // token đã đăng nhập sẵn - không hỏi lại) - để biết acc nào CHƯA có trong GoLike thì
     // hiện nút "+ Thêm" cho acc đó. Chỉ gọi khi đã đăng nhập Golike.
@@ -203,6 +208,14 @@ fun GolikeTikTokScreen(navController: NavController) {
                             account = account,
                             isSelected = account.uid == effectiveSelectedId,
                             isLinkedToGolike = account.handle.lowercase() in golikeLinkedHandles,
+                            isCheckedForRun = account.uid in selectedForRunIds,
+                            onCheckedForRunChange = { checked ->
+                                selectedForRunIds = if (checked) {
+                                    selectedForRunIds + account.uid
+                                } else {
+                                    selectedForRunIds - account.uid
+                                }
+                            },
                             onClick = { selectedAccountId = account.uid }
                         )
                     }
@@ -232,25 +245,34 @@ fun GolikeTikTokScreen(navController: NavController) {
             }
             Button(
                 onClick = {
-                    val selectedAccount = accountsForSelectedTab.firstOrNull { it.uid == effectiveSelectedId }
-                    if (selectedAccount == null) {
+                    val selectedAccounts = accountsForSelectedTab.filter { it.uid in selectedForRunIds }
+                    if (selectedAccounts.isEmpty()) {
                         android.widget.Toast.makeText(
                             context,
-                            "Chưa có tài khoản nào để chạy - hãy bật tài khoản ở phần Quản lý tài khoản TikTok trước",
+                            "Hãy tick chọn ít nhất 1 tài khoản đã liên kết GoLike để chạy",
                             android.widget.Toast.LENGTH_LONG
                         ).show()
                     } else {
-                        // CHỈ có phần tài khoản là dữ liệu THẬT (lấy từ acc đang chọn). Các
-                        // trường job (jobId/jobType/jobPrice/success/fail/earned/link) để
+                        // CHỈ có phần tài khoản là dữ liệu THẬT (lấy từ (các) acc đã tick).
+                        // Các trường job (jobId/jobType/jobPrice/success/fail/earned/link) để
                         // trống vì CHƯA có API lấy job thật - màn nổi sẽ tự ẩn các dòng đó.
+                        val first = selectedAccounts.first()
                         com.cayxu.app.ui.overlay.golike.startJobRunnerOverlay(
                             context = context,
                             navController = navController,
                             data = com.cayxu.app.ui.overlay.golike.JobRunData(
                                 modeLabel = selectedTab.label,
-                                accountHandle = selectedAccount.handle,
-                                accountTaskCount = selectedAccount.taskCount
-                            )
+                                accountHandle = first.handle,
+                                accountTaskCount = first.taskCount
+                            ),
+                            accountsQueue = selectedAccounts.map {
+                                com.cayxu.app.ui.overlay.golike.JobRunAccount(
+                                    handle = it.handle,
+                                    packageName = it.variant.packageName,
+                                    variant = it.variant,
+                                    taskCount = it.taskCount
+                                )
+                            }
                         )
                     }
                 },
@@ -259,7 +281,7 @@ fun GolikeTikTokScreen(navController: NavController) {
             ) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Chạy")
+                Text("Chạy" + if (selectedForRunIds.size > 1) " (${selectedForRunIds.size})" else "")
             }
         }
     }
@@ -333,6 +355,8 @@ private fun TikTokAccountCard(
     account: TikTokAccount,
     isSelected: Boolean,
     isLinkedToGolike: Boolean,
+    isCheckedForRun: Boolean,
+    onCheckedForRunChange: (Boolean) -> Unit,
     onClick: () -> Unit
 ) {
     val avatarColor = avatarColorFor(account.uid)
@@ -358,6 +382,20 @@ private fun TikTokAccountCard(
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Chỉ acc ĐÃ liên kết GoLike mới tick chọn "Chạy" được (chưa liên kết thì
+                // phải bấm "Thêm" trước) - acc chưa liên kết vẫn giữ khoảng trắng để các
+                // dòng thẳng hàng nhau.
+                if (isLinkedToGolike) {
+                    Checkbox(
+                        checked = isCheckedForRun,
+                        onCheckedChange = onCheckedForRunChange,
+                        colors = CheckboxDefaults.colors(checkedColor = Primary),
+                        modifier = Modifier.size(24.dp)
+                    )
+                } else {
+                    Spacer(Modifier.size(24.dp))
+                }
+                Spacer(Modifier.width(6.dp))
                 Box(
                     modifier = Modifier.size(40.dp).background(avatarColor, CircleShape),
                     contentAlignment = Alignment.Center

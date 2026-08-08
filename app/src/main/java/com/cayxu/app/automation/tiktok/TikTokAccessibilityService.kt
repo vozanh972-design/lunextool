@@ -568,18 +568,26 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
 
                 if (switched) {
-                    GolikeFollowStatusBridge.update("Đã chuyển tài khoản, đang đợi TikTok tải lại...")
-                    // Đợi ĐỦ LÂU cho TikTok tải lại hoàn toàn sau khi chuyển tài khoản (mở
-                    // deep link sớm quá lúc TikTok còn đang load sẽ bị lỗi/không vào đúng
-                    // trang) - đợi lâu hơn hẳn so với các bước chờ khác trong flow.
-                    delay(SWITCH_ACCOUNT_SETTLE_MS)
-                    GolikeFollowStatusBridge.update("Đang mở trang cần follow...")
-                    com.cayxu.app.ui.screens.golike.openTikTokProfile(
-                        applicationContext, state.followTargetUsername, state.packageName
-                    )
-                    // Tái sử dụng NGUYÊN luồng tự bấm Follow đã có (startFollowFlow) - không
-                    // viết lại logic tìm/bấm Follow ở đây.
-                    GolikeFollowBridge.requestFollow(state.followTargetUsername, state.packageName)
+                    if (state.skipFollow) {
+                        // Dùng cho "Làm NV" - CHỈ cần chuyển đúng acc, KHÔNG mở deep link,
+                        // KHÔNG follow gì cả. Đợi 1 nhịp cho TikTok tải lại xong rồi dừng.
+                        GolikeFollowStatusBridge.update("Đã chuyển tài khoản, đang đợi TikTok tải lại...")
+                        delay(SWITCH_ACCOUNT_SETTLE_MS)
+                        GolikeFollowStatusBridge.update("Đã chuyển sang @${state.targetHandle} - sẵn sàng")
+                    } else {
+                        GolikeFollowStatusBridge.update("Đã chuyển tài khoản, đang đợi TikTok tải lại...")
+                        // Đợi ĐỦ LÂU cho TikTok tải lại hoàn toàn sau khi chuyển tài khoản (mở
+                        // deep link sớm quá lúc TikTok còn đang load sẽ bị lỗi/không vào đúng
+                        // trang) - đợi lâu hơn hẳn so với các bước chờ khác trong flow.
+                        delay(SWITCH_ACCOUNT_SETTLE_MS)
+                        GolikeFollowStatusBridge.update("Đang mở trang cần follow...")
+                        com.cayxu.app.ui.screens.golike.openTikTokProfile(
+                            applicationContext, state.followTargetUsername, state.packageName
+                        )
+                        // Tái sử dụng NGUYÊN luồng tự bấm Follow đã có (startFollowFlow) -
+                        // không viết lại logic tìm/bấm Follow ở đây.
+                        GolikeFollowBridge.requestFollow(state.followTargetUsername, state.packageName)
+                    }
                 } else {
                     GolikeFollowStatusBridge.update("Không tìm được tài khoản @${state.targetHandle} để chuyển")
                     GolikeFollowResultBridge.publish(
