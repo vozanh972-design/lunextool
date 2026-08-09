@@ -147,18 +147,14 @@ private fun GolikeLoginWebView(onTokenCaptured: (String) -> Unit) {
 
     AndroidView(
         factory = { ctx ->
-            // XOÁ SẠCH cookie + dữ liệu web cũ (localStorage/sessionStorage) TRƯỚC KHI tải
-            // trang - WebView giữ phiên đăng nhập của chính nó ĐỘC LẬP với việc app đã
-            // "Đăng xuất" hay chưa (đăng xuất trong app chỉ xoá token app tự lưu, không đụng
-            // tới cookie/local storage của WebView), nên nếu không xoá sẽ bị web tự dùng lại
-            // phiên/token GoLike cũ (có thể đã hết hạn) thay vì cho đăng nhập mới thật sự.
-            CookieManager.getInstance().apply {
-                removeAllCookies(null)
-                flush()
-            }
+            // XOÁ SẠCH dữ liệu web cũ (localStorage/sessionStorage) TRƯỚC - cái này chạy
+            // ĐỒNG BỘ nên xong ngay, không cần đợi. WebStorage KHÔNG liên quan gì tới việc
+            // app đã "Đăng xuất" hay chưa (đăng xuất trong app chỉ xoá token app tự lưu),
+            // nên nếu không xoá sẽ bị web tự dùng lại phiên GoLike cũ thay vì cho đăng nhập
+            // mới thật sự.
             WebStorage.getInstance().deleteAllData()
 
-            WebView(ctx).apply {
+            val webView = WebView(ctx).apply {
                 // "Siêu nhẹ" - chỉ bật đúng 2 thứ BẮT BUỘC để trang SPA của GoLike chạy được
                 // (thiếu JS/DOM storage là trắng trang), không bật gì thêm ngoài ra.
                 settings.javaScriptEnabled = true
@@ -180,9 +176,19 @@ private fun GolikeLoginWebView(onTokenCaptured: (String) -> Unit) {
                         return super.shouldInterceptRequest(view, request)
                     }
                 }
-
-                loadUrl(GOLIKE_LOGIN_URL)
             }
+
+            // XOÁ COOKIE chạy BẤT ĐỒNG BỘ - PHẢI đợi đúng lúc nó báo xong (qua callback) rồi
+            // MỚI thật sự loadUrl(), nếu không trang có thể đã bắt đầu tải (dùng cookie cũ)
+            // trước khi lệnh xoá thực sự hoàn tất, dẫn tới vẫn dính token cũ đã hết hạn.
+            CookieManager.getInstance().apply {
+                removeAllCookies { _ ->
+                    flush()
+                    webView.loadUrl(GOLIKE_LOGIN_URL)
+                }
+            }
+
+            webView
         },
         modifier = Modifier.fillMaxSize()
     )
