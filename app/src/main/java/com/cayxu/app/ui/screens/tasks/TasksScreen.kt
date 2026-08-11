@@ -51,12 +51,6 @@ private data class PlatformOption(
 
 private val platformOptions = listOf(
     PlatformOption(
-        name = "Golike",
-        subtitle = "Nhiệm vụ tăng like, view, follow cho mạng xã hội",
-        icon = Icons.Filled.ThumbUp,
-        accentColor = Color(0xFF7C3AED)
-    ),
-    PlatformOption(
         name = "Traodoisub",
         subtitle = "Nhiệm vụ đăng ký kênh, tăng sub, view YouTube",
         icon = Icons.Filled.SwapHoriz,
@@ -67,6 +61,12 @@ private val platformOptions = listOf(
         subtitle = "Nhiệm vụ tương tác chéo giữa các nền tảng",
         icon = Icons.Filled.FavoriteBorder,
         accentColor = Color(0xFFEC4899)
+    ),
+    PlatformOption(
+        name = "XSMM",
+        subtitle = "Nhiệm vụ tăng tương tác Facebook, TikTok",
+        icon = Icons.Filled.Check,
+        accentColor = Color(0xFF16A34A)
     )
 )
 
@@ -114,9 +114,9 @@ fun TasksScreen(navController: NavController) {
                         selected = index == selectedPlatform,
                         onClick = {
                             selectedPlatform = index
-                            if (option.name == "Golike") {
-                                navController.navigate(com.cayxu.app.ui.navigation.Routes.GOLIKE) { launchSingleTop = true }
-                            }
+                            navController.navigate(
+                                com.cayxu.app.ui.navigation.Routes.simpleTaskPlatform(option.name)
+                            ) { launchSingleTop = true }
                         }
                     )
                 }
