@@ -60,18 +60,5 @@
         <service
             android:name=".automation.nurture.NurtureOverlayService"
             android:exported="false" />
-
-        <!-- Lớp nổi RIÊNG cho nút "Thêm" (thêm acc vào GoLike) - CHỈ hiển thị thông tin +
-             tự mở link trang cá nhân TikTok, KHÔNG dùng Accessibility Service, KHÔNG tự
-             thao tác gì trong TikTok. -->
-        <service
-            android:name=".ui.overlay.golike.GolikeAddAccountOverlayService"
-            android:exported="false" />
-
-        <!-- Lớp nổi hiện khi bấm "Chạy" để làm nhiệm vụ (job) - CHỈ lo giao diện, nhận dữ
-             liệu qua Intent extras, KHÔNG tự chạy job (hệ thống job thật chưa có). -->
-        <service
-            android:name=".ui.overlay.golike.GolikeJobRunnerOverlayService"
-            android:exported="false" />
     </application>
 </manifest>

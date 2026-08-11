@@ -47,18 +47,12 @@ object Routes {
     const val SETTINGS = "settings"
     const val UTILITIES = "utilities"
     const val NURTURE_SETUP = "nurture_setup"
-    const val GOLIKE = "golike"
-    const val GOLIKE_LOGIN = "golike_login"
-    const val GOLIKE_PLATFORM = "golike_platform/{platform}"
 
-    fun golikePlatform(platform: String) = "golike_platform/$platform"
+    /** Màn nhiệm vụ đơn giản (Facebook + TikTok) dùng chung cho 3 dịch vụ: Trao đổi Sub,
+     *  Tương tác chéo, XSMM - nhận theo tên dịch vụ để hiển thị đúng tiêu đề/màu sắc. */
+    const val SIMPLE_TASK_PLATFORM = "simple_task_platform/{service}"
 
-    // Màn "Cấu hình hoạt động" mở ra khi bấm nút Cấu hình chạy ở Golike TikTok -
-    // nhận theo tên loại (TikTok/TikTok Lite/TikTok Studio) để hiển thị đúng loại
-    // đang được chọn sẵn khi mở màn cấu hình.
-    const val GOLIKE_TIKTOK_CONFIG = "golike_tiktok_config/{variant}"
-
-    fun golikeTikTokConfig(variant: String) = "golike_tiktok_config/$variant"
+    fun simpleTaskPlatform(service: String) = "simple_task_platform/$service"
 
     const val LINK_ACCOUNT = "link_account/{platform}/{iconRes}"
     const val ADD_ACCOUNT = "add_account/{platform}/{iconRes}"
@@ -136,7 +130,7 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
 
     // Key bị server thu hồi/hết hạn khi worker re-check định kỳ (KHÁC với bị khoá
     // vĩnh viễn ở trên) -> đưa NGAY người dùng về màn nhập Key để họ tự nhập key
-    // mới/gia hạn, dù đang đứng ở màn nào (Golike, Home...). consumeKeyRevoked()
+    // mới/gia hạn, dù đang đứng ở màn nào (Home, Tasks...). consumeKeyRevoked()
     // reset lại tín hiệu ngay sau khi điều hướng để không lặp lại nếu currentRoute
     // đổi qua lại.
     val isKeyRevokedNow by AppLockState.keyRevoked.collectAsState()
@@ -229,25 +223,12 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             composable(Routes.NURTURE_SETUP) {
                 com.cayxu.app.ui.screens.nurture.NurtureSetupScreen(navController)
             }
-            composable(Routes.GOLIKE) {
-                com.cayxu.app.ui.screens.golike.GolikeScreen(navController)
-            }
-            composable(Routes.GOLIKE_LOGIN) {
-                com.cayxu.app.ui.screens.golike.GolikeLoginScreen(navController)
-            }
             composable(
-                Routes.GOLIKE_TIKTOK_CONFIG,
-                arguments = listOf(androidx.navigation.navArgument("variant") { type = androidx.navigation.NavType.StringType })
+                Routes.SIMPLE_TASK_PLATFORM,
+                arguments = listOf(androidx.navigation.navArgument("service") { type = androidx.navigation.NavType.StringType })
             ) { backStackEntry ->
-                val variant = backStackEntry.arguments?.getString("variant").orEmpty()
-                com.cayxu.app.ui.screens.golike.GolikeTikTokConfigScreen(navController, variant)
-            }
-            composable(
-                Routes.GOLIKE_PLATFORM,
-                arguments = listOf(androidx.navigation.navArgument("platform") { type = androidx.navigation.NavType.StringType })
-            ) { backStackEntry ->
-                val platform = backStackEntry.arguments?.getString("platform").orEmpty()
-                com.cayxu.app.ui.screens.golike.GolikePlatformScreen(navController, platform)
+                val service = backStackEntry.arguments?.getString("service").orEmpty()
+                com.cayxu.app.ui.screens.tasks.SimpleTaskPlatformScreen(navController, service)
             }
             composable(
                 route = Routes.LINK_ACCOUNT,

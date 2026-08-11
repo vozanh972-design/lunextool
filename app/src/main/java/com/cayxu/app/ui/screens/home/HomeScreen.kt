@@ -246,14 +246,6 @@ private fun MenuButton(
 
 @Composable
 private fun IncomeCard(navController: NavController) {
-    // "Thu nhập hôm nay" + biểu đồ theo nền tảng giờ lấy THẬT từ GolikeSession.todayIncome/
-    // platformStats (đọc từ GET /api/statistics/report) - không còn số liệu mẫu/biểu đồ giả
-    // 7 ngày nữa. Biểu đồ giờ là cột ngang theo TỪNG nền tảng (facebook/tiktok/...) vì GoLike
-    // trả thu nhập hôm nay theo nền tảng, không trả theo từng ngày trong quá khứ.
-    val isGolikeLoggedIn by com.cayxu.app.ui.screens.golike.GolikeSession.isLoggedIn
-    val todayIncome by com.cayxu.app.ui.screens.golike.GolikeSession.todayIncome
-    val platformStats by com.cayxu.app.ui.screens.golike.GolikeSession.platformStats
-
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = CardWhite),
@@ -267,44 +259,9 @@ private fun IncomeCard(navController: NavController) {
                 Icon(Icons.Filled.Info, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
             }
             Spacer(Modifier.height(8.dp))
-
-            if (!isGolikeLoggedIn) {
-                Text(
-                    "Cần đăng nhập GoLike để xem thu nhập hôm nay",
-                    color = TextSecondary,
-                    fontSize = 13.sp
-                )
-                Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = {
-                        navController.navigate(com.cayxu.app.ui.navigation.Routes.GOLIKE_LOGIN) { launchSingleTop = true }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
-                ) {
-                    Text("Đăng nhập GoLike")
-                }
-            } else {
-                Text("+${todayIncome}đ", color = SuccessGreen, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-
-                val earningPlatforms = platformStats.filter { it.pendingCoin > 0 }.sortedByDescending { it.pendingCoin }
-                if (earningPlatforms.isNotEmpty()) {
-                    Spacer(Modifier.height(16.dp))
-                    val maxCoin = earningPlatforms.first().pendingCoin.coerceAtLeast(1)
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        earningPlatforms.forEach { stat ->
-                            PlatformIncomeBar(
-                                platform = com.cayxu.app.ui.screens.golike.golikePlatformDisplayName(stat.platform),
-                                color = com.cayxu.app.ui.screens.golike.golikePlatformColor(stat.platform),
-                                amount = stat.pendingCoin,
-                                fraction = stat.pendingCoin.toFloat() / maxCoin.toFloat()
-                            )
-                        }
-                    }
-                } else {
-                    Spacer(Modifier.height(8.dp))
-                    Text("Chưa có nền tảng nào có thu nhập hôm nay", color = TextSecondary, fontSize = 12.sp)
-                }
-            }
+            Text("+0đ", color = SuccessGreen, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text("Chưa có nền tảng nào có thu nhập hôm nay", color = TextSecondary, fontSize = 12.sp)
         }
     }
 }
