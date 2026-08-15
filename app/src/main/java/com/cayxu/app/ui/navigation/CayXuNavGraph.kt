@@ -48,11 +48,14 @@ object Routes {
     const val UTILITIES = "utilities"
     const val NURTURE_SETUP = "nurture_setup"
 
-    /** Màn nhiệm vụ đơn giản (Facebook + TikTok) dùng chung cho 3 dịch vụ: Trao đổi Sub,
-     *  Tương tác chéo, XSMM - nhận theo tên dịch vụ để hiển thị đúng tiêu đề/màu sắc. */
+    /** Màn nhiệm vụ đơn giản (Facebook + TikTok) dùng chung cho 2 dịch vụ: Trao đổi Sub,
+     *  Tương tác chéo - nhận theo tên dịch vụ để hiển thị đúng tiêu đề/màu sắc. */
     const val SIMPLE_TASK_PLATFORM = "simple_task_platform/{service}"
 
     fun simpleTaskPlatform(service: String) = "simple_task_platform/$service"
+
+    const val XSMM_LOGIN = "xsmm_login"
+    const val XSMM_ACCOUNT = "xsmm_account"
 
     const val LINK_ACCOUNT = "link_account/{platform}/{iconRes}"
     const val ADD_ACCOUNT = "add_account/{platform}/{iconRes}"
@@ -229,6 +232,12 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             ) { backStackEntry ->
                 val service = backStackEntry.arguments?.getString("service").orEmpty()
                 com.cayxu.app.ui.screens.tasks.SimpleTaskPlatformScreen(navController, service)
+            }
+            composable(Routes.XSMM_LOGIN) {
+                com.cayxu.app.ui.screens.xsmm.XsmmLoginScreen(navController)
+            }
+            composable(Routes.XSMM_ACCOUNT) {
+                com.cayxu.app.ui.screens.xsmm.XsmmAccountScreen(navController)
             }
             composable(
                 route = Routes.LINK_ACCOUNT,

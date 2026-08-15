@@ -27,5 +27,8 @@ class CayXuApp : Application() {
         // server thật - hoạt động độc lập với UI nên không bị ảnh hưởng nếu màn
         // Login bị bypass.
         KeyRecheckWorker.scheduleNext(this)
+
+        // Khôi phục phiên đăng nhập XSMM đã lưu trước đó (nếu có).
+        com.cayxu.app.ui.screens.xsmm.XsmmSession.restore(this)
     }
 }

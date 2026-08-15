@@ -114,9 +114,18 @@ fun TasksScreen(navController: NavController) {
                         selected = index == selectedPlatform,
                         onClick = {
                             selectedPlatform = index
-                            navController.navigate(
-                                com.cayxu.app.ui.navigation.Routes.simpleTaskPlatform(option.name)
-                            ) { launchSingleTop = true }
+                            if (option.name == "XSMM") {
+                                val route = if (com.cayxu.app.ui.screens.xsmm.XsmmSession.isLoggedIn.value) {
+                                    com.cayxu.app.ui.navigation.Routes.XSMM_ACCOUNT
+                                } else {
+                                    com.cayxu.app.ui.navigation.Routes.XSMM_LOGIN
+                                }
+                                navController.navigate(route) { launchSingleTop = true }
+                            } else {
+                                navController.navigate(
+                                    com.cayxu.app.ui.navigation.Routes.simpleTaskPlatform(option.name)
+                                ) { launchSingleTop = true }
+                            }
                         }
                     )
                 }
