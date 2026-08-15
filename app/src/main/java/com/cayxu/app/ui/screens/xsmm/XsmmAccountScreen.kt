@@ -6,7 +6,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
@@ -83,6 +83,16 @@ fun XsmmAccountScreen(navController: NavController) {
                     Icon(Icons.Filled.Refresh, contentDescription = "Làm mới", tint = XsmmAccentEnd)
                 }
             }
+            IconButton(
+                onClick = {
+                    XsmmSession.logout(context)
+                    navController.navigate(Routes.XSMM_LOGIN) {
+                        popUpTo(Routes.XSMM_ACCOUNT) { inclusive = true }
+                    }
+                }
+            ) {
+                Icon(Icons.Filled.ExitToApp, contentDescription = "Đăng xuất", tint = DangerRed)
+            }
         }
 
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -124,23 +134,6 @@ fun XsmmAccountScreen(navController: NavController) {
                         }
                     }
                 }
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            OutlinedButton(
-                onClick = {
-                    XsmmSession.logout(context)
-                    navController.navigate(Routes.XSMM_LOGIN) {
-                        popUpTo(Routes.XSMM_ACCOUNT) { inclusive = true }
-                    }
-                },
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = DangerRed),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Filled.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Đăng xuất")
             }
         }
     }
