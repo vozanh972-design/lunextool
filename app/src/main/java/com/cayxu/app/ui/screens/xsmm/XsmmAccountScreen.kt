@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,12 +34,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.data.local.TikTokAccount
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.data.local.XsmmAccountStore
-import com.cayxu.app.data.local.XsmmTikTokLinkStore
+import com.cayxu.app.data.repository.XsmmAccountsRepository
+import com.cayxu.app.data.repository.XsmmAccountsResult
+import com.cayxu.app.data.repository.XsmmAddAccountResult
 import com.cayxu.app.data.repository.XsmmAuthRepository
 import com.cayxu.app.data.repository.XsmmLoginResult
 import com.cayxu.app.ui.navigation.Routes
@@ -54,13 +56,16 @@ private val XsmmAccentEnd = Color(0xFF16A34A)
  * TikTok của GoLike trước đây) - acc chưa "Thêm" hiện nút Thêm, acc đã thêm rồi thì ẩn nút đó.
  * Cuối màn có 2 nút cố định: "Cấu hình chạy" và "Chạy".
  *
- * LƯU Ý: XSMM (xsmm.net) CHỈ có API /api/taskapi/user (lấy số dư) - KHÔNG có API nào để kiểm
- * tra/đồng bộ acc TikTok đã liên kết, cũng KHÔNG có API lấy "job" hay cấu hình chạy. Vì vậy:
- *   - Trạng thái "đã thêm" chỉ lưu LOCAL (XsmmTikTokLinkStore), không đồng bộ với server thật.
- *   - Nút "Thêm" hiện tại chỉ đánh dấu local + mở TikTok lên (không tự động follow/thao tác
- *     gì thêm, vì không biết XSMM cần follow/làm gì trên TikTok).
- *   - Nút "Cấu hình chạy" và "Chạy" hiện là placeholder (báo chưa có API), sẵn sàng nối khi
- *     có thông tin API thật.
+ * Đã nối THẬT với API XSMM (/api/taskapi/accounts):
+ *   - Vào màn/đổi tab -> gọi GET accounts?account_type=tiktok để biết @handle nào ĐÃ có trên
+ *     XSMM (so khớp theo link_account) -> tự ẩn nút "Thêm" cho acc đó.
+ *   - Bấm "Thêm" -> gọi THẬT POST accounts (type=tiktok, link_account, active=true) để thêm
+ *     acc đó vào XSMM (đặt luôn làm "nick chạy").
+ *
+ * "Cấu hình chạy" và "Chạy" HIỆN VẪN LÀ PLACEHOLDER - XSMM có API GET tasks + POST
+ * tasks/complete (xem XsmmTasksRepository, đã viết sẵn sàng nối) nhưng CHƯA gắn vào đây vì
+ * "type" nhiệm vụ có nhiều loại (tiktok_follow/tiktok_like/tiktok_comment...) và chưa rõ màn
+ * này nên để người dùng tự chọn loại nào hay mặc định loại nào.
  */
 @Composable
 fun XsmmAccountScreen(navController: NavController) {
@@ -72,11 +77,29 @@ fun XsmmAccountScreen(navController: NavController) {
     var isRefreshing by remember { mutableStateOf(false) }
 
     var selectedVariant by remember { mutableStateOf(TikTokAppVariant.STANDARD) }
-    var addedUids by remember { mutableStateOf(XsmmTikTokLinkStore.getAddedUids(context)) }
+    var linkedHandles by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var isCheckingLinked by remember { mutableStateOf(false) }
+    var addingUid by remember { mutableStateOf<String?>(null) }
     var selectedAccountUid by remember(selectedVariant) { mutableStateOf<String?>(null) }
 
     val allTikTokAccounts = remember { TikTokAccountsStore.getAccounts(context).filter { it.enabled } }
     val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
+
+    // Gọi THẬT GET /api/taskapi/accounts?account_type=tiktok mỗi khi vào màn/đổi tab, để biết
+    // acc nào ĐÃ có trên XSMM rồi (tự ẩn nút "Thêm"), acc nào chưa (hiện nút "Thêm").
+    LaunchedEffect(selectedVariant) {
+        val token = XsmmAccountStore.getToken(context) ?: return@LaunchedEffect
+        isCheckingLinked = true
+        when (val result = XsmmAccountsRepository.getAccounts(token, accountType = "tiktok")) {
+            is XsmmAccountsResult.Success -> {
+                linkedHandles = result.accounts.mapNotNull { acc ->
+                    acc.linkAccount.substringAfterLast("@").trim('/').lowercase().takeIf { it.isNotBlank() }
+                }.toSet()
+            }
+            is XsmmAccountsResult.Error -> Unit // giữ danh sách cũ, coi như chưa xác định được
+        }
+        isCheckingLinked = false
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Row(
@@ -187,6 +210,14 @@ fun XsmmAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(12.dp))
 
+            if (isCheckingLinked) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+                    CircularProgressIndicator(color = XsmmAccentEnd, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Đang kiểm tra tài khoản trên XSMM...", color = TextSecondary, fontSize = 12.sp)
+                }
+            }
+
             if (accountsForVariant.isEmpty()) {
                 Card(
                     shape = RoundedCornerShape(16.dp),
@@ -201,15 +232,32 @@ fun XsmmAccountScreen(navController: NavController) {
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     accountsForVariant.forEach { account ->
+                        val handleLower = account.handle.trim().removePrefix("@").lowercase()
                         XsmmTikTokAccountCard(
                             account = account,
                             isSelected = account.uid == selectedAccountUid,
-                            isAdded = account.uid in addedUids,
+                            isAdded = handleLower in linkedHandles,
+                            isAdding = addingUid == account.uid,
                             onClick = { selectedAccountUid = account.uid },
                             onAddClick = {
-                                XsmmTikTokLinkStore.markAdded(context, account.uid)
-                                addedUids = XsmmTikTokLinkStore.getAddedUids(context)
-                                TikTokAppLauncher.launch(context, account.variant)
+                                val token = XsmmAccountStore.getToken(context)
+                                if (token.isNullOrBlank()) {
+                                    android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                    return@XsmmTikTokAccountCard
+                                }
+                                addingUid = account.uid
+                                scope.launch {
+                                    when (val result = XsmmAccountsRepository.addTikTokAccount(token, account.handle)) {
+                                        is XsmmAddAccountResult.Success -> {
+                                            linkedHandles = linkedHandles + handleLower
+                                            android.widget.Toast.makeText(context, "Đã thêm @${account.handle} vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                        is XsmmAddAccountResult.Error -> {
+                                            android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                    addingUid = null
+                                }
                             }
                         )
                     }
@@ -290,6 +338,7 @@ private fun XsmmTikTokAccountCard(
     account: TikTokAccount,
     isSelected: Boolean,
     isAdded: Boolean,
+    isAdding: Boolean,
     onClick: () -> Unit,
     onAddClick: () -> Unit
 ) {
@@ -312,20 +361,26 @@ private fun XsmmTikTokAccountCard(
                 Spacer(Modifier.height(2.dp))
                 Text(account.displayName.ifBlank { "Chưa có tên hiển thị" }, color = TextSecondary, fontSize = 12.sp)
             }
-            if (isAdded) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Check, contentDescription = null, tint = XsmmAccentEnd, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Đã thêm", color = XsmmAccentEnd, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            when {
+                isAdding -> {
+                    CircularProgressIndicator(color = XsmmAccentEnd, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
                 }
-            } else {
-                Button(
-                    onClick = onAddClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = XsmmAccentEnd),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                    modifier = Modifier.height(32.dp)
-                ) {
-                    Text("Thêm", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                isAdded -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Check, contentDescription = null, tint = XsmmAccentEnd, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Đã thêm", color = XsmmAccentEnd, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+                else -> {
+                    Button(
+                        onClick = onAddClick,
+                        colors = ButtonDefaults.buttonColors(containerColor = XsmmAccentEnd),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("Thêm", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
