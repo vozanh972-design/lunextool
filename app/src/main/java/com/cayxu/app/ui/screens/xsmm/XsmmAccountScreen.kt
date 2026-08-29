@@ -274,7 +274,7 @@ fun XsmmAccountScreen(navController: NavController) {
         ) {
             OutlinedButton(
                 onClick = {
-                    android.widget.Toast.makeText(context, "Cấu hình chạy XSMM chưa có API - đang chờ backend", android.widget.Toast.LENGTH_LONG).show()
+                    navController.navigate(Routes.XSMM_RUN_CONFIG)
                 },
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = XsmmAccentEnd),
                 modifier = Modifier.weight(1f)
