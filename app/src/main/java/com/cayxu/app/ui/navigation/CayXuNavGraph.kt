@@ -56,6 +56,7 @@ object Routes {
 
     const val XSMM_LOGIN = "xsmm_login"
     const val XSMM_ACCOUNT = "xsmm_account"
+    const val XSMM_RUN_CONFIG = "xsmm_run_config"
 
     const val LINK_ACCOUNT = "link_account/{platform}/{iconRes}"
     const val ADD_ACCOUNT = "add_account/{platform}/{iconRes}"
@@ -238,6 +239,9 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             }
             composable(Routes.XSMM_ACCOUNT) {
                 com.cayxu.app.ui.screens.xsmm.XsmmAccountScreen(navController)
+            }
+            composable(Routes.XSMM_RUN_CONFIG) {
+                com.cayxu.app.ui.screens.xsmm.XsmmRunConfigScreen(navController)
             }
             composable(
                 route = Routes.LINK_ACCOUNT,
