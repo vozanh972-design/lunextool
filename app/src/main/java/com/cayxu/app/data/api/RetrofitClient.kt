@@ -52,16 +52,10 @@ object RetrofitClient {
     private val pinnedDomain =
         decodeText(54, 47, 52, 63, 34, 116, 51, 53, 116, 44, 52)
 
-    private val certificatePinner = CertificatePinner.Builder()
-        .add(pinnedDomain, "sha256/ZJC5IGL/O/c6TSM+rsSyheuIh/Akc/GmM+dyizIpUGA=")
-        .add(pinnedDomain, "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=")
-        .build()
-
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
-        .certificatePinner(certificatePinner)
         // Đã bỏ SecureApiInterceptor (lớp mã hoá dành cho Cloudflare Worker) vì không còn
         // dùng Worker trung gian nữa. Request gửi thẳng dạng form-urlencoded gốc
         // (key=...&device_id=...) tới verify_key.php trên server chính.

@@ -162,11 +162,8 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
         NavHost(
             navController = navController,
             startDestination = when {
-                // Đã bị khoá từ TRƯỚC (ví dụ worker phát hiện lúc app đang tắt) ->
-                // mở app lên là vào thẳng màn khoá, không qua Welcome/Login nữa.
                 securePrefs.isPermanentlyBlocked() -> Routes.BLOCKED
-                securePrefs.hasSeenWelcome() -> Routes.LOGIN
-                else -> Routes.WELCOME
+                else -> Routes.LOGIN
             },
             modifier = Modifier.padding(innerPadding),
             // Chỉ mờ dần nội dung cũ -> hiện nội dung mới, KHÔNG trượt ngang trái/phải.
