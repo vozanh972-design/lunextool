@@ -97,9 +97,9 @@ fun LoginScreen(
                 indication = null
             ) { focusManager.clearFocus() }
     ) {
-        // Ảnh nền Full màn hình phong cách ACB ONE do chính người dùng thiết kế
+        // Nền sạch sẽ phong cảnh xanh không chứa bất kỳ nút bấm/chữ nào của ảnh mẫu
         Image(
-            painter = painterResource(R.drawable.bg_autolunex_full),
+            painter = painterResource(R.drawable.bg_autolunex_clean),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
@@ -119,7 +119,7 @@ fun LoginScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Image(
-                    painter = painterResource(R.drawable.ic_autolunex_logo),
+                    painter = painterResource(R.drawable.ic_autolunex_logo_clean),
                     contentDescription = "AutoLunex",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.height(48.dp)
