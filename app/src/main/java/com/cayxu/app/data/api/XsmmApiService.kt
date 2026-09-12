@@ -1,5 +1,6 @@
 package com.cayxu.app.data.api
 
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import retrofit2.Response
 import retrofit2.http.Body
@@ -50,18 +51,19 @@ interface XsmmApiService {
         @Path("id") id: String
     ): Response<JsonObject>
 
-    /** Lấy danh sách nhiệm vụ khả dụng theo loại (vd "tiktok_follow"), typejob lọc thêm theo
-     *  hạng (normal/better/best, cách nhau dấu phẩy). */
-    @GET("api/taskapi/tasks")
-    suspend fun getTasks(
+    /** Lấy danh sách nhiệm vụ khả dụng (tasks2 - có uid của acc đang chạy).
+     *  [type]: vd "tiktok_follow", [uid]: account_id của acc TikTok đã set-active trên XSMM. */
+    @GET("api/taskapi/tasks2")
+    suspend fun getTasks2(
         @Header("Authorization") authorization: String,
         @Query("type") type: String,
+        @Query("uid") uid: String,
         @Query("typejob") typejob: String? = null
-    ): Response<JsonObject>
+    ): Response<com.google.gson.JsonArray>
 
-    /** Hoàn thành 1 hoặc nhiều nhiệm vụ. Body: {"type": "...", "task_id": ["...", "..."]} */
-    @POST("api/taskapi/tasks/complete")
-    suspend fun completeTasks(
+    /** Hoàn thành nhiệm vụ (tasks2/complete - có uid). Body: {"type":..., "task_id":[...], "uid":...} */
+    @POST("api/taskapi/tasks2/complete")
+    suspend fun completeTasks2(
         @Header("Authorization") authorization: String,
         @Body body: JsonObject
     ): Response<JsonObject>

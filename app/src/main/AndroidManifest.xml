@@ -60,5 +60,9 @@
         <service
             android:name=".automation.nurture.NurtureOverlayService"
             android:exported="false" />
+
+        <service
+            android:name=".ui.overlay.xsmm.XsmmJobRunnerOverlayService"
+            android:exported="false" />
     </application>
 </manifest>
