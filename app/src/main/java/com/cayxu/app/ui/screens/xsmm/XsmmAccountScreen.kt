@@ -81,6 +81,7 @@ fun XsmmAccountScreen(navController: NavController) {
     var isCheckingLinked by remember { mutableStateOf(false) }
     var addingUid by remember { mutableStateOf<String?>(null) }
     var selectedAccountUid by remember(selectedVariant) { mutableStateOf<String?>(null) }
+    var selectedForRunUids by remember(selectedVariant) { mutableStateOf<Set<String>>(emptySet()) }
 
     val allTikTokAccounts = remember { TikTokAccountsStore.getAccounts(context).filter { it.enabled } }
     val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
@@ -198,7 +199,25 @@ fun XsmmAccountScreen(navController: NavController) {
             }
 
             Spacer(Modifier.height(20.dp))
-            Text("Tài khoản TikTok", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Tài khoản TikTok", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                val allUidsInTab = accountsForVariant.filter { it.handle.trim().removePrefix("@").lowercase() in linkedHandles }.map { it.uid }
+                val allSelected = allUidsInTab.isNotEmpty() && allUidsInTab.all { it in selectedForRunUids }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable {
+                        selectedForRunUids = if (allSelected) selectedForRunUids - allUidsInTab.toSet()
+                        else selectedForRunUids + allUidsInTab.toSet()
+                    }
+                ) {
+                    Checkbox(
+                        checked = allSelected,
+                        onCheckedChange = null,
+                        colors = CheckboxDefaults.colors(checkedColor = XsmmAccentEnd)
+                    )
+                    Text("Tất cả", color = TextSecondary, fontSize = 12.sp)
+                }
+            }
             Spacer(Modifier.height(10.dp))
 
             // ---- 3 tab: TikTok / TikTok Lite / TikTok Studio ----
@@ -233,11 +252,18 @@ fun XsmmAccountScreen(navController: NavController) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     accountsForVariant.forEach { account ->
                         val handleLower = account.handle.trim().removePrefix("@").lowercase()
+                        val isLinked = handleLower in linkedHandles
                         XsmmTikTokAccountCard(
                             account = account,
                             isSelected = account.uid == selectedAccountUid,
-                            isAdded = handleLower in linkedHandles,
+                            isAdded = isLinked,
                             isAdding = addingUid == account.uid,
+                            isCheckedForRun = account.uid in selectedForRunUids,
+                            onCheckedForRunChange = { checked ->
+                                if (!isLinked) return@XsmmTikTokAccountCard
+                                selectedForRunUids = if (checked) selectedForRunUids + account.uid
+                                else selectedForRunUids - account.uid
+                            },
                             onClick = { selectedAccountUid = account.uid },
                             onAddClick = {
                                 val token = XsmmAccountStore.getToken(context)
@@ -285,18 +311,18 @@ fun XsmmAccountScreen(navController: NavController) {
             }
             Button(
                 onClick = {
-                    if (selectedAccountUid == null) {
-                        android.widget.Toast.makeText(context, "Hãy chọn 1 tài khoản để chạy", android.widget.Toast.LENGTH_SHORT).show()
-                    } else {
-                        android.widget.Toast.makeText(context, "XSMM chưa có API lấy nhiệm vụ - đang chờ backend", android.widget.Toast.LENGTH_LONG).show()
-                    }
+                    val handles = accountsForVariant
+                        .filter { it.uid in selectedForRunUids }
+                        .map { it.handle.trim().removePrefix("@") }
+                    com.cayxu.app.ui.overlay.xsmm.startXsmmJobRunnerOverlay(context, handles)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = XsmmAccentEnd),
                 modifier = Modifier.weight(1f)
             ) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Chạy")
+                val runCount = selectedForRunUids.size
+                Text(if (runCount > 1) "Chạy ($runCount)" else "Chạy")
             }
         }
     }
@@ -339,6 +365,8 @@ private fun XsmmTikTokAccountCard(
     isSelected: Boolean,
     isAdded: Boolean,
     isAdding: Boolean,
+    isCheckedForRun: Boolean,
+    onCheckedForRunChange: (Boolean) -> Unit,
     onClick: () -> Unit,
     onAddClick: () -> Unit
 ) {
@@ -356,6 +384,17 @@ private fun XsmmTikTokAccountCard(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (isAdded) {
+                Checkbox(
+                    checked = isCheckedForRun,
+                    onCheckedChange = onCheckedForRunChange,
+                    colors = CheckboxDefaults.colors(checkedColor = XsmmAccentEnd),
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+            } else {
+                Spacer(Modifier.width(30.dp))
+            }
             Column(Modifier.weight(1f)) {
                 Text("@${account.handle.ifBlank { "chưa_rõ" }}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
                 Spacer(Modifier.height(2.dp))
