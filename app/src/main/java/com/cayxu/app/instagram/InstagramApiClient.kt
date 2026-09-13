@@ -102,7 +102,10 @@ class InstagramApiClient(
 
     fun extractCsrfToken(): String? {
         val matcher = PATTERN_CSRF.matcher(cookie)
-        return if (matcher.find()) matcher.group(1) else null
+        if (matcher.find()) return matcher.group(1)
+        val altMatcher = Pattern.compile("(?:^|;\\s*)csrftoken=([^;]+)").matcher(cookie)
+        if (altMatcher.find()) return altMatcher.group(1)
+        return null
     }
 
     private fun buildStandardHeaders(csrfToken: String? = null): Headers {
@@ -161,10 +164,35 @@ class InstagramApiClient(
     }
 
     /**
-     * Tra cứu user ID từ username
+     * Chuẩn hóa link / username Instagram thành username hoặc user_id sạch
+     */
+    fun cleanInstagramUsername(target: String): String {
+        var t = target.trim()
+        if (t.startsWith("http://") || t.startsWith("https://")) {
+            val uri = android.net.Uri.parse(t)
+            val segments = uri.pathSegments.filter { it.isNotBlank() }
+            if (segments.isNotEmpty()) {
+                // Ví dụ: https://instagram.com/username/?igsh=...
+                val first = segments[0]
+                if (first != "p" && first != "reel" && first != "tv" && first != "stories") {
+                    t = first
+                } else if (segments.size >= 2) {
+                    t = segments[1]
+                }
+            }
+        }
+        return t.substringBefore("?").substringBefore("/").removePrefix("@").trim()
+    }
+
+    /**
+     * Tra cứu user ID từ username với nhiều tầng fallback (API, HTML, TopSearch)
      */
     fun getUserIdFromUsername(username: String): String? {
-        val cleanName = username.trim().removePrefix("@")
+        val cleanName = cleanInstagramUsername(username)
+        if (cleanName.isBlank()) return null
+        if (cleanName.all { it.isDigit() }) return cleanName
+
+        // Cách 1: Qua web_profile_info
         try {
             val request = Request.Builder()
                 .url("$BASE_URL/api/v1/users/web_profile_info/?username=$cleanName")
@@ -176,12 +204,64 @@ class InstagramApiClient(
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: ""
                     val json = JSONObject(body)
-                    return json.optJSONObject("data")?.optJSONObject("user")?.optString("id")
+                    val id = json.optJSONObject("data")?.optJSONObject("user")?.optString("id")
+                    if (!id.isNullOrBlank()) return id
                 }
             }
-        } catch (e: Exception) {
-            // Ignore
-        }
+        } catch (_: Exception) {}
+
+        // Cách 2: Qua web search topsearch API
+        try {
+            val request = Request.Builder()
+                .url("$BASE_URL/web/search/topsearch/?context=blended&query=$cleanName&rank_token=0.5")
+                .headers(buildStandardHeaders())
+                .get()
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    val usersArr = json.optJSONArray("users")
+                    if (usersArr != null && usersArr.length() > 0) {
+                        for (i in 0 until usersArr.length()) {
+                            val u = usersArr.getJSONObject(i).optJSONObject("user")
+                            val uName = u?.optString("username")
+                            if (uName.equals(cleanName, ignoreCase = true)) {
+                                val pk = u.optString("pk").ifBlank { u.optString("id") }
+                                if (pk.isNotBlank()) return pk
+                            }
+                        }
+                        // Lấy kết quả đầu tiên nếu khớp
+                        val firstUser = usersArr.getJSONObject(0).optJSONObject("user")
+                        val pk = firstUser?.optString("pk")?.ifBlank { firstUser.optString("id") }
+                        if (!pk.isNullOrBlank()) return pk
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Cách 3: Đọc trực tiếp HTML profile page
+        try {
+            val request = Request.Builder()
+                .url("$BASE_URL/$cleanName/")
+                .headers(buildStandardHeaders())
+                .get()
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val m1 = Pattern.compile("\"id\":\"(\\d+)\"").matcher(body)
+                    if (m1.find()) return m1.group(1)
+                    val m2 = Pattern.compile("\"user_id\":\"(\\d+)\"").matcher(body)
+                    if (m2.find()) return m2.group(1)
+                    val m3 = Pattern.compile("\"profile_id\":\"(\\d+)\"").matcher(body)
+                    if (m3.find()) return m3.group(1)
+                }
+            }
+        } catch (_: Exception) {}
+
         return null
     }
 
@@ -190,32 +270,56 @@ class InstagramApiClient(
      */
     @Throws(Exception::class)
     fun followUser(targetUserId: String): Boolean {
-        val csrf = extractCsrfToken() ?: throw IllegalStateException("Không có CSRF token")
-        val url = "$API_BASE_URL/api/v1/web/friendships/$targetUserId/follow/"
-        val requestBody = FormBody.Builder().build()
+        val csrf = extractCsrfToken() ?: throw IllegalStateException("Không có CSRF token trong Cookie")
+        val cleanTargetId = targetUserId.trim()
 
-        val request = Request.Builder()
-            .url(url)
-            .headers(buildStandardHeaders(csrf))
-            .post(requestBody)
+        val requestBody = FormBody.Builder()
+            .add("user_id", cleanTargetId)
             .build()
 
-        httpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string() ?: ""
-            if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
-                return true
-            }
-        }
-
-        // Fallback endpoint web
-        val webUrl = "$BASE_URL/api/v1/web/friendships/$targetUserId/follow/"
+        // 1. Thử endpoint Web API chuẩn của Instagram
+        val webUrl = "$BASE_URL/api/v1/web/friendships/$cleanTargetId/follow/"
         val webRequest = Request.Builder()
             .url(webUrl)
             .headers(buildStandardHeaders(csrf))
             .post(requestBody)
             .build()
 
-        httpClient.newCall(webRequest).execute().use { response ->
+        try {
+            httpClient.newCall(webRequest).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
+                    return true
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 2. Thử endpoint i.instagram.com
+        val apiUrl = "$API_BASE_URL/api/v1/web/friendships/$cleanTargetId/follow/"
+        val apiRequest = Request.Builder()
+            .url(apiUrl)
+            .headers(buildStandardHeaders(csrf))
+            .post(requestBody)
+            .build()
+
+        try {
+            httpClient.newCall(apiRequest).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
+                    return true
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 3. Thử friendships create
+        val createUrl = "$BASE_URL/api/v1/friendships/create/$cleanTargetId/"
+        val createReq = Request.Builder()
+            .url(createUrl)
+            .headers(buildStandardHeaders(csrf))
+            .post(requestBody)
+            .build()
+
+        httpClient.newCall(createReq).execute().use { response ->
             val body = response.body?.string() ?: ""
             return response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))
         }
@@ -226,15 +330,15 @@ class InstagramApiClient(
      */
     @Throws(Exception::class)
     fun followTarget(targetIdOrUsername: String): Boolean {
-        val trimmed = targetIdOrUsername.trim().removePrefix("@")
-        if (trimmed.all { it.isDigit() }) {
-            return followUser(trimmed)
+        val clean = cleanInstagramUsername(targetIdOrUsername)
+        if (clean.all { it.isDigit() }) {
+            return followUser(clean)
         }
-        val userId = getUserIdFromUsername(trimmed)
+        val userId = getUserIdFromUsername(clean)
         if (!userId.isNullOrBlank()) {
             return followUser(userId)
         }
-        return followUser(trimmed)
+        return followUser(clean)
     }
 
     /**

@@ -101,11 +101,10 @@ fun XsmmAccountScreen(navController: NavController) {
                 .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
         )
     }
-    var runningIgAccount by remember { mutableStateOf<String?>(null) }
-    var runningIgJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    var igStatusMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var igSuccessCountMap by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
-    var igErrorCountMap by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    val runningIgAccount = com.cayxu.app.automation.instagram.XsmmInstagramManager.runningAccount.value
+    val igStatusMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap
+    val igSuccessCountMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.successCountMap
+    val igErrorCountMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.errorCountMap
 
     if (showInstagramCookieSheet) {
         InstagramCookieBottomSheet(
@@ -586,25 +585,25 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     val acc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanIg)
                                                     if (acc == null || acc.cookie.isBlank()) {
                                                         withContext(Dispatchers.Main) {
-                                                            igStatusMap = igStatusMap + (cleanIg to "Chưa lưu cookie")
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Chưa lưu cookie"
                                                             android.widget.Toast.makeText(context, "Không tìm thấy cookie cho $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
                                                         }
                                                         return@launch
                                                     }
                                                     try {
                                                         withContext(Dispatchers.Main) {
-                                                            igStatusMap = igStatusMap + (cleanIg to "Đang kiểm tra cookie...")
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Đang kiểm tra cookie..."
                                                         }
                                                         val client = com.cayxu.app.instagram.InstagramApiClient(cookie = acc.cookie)
                                                         val info = client.fetchUserInfo()
                                                         withContext(Dispatchers.Main) {
                                                             val nameDisplay = if (info.fullName.isNotBlank()) info.fullName else info.username
-                                                            igStatusMap = igStatusMap + (cleanIg to "Live - $nameDisplay")
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Live - $nameDisplay"
                                                             android.widget.Toast.makeText(context, "Tài khoản $cleanIg còn LIVE", android.widget.Toast.LENGTH_SHORT).show()
                                                         }
                                                     } catch (e: Exception) {
                                                         withContext(Dispatchers.Main) {
-                                                            igStatusMap = igStatusMap + (cleanIg to "Lỗi: Cookie DIE / Checkpoint")
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Lỗi: Cookie DIE / Checkpoint"
                                                             android.widget.Toast.makeText(context, "Lỗi kiểm tra $cleanIg: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
                                                         }
                                                     }
@@ -636,39 +635,14 @@ fun XsmmAccountScreen(navController: NavController) {
                                         IconButton(
                                             onClick = {
                                                 if (isRunningThis) {
-                                                    runningIgJob?.cancel()
-                                                    runningIgJob = null
-                                                    runningIgAccount = null
-                                                    igStatusMap = igStatusMap + (cleanIg to "Đã dừng chạy")
+                                                    com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(cleanIg)
                                                     android.widget.Toast.makeText(context, "Đã dừng chạy $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
                                                 } else {
                                                     if (runningIgAccount != null) {
                                                         android.widget.Toast.makeText(context, "Đang chạy tài khoản $runningIgAccount, hãy dừng trước!", android.widget.Toast.LENGTH_SHORT).show()
                                                         return@IconButton
                                                     }
-                                                    runningIgAccount = cleanIg
-                                                    runningIgJob = scope.launch(Dispatchers.IO) {
-                                                        com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner.run(
-                                                            context = context,
-                                                            accountUsernames = listOf(cleanIg),
-                                                            onStatusUpdate = { status ->
-                                                                scope.launch(Dispatchers.Main) {
-                                                                    igStatusMap = igStatusMap + (cleanIg to status)
-                                                                }
-                                                            },
-                                                            onProgressUpdate = { status, success, errors ->
-                                                                scope.launch(Dispatchers.Main) {
-                                                                    igStatusMap = igStatusMap + (cleanIg to status)
-                                                                    igSuccessCountMap = igSuccessCountMap + (cleanIg to success)
-                                                                    igErrorCountMap = igErrorCountMap + (cleanIg to errors)
-                                                                }
-                                                            }
-                                                        )
-                                                        withContext(Dispatchers.Main) {
-                                                            runningIgAccount = null
-                                                            runningIgJob = null
-                                                        }
-                                                    }
+                                                    com.cayxu.app.automation.instagram.XsmmInstagramManager.start(context, cleanIg)
                                                 }
                                             },
                                             enabled = runningIgAccount == null || isRunningThis,
