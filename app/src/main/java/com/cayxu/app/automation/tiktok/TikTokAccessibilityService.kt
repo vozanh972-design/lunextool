@@ -88,6 +88,7 @@ class TikTokAccessibilityService : AccessibilityService() {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var pollingJob: Job? = null
     private var nurtureJob: Job? = null
+    private var xsmmTaskJob: Job? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -113,12 +114,23 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
             }
         }
+        // Theo dõi nhiệm vụ chạy tự động XSMM (bấm Follow, like, quay về Home lướt tin)
+        scope.launch {
+            XsmmTaskAutomationBridge.action.collect { action ->
+                if (action is XsmmTaskAction.DoTask) {
+                    startXsmmTaskExecution(action)
+                } else {
+                    xsmmTaskJob?.cancel()
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         pollingJob?.cancel()
         nurtureJob?.cancel()
+        xsmmTaskJob?.cancel()
     }
 
     // Không cần xử lý gì ở đây - toàn bộ logic tự động nằm ở vòng lặp polling để không phụ
@@ -756,5 +768,116 @@ class TikTokAccessibilityService : AccessibilityService() {
             if (found != null) return found
         }
         return null
+    }
+
+    private fun findFollowButtonNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val labels = setOf("follow", "theo dõi", "follow lại", "theo dõi lại")
+        return findNodeByText(root, labels, exact = false)
+    }
+
+    private fun findHomeTabNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val labels = setOf("trang chủ", "home", "dành cho bạn", "for you")
+        return findNodeByText(root, labels, exact = false)
+    }
+
+    private fun doubleTapCenter() {
+        val root = rootInActiveWindow ?: return
+        val bounds = Rect()
+        root.getBoundsInScreen(bounds)
+        if (bounds.width() <= 0 || bounds.height() <= 0) return
+        val cx = bounds.exactCenterX()
+        val cy = bounds.exactCenterY()
+        tapAt(cx, cy)
+        scope.launch {
+            delay(120)
+            tapAt(cx, cy)
+        }
+    }
+
+    private fun startXsmmTaskExecution(action: XsmmTaskAction.DoTask) {
+        xsmmTaskJob?.cancel()
+        xsmmTaskJob = scope.launch {
+            try {
+                if (action.swipeBefore) {
+                    XsmmTaskAutomationBridge.updateProgress("Đang lướt trước khi làm...")
+                    delay(1500)
+                    swipeUpNextVideo()
+                    delay(1500)
+                }
+
+                if (action.taskType.contains("follow", ignoreCase = true)) {
+                    XsmmTaskAutomationBridge.updateProgress("Đang tìm nút Follow...")
+                    var followed = false
+                    val maxTries = 15 // ~10 seconds
+                    for (i in 0 until maxTries) {
+                        val root = rootInActiveWindow
+                        if (root != null) {
+                            // Check if already followed
+                            val alreadyNode = findNodeByText(
+                                root,
+                                setOf("đang follow", "đang theo dõi", "following", "bạn bè", "friends"),
+                                exact = false
+                            )
+                            if (alreadyNode != null && !alreadyNode.text.toString().equals("follow", ignoreCase = true)) {
+                                XsmmTaskAutomationBridge.updateProgress("Tài khoản đã được follow từ trước")
+                                followed = true
+                                break
+                            }
+
+                            // Find follow button
+                            val followNode = findFollowButtonNode(root)
+                            if (followNode != null) {
+                                XsmmTaskAutomationBridge.updateProgress("Đã thấy nút Follow, đang bấm...")
+                                clickNode(followNode)
+                                delay(1200)
+                                followed = true
+                                break
+                            }
+                        }
+                        delay(700)
+                    }
+                    if (!followed) {
+                        XsmmTaskAutomationBridge.updateProgress("Không tìm thấy nút Follow")
+                    }
+                } else if (action.taskType.contains("like", ignoreCase = true)) {
+                    XsmmTaskAutomationBridge.updateProgress("Đang thả tim video...")
+                    delay(1500)
+                    doubleTapCenter()
+                    delay(1200)
+                }
+
+                if (action.returnHomeAndSwipe) {
+                    XsmmTaskAutomationBridge.updateProgress("Đang trở về Home để lướt tin...")
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    delay(800)
+                    val homeTab = rootInActiveWindow?.let { findHomeTabNode(it) }
+                    if (homeTab != null) {
+                        clickNode(homeTab)
+                        delay(1000)
+                    }
+
+                    val duration = action.durationSeconds.coerceAtLeast(3)
+                    val startTime = System.currentTimeMillis()
+                    val endTime = startTime + duration * 1000L
+
+                    while (System.currentTimeMillis() < endTime && scope.isActive) {
+                        val remainingSec = ((endTime - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
+                        XsmmTaskAutomationBridge.updateProgress("Đang lướt video trên Home... còn ${remainingSec}s")
+                        delay(Random.nextLong(2500L, 4000L))
+                        swipeUpNextVideo()
+                    }
+                } else {
+                    val duration = action.durationSeconds.coerceAtLeast(1)
+                    for (s in duration downTo 1) {
+                        XsmmTaskAutomationBridge.updateProgress("Đang làm nhiệm vụ... còn ${s}s")
+                        delay(1000L)
+                    }
+                }
+
+                XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đã hoàn thành thao tác")
+            } catch (e: Exception) {
+                XsmmTaskAutomationBridge.completeTask(action.actionId, false, e.message ?: "Lỗi tự động hóa")
+            }
+        }
     }
 }

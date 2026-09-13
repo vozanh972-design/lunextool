@@ -34,25 +34,9 @@ object XsmmRunConfigStore {
     private const val KEY_RETURN_HOME_SWIPE = "return_home_and_swipe"
 
     val supportedTaskTypes = listOf(
-        "tiktok_follow" to "TikTok Follow",
+        "tiktok_follow" to "TikTok Follow (Theo dõi)",
         "tiktok_like" to "TikTok Like (Thả tim)",
-        "tiktok_comment" to "TikTok Comment",
-        "facebook_like" to "Facebook Like",
-        "facebook_follow" to "Facebook Follow",
-        "facebook_comment" to "Facebook Comment",
-        "facebook_share" to "Facebook Share",
-        "facebook_likepage" to "Facebook Like Page",
-        "facebook_member" to "Facebook Tham gia nhóm",
-        "facebook_likecmt" to "Facebook Like Comment",
-        "facebook_review" to "Facebook Đánh giá",
-        "instagram_follow" to "Instagram Follow",
-        "instagram_like" to "Instagram Like",
-        "instagram_comment" to "Instagram Comment",
-        "thread_follow" to "Threads Follow",
-        "thread_like" to "Threads Like",
-        "youtube_follow" to "YouTube Subscribe",
-        "youtube_comment" to "YouTube Comment",
-        "google_review" to "Google Review"
+        "tiktok_comment" to "TikTok Comment (Bình luận)"
     )
 
     private fun prefs(context: Context) =

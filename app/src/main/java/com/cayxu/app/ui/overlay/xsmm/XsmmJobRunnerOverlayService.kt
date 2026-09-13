@@ -172,11 +172,32 @@ class XsmmJobRunnerOverlayService : Service() {
                                         TikTokAppLauncher.openUserProfile(applicationContext, task.targetUrl)
                                     }
 
-                                    val duration = config.doTaskDurationSeconds.coerceAtLeast(1)
-                                    for (s in duration downTo 1) {
-                                        if (!isActive) break
-                                        XsmmJobStatusBridge.update("Đang làm nhiệm vụ... còn ${s}s")
-                                        delay(1000L)
+                                    // Kích hoạt Accessibility Service tự động bấm Follow/Like, quay về Home lướt tin
+                                    val actionId = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.triggerTask(
+                                        taskType = task.type.ifBlank { config.taskType },
+                                        swipeBefore = config.swipeBeforeTask,
+                                        returnHomeAndSwipe = config.returnHomeAndSwipe,
+                                        durationSeconds = config.doTaskDurationSeconds
+                                    )
+
+                                    // Chờ Accessibility Service thực hiện xong
+                                    val actionStartTime = System.currentTimeMillis()
+                                    val maxWaitTime = (config.doTaskDurationSeconds + 20) * 1000L
+                                    while (isActive && (System.currentTimeMillis() - actionStartTime) < maxWaitTime) {
+                                        val res = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.result.value
+                                        when (res) {
+                                            is com.cayxu.app.automation.tiktok.XsmmTaskActionResult.InProgress -> {
+                                                XsmmJobStatusBridge.update(res.message)
+                                            }
+                                            is com.cayxu.app.automation.tiktok.XsmmTaskActionResult.Completed -> {
+                                                if (res.actionId == actionId) {
+                                                    XsmmJobStatusBridge.update(res.message)
+                                                    break
+                                                }
+                                            }
+                                            else -> Unit
+                                        }
+                                        delay(500L)
                                     }
 
                                     XsmmJobStatusBridge.update("Đang gửi xác nhận hoàn thành...")
@@ -199,7 +220,8 @@ class XsmmJobRunnerOverlayService : Service() {
                                             updateProgressDisplay()
                                         }
 
-                                        XsmmJobStatusBridge.update("Thành công +$pts xu! (Đã làm $totalCompleted NV)")
+                                        val msg = if (compRes.message.isNotBlank()) compRes.message else "Thành công +$pts xu!"
+                                        XsmmJobStatusBridge.update("$msg (Đã làm $totalCompleted NV)")
 
                                         if (compRes.countdown > 0) {
                                             delay(compRes.countdown * 1000L)
