@@ -105,6 +105,19 @@ fun XsmmAccountScreen(navController: NavController) {
     val igStatusMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap
     val igSuccessCountMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.successCountMap
     val igErrorCountMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.errorCountMap
+    val igErrorDetailMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.lastErrorDetail
+
+    var selectedErrorDetailAccount by remember { mutableStateOf<String?>(null) }
+
+    if (selectedErrorDetailAccount != null) {
+        val targetUser = selectedErrorDetailAccount ?: ""
+        val detail = igErrorDetailMap[targetUser] ?: igStatusMap[targetUser] ?: "Không có thông tin lỗi chi tiết."
+        ErrorDetailBottomSheet(
+            accountName = targetUser,
+            errorMessage = detail,
+            onDismiss = { selectedErrorDetailAccount = null }
+        )
+    }
 
     if (showInstagramCookieSheet) {
         InstagramCookieBottomSheet(
@@ -775,7 +788,29 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 }
                                             }
 
-                                            if (isRunningNow) {
+                                            val errorDetail = igErrorDetailMap[cleanIg] ?: (if (errorCount > 0) currentStatus else null)
+                                            if (errorDetail != null || errorCount > 0) {
+                                                // Icon dấu chấm than màu đỏ -> bấm để xem popup chi tiết lỗi
+                                                IconButton(
+                                                    onClick = { selectedErrorDetailAccount = cleanIg },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(24.dp)
+                                                            .clip(CircleShape)
+                                                            .background(DangerRed.copy(alpha = 0.12f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Filled.Warning,
+                                                            contentDescription = "Xem chi tiết lỗi",
+                                                            tint = DangerRed,
+                                                            modifier = Modifier.size(14.dp)
+                                                        )
+                                                    }
+                                                }
+                                            } else if (isRunningNow) {
                                                 Text(
                                                     "Đang chạy...",
                                                     fontSize = 11.sp,
@@ -1254,6 +1289,99 @@ private fun DeleteConfirmBottomSheet(
                     Spacer(Modifier.width(6.dp))
                     Text("Xóa ngay", fontWeight = FontWeight.Bold, color = Color.White)
                 }
+            }
+
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ErrorDetailBottomSheet(
+    accountName: String,
+    errorMessage: String,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = CardWhite,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            // Header: Dấu chấm than cảnh báo
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(DangerRed.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = DangerRed,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "Chi tiết lỗi",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = TextPrimary
+                    )
+                    Text(
+                        "Tài khoản: $accountName",
+                        fontSize = 12.5.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Text("Nguyên nhân Instagram trả về:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Spacer(Modifier.height(8.dp))
+
+            // Nội dung chi tiết lỗi
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(
+                        errorMessage,
+                        color = Color(0xFF991B1B),
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = DangerRed),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(46.dp)
+            ) {
+                Text("Đã hiểu & Đóng", fontWeight = FontWeight.Bold, color = Color.White)
             }
 
             Spacer(Modifier.height(16.dp))

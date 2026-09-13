@@ -23,6 +23,7 @@ object XsmmInstagramManager {
     val statusMap = mutableStateMapOf<String, String>()
     val successCountMap = mutableStateMapOf<String, Int>()
     val errorCountMap = mutableStateMapOf<String, Int>()
+    val lastErrorDetail = mutableStateMapOf<String, String>()
 
     fun isRunning(accountUsername: String): Boolean {
         val clean = accountUsername.trim().lowercase()
@@ -66,6 +67,11 @@ object XsmmInstagramManager {
                             statusMap[cur] = status
                             successCountMap[cur] = success
                             errorCountMap[cur] = errors
+                        }
+                    },
+                    onErrorDetail = { username, detail ->
+                        scope.launch(Dispatchers.Main) {
+                            lastErrorDetail[username] = detail
                         }
                     }
                 )

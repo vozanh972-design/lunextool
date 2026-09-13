@@ -38,7 +38,8 @@ object XsmmInstagramTaskRunner {
         context: Context,
         accountUsernames: List<String>,
         onProgressUpdate: ((status: String, successCount: Int, errorCount: Int) -> Unit)? = null,
-        onStatusUpdate: ((String) -> Unit)? = null
+        onStatusUpdate: ((String) -> Unit)? = null,
+        onErrorDetail: ((username: String, detail: String) -> Unit)? = null
     ): RunResult {
         val token = XsmmAccountStore.getToken(context)
         if (token.isNullOrBlank()) {
@@ -58,6 +59,10 @@ object XsmmInstagramTaskRunner {
             onStatusUpdate?.invoke(status)
             onProgressUpdate?.invoke(status, totalCompleted, totalErrors)
             XsmmJobStatusBridge.update(status)
+        }
+
+        fun reportError(user: String, detail: String) {
+            onErrorDetail?.invoke(user, detail)
         }
 
         val targetAccounts = accountUsernames.mapNotNull { name ->
@@ -149,6 +154,7 @@ object XsmmInstagramTaskRunner {
                                     notify("[$cleanUsername] Đang làm $readableType: $target")
 
                                     var actionSuccess = false
+                                    var lastActionError: String? = null
                                     try {
                                         if (isFollow || task.type.contains("follow", ignoreCase = true)) {
                                             val followTarget = task.idorlink.ifBlank { task.targetUrl }
@@ -158,10 +164,12 @@ object XsmmInstagramTaskRunner {
                                             actionSuccess = apiClient.likeTarget(likeTarget, fbDtsg = account.fbDtsg)
                                         }
                                         if (!actionSuccess) {
+                                            lastActionError = "Instagram trả về thất bại (Không thể hoàn thành hành động)"
                                             notify("[$cleanUsername] Instagram không phản hồi thành công")
                                         }
                                     } catch (e: Exception) {
                                         actionSuccess = false
+                                        lastActionError = e.message ?: "Lỗi ngoại lệ khi gửi request Instagram"
                                         notify("[$cleanUsername] Lỗi Instagram: ${e.message}")
                                     }
 
@@ -177,12 +185,14 @@ object XsmmInstagramTaskRunner {
                                     // 4. Xử lý nhận xu theo cơ chế 12 Follow / lần
                                     if (isFollow) {
                                         if (actionSuccess) {
-                                            pendingFollowTaskIds.add(task.id)
-                                            totalCompleted++
-                                            notify("[$cleanUsername] Đã Follow (${pendingFollowTaskIds.size}/12) - Đủ 12 job sẽ nhận xu")
+                                             pendingFollowTaskIds.add(task.id)
+                                             totalCompleted++
+                                             notify("[$cleanUsername] Đã Follow (${pendingFollowTaskIds.size}/12) - Đủ 12 job sẽ nhận xu")
                                         } else {
-                                            totalErrors++
-                                            notify("[$cleanUsername] Lỗi Follow: Instagram từ chối / không thể Follow")
+                                             totalErrors++
+                                             val detailStr = lastActionError ?: "Lỗi Follow: Instagram từ chối / không thể Follow đối tượng $target"
+                                             reportError(cleanUsername, detailStr)
+                                             notify("[$cleanUsername] Lỗi Follow: $detailStr")
                                         }
 
                                         // Khi đủ 12 job Follow -> Gửi nhận xu 1 lần
