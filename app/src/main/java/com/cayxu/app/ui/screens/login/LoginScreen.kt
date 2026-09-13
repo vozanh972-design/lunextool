@@ -63,11 +63,17 @@ fun LoginScreen(
         isSplashPhase = false
     }
 
-    // Tọa độ Y dịch chuyển của Logo: Từ giữa (0.dp) trượt lên trên đỉnh (-260.dp)
-    val logoOffsetY by animateDpAsState(
-        targetValue = if (isSplashPhase) 0.dp else (-260).dp,
+    // Animation chuyển động logo từ chính giữa (bias = 0f) lên trên đỉnh (bias = -0.85f)
+    val logoVerticalBias by animateFloatAsState(
+        targetValue = if (isSplashPhase) 0f else -0.85f,
         animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
-        label = "LogoOffset"
+        label = "LogoVerticalBias"
+    )
+
+    val logoScale by animateFloatAsState(
+        targetValue = if (isSplashPhase) 1.0f else 0.85f,
+        animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+        label = "LogoScale"
     )
 
     val contentAlpha by animateFloatAsState(
@@ -105,26 +111,21 @@ fun LoginScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Logo AutoLunex chuyển động (Từ giữa đẩy lên đỉnh)
+        // Logo AutoLunex chuyển động mượt mà từ chính giữa (Center) lên trên đỉnh (Top)
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp),
-            contentAlignment = Alignment.Center
+                .padding(horizontal = 32.dp),
+            contentAlignment = Alignment(horizontalBias = 0f, verticalBias = logoVerticalBias)
         ) {
-            Box(
+            Image(
+                painter = painterResource(R.drawable.ic_autolunex_logo_clean),
+                contentDescription = "AutoLunex",
+                contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .offset(y = logoOffsetY)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_autolunex_logo_clean),
-                    contentDescription = "AutoLunex",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.height(48.dp)
-                )
-            }
+                    .fillMaxWidth(0.85f * logoScale)
+                    .wrapContentHeight()
+            )
         }
 
         // Nội dung giao diện bên dưới (Hiện ra sau khi logo trượt lên)
