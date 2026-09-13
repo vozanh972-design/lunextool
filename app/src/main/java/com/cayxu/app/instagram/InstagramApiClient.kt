@@ -185,14 +185,63 @@ class InstagramApiClient(
     }
 
     /**
-     * Tra cứu user ID từ username với nhiều tầng fallback (API, HTML, TopSearch)
+     * Tra cứu user ID từ username với nhiều tầng: GraphQL PolarisProfilePostsQuery, web_profile_info, HTML page, TopSearch
      */
     fun getUserIdFromUsername(username: String): String? {
         val cleanName = cleanInstagramUsername(username)
         if (cleanName.isBlank()) return null
         if (cleanName.all { it.isDigit() }) return cleanName
 
-        // Cách 1: Qua web_profile_info
+        val csrf = extractCsrfToken() ?: ""
+
+        // Cách 1: Qua GraphQL PolarisProfilePostsQuery chuẩn nhất (doc_id: 28322872020710458)
+        try {
+            val variables = JSONObject().apply {
+                put("data", JSONObject().apply {
+                    put("count", 1)
+                    put("include_reel_media_seen_timestamp", false)
+                    put("include_relationship_info", true)
+                    put("latest_besties_reel_media", false)
+                    put("latest_reel_media", false)
+                })
+                put("username", cleanName)
+            }.toString()
+
+            val formBody = FormBody.Builder()
+                .add("variables", variables)
+                .add("doc_id", "28322872020710458")
+                .build()
+
+            val headers = Headers.Builder()
+                .add("User-Agent", userAgent)
+                .add("Cookie", cookie)
+                .add("Accept", "*/*")
+                .add("Origin", BASE_URL)
+                .add("Referer", "$BASE_URL/$cleanName/")
+                .add("X-CSRFToken", csrf)
+                .add("X-IG-App-ID", APP_ID)
+                .add("X-ASBD-ID", ASBD_ID)
+                .add("X-FB-Friendly-Name", "PolarisProfilePostsQuery")
+                .build()
+
+            val request = Request.Builder()
+                .url("$BASE_URL/graphql/query")
+                .headers(headers)
+                .post(formBody)
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val m = Pattern.compile("\"owner\"\\s*:\\s*\\{\\s*\"id\"\\s*:\\s*\"([0-9]+)\"").matcher(body)
+                    if (m.find()) return m.group(1)
+                    val m2 = Pattern.compile("\"id\"\\s*:\\s*\"([0-9]+)\"").matcher(body)
+                    if (m2.find()) return m2.group(1)
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Cách 2: Qua web_profile_info
         try {
             val request = Request.Builder()
                 .url("$BASE_URL/api/v1/users/web_profile_info/?username=$cleanName")
@@ -206,37 +255,6 @@ class InstagramApiClient(
                     val json = JSONObject(body)
                     val id = json.optJSONObject("data")?.optJSONObject("user")?.optString("id")
                     if (!id.isNullOrBlank()) return id
-                }
-            }
-        } catch (_: Exception) {}
-
-        // Cách 2: Qua web search topsearch API
-        try {
-            val request = Request.Builder()
-                .url("$BASE_URL/web/search/topsearch/?context=blended&query=$cleanName&rank_token=0.5")
-                .headers(buildStandardHeaders())
-                .get()
-                .build()
-
-            httpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val usersArr = json.optJSONArray("users")
-                    if (usersArr != null && usersArr.length() > 0) {
-                        for (i in 0 until usersArr.length()) {
-                            val u = usersArr.getJSONObject(i).optJSONObject("user")
-                            val uName = u?.optString("username")
-                            if (uName.equals(cleanName, ignoreCase = true)) {
-                                val pk = u.optString("pk").ifBlank { u.optString("id") }
-                                if (pk.isNotBlank()) return pk
-                            }
-                        }
-                        // Lấy kết quả đầu tiên nếu khớp
-                        val firstUser = usersArr.getJSONObject(0).optJSONObject("user")
-                        val pk = firstUser?.optString("pk")?.ifBlank { firstUser.optString("id") }
-                        if (!pk.isNullOrBlank()) return pk
-                    }
                 }
             }
         } catch (_: Exception) {}
@@ -258,6 +276,38 @@ class InstagramApiClient(
                     if (m2.find()) return m2.group(1)
                     val m3 = Pattern.compile("\"profile_id\":\"(\\d+)\"").matcher(body)
                     if (m3.find()) return m3.group(1)
+                    val m4 = Pattern.compile("profilePage_([0-9]+)").matcher(body)
+                    if (m4.find()) return m4.group(1)
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Cách 4: Qua web search topsearch API
+        try {
+            val request = Request.Builder()
+                .url("$BASE_URL/web/search/topsearch/?context=blended&query=$cleanName&rank_token=0.5")
+                .headers(buildStandardHeaders())
+                .get()
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    val usersArr = json.optJSONArray("users")
+                    if (usersArr != null && usersArr.length() > 0) {
+                        for (i in 0 until usersArr.length()) {
+                            val u = usersArr.getJSONObject(i).optJSONObject("user")
+                            val uName = u?.optString("username")
+                            if (uName.equals(cleanName, ignoreCase = true)) {
+                                val pk = u.optString("pk").ifBlank { u.optString("id") }
+                                if (pk.isNotBlank()) return pk
+                            }
+                        }
+                        val firstUser = usersArr.getJSONObject(0).optJSONObject("user")
+                        val pk = firstUser?.optString("pk")?.ifBlank { firstUser.optString("id") }
+                        if (!pk.isNullOrBlank()) return pk
+                    }
                 }
             }
         } catch (_: Exception) {}
