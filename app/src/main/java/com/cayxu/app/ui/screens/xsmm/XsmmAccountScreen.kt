@@ -410,13 +410,27 @@ fun XsmmAccountScreen(navController: NavController) {
             Button(
                 onClick = {
                     val handles = if (selectedPlatform == "tiktok") {
-                        accountsForVariant
-                            .filter { it.uid in selectedForRunUids }
-                            .map { it.handle.trim().removePrefix("@") }
+                        val selected = if (selectedForRunUids.isNotEmpty()) {
+                            accountsForVariant.filter { it.uid in selectedForRunUids }
+                        } else if (selectedAccountUid != null) {
+                            accountsForVariant.filter { it.uid == selectedAccountUid }
+                        } else {
+                            accountsForVariant
+                        }
+                        selected.map { it.handle.trim().removePrefix("@") }.filter { it.isNotBlank() }
                     } else {
-                        facebookAccounts
-                            .filter { it.uid in selectedForRunUids }
-                            .map { it.uid.trim() }
+                        val selected = if (selectedForRunUids.isNotEmpty()) {
+                            facebookAccounts.filter { it.uid in selectedForRunUids }
+                        } else if (selectedAccountUid != null) {
+                            facebookAccounts.filter { it.uid == selectedAccountUid }
+                        } else {
+                            facebookAccounts
+                        }
+                        selected.map { it.uid.trim() }.filter { it.isNotBlank() }
+                    }
+                    if (handles.isEmpty()) {
+                        android.widget.Toast.makeText(context, "Chưa có tài khoản nào để chạy", android.widget.Toast.LENGTH_SHORT).show()
+                        return@Button
                     }
                     com.cayxu.app.ui.overlay.xsmm.startXsmmJobRunnerOverlay(context, handles)
                 },
@@ -425,7 +439,7 @@ fun XsmmAccountScreen(navController: NavController) {
             ) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                val runCount = selectedForRunUids.size
+                val runCount = if (selectedForRunUids.isNotEmpty()) selectedForRunUids.size else accountsForVariant.size
                 Text(if (runCount > 1) "Chạy ($runCount)" else "Chạy")
             }
         }

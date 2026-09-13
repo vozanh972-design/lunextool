@@ -115,7 +115,11 @@ fun TasksScreen(navController: NavController) {
                         onClick = {
                             selectedPlatform = index
                             if (option.name == "XSMM") {
-                                val route = if (com.cayxu.app.ui.screens.xsmm.XsmmSession.isLoggedIn.value) {
+                                val isXsmmLoggedIn = com.cayxu.app.data.local.XsmmAccountStore.isLoggedIn(context)
+                                if (isXsmmLoggedIn) {
+                                    com.cayxu.app.ui.screens.xsmm.XsmmSession.restore(context)
+                                }
+                                val route = if (isXsmmLoggedIn || com.cayxu.app.ui.screens.xsmm.XsmmSession.isLoggedIn.value) {
                                     com.cayxu.app.ui.navigation.Routes.XSMM_ACCOUNT
                                 } else {
                                     com.cayxu.app.ui.navigation.Routes.XSMM_LOGIN

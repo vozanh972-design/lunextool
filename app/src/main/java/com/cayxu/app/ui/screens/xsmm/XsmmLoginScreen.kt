@@ -43,6 +43,15 @@ fun XsmmLoginScreen(navController: NavController) {
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (com.cayxu.app.data.local.XsmmAccountStore.isLoggedIn(context)) {
+            XsmmSession.restore(context)
+            navController.navigate(Routes.XSMM_ACCOUNT) {
+                popUpTo(Routes.XSMM_LOGIN) { inclusive = true }
+            }
+        }
+    }
+
     fun submit() {
         if (tokenInput.isBlank()) {
             errorMessage = "Vui lòng nhập token"
