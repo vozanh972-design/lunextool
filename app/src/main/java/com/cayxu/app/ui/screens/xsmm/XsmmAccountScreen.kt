@@ -513,10 +513,10 @@ fun XsmmAccountScreen(navController: NavController) {
             Spacer(Modifier.height(90.dp))
         }
 
-        // ---- 2 nút cố định dưới cùng: Cấu hình chạy + Chạy (kèm nút + đăng nhập) ----
+        // ---- 2 nút cố định dưới cùng: Cấu hình chạy + Chạy ----
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedButton(
@@ -527,33 +527,8 @@ fun XsmmAccountScreen(navController: NavController) {
                 modifier = Modifier.weight(1f).height(48.dp)
             ) {
                 Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Cấu hình", maxLines = 1)
-            }
-            IconButton(
-                onClick = {
-                    when (selectedPlatform) {
-                        "facebook" -> showFacebookLoginSheet = true
-                        "instagram" -> showInstagramCookieSheet = true
-                        else -> navController.navigate(Routes.LINK_ACCOUNT_TIKTOK)
-                    }
-                },
-                modifier = Modifier.size(46.dp)
-            ) {
-                val plusColor = when (selectedPlatform) {
-                    "facebook" -> Color(0xFF1877F2)
-                    "instagram" -> Color(0xFFE1306C)
-                    else -> XsmmAccentEnd
-                }
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(plusColor.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Đăng nhập tài khoản", tint = plusColor, modifier = Modifier.size(24.dp))
-                }
+                Spacer(Modifier.width(6.dp))
+                Text("Cấu hình chạy", maxLines = 1)
             }
             Button(
                 onClick = {

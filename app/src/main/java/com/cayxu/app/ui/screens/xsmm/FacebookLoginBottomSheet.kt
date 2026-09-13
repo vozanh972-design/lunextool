@@ -2,6 +2,9 @@ package com.cayxu.app.ui.screens.xsmm
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -25,6 +28,22 @@ import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
 import com.cayxu.app.utils.FacebookLiveChecker
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+
+private enum class FbFieldKey(val label: String, val sample: String) {
+    UID("UID", "100088992211334"),
+    PASSWORD("Pass", "matkhau123"),
+    TWOFA("2FA", "123456"),
+    COOKIE("Cookie", "c_user=...; xs=..."),
+    TOKEN("Token", "EAAB..."),
+    PROXY("Proxy", "1.2.3.4:8080")
+}
 
 private fun extractUidFromCookie(cookie: String): String? {
     val pairs = cookie.split(';')
@@ -44,9 +63,36 @@ fun FacebookLoginBottomSheet(
     onAccountSaved: ((FacebookAccount) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var cookieText by remember { mutableStateOf("") }
+
+    // Thứ tự các trường được chọn, mặc định chọn Cookie
+    var selectedFields by remember { mutableStateOf(listOf(FbFieldKey.COOKIE)) }
+    var inputText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+
+    val allFields = listOf(
+        FbFieldKey.UID,
+        FbFieldKey.PASSWORD,
+        FbFieldKey.TWOFA,
+        FbFieldKey.COOKIE,
+        FbFieldKey.TOKEN,
+        FbFieldKey.PROXY
+    )
+
+    fun toggleField(field: FbFieldKey) {
+        selectedFields = if (field in selectedFields) {
+            val newList = selectedFields - field
+            if (newList.isEmpty()) listOf(field) else newList
+        } else {
+            selectedFields + field
+        }
+    }
+
+    val formatString = if (selectedFields.isEmpty()) "Chưa chọn trường nào"
+    else selectedFields.joinToString(" | ") { it.label }
+
+    val placeholderExample = selectedFields.joinToString(" | ") { it.sample }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -60,6 +106,7 @@ fun FacebookLoginBottomSheet(
                 .padding(horizontal = 20.dp, vertical = 12.dp)
                 .verticalScroll(rememberScrollState())
         ) {
+            // Header
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -87,21 +134,93 @@ fun FacebookLoginBottomSheet(
                         color = TextPrimary
                     )
                     Text(
-                        "Dán Cookie hoặc Access Token Facebook",
+                        "Chọn định dạng trường và dán dữ liệu tài khoản",
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
                 }
             }
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(16.dp))
 
-            Text("Cookie / Token Facebook", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Text("Chọn trường & thứ tự kết hợp:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Spacer(Modifier.height(8.dp))
+
+            // 2 hàng x 3 nút chọn trường
+            val chunked = allFields.chunked(3)
+            chunked.forEachIndexed { rowIndex, rowFields ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowFields.forEach { field ->
+                        val orderIndex = selectedFields.indexOf(field).let { if (it >= 0) it + 1 else null }
+                        val isSelected = orderIndex != null
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) Color(0xFF1877F2) else CardWhite)
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isSelected) Color(0xFF1877F2) else Color(0xFFE2E8F0),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = { toggleField(field) }
+                                )
+                                .padding(vertical = 9.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (orderIndex != null) "$orderIndex. ${field.label}" else field.label,
+                                fontSize = 12.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) CardWhite else TextPrimary
+                            )
+                        }
+                    }
+                }
+                if (rowIndex < chunked.lastIndex) {
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Hiển thị định dạng hiện tại
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFF1F5F9))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "Định dạng: $formatString",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF1877F2)
+                )
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            Text("Dữ liệu tài khoản (mỗi dòng 1 nick):", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Spacer(Modifier.height(6.dp))
+
             OutlinedTextField(
-                value = cookieText,
-                onValueChange = { cookieText = it },
-                placeholder = { Text("Dán chuỗi cookie (c_user=...; xs=...) hoặc Access Token (EAAB...)", color = TextSecondary, fontSize = 13.sp) },
+                value = inputText,
+                onValueChange = { inputText = it },
+                placeholder = {
+                    Text(
+                        "Phân tách bằng dấu \"|\"\nVí dụ:\n$placeholderExample",
+                        color = TextSecondary.copy(alpha = 0.7f),
+                        fontSize = 12.sp
+                    )
+                },
                 minLines = 5,
                 maxLines = 8,
                 shape = RoundedCornerShape(14.dp),
@@ -112,8 +231,9 @@ fun FacebookLoginBottomSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(20.dp))
 
+            // Nút Hủy & Đăng nhập
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -127,45 +247,97 @@ fun FacebookLoginBottomSheet(
                 }
                 Button(
                     onClick = {
-                        val trimmed = cookieText.trim()
-                        if (trimmed.isBlank()) {
-                            Toast.makeText(context, "Vui lòng nhập Cookie hoặc Token", Toast.LENGTH_SHORT).show()
+                        val raw = inputText.trim()
+                        if (raw.isBlank()) {
+                            Toast.makeText(context, "Vui lòng dán dữ liệu tài khoản", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
-                        isLoading = true
-                        val extractedUid = extractUidFromCookie(trimmed) ?: if (trimmed.startsWith("EAA")) "Token_${System.currentTimeMillis() % 100000}" else "FB_${System.currentTimeMillis() % 100000}"
-                        val isToken = trimmed.startsWith("EAA")
-                        val account = FacebookAccount(
-                            uid = extractedUid,
-                            name = "",
-                            note = if (!isToken) trimmed else "",
-                            bio = if (isToken) trimmed else "",
-                            isLive = false
-                        )
-                        FacebookAccountsStore.addAccount(context, account)
+                        if (selectedFields.isEmpty()) {
+                            Toast.makeText(context, "Vui lòng chọn ít nhất 1 trường định dạng", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
 
-                        if (!isToken) {
-                            FacebookLiveChecker.checkCookieWithAvatarAndName(
-                                cookieString = trimmed,
-                                onResult = { uid, isLive, avatarUrl, fullName ->
-                                    val updated = account.copy(
-                                        uid = uid ?: account.uid,
-                                        name = fullName ?: account.name,
-                                        avatar = avatarUrl ?: account.avatar,
-                                        isLive = isLive
-                                    )
-                                    FacebookAccountsStore.updateAccount(context, updated)
-                                    isLoading = false
-                                    Toast.makeText(context, "Đã đăng nhập tài khoản Facebook: ${updated.name.ifBlank { updated.uid }}", Toast.LENGTH_SHORT).show()
-                                    onAccountSaved?.invoke(updated)
-                                    onDismiss()
+                        val lines = raw.lines().map { it.trim() }.filter { it.isNotBlank() }
+                        val accountsToAdd = lines.mapNotNull { line ->
+                            val parts = line.split("|").map { it.trim() }
+                            var uid = ""
+                            var pass = ""
+                            var twoFa = ""
+                            var cookie = ""
+                            var token = ""
+                            var proxy = ""
+
+                            selectedFields.forEachIndexed { index, field ->
+                                val value = parts.getOrNull(index).orEmpty()
+                                when (field) {
+                                    FbFieldKey.UID -> uid = value
+                                    FbFieldKey.PASSWORD -> pass = value
+                                    FbFieldKey.TWOFA -> twoFa = value
+                                    FbFieldKey.COOKIE -> cookie = value
+                                    FbFieldKey.TOKEN -> token = value
+                                    FbFieldKey.PROXY -> proxy = value
                                 }
+                            }
+
+                            if (uid.isBlank() && cookie.isNotBlank()) {
+                                uid = extractUidFromCookie(cookie).orEmpty()
+                            }
+                            if (uid.isBlank() && token.isNotBlank() && token.startsWith("EAA")) {
+                                uid = "Token_${System.currentTimeMillis() % 100000}"
+                            }
+                            if (uid.isBlank()) {
+                                uid = "FB_${System.currentTimeMillis() % 100000}"
+                            }
+
+                            FacebookAccount(
+                                uid = uid,
+                                name = pass,
+                                link = twoFa,
+                                note = cookie,
+                                phone = proxy,
+                                bio = token,
+                                isLive = false
                             )
-                        } else {
-                            isLoading = false
-                            Toast.makeText(context, "Đã đăng nhập tài khoản Facebook", Toast.LENGTH_SHORT).show()
-                            onAccountSaved?.invoke(account)
-                            onDismiss()
+                        }
+
+                        if (accountsToAdd.isEmpty()) {
+                            Toast.makeText(context, "Không có dữ liệu hợp lệ", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+
+                        isLoading = true
+                        scope.launch {
+                            val checkedAccounts = accountsToAdd.map { acc ->
+                                async {
+                                    val cookie = acc.note
+                                    if (cookie.isNotBlank()) {
+                                        suspendCancellableCoroutine { cont ->
+                                            FacebookLiveChecker.checkCookieWithAvatarAndName(
+                                                cookieString = cookie,
+                                                onResult = { uidRes, isLive, avatarUrl, fullName ->
+                                                    val updated = acc.copy(
+                                                        uid = uidRes ?: acc.uid,
+                                                        name = fullName ?: acc.name,
+                                                        avatar = avatarUrl ?: acc.avatar,
+                                                        isLive = isLive
+                                                    )
+                                                    cont.resume(updated)
+                                                }
+                                            )
+                                        }
+                                    } else {
+                                        acc
+                                    }
+                                }
+                            }.awaitAll()
+
+                            FacebookAccountsStore.addAccounts(context, checkedAccounts)
+                            withContext(Dispatchers.Main) {
+                                isLoading = false
+                                Toast.makeText(context, "Đã đăng nhập ${checkedAccounts.size} tài khoản Facebook", Toast.LENGTH_SHORT).show()
+                                checkedAccounts.firstOrNull()?.let { onAccountSaved?.invoke(it) }
+                                onDismiss()
+                            }
                         }
                     },
                     shape = RoundedCornerShape(12.dp),
