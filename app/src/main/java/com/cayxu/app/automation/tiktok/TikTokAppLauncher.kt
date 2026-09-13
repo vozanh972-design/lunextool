@@ -83,6 +83,20 @@ object TikTokAppLauncher {
         }
     }
 
+    /** Mở link profile / video trên TikTok hoặc trình duyệt */
+    fun openUserProfile(context: Context, url: String): Boolean {
+        return try {
+            val cleanUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) "https://$url" else url
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     fun isOverlayPermissionGranted(context: Context): Boolean {
         return Settings.canDrawOverlays(context)
     }

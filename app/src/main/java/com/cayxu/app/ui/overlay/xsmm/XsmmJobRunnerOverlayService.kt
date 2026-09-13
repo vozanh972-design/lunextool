@@ -195,7 +195,7 @@ class XsmmJobRunnerOverlayService : Service() {
                                         launch(Dispatchers.Main) {
                                             val currentPts = XsmmAccountStore.getPoints(applicationContext) + pts
                                             XsmmAccountStore.updatePoints(applicationContext, currentPts)
-                                            XsmmSession.points.longValue = currentPts
+                                            XsmmSession.points.value = currentPts
                                             updateProgressDisplay()
                                         }
 
