@@ -29,6 +29,4 @@ fun startXsmmJobRunnerOverlay(context: Context, accountHandles: List<String>) {
     context.startService(Intent(context, XsmmJobRunnerOverlayService::class.java).apply {
         putExtra(XsmmJobRunnerOverlayService.EXTRA_ACCOUNT_HANDLES, accountHandles.joinToString(","))
     })
-    // Tự động mở TikTok để lớp nổi hoạt động trên nền TikTok
-    TikTokAppLauncher.launch(context, TikTokAppVariant.STANDARD)
 }

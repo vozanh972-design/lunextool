@@ -143,7 +143,7 @@ class XsmmJobRunnerOverlayService : Service() {
                         delay(1200L)
                         val verifyActionId = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.triggerVerifyAccount(cleanHandle)
                         val verifyStartTime = System.currentTimeMillis()
-                        val maxVerifyWait = 35000L // 35s để thoải mái mở menu và chuyển acc
+                        val maxVerifyWait = 90000L // 90s để máy yếu mở app và tải chậm thoải mái
                         while (isActive && (System.currentTimeMillis() - verifyStartTime) < maxVerifyWait) {
                             val res = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.result.value
                             if (res is com.cayxu.app.automation.tiktok.XsmmTaskActionResult.InProgress) {
