@@ -77,32 +77,41 @@ object XsmmRunConfigStore {
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun get(context: Context): XsmmRunConfig {
+    fun setActivePlatform(context: Context, platform: String) {
+        prefs(context).edit().putString(KEY_PLATFORM, platform).apply()
+    }
+
+    fun get(context: Context, platform: String? = null): XsmmRunConfig {
         val p = prefs(context)
+        val selectedPlatform = (platform ?: p.getString(KEY_PLATFORM, "tiktok") ?: "tiktok").lowercase()
+        val prefix = if (selectedPlatform != "tiktok") "${selectedPlatform}_" else ""
         return XsmmRunConfig(
-            platform = p.getString(KEY_PLATFORM, "tiktok") ?: "tiktok",
-            taskType = p.getString(KEY_TASK_TYPE, "tiktok_follow") ?: "tiktok_follow",
-            fetchTaskIntervalSeconds = p.getInt(KEY_FETCH_INTERVAL, 10),
-            doTaskDurationSeconds = p.getInt(KEY_DO_DURATION, 10),
-            taskCountTarget = p.getInt(KEY_TASK_COUNT_TARGET, 0),
-            stopAfterNoTaskCount = p.getInt(KEY_STOP_AFTER_NO_TASK, 100),
-            stopAfterCompletedCount = p.getInt(KEY_STOP_AFTER_COMPLETED, 100),
-            swipeBeforeTask = p.getBoolean(KEY_SWIPE_BEFORE, false),
-            returnHomeAndSwipe = p.getBoolean(KEY_RETURN_HOME_SWIPE, false)
+            platform = selectedPlatform,
+            taskType = p.getString("${prefix}${KEY_TASK_TYPE}", if (selectedPlatform == "instagram") "instagram_follow" else "tiktok_follow") ?: "tiktok_follow",
+            fetchTaskIntervalSeconds = p.getInt("${prefix}${KEY_FETCH_INTERVAL}", p.getInt(KEY_FETCH_INTERVAL, 10)),
+            doTaskDurationSeconds = p.getInt("${prefix}${KEY_DO_DURATION}", p.getInt(KEY_DO_DURATION, 10)),
+            taskCountTarget = p.getInt("${prefix}${KEY_TASK_COUNT_TARGET}", p.getInt(KEY_TASK_COUNT_TARGET, 0)),
+            stopAfterNoTaskCount = p.getInt("${prefix}${KEY_STOP_AFTER_NO_TASK}", p.getInt(KEY_STOP_AFTER_NO_TASK, 100)),
+            stopAfterCompletedCount = p.getInt("${prefix}${KEY_STOP_AFTER_COMPLETED}", p.getInt(KEY_STOP_AFTER_COMPLETED, 100)),
+            swipeBeforeTask = p.getBoolean("${prefix}${KEY_SWIPE_BEFORE}", p.getBoolean(KEY_SWIPE_BEFORE, false)),
+            returnHomeAndSwipe = p.getBoolean("${prefix}${KEY_RETURN_HOME_SWIPE}", p.getBoolean(KEY_RETURN_HOME_SWIPE, false))
         )
     }
 
     fun save(context: Context, config: XsmmRunConfig) {
-        prefs(context).edit()
-            .putString(KEY_PLATFORM, config.platform)
-            .putString(KEY_TASK_TYPE, config.taskType)
-            .putInt(KEY_FETCH_INTERVAL, config.fetchTaskIntervalSeconds)
-            .putInt(KEY_DO_DURATION, config.doTaskDurationSeconds)
-            .putInt(KEY_TASK_COUNT_TARGET, config.taskCountTarget)
-            .putInt(KEY_STOP_AFTER_NO_TASK, config.stopAfterNoTaskCount)
-            .putInt(KEY_STOP_AFTER_COMPLETED, config.stopAfterCompletedCount)
-            .putBoolean(KEY_SWIPE_BEFORE, config.swipeBeforeTask)
-            .putBoolean(KEY_RETURN_HOME_SWIPE, config.returnHomeAndSwipe)
+        val p = prefs(context)
+        val selectedPlatform = config.platform.lowercase()
+        val prefix = if (selectedPlatform != "tiktok") "${selectedPlatform}_" else ""
+        p.edit()
+            .putString(KEY_PLATFORM, selectedPlatform)
+            .putString("${prefix}${KEY_TASK_TYPE}", config.taskType)
+            .putInt("${prefix}${KEY_FETCH_INTERVAL}", config.fetchTaskIntervalSeconds)
+            .putInt("${prefix}${KEY_DO_DURATION}", config.doTaskDurationSeconds)
+            .putInt("${prefix}${KEY_TASK_COUNT_TARGET}", config.taskCountTarget)
+            .putInt("${prefix}${KEY_STOP_AFTER_NO_TASK}", config.stopAfterNoTaskCount)
+            .putInt("${prefix}${KEY_STOP_AFTER_COMPLETED}", config.stopAfterCompletedCount)
+            .putBoolean("${prefix}${KEY_SWIPE_BEFORE}", config.swipeBeforeTask)
+            .putBoolean("${prefix}${KEY_RETURN_HOME_SWIPE}", config.returnHomeAndSwipe)
             .apply()
     }
 }

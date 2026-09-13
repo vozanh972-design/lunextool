@@ -137,11 +137,31 @@ fun XsmmRunConfigScreen(navController: NavController) {
                     taskType = defaultTask
                 }
             )
-            ConfigTaskTypeSelector(
-                platform = platform,
-                selectedType = taskType,
-                onSelectType = { taskType = it }
-            )
+            if (platform == "tiktok") {
+                ConfigTaskTypeSelector(
+                    platform = platform,
+                    selectedType = taskType,
+                    onSelectType = { taskType = it }
+                )
+            } else {
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardWhite),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEEF1F5)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text("Loại nhiệm vụ", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Tự động tìm nhiệm vụ: Ưu tiên Follow (Theo dõi), khi hết job sẽ tự động chuyển sang Like (Thích).",
+                            fontSize = 12.5.sp,
+                            color = TextSecondary,
+                            lineHeight = 17.sp
+                        )
+                    }
+                }
+            }
             ConfigNumberField(
                 label = "Thời gian lấy nhiệm vụ",
                 suffix = "giây",

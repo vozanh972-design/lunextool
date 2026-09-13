@@ -102,7 +102,10 @@ fun XsmmAccountScreen(navController: NavController) {
         )
     }
     var runningIgAccount by remember { mutableStateOf<String?>(null) }
+    var runningIgJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var igStatusMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var igSuccessCountMap by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var igErrorCountMap by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
 
     if (showInstagramCookieSheet) {
         InstagramCookieBottomSheet(
@@ -628,24 +631,43 @@ fun XsmmAccountScreen(navController: NavController) {
 
                                         Spacer(Modifier.width(6.dp))
 
-                                        // Nút Tam giác Chạy (Play)
+                                        // Nút Chạy (Play tam giác) / Dừng (Stop ô vuông đỏ)
                                         val isRunningThis = runningIgAccount == cleanIg
                                         IconButton(
                                             onClick = {
-                                                if (runningIgAccount != null) return@IconButton
-                                                runningIgAccount = cleanIg
-                                                scope.launch(Dispatchers.IO) {
-                                                    com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner.run(
-                                                        context = context,
-                                                        accountUsernames = listOf(cleanIg),
-                                                        onStatusUpdate = { status ->
-                                                            scope.launch(Dispatchers.Main) {
-                                                                igStatusMap = igStatusMap + (cleanIg to status)
+                                                if (isRunningThis) {
+                                                    runningIgJob?.cancel()
+                                                    runningIgJob = null
+                                                    runningIgAccount = null
+                                                    igStatusMap = igStatusMap + (cleanIg to "Đã dừng chạy")
+                                                    android.widget.Toast.makeText(context, "Đã dừng chạy $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    if (runningIgAccount != null) {
+                                                        android.widget.Toast.makeText(context, "Đang chạy tài khoản $runningIgAccount, hãy dừng trước!", android.widget.Toast.LENGTH_SHORT).show()
+                                                        return@IconButton
+                                                    }
+                                                    runningIgAccount = cleanIg
+                                                    runningIgJob = scope.launch(Dispatchers.IO) {
+                                                        com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner.run(
+                                                            context = context,
+                                                            accountUsernames = listOf(cleanIg),
+                                                            onStatusUpdate = { status ->
+                                                                scope.launch(Dispatchers.Main) {
+                                                                    igStatusMap = igStatusMap + (cleanIg to status)
+                                                                }
+                                                            },
+                                                            onProgressUpdate = { status, success, errors ->
+                                                                scope.launch(Dispatchers.Main) {
+                                                                    igStatusMap = igStatusMap + (cleanIg to status)
+                                                                    igSuccessCountMap = igSuccessCountMap + (cleanIg to success)
+                                                                    igErrorCountMap = igErrorCountMap + (cleanIg to errors)
+                                                                }
                                                             }
+                                                        )
+                                                        withContext(Dispatchers.Main) {
+                                                            runningIgAccount = null
+                                                            runningIgJob = null
                                                         }
-                                                    )
-                                                    withContext(Dispatchers.Main) {
-                                                        runningIgAccount = null
                                                     }
                                                 }
                                             },
@@ -656,14 +678,16 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 modifier = Modifier
                                                     .size(28.dp)
                                                     .clip(CircleShape)
-                                                    .background(if (isRunningThis) Color(0xFF16A34A) else Color(0xFFE1306C)),
+                                                    .background(if (isRunningThis) DangerRed else Color(0xFFE1306C)),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 if (isRunningThis) {
-                                                    CircularProgressIndicator(
-                                                        color = Color.White,
-                                                        strokeWidth = 2.dp,
-                                                        modifier = Modifier.size(16.dp)
+                                                    // Ô vuông màu đỏ khi đang chạy -> bấm để DỪNG
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(10.dp)
+                                                            .clip(RoundedCornerShape(2.dp))
+                                                            .background(Color.White)
                                                     )
                                                 } else {
                                                     Icon(
@@ -683,40 +707,108 @@ fun XsmmAccountScreen(navController: NavController) {
                                         modifier = Modifier.padding(vertical = 10.dp)
                                     )
 
-                                    // Khu vực hiển thị trạng thái kéo dài xuống dưới
+                                    // Khu vực hiển thị trạng thái + thống kê Hoàn thành / Lỗi
                                     val currentStatus = igStatusMap[cleanIg] ?: "Trạng thái: Sẵn sàng"
+                                    val successCount = igSuccessCountMap[cleanIg] ?: 0
+                                    val errorCount = igErrorCountMap[cleanIg] ?: 0
                                     val isError = currentStatus.contains("Lỗi", ignoreCase = true) || currentStatus.contains("DIE", ignoreCase = true) || currentStatus.contains("Không tìm thấy", ignoreCase = true)
                                     val isRunningNow = runningIgAccount == cleanIg
 
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
+                                        // Dòng 1: Status text kèm chấm tròn trạng thái (đếm ngược thời gian)
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.weight(1f)
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(7.dp)
+                                                    .size(8.dp)
                                                     .clip(CircleShape)
                                                     .background(
                                                         when {
                                                             isRunningNow -> Color(0xFF3B82F6)
-                                                            isError -> Color(0xFFDC2626)
+                                                            isError -> DangerRed
                                                             else -> Color(0xFF16A34A)
                                                         }
                                                     )
                                             )
-                                            Spacer(Modifier.width(6.dp))
+                                            Spacer(Modifier.width(8.dp))
                                             Text(
                                                 currentStatus,
-                                                fontSize = 11.5.sp,
-                                                color = if (isError) Color(0xFFDC2626) else TextSecondary,
-                                                fontWeight = FontWeight.Medium,
-                                                maxLines = 1
+                                                fontSize = 12.sp,
+                                                color = if (isError) DangerRed else if (isRunningNow) Color(0xFF1E40AF) else TextSecondary,
+                                                fontWeight = if (isRunningNow) FontWeight.SemiBold else FontWeight.Medium,
+                                                maxLines = 2,
+                                                modifier = Modifier.weight(1f)
                                             )
+                                        }
+
+                                        // Dòng 2: Hiển thị Thống kê Hoàn thành / Lỗi
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                // Thành công
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier
+                                                        .background(Color(0xFF16A34A).copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Check,
+                                                        contentDescription = null,
+                                                        tint = Color(0xFF16A34A),
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(
+                                                        "Hoàn thành: $successCount",
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFF15803D)
+                                                    )
+                                                }
+
+                                                // Thất bại / Lỗi
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier
+                                                        .background(DangerRed.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
+                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(6.dp)
+                                                            .clip(CircleShape)
+                                                            .background(DangerRed)
+                                                    )
+                                                    Spacer(Modifier.width(5.dp))
+                                                    Text(
+                                                        "Lỗi: $errorCount",
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = DangerRed
+                                                    )
+                                                }
+                                            }
+
+                                            if (isRunningNow) {
+                                                Text(
+                                                    "Đang chạy...",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFFE1306C)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -742,6 +834,7 @@ fun XsmmAccountScreen(navController: NavController) {
             ) {
                 OutlinedButton(
                     onClick = {
+                        com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, "tiktok")
                         navController.navigate(Routes.XSMM_RUN_CONFIG)
                     },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = XsmmAccentEnd),
@@ -801,6 +894,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     // Nút Cấu hình chạy
                     OutlinedButton(
                         onClick = {
+                            com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, selectedPlatform)
                             navController.navigate(Routes.XSMM_RUN_CONFIG)
                         },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = platformColor),
