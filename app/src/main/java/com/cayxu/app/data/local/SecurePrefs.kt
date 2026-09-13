@@ -84,9 +84,36 @@ class SecurePrefs(context: Context) {
      */
     fun hasSeenWelcome(): Boolean = prefs.getBoolean(KEY_SEEN_WELCOME, false)
 
-    fun setSeenWelcome() {
-        prefs.edit().putBoolean(KEY_SEEN_WELCOME, true).apply()
+    fun saveBuyerUsername(name: String?) {
+        prefs.edit().putString(KEY_BUYER_USERNAME, name).apply()
     }
+
+    fun getBuyerUsername(): String? = prefs.getString(KEY_BUYER_USERNAME, null)
+
+    fun savePackageName(pkg: String?) {
+        prefs.edit().putString(KEY_PACKAGE_NAME, pkg).apply()
+    }
+
+    fun getPackageName(): String? = prefs.getString(KEY_PACKAGE_NAME, "Premium")
+
+    fun saveExpiresAt(expiresAt: String?) {
+        prefs.edit().putString(KEY_EXPIRES_AT, expiresAt).apply()
+    }
+
+    fun getExpiresAt(): String? = prefs.getString(KEY_EXPIRES_AT, null)
+
+    fun saveActivatedKeysCount(count: Int) {
+        prefs.edit().putInt(KEY_ACTIVATED_KEYS, count).apply()
+    }
+
+    fun getActivatedKeysCount(): Int = prefs.getInt(KEY_ACTIVATED_KEYS, 1)
+
+    fun incrementActivatedKeysCount() {
+        val current = getActivatedKeysCount()
+        saveActivatedKeysCount(current + 1)
+    }
+
+    fun getPoints(): Int = getActivatedKeysCount() * 10
 
     companion object {
         private const val KEY_LOGIN_KEY = "login_key"
@@ -95,5 +122,9 @@ class SecurePrefs(context: Context) {
         private const val KEY_ACCOUNT_ID = "account_id"
         private const val KEY_AVATAR_URI = "avatar_uri"
         private const val KEY_SEEN_WELCOME = "has_seen_welcome"
+        private const val KEY_BUYER_USERNAME = "buyer_username"
+        private const val KEY_PACKAGE_NAME = "package_name"
+        private const val KEY_EXPIRES_AT = "expires_at"
+        private const val KEY_ACTIVATED_KEYS = "activated_keys"
     }
 }

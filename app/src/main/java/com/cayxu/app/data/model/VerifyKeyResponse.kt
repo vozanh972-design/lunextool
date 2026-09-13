@@ -18,7 +18,15 @@ data class VerifyKeyResponse(
     @SerializedName("expire_in_seconds") val expireInSeconds: Long? = null,
     @SerializedName("server_ts") val serverTs: Long? = null,
     @SerializedName("expire_ts") val expireTs: Long? = null,
-    @SerializedName("device_check_count") val deviceCheckCount: Int? = null
+    @SerializedName("device_check_count") val deviceCheckCount: Int? = null,
+    @SerializedName("buyer") val buyer: BuyerInfo? = null
 ) {
     val isSuccess: Boolean get() = status == "success"
 }
+
+data class BuyerInfo(
+    @SerializedName("username") val username: String? = null,
+    @SerializedName("email") val email: String? = null,
+    @SerializedName("phone") val phone: String? = null,
+    @SerializedName("order_id") val orderId: String? = null
+)

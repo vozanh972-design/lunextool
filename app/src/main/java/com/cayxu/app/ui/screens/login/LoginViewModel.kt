@@ -46,6 +46,9 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                     // Re-bind fingerprint mỗi lần verify thành công - phòng trường hợp chữ ký
                     // APK hợp lệ đổi (vd sau khi bạn tự cập nhật bản ký release thật).
                     com.cayxu.app.util.IntegrityGuard.bindKeyToDevice(getApplication(), savedKey)
+                    result.data.buyer?.username?.let { if (it.isNotBlank()) securePrefs.saveBuyerUsername(it) }
+                    result.data.packageName?.let { securePrefs.savePackageName(it) }
+                    result.data.expiresAt?.let { securePrefs.saveExpiresAt(it) }
                     _uiState.value = _uiState.value.copy(isCheckingSavedKey = false)
                     _pendingAutoLoginSuccess = true
                 }
@@ -82,6 +85,9 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                 is AuthResult.Success -> {
                     securePrefs.saveKey(key)
                     com.cayxu.app.util.IntegrityGuard.bindKeyToDevice(getApplication(), key)
+                    result.data.buyer?.username?.let { if (it.isNotBlank()) securePrefs.saveBuyerUsername(it) }
+                    result.data.packageName?.let { securePrefs.savePackageName(it) }
+                    result.data.expiresAt?.let { securePrefs.saveExpiresAt(it) }
                     _uiState.value = _uiState.value.copy(isLoading = false)
                     onSuccess()
                 }

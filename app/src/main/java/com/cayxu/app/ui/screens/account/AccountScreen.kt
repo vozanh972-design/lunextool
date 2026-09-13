@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,15 +16,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -39,14 +39,11 @@ import androidx.navigation.NavController
 import com.cayxu.app.BuildConfig
 import com.cayxu.app.R
 import com.cayxu.app.data.local.FacebookAccountsStore
+import com.cayxu.app.data.local.LinkedAccountsStore
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.data.local.TikTokAccountsStore
-import com.cayxu.app.ui.theme.AppBackground
-import com.cayxu.app.ui.theme.CardWhite
-import com.cayxu.app.ui.theme.InfoBlueBg
-import com.cayxu.app.ui.theme.Primary
-import com.cayxu.app.ui.theme.TextPrimary
-import com.cayxu.app.ui.theme.TextSecondary
+import com.cayxu.app.ui.navigation.Routes
+import com.cayxu.app.ui.theme.*
 import com.cayxu.app.util.DeviceUtils
 
 private data class SocialAccountItem(
@@ -63,23 +60,28 @@ private val socialAccounts = listOf(
     SocialAccountItem("Threads", R.drawable.ic_social_threads)
 )
 
+private val Navy900 = Color(0xFF0A1730)
+private val Cobalt600 = Color(0xFF1D4ED8)
+private val Cyan400 = Color(0xFF4FD1E8)
+private val Cyan100 = Color(0xFFE3FBFD)
+
 @Composable
 fun AccountScreen(navController: NavController) {
     val context = LocalContext.current
     val securePrefs = remember { SecurePrefs(context) }
     val clipboardManager = LocalClipboardManager.current
 
-    // Lấy số lượng tài khoản Facebook và TikTok (mỗi nền tảng lưu riêng, không dùng chung store)
     var facebookCount by remember { mutableStateOf(FacebookAccountsStore.getAccounts(context).size) }
     var tikTokCount by remember { mutableStateOf(TikTokAccountsStore.getAccounts(context).size) }
+    var instagramCount by remember { mutableStateOf(LinkedAccountsStore.getAccounts(context, "Instagram").size) }
 
-    // Cập nhật khi quay lại màn hình
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 facebookCount = FacebookAccountsStore.getAccounts(context).size
                 tikTokCount = TikTokAccountsStore.getAccounts(context).size
+                instagramCount = LinkedAccountsStore.getAccounts(context, "Instagram").size
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -87,10 +89,31 @@ fun AccountScreen(navController: NavController) {
     }
 
     val accountId = remember { securePrefs.getOrCreateAccountId() }
+    val buyerUsername = remember { securePrefs.getBuyerUsername() }
+    val displayName = if (!buyerUsername.isNullOrBlank()) buyerUsername else "ID: $accountId"
     val deviceId = remember { DeviceUtils.getAndroidId(context) }
+    val packageName = remember { securePrefs.getPackageName() ?: "Premium" }
+    val expiresAt = remember { securePrefs.getExpiresAt() ?: "20/12/2026" }
+    val activatedKeys = remember { securePrefs.getActivatedKeysCount() }
+
+    // Tính điểm thành viên: mỗi lần mua/kích hoạt 1 key = 10 điểm
+    val points = remember(activatedKeys) { activatedKeys * 10 }
+
+    // Hạng thành viên tính theo điểm
+    val (tierName, nextTierName, neededPoints, progressFraction) = remember(points) {
+        when {
+            points < 50 -> Quad("Hạng Đồng", "Hạng Bạc", 50 - points, points / 50f)
+            points < 200 -> Quad("Hạng Bạc", "Hạng Vàng", 200 - points, (points - 50) / 150f)
+            points < 500 -> Quad("Hạng Vàng", "Bạch Kim", 500 - points, (points - 200) / 300f)
+            points < 1000 -> Quad("Hạng Bạch Kim", "Kim Cương", 1000 - points, (points - 500) / 500f)
+            else -> Quad("Hạng Kim Cương", "Tối Thượng", 0, 1.0f)
+        }
+    }
 
     var avatarUriString by remember { mutableStateOf(securePrefs.getAvatarUri()) }
     var avatarBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var showBenefitsDialog by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(avatarUriString) {
         val uriString = avatarUriString
@@ -124,39 +147,100 @@ fun AccountScreen(navController: NavController) {
         }
     }
 
+    if (showBenefitsDialog) {
+        AlertDialog(
+            onDismissRequest = { showBenefitsDialog = false },
+            title = { Text("Quyền lợi $tierName", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("• Tích luỹ 10 điểm cho mỗi key kích hoạt.", fontSize = 13.5.sp, color = TextSecondary)
+                    Text("• Ưu tiên xử lý nhiệm vụ siêu tốc độ.", fontSize = 13.5.sp, color = TextSecondary)
+                    Text("• Hỗ trợ kỹ thuật 24/7 trực tiếp.", fontSize = 13.5.sp, color = TextSecondary)
+                    Text("• Mở khoá tính năng chạy đa luồng không giới hạn.", fontSize = 13.5.sp, color = TextSecondary)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBenefitsDialog = false }) {
+                    Text("Đóng", fontWeight = FontWeight.Bold, color = Cobalt600)
+                }
+            }
+        )
+    }
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Đăng xuất", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = { Text("Bạn có chắc chắn muốn đăng xuất khỏi tài khoản?", fontSize = 14.sp, color = TextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutDialog = false
+                        securePrefs.clearKey()
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = DangerRed)
+                ) {
+                    Text("Đăng xuất", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showLogoutDialog = false }) {
+                    Text("Hủy", color = TextSecondary)
+                }
+            }
+        )
+    }
+
     Column(
         Modifier
             .fillMaxSize()
             .background(AppBackground)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 20.dp)
     ) {
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(16.dp))
+
+        // ---- Header ----
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Tài khoản", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text("Tài khoản", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = { navController.navigate(com.cayxu.app.ui.navigation.Routes.SETTINGS) }) {
-                Icon(Icons.Filled.Settings, contentDescription = "Cài đặt", tint = TextPrimary)
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(CardWhite)
+                    .clickable { navController.navigate(Routes.SETTINGS) },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Settings, contentDescription = "Cài đặt", tint = TextPrimary, modifier = Modifier.size(20.dp))
             }
         }
+
         Spacer(Modifier.height(16.dp))
 
-        Column(
-            Modifier
+        // ---- Profile Card (Tên người dùng mua key + Avatar + Mã máy) ----
+        Box(
+            modifier = Modifier
                 .fillMaxWidth()
-                .background(InfoBlueBg, RoundedCornerShape(18.dp))
-                .padding(16.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(Brush.linearGradient(listOf(Cyan100, Color(0xFFEDF2FF), Color(0xFFF5F0FF))))
+                .border(1.dp, Color(0x140F1E37), RoundedCornerShape(22.dp))
+                .padding(18.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(contentAlignment = Alignment.BottomEnd) {
                     Box(
                         Modifier
-                            .size(72.dp)
+                            .size(62.dp)
                             .clip(CircleShape)
-                            .background(CardWhite)
+                            .background(Brush.linearGradient(listOf(Navy900, Cobalt600, Cyan400))),
+                        contentAlignment = Alignment.Center
                     ) {
                         val bitmap = avatarBitmap
                         if (bitmap != null) {
@@ -164,14 +248,14 @@ fun AccountScreen(navController: NavController) {
                                 bitmap = bitmap,
                                 contentDescription = "Ảnh đại diện",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize().clip(CircleShape)
                             )
                         } else {
                             Image(
                                 painter = painterResource(R.drawable.ic_default_avatar),
                                 contentDescription = "Ảnh đại diện mặc định",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize().clip(CircleShape)
                             )
                         }
                     }
@@ -182,7 +266,7 @@ fun AccountScreen(navController: NavController) {
                             .background(CardWhite)
                             .padding(2.dp)
                             .clip(CircleShape)
-                            .background(Primary)
+                            .background(Cobalt600)
                             .clickable { pickImageLauncher.launch(arrayOf("image/*")) },
                         contentAlignment = Alignment.Center
                     ) {
@@ -190,7 +274,7 @@ fun AccountScreen(navController: NavController) {
                             Icons.Filled.CameraAlt,
                             contentDescription = "Đổi ảnh đại diện",
                             tint = CardWhite,
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(12.dp)
                         )
                     }
                 }
@@ -200,48 +284,163 @@ fun AccountScreen(navController: NavController) {
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "ID: $accountId",
+                            displayName,
                             color = TextPrimary,
                             fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
                         )
-                        IconButton(
-                            onClick = {
-                                clipboardManager.setText(AnnotatedString(accountId))
-                                Toast.makeText(context, "Đã sao chép ID", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(26.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(Color.White.copy(alpha = 0.6f))
+                                .clickable {
+                                    clipboardManager.setText(AnnotatedString(displayName))
+                                    Toast.makeText(context, "Đã sao chép tên người dùng", Toast.LENGTH_SHORT).show()
+                                },
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 Icons.Filled.ContentCopy,
-                                contentDescription = "Sao chép ID",
-                                tint = TextSecondary,
-                                modifier = Modifier.size(14.dp)
+                                contentDescription = "Sao chép",
+                                tint = Cobalt600,
+                                modifier = Modifier.size(13.dp)
                             )
                         }
                     }
-                    Spacer(Modifier.height(2.dp))
-                    Text("Mã máy: $deviceId", color = TextSecondary, fontSize = 12.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Mã máy: $deviceId", color = TextSecondary, fontSize = 12.5.sp, maxLines = 1)
                 }
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
 
-        Text("Quản lý tài khoản", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-        Spacer(Modifier.height(8.dp))
+        // ---- Card Hạng thành viên (Tier Card) ----
+        Text("Hạng thành viên", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Spacer(Modifier.height(10.dp))
         Card(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Brush.linearGradient(listOf(Navy900, Cobalt600, Cyan400)))
+                    .padding(20.dp)
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFFFDE047), modifier = Modifier.size(24.dp))
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(tierName, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(2.dp))
+                            val subText = if (neededPoints > 0) "$points điểm • còn $neededPoints điểm để lên $nextTierName"
+                            else "$points điểm • Đã đạt hạng cao nhất"
+                            Text(subText, color = Color(0xFFEAF1FC).copy(alpha = 0.85f), fontSize = 12.5.sp)
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    // Progress bar
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(7.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Color.White.copy(alpha = 0.18f))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(progressFraction.coerceIn(0.05f, 1f))
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(Brush.horizontalGradient(listOf(Cyan400, Color.White)))
+                        )
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    OutlinedButton(
+                        onClick = { showBenefitsDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color.White.copy(alpha = 0.08f),
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                    ) {
+                        Text("Xem quyền lợi hạng thành viên", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ---- Gói dịch vụ ----
+        Text("Gói dịch vụ", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Spacer(Modifier.height(10.dp))
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = CardWhite),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column {
+                HtmlListRow(
+                    title = "Gói đang sử dụng",
+                    subtitle = "$packageName • Còn hiệu lực đến $expiresAt",
+                    subtitleColor = Cobalt600,
+                    onClick = { Toast.makeText(context, "Gói $packageName còn hiệu lực đến $expiresAt", Toast.LENGTH_SHORT).show() }
+                )
+                HorizontalDivider(color = AppBackground, thickness = 1.dp)
+                HtmlListRow(
+                    title = "Lịch sử kích hoạt",
+                    subtitle = "Đã kích hoạt $activatedKeys mã",
+                    onClick = { Toast.makeText(context, "Tổng cộng đã kích hoạt $activatedKeys key", Toast.LENGTH_SHORT).show() }
+                )
+                HorizontalDivider(color = AppBackground, thickness = 1.dp)
+                HtmlListRow(
+                    title = "Thiết bị đã kích hoạt",
+                    subtitle = "1 thiết bị đang hoạt động",
+                    onClick = { Toast.makeText(context, "Thiết bị hiện tại: $deviceId", Toast.LENGTH_SHORT).show() }
+                )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ---- Quản lý tài khoản ----
+        Text("Quản lý tài khoản", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Spacer(Modifier.height(10.dp))
+        Card(
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = CardWhite),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column {
                 socialAccounts.forEachIndexed { index, item ->
-                    // Với Facebook/TikTok, hiển thị số lượng đã thêm (mỗi nền tảng có store riêng)
                     val count = when (item.label) {
                         "Facebook" -> facebookCount
                         "TikTok" -> tikTokCount
+                        "Instagram" -> instagramCount
                         else -> 0
                     }
                     SocialAccountRow(
@@ -249,9 +448,9 @@ fun AccountScreen(navController: NavController) {
                         count = count,
                         onClick = {
                             when (item.label) {
-                                "Facebook" -> navController.navigate(com.cayxu.app.ui.navigation.Routes.LINK_ACCOUNT_FACEBOOK)
-                                "TikTok" -> navController.navigate(com.cayxu.app.ui.navigation.Routes.LINK_ACCOUNT_TIKTOK)
-                                else -> navController.navigate(com.cayxu.app.ui.navigation.Routes.linkAccount(item.label, item.iconRes))
+                                "Facebook" -> navController.navigate(Routes.LINK_ACCOUNT_FACEBOOK)
+                                "TikTok" -> navController.navigate(Routes.LINK_ACCOUNT_TIKTOK)
+                                else -> navController.navigate(Routes.linkAccount(item.label, item.iconRes))
                             }
                         }
                     )
@@ -262,28 +461,82 @@ fun AccountScreen(navController: NavController) {
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
 
-        Text("Hỗ trợ & khác", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-        Spacer(Modifier.height(8.dp))
+        // ---- Hỗ trợ & khác ----
+        Text("Hỗ trợ & khác", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Spacer(Modifier.height(10.dp))
         Card(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = CardWhite),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column {
-                SimpleInfoRow("Trung tâm hỗ trợ")
+                HtmlListRow(
+                    title = "Trung tâm hỗ trợ",
+                    onClick = { Toast.makeText(context, "Đang mở trung tâm hỗ trợ", Toast.LENGTH_SHORT).show() }
+                )
                 HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                SimpleInfoRow("Điều khoản sử dụng")
+                HtmlListRow(
+                    title = "Điều khoản sử dụng",
+                    onClick = { Toast.makeText(context, "Đang mở điều khoản sử dụng", Toast.LENGTH_SHORT).show() }
+                )
                 HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                SimpleInfoRow("Chính sách bảo mật")
+                HtmlListRow(
+                    title = "Chính sách bảo mật",
+                    onClick = { Toast.makeText(context, "Đang mở chính sách bảo mật", Toast.LENGTH_SHORT).show() }
+                )
                 HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                SimpleInfoRow("Phiên bản ứng dụng", trailing = BuildConfig.VERSION_NAME)
+                HtmlListRow(
+                    title = "Phiên bản ứng dụng",
+                    trailingText = BuildConfig.VERSION_NAME
+                )
+                HorizontalDivider(color = AppBackground, thickness = 1.dp)
+                HtmlListRow(
+                    title = "Đăng xuất",
+                    titleColor = DangerRed,
+                    hideChevron = true,
+                    onClick = { showLogoutDialog = true }
+                )
             }
         }
 
         Spacer(Modifier.height(90.dp))
+    }
+}
+
+private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+
+@Composable
+private fun HtmlListRow(
+    title: String,
+    subtitle: String? = null,
+    titleColor: Color = TextPrimary,
+    subtitleColor: Color = TextSecondary,
+    trailingText: String? = null,
+    hideChevron: Boolean = false,
+    onClick: (() -> Unit)? = null
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = onClick != null) { onClick?.invoke() }
+            .padding(horizontal = 16.dp, vertical = 15.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = titleColor, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            if (subtitle != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(subtitle, color = subtitleColor, fontSize = 12.5.sp, fontWeight = if (subtitleColor == Cobalt600) FontWeight.SemiBold else FontWeight.Normal)
+            }
+        }
+        if (trailingText != null) {
+            Text(trailingText, color = TextSecondary, fontSize = 13.sp)
+        } else if (!hideChevron) {
+            Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Color(0xFF8E9BB0), modifier = Modifier.size(18.dp))
+        }
     }
 }
 
@@ -293,7 +546,7 @@ private fun SocialAccountRow(item: SocialAccountItem, count: Int, onClick: () ->
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Image(
@@ -301,36 +554,15 @@ private fun SocialAccountRow(item: SocialAccountItem, count: Int, onClick: () ->
             contentDescription = item.label,
             modifier = Modifier
                 .size(40.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(12.dp))
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text("Thêm tài khoản ${item.label}", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            val statusText = if ((item.label == "Facebook" || item.label == "TikTok") && count > 0) {
-                "$count tài khoản"
-            } else {
-                "Chưa liên kết"
-            }
-            Text(statusText, color = if (count > 0) Primary else TextSecondary, fontSize = 12.sp)
+            Text("Thêm tài khoản ${item.label}", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            val statusText = if (count > 0) "$count tài khoản" else "Chưa liên kết"
+            Spacer(Modifier.height(2.dp))
+            Text(statusText, color = if (count > 0) Cobalt600 else Color(0xFF8E9BB0), fontSize = 12.5.sp, fontWeight = if (count > 0) FontWeight.SemiBold else FontWeight.Normal)
         }
-        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = TextSecondary)
-    }
-}
-
-@Composable
-private fun SimpleInfoRow(label: String, trailing: String? = null) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(enabled = trailing == null) { }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, color = TextPrimary, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        if (trailing != null) {
-            Text(trailing, color = TextSecondary, fontSize = 13.sp)
-        } else {
-            Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = TextSecondary)
-        }
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Color(0xFF8E9BB0), modifier = Modifier.size(18.dp))
     }
 }
