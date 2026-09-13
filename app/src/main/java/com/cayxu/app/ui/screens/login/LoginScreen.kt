@@ -11,15 +11,17 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.HeadsetMic
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,15 +30,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,27 +43,32 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cayxu.app.R
 
 /**
- * GIAO DIỆN 3: MÀN ĐĂNG NHẬP / NHẬP KEY (LOGIN SCREEN)
- * - Logo AutoLunex ở trên
- * - Tiêu đề "Đăng nhập vào tài khoản"
- * - Khu vực nhập Key và Nút Đăng nhập được dời xuống gần phía dưới cùng của màn hình
- * - Vùng bấm ẩn "Chưa có key? Mua key ngay" tàng hình cùng màu nền dẫn tới lunex.io.vn
+ * GIAO DIỆN 2: MÀN ĐĂNG NHẬP BẰNG KEY (LOGIN SCREEN)
+ * Thiết kế chuẩn phong cách Digital Banking:
+ * - Header có nút Back và Logo AutoLunex
+ * - Tiêu đề "Đăng nhập"
+ * - CHỈ CÓ DUY NHẤT 1 Ô NHẬP: Key kích hoạt (không dùng tài khoản / mật khẩu)
+ * - Checkbox "Ghi nhớ đăng nhập" & link "Mua key ngay?"
+ * - Nút "Đăng nhập" Cobalt Banking
+ * - Các nút tiện ích Lấy OTP / CSKH
  */
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
+    onBackToIntro: (() -> Unit)? = null,
     viewModel: LoginViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
 
-    var rememberAccount by remember { mutableStateOf(true) }
-    var passwordVisible by remember { mutableStateOf(true) }
+    var rememberKey by remember { mutableStateOf(true) }
+    var showOtpDialog by remember { mutableStateOf(false) }
 
-    val brandOrange = Color(0xFFFF5E1E)
-    val textDark = Color(0xFF1E293B)
-    val textMuted = Color(0xFF64748B)
+    val cobalt600 = Color(0xFF1D4ED8)
+    val textPrimary = Color(0xFF0B1730)
+    val textSecondary = Color(0xFF5B6B85)
+    val surface2 = Color(0xFFF7F9FB)
     val borderColor = Color(0xFFE2E8F0)
 
     // Tự động chuyển tiếp nếu key đã lưu hợp lệ
@@ -83,248 +87,362 @@ fun LoginScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFFCFBF9))
+            .background(Color.White)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
             ) { focusManager.clearFocus() }
     ) {
-        // Nền sóng cam ở chân màn hình
-        Image(
-            painter = painterResource(R.drawable.bg_bottom_warm_waves),
-            contentDescription = null,
-            contentScale = ContentScale.FillWidth,
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-        )
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .navigationBarsPadding(),
+            horizontalAlignment = Alignment.Start
         ) {
-            Spacer(modifier = Modifier.height(36.dp))
-
-            // Logo AutoLunex chuẩn, sắc nét
-            Image(
-                painter = painterResource(R.drawable.ic_autolunex_warm_logo),
-                contentDescription = "AutoLunex Logo",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxWidth(0.7f)
-                    .height(90.dp)
-            )
-
-            Spacer(modifier = Modifier.height(28.dp))
-
-            // Tiêu đề
-            Text(
-                text = "Đăng nhập vào tài khoản",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = textDark,
-                textAlign = TextAlign.Center
-            )
-
-            // Đẩy toàn bộ khu vực Nhập Key và Đăng nhập xuống gần phía dưới cùng
-            Spacer(modifier = Modifier.weight(1f))
-
-            // Ô NHẬP KEY / MẬT KHẨU
-            Box(
+            // TOP BAR: Nút Back + Logo thương hiệu
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White)
-                    .border(1.dp, borderColor, RoundedCornerShape(14.dp))
-                    .padding(horizontal = 16.dp),
-                contentAlignment = Alignment.CenterStart
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Lock,
-                        contentDescription = null,
-                        tint = Color(0xFF64748B),
-                        modifier = Modifier.size(20.dp)
-                    )
+                if (onBackToIntro != null) {
+                    IconButton(
+                        onClick = onBackToIntro,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(surface2)
+                            .border(1.dp, borderColor, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Quay lại",
+                            tint = textPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                     Spacer(modifier = Modifier.width(12.dp))
+                }
 
-                    Box(modifier = Modifier.weight(1f)) {
-                        if (uiState.keyInput.isEmpty()) {
-                            Text(
-                                text = "Mật khẩu / Key kích hoạt",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 15.sp
+                Image(
+                    painter = painterResource(R.drawable.ic_app_logo),
+                    contentDescription = "AutoLunex Logo",
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "AUTOLUNEX",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = textPrimary
+                )
+            }
+
+            // NỘI DUNG FORM ĐĂNG NHẬP
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.Start
+            ) {
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "Đăng nhập",
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = textPrimary
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Nhập key kích hoạt để tiếp tục sử dụng dịch vụ.",
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    color = textSecondary
+                )
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                // LABEL VÀ Ô NHẬP KEY DUY NHẤT
+                Text(
+                    text = "Key kích hoạt",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = textSecondary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(surface2)
+                        .border(1.5.dp, if (uiState.keyInput.isNotEmpty()) cobalt600 else borderColor, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Lock,
+                            contentDescription = null,
+                            tint = if (uiState.keyInput.isNotEmpty()) cobalt600 else Color(0xFF8E9BB0),
+                            modifier = Modifier.size(20.dp)
+                        )
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (uiState.keyInput.isEmpty()) {
+                                Text(
+                                    text = "Nhập mã key của bạn",
+                                    color = Color(0xFF8E9BB0),
+                                    fontSize = 14.5.sp
+                                )
+                            }
+                            BasicTextField(
+                                value = uiState.keyInput,
+                                onValueChange = viewModel::onKeyInputChange,
+                                singleLine = true,
+                                textStyle = TextStyle(
+                                    color = textPrimary,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                cursorBrush = SolidColor(cobalt600),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = {
+                                    focusManager.clearFocus()
+                                    if (uiState.keyInput.isNotBlank()) {
+                                        viewModel.login(onLoginSuccess)
+                                    }
+                                }),
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
-                        BasicTextField(
-                            value = uiState.keyInput,
-                            onValueChange = viewModel::onKeyInputChange,
-                            singleLine = true,
-                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                            textStyle = TextStyle(
-                                color = textDark,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium
+
+                        // Nút Dán hoặc Xóa nhanh
+                        if (uiState.keyInput.isNotEmpty()) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Xóa",
+                                tint = textSecondary,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clickable { viewModel.onKeyInputChange("") }
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.ContentPaste,
+                                contentDescription = "Dán từ bộ nhớ tạm",
+                                tint = cobalt600,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clickable {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        val clip = clipboard.primaryClip
+                                        if (clip != null && clip.itemCount > 0) {
+                                            val text = clip.getItemAt(0).text?.toString().orEmpty().trim()
+                                            if (text.isNotEmpty()) {
+                                                viewModel.onKeyInputChange(text)
+                                            }
+                                        }
+                                    }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // HÀNG TÙY CHỌN: Ghi nhớ & Mua key
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { rememberKey = !rememberKey }
+                    ) {
+                        Checkbox(
+                            checked = rememberKey,
+                            onCheckedChange = { rememberKey = it },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = cobalt600,
+                                uncheckedColor = Color(0xFFCBD5E1),
+                                checkmarkColor = Color.White
                             ),
-                            cursorBrush = SolidColor(brandOrange),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(onDone = {
-                                focusManager.clearFocus()
-                                if (uiState.keyInput.isNotBlank()) {
-                                    viewModel.login(onLoginSuccess)
-                                }
-                            }),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Ghi nhớ đăng nhập",
+                            fontSize = 13.sp,
+                            color = textSecondary,
+                            fontWeight = FontWeight.Medium
                         )
                     }
 
-                    // Nút chuyển đổi ẩn/hiện hoặc Dán
-                    if (uiState.keyInput.isNotEmpty()) {
-                        IconButton(
-                            onClick = { passwordVisible = !passwordVisible },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                contentDescription = "Ẩn/Hiện",
-                                tint = Color(0xFF64748B),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    } else {
-                        IconButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = clipboard.primaryClip
-                                if (clip != null && clip.itemCount > 0) {
-                                    val text = clip.getItemAt(0).text?.toString().orEmpty().trim()
-                                    if (text.isNotEmpty()) {
-                                        viewModel.onKeyInputChange(text)
-                                    }
-                                }
-                            },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.ContentPaste,
-                                contentDescription = "Dán",
-                                tint = brandOrange,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Hàng tùy chọn "Nhớ tài khoản" & "Quên mật khẩu?"
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable { rememberAccount = !rememberAccount }
-                ) {
-                    Checkbox(
-                        checked = rememberAccount,
-                        onCheckedChange = { rememberAccount = it },
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = Color(0xFF334155),
-                            uncheckedColor = Color(0xFFCBD5E1),
-                            checkmarkColor = Color.White
-                        ),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Nhớ tài khoản",
-                        fontSize = 14.sp,
-                        color = Color(0xFF334155),
-                        fontWeight = FontWeight.Medium
+                        text = "Mua key ngay?",
+                        fontSize = 13.sp,
+                        color = cobalt600,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clickable {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://lunex.io.vn/"))
+                            runCatching { context.startActivity(intent) }
+                        }
                     )
                 }
 
-                Text(
-                    text = "Quên mật khẩu?",
-                    fontSize = 14.sp,
-                    color = brandOrange,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clickable {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://lunex.io.vn/"))
-                        runCatching { context.startActivity(intent) }
-                    }
-                )
-            }
+                Spacer(modifier = Modifier.height(28.dp))
 
-            Spacer(modifier = Modifier.height(28.dp))
-
-            // Nút "ĐĂNG NHẬP"
-            Button(
-                onClick = {
-                    focusManager.clearFocus()
-                    if (uiState.keyInput.isNotBlank()) {
-                        viewModel.login(onLoginSuccess)
-                    } else {
-                        Toast.makeText(context, "Vui lòng nhập key hoặc mật khẩu", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                enabled = !uiState.isLoading,
-                shape = RoundedCornerShape(26.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = brandOrange),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .shadow(elevation = 6.dp, shape = RoundedCornerShape(26.dp), spotColor = brandOrange)
-            ) {
-                if (uiState.isLoading) {
-                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                } else {
-                    Text(
-                        text = "Đăng nhập",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(48.dp))
-
-            // Vùng tàng hình "Chưa có key ? Mua key ngay" (Màu trong suốt/trùng nền tàng hình nhưng chạm vào sẽ mở link lunex.io.vn)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 24.dp)
-                    .clickable {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://lunex.io.vn/"))
-                        runCatching { context.startActivity(intent) }
+                // NÚT ĐĂNG NHẬP CHÍNH
+                Button(
+                    onClick = {
+                        focusManager.clearFocus()
+                        if (uiState.keyInput.isNotBlank()) {
+                            viewModel.login(onLoginSuccess)
+                        } else {
+                            Toast.makeText(context, "Vui lòng nhập key kích hoạt", Toast.LENGTH_SHORT).show()
+                        }
                     },
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Chưa có key ? ",
-                    fontSize = 14.sp,
-                    color = Color.Transparent
-                )
-                Text(
-                    text = "Mua key ngay",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Transparent
-                )
+                    enabled = !uiState.isLoading,
+                    shape = RoundedCornerShape(28.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = cobalt600),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .shadow(elevation = 6.dp, shape = RoundedCornerShape(28.dp), spotColor = cobalt600)
+                ) {
+                    if (uiState.isLoading) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(
+                            text = "Đăng nhập",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // HÀNG PHÍM TIỆN ÍCH HỖ TRỢ: LẤY OTP & CSKH
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Nút Lấy OTP
+                    OutlinedButton(
+                        onClick = { showOtpDialog = true },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = textPrimary),
+                        border = ButtonDefaults.outlinedButtonBorder.copy(brush = SolidColor(borderColor)),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Shield,
+                            contentDescription = null,
+                            tint = cobalt600,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Lấy OTP",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    // Nút CSKH
+                    OutlinedButton(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://lunex.io.vn/"))
+                            runCatching { context.startActivity(intent) }
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = textPrimary),
+                        border = ButtonDefaults.outlinedButtonBorder.copy(brush = SolidColor(borderColor)),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.HeadsetMic,
+                            contentDescription = null,
+                            tint = cobalt600,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Hỗ trợ CSKH",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                // DÒNG DƯỚI CÙNG: Chưa có key? Mua key ngay
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 20.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Chưa có key? ",
+                        fontSize = 13.5.sp,
+                        color = textSecondary
+                    )
+                    Text(
+                        text = "Mua key ngay",
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = cobalt600,
+                        modifier = Modifier.clickable {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://lunex.io.vn/"))
+                            runCatching { context.startActivity(intent) }
+                        }
+                    )
+                }
             }
+        }
+
+        // HỘP THOẠI LẤY OTP
+        if (showOtpDialog) {
+            AlertDialog(
+                onDismissRequest = { showOtpDialog = false },
+                title = { Text("Lấy Mã OTP", fontWeight = FontWeight.Bold) },
+                text = {
+                    Text(
+                        "Mã OTP được cấp qua trang hỗ trợ AutoLunex để kích hoạt và xác minh thiết bị của bạn.",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { showOtpDialog = false }) {
+                        Text("Đóng", color = cobalt600)
+                    }
+                }
+            )
         }
     }
 }

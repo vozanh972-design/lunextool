@@ -207,6 +207,11 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
                         navController.navigate(Routes.HOME) {
                             popUpTo(Routes.LOGIN) { inclusive = true }
                         }
+                    },
+                    onBackToIntro = {
+                        navController.navigate(Routes.WELCOME) {
+                            launchSingleTop = true
+                        }
                     }
                 )
             }
