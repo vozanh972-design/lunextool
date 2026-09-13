@@ -26,6 +26,10 @@ import com.cayxu.app.data.local.XsmmRunConfig
 import com.cayxu.app.data.local.XsmmRunConfigStore
 import com.cayxu.app.ui.theme.*
 
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.Add
+
 private val XsmmAccent = Color(0xFF16A34A)
 
 /**
@@ -54,6 +58,8 @@ fun XsmmRunConfigScreen(navController: NavController) {
     var swipeBeforeTask by remember { mutableStateOf(saved.swipeBeforeTask) }
     var returnHomeAndSwipe by remember { mutableStateOf(saved.returnHomeAndSwipe) }
 
+    var showInstagramCookieSheet by remember { mutableStateOf(false) }
+
     fun saveAndBack() {
         XsmmRunConfigStore.save(
             context,
@@ -72,6 +78,12 @@ fun XsmmRunConfigScreen(navController: NavController) {
         navController.popBackStack()
     }
 
+    if (showInstagramCookieSheet) {
+        InstagramCookieBottomSheet(
+            onDismiss = { showInstagramCookieSheet = false }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -81,7 +93,21 @@ fun XsmmRunConfigScreen(navController: NavController) {
                 Icon(Icons.Filled.ArrowBack, contentDescription = "Quay lại", tint = TextPrimary)
             }
             Spacer(Modifier.width(6.dp))
-            Text("Cấu hình chạy", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text("Cấu hình chạy", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary, modifier = Modifier.weight(1f))
+            IconButton(
+                onClick = { showInstagramCookieSheet = true },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE1306C).copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Thêm Cookie Instagram", tint = Color(0xFFE1306C), modifier = Modifier.size(20.dp))
+                }
+            }
         }
 
         Column(
@@ -330,6 +356,109 @@ private fun ConfigTaskTypeSelector(
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InstagramCookieBottomSheet(
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var cookieText by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = CardWhite,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE1306C).copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = null,
+                        tint = Color(0xFFE1306C),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Nhập Cookie Instagram",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = TextPrimary
+                    )
+                    Text(
+                        "Dán cookie tài khoản Instagram để chạy đa luồng",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            Text("Cookie Instagram", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Spacer(Modifier.height(6.dp))
+            OutlinedTextField(
+                value = cookieText,
+                onValueChange = { cookieText = it },
+                placeholder = { Text("Dán toàn bộ chuỗi cookie vào đây (sessionid=...; ds_user_id=...; csrftoken=...)", color = TextSecondary, fontSize = 13.sp) },
+                minLines = 5,
+                maxLines = 8,
+                shape = RoundedCornerShape(14.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFFE1306C),
+                    cursorColor = Color(0xFFE1306C)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(22.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).height(48.dp)
+                ) {
+                    Text("Hủy", color = TextSecondary, fontWeight = FontWeight.Medium)
+                }
+                Button(
+                    onClick = {
+                        // TODO: Logic lưu cookie Instagram
+                        onDismiss()
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE1306C)),
+                    modifier = Modifier.weight(1f).height(48.dp)
+                ) {
+                    Text("Lưu Cookie", color = CardWhite, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
         }
     }
 }

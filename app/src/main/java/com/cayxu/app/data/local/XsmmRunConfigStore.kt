@@ -38,7 +38,8 @@ object XsmmRunConfigStore {
 
     val supportedPlatforms = listOf(
         "tiktok" to "TikTok",
-        "facebook" to "Facebook"
+        "facebook" to "Facebook",
+        "instagram" to "Instagram"
     )
 
     val tiktokTaskTypes = listOf(
@@ -58,8 +59,15 @@ object XsmmRunConfigStore {
         "facebook_review" to "Facebook Đánh giá"
     )
 
+    val instagramTaskTypes = listOf(
+        "instagram_follow" to "Instagram Follow (Theo dõi)",
+        "instagram_like" to "Instagram Like (Thích bài viết)",
+        "instagram_comment" to "Instagram Comment (Bình luận)"
+    )
+
     fun taskTypesFor(platform: String): List<Pair<String, String>> = when (platform.lowercase()) {
         "facebook" -> facebookTaskTypes
+        "instagram" -> instagramTaskTypes
         else -> tiktokTaskTypes
     }
 

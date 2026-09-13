@@ -87,6 +87,7 @@ fun XsmmAccountScreen(navController: NavController) {
     val allTikTokAccounts = remember { TikTokAccountsStore.getAccounts(context).filter { it.enabled } }
     val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
     val facebookAccounts = remember { com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context) }
+    val instagramAccounts = remember { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
 
     LaunchedEffect(selectedPlatform, selectedVariant) {
         val token = XsmmAccountStore.getToken(context) ?: return@LaunchedEffect
@@ -211,15 +212,15 @@ fun XsmmAccountScreen(navController: NavController) {
 
             Spacer(Modifier.height(16.dp))
 
-            // ---- Chọn nền tảng (TikTok / Facebook) ----
+            // ---- Chọn nền tảng (TikTok / Facebook / Instagram) ----
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilterChip(
                     selected = selectedPlatform == "tiktok",
                     onClick = { selectedPlatform = "tiktok" },
-                    label = { Text("TikTok (${allTikTokAccounts.size})", fontWeight = FontWeight.Bold) },
+                    label = { Text("TikTok (${allTikTokAccounts.size})", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = XsmmAccentEnd.copy(alpha = 0.15f),
                         selectedLabelColor = XsmmAccentEnd
@@ -228,10 +229,19 @@ fun XsmmAccountScreen(navController: NavController) {
                 FilterChip(
                     selected = selectedPlatform == "facebook",
                     onClick = { selectedPlatform = "facebook" },
-                    label = { Text("Facebook (${facebookAccounts.size})", fontWeight = FontWeight.Bold) },
+                    label = { Text("Facebook (${facebookAccounts.size})", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = Color(0xFF1877F2).copy(alpha = 0.15f),
                         selectedLabelColor = Color(0xFF1877F2)
+                    )
+                )
+                FilterChip(
+                    selected = selectedPlatform == "instagram",
+                    onClick = { selectedPlatform = "instagram" },
+                    label = { Text("Instagram (${instagramAccounts.size})", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFFE1306C).copy(alpha = 0.15f),
+                        selectedLabelColor = Color(0xFFE1306C)
                     )
                 )
             }
@@ -266,9 +276,13 @@ fun XsmmAccountScreen(navController: NavController) {
                     VariantTabChip("TikTok Lite", TikTokAppVariant.LITE, selectedVariant, allTikTokAccounts) { selectedVariant = it }
                     VariantTabChip("TikTok Studio", TikTokAppVariant.STUDIO, selectedVariant, allTikTokAccounts) { selectedVariant = it }
                 }
-            } else {
+            } else if (selectedPlatform == "facebook") {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("Tài khoản Facebook", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Tài khoản Instagram", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
                 }
             }
 
@@ -335,7 +349,7 @@ fun XsmmAccountScreen(navController: NavController) {
                         }
                     }
                 }
-            } else {
+            } else if (selectedPlatform == "facebook") {
                 if (facebookAccounts.isEmpty()) {
                     Card(
                         shape = RoundedCornerShape(16.dp),
@@ -351,7 +365,6 @@ fun XsmmAccountScreen(navController: NavController) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         facebookAccounts.forEach { account ->
                             val uidLower = account.uid.trim().lowercase()
-                            val isLinked = uidLower in linkedHandles
                             Card(
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(
@@ -386,6 +399,56 @@ fun XsmmAccountScreen(navController: NavController) {
                         }
                     }
                 }
+            } else {
+                if (instagramAccounts.isEmpty()) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardWhite),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(20.dp)) {
+                            Text("Chưa có tài khoản Instagram nào - thêm ở phần Liên kết tài khoản Instagram trước.", color = TextSecondary, fontSize = 13.sp)
+                        }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        instagramAccounts.forEach { igUid ->
+                            val cleanIg = igUid.trim()
+                            Card(
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (cleanIg == selectedAccountUid) Color(0xFFE1306C).copy(alpha = 0.08f) else CardWhite
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    width = 1.dp,
+                                    color = if (cleanIg == selectedAccountUid) Color(0xFFE1306C) else Color(0xFFEEF1F5)
+                                ),
+                                modifier = Modifier.fillMaxWidth().clickable { selectedAccountUid = cleanIg }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = cleanIg in selectedForRunUids,
+                                        onCheckedChange = { checked ->
+                                            selectedForRunUids = if (checked) selectedForRunUids + cleanIg
+                                            else selectedForRunUids - cleanIg
+                                        },
+                                        colors = CheckboxDefaults.colors(checkedColor = Color(0xFFE1306C))
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(cleanIg, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
+                                        Spacer(Modifier.height(2.dp))
+                                        Text("Instagram", color = TextSecondary, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(90.dp))
@@ -409,24 +472,37 @@ fun XsmmAccountScreen(navController: NavController) {
             }
             Button(
                 onClick = {
-                    val handles = if (selectedPlatform == "tiktok") {
-                        val selected = if (selectedForRunUids.isNotEmpty()) {
-                            accountsForVariant.filter { it.uid in selectedForRunUids }
-                        } else if (selectedAccountUid != null) {
-                            accountsForVariant.filter { it.uid == selectedAccountUid }
-                        } else {
-                            accountsForVariant
+                    val handles = when (selectedPlatform) {
+                        "tiktok" -> {
+                            val selected = if (selectedForRunUids.isNotEmpty()) {
+                                accountsForVariant.filter { it.uid in selectedForRunUids }
+                            } else if (selectedAccountUid != null) {
+                                accountsForVariant.filter { it.uid == selectedAccountUid }
+                            } else {
+                                accountsForVariant
+                            }
+                            selected.map { it.handle.trim().removePrefix("@") }.filter { it.isNotBlank() }
                         }
-                        selected.map { it.handle.trim().removePrefix("@") }.filter { it.isNotBlank() }
-                    } else {
-                        val selected = if (selectedForRunUids.isNotEmpty()) {
-                            facebookAccounts.filter { it.uid in selectedForRunUids }
-                        } else if (selectedAccountUid != null) {
-                            facebookAccounts.filter { it.uid == selectedAccountUid }
-                        } else {
-                            facebookAccounts
+                        "facebook" -> {
+                            val selected = if (selectedForRunUids.isNotEmpty()) {
+                                facebookAccounts.filter { it.uid in selectedForRunUids }
+                            } else if (selectedAccountUid != null) {
+                                facebookAccounts.filter { it.uid == selectedAccountUid }
+                            } else {
+                                facebookAccounts
+                            }
+                            selected.map { it.uid.trim() }.filter { it.isNotBlank() }
                         }
-                        selected.map { it.uid.trim() }.filter { it.isNotBlank() }
+                        else -> {
+                            val selected = if (selectedForRunUids.isNotEmpty()) {
+                                instagramAccounts.filter { it in selectedForRunUids }
+                            } else if (selectedAccountUid != null) {
+                                instagramAccounts.filter { it == selectedAccountUid }
+                            } else {
+                                instagramAccounts
+                            }
+                            selected.map { it.trim().removePrefix("@") }.filter { it.isNotBlank() }
+                        }
                     }
                     if (handles.isEmpty()) {
                         android.widget.Toast.makeText(context, "Chưa có tài khoản nào để chạy", android.widget.Toast.LENGTH_SHORT).show()
@@ -439,7 +515,10 @@ fun XsmmAccountScreen(navController: NavController) {
             ) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                val runCount = if (selectedForRunUids.isNotEmpty()) selectedForRunUids.size else accountsForVariant.size
+                val runCount = if (selectedForRunUids.isNotEmpty()) selectedForRunUids.size
+                else if (selectedPlatform == "tiktok") accountsForVariant.size
+                else if (selectedPlatform == "facebook") facebookAccounts.size
+                else instagramAccounts.size
                 Text(if (runCount > 1) "Chạy ($runCount)" else "Chạy")
             }
         }
