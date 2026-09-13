@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,7 +42,7 @@ private data class OnboardingPageData(
 /**
  * Luồng khởi động AutoLunex:
  * 1. Màn Splash (Chào mừng): Logo chữ A sắc nét, slogan, thanh loading đáy màn hình.
- * 2. Màn Giới thiệu (Onboarding): Slider tự động trượt trang sau mỗi 3 giây, nút Bỏ qua kéo sát đỉnh, chuyển tiếp mượt mà.
+ * 2. Màn Giới thiệu (Onboarding): Slider tự động trượt trang 100% không bị dừng lửng, nút Bỏ qua kéo sát góc trên cùng.
  */
 @Composable
 fun WelcomeScreen(onGetStarted: () -> Unit) {
@@ -86,7 +87,6 @@ private fun SplashScreenView(onFinishSplash: () -> Unit) {
                 indication = null
             ) { onFinishSplash() }
     ) {
-        // Nền sóng cam ấm chất lượng cao
         Image(
             painter = painterResource(R.drawable.bg_splash_warm_waves),
             contentDescription = null,
@@ -103,7 +103,6 @@ private fun SplashScreenView(onFinishSplash: () -> Unit) {
         ) {
             Spacer(modifier = Modifier.weight(0.9f))
 
-            // Logo AutoLunex chuẩn, sắc nét, trong suốt
             Image(
                 painter = painterResource(R.drawable.ic_autolunex_warm_logo),
                 contentDescription = "AutoLunex Logo",
@@ -115,7 +114,6 @@ private fun SplashScreenView(onFinishSplash: () -> Unit) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Slogan
             Text(
                 text = "Kiếm xu mỗi ngày",
                 fontSize = 24.sp,
@@ -134,7 +132,6 @@ private fun SplashScreenView(onFinishSplash: () -> Unit) {
 
             Spacer(modifier = Modifier.weight(1.3f))
 
-            // Thanh Loading bo tròn ở dưới đáy màn hình
             Box(
                 modifier = Modifier
                     .padding(bottom = 48.dp)
@@ -157,8 +154,8 @@ private fun SplashScreenView(onFinishSplash: () -> Unit) {
 
 /**
  * GIAO DIỆN 2: MÀN GIỚI THIỆU (ONBOARDING)
- * - Nút "Bỏ qua" kéo lên trên sát mép đỉnh
- * - Tự động trượt trang sau mỗi 3 giây
+ * - Nút "Bỏ qua" đặt sát góc trên cùng bên phải
+ * - Tự động trượt qua hết 100% trang, khóa snap chuẩn không bao giờ bị dừng lưng chừng
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -197,14 +194,23 @@ private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
 
     val pagerState = rememberPagerState(pageCount = { pages.size })
 
-    // Tự động nhảy trang sau 3 giây
-    LaunchedEffect(pagerState.currentPage) {
-        delay(3000)
-        if (pagerState.currentPage < pages.size - 1) {
-            pagerState.animateScrollToPage(pagerState.currentPage + 1)
-        } else {
-            // Sau khi trang cuối cùng hiển thị 3s, tự động chuyển vào Màn 3
-            onFinish()
+    // Tự động lướt trọn vẹn từng trang sau mỗi 3 giây
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(3000)
+            if (!pagerState.isScrollInProgress) {
+                val next = pagerState.currentPage + 1
+                if (next < pages.size) {
+                    pagerState.animateScrollToPage(
+                        page = next,
+                        animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing)
+                    )
+                } else {
+                    delay(500)
+                    onFinish()
+                    break
+                }
+            }
         }
     }
 
@@ -223,6 +229,28 @@ private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
                 .align(Alignment.BottomCenter)
         )
 
+        // Nút "Bỏ qua" đặt sát đỉnh góc trên bên phải
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(top = 4.dp, end = 12.dp)
+                .align(Alignment.TopEnd),
+            contentAlignment = Alignment.CenterEnd
+        ) {
+            TextButton(
+                onClick = onFinish,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "Bỏ qua",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF475569)
+                )
+            }
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -231,38 +259,24 @@ private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Nút "Bỏ qua" kéo lên trên cao sát mép đỉnh
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                TextButton(
-                    onClick = onFinish,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = "Bỏ qua",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFF475569)
-                    )
-                }
-            }
+            Spacer(modifier = Modifier.height(36.dp))
 
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // Slider 4 trang Onboarding
+            // Slider 4 trang Onboarding với Snap Fling hoàn hảo
             HorizontalPager(
                 state = pagerState,
+                flingBehavior = PagerDefaults.flingBehavior(
+                    state = pagerState,
+                    snapAnimationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
             ) { pageIndex ->
                 val page = pages[pageIndex]
                 Column(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -301,7 +315,7 @@ private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
                         color = Color(0xFF475569),
                         textAlign = TextAlign.Center,
                         lineHeight = 22.sp,
-                        modifier = Modifier.padding(horizontal = 20.dp)
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
             }
@@ -335,7 +349,10 @@ private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
                         onFinish()
                     } else {
                         coroutineScope.launch {
-                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                            pagerState.animateScrollToPage(
+                                page = pagerState.currentPage + 1,
+                                animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
+                            )
                         }
                     }
                 },
