@@ -85,10 +85,11 @@ fun XsmmAccountScreen(navController: NavController) {
     var selectedAccountUid by remember(selectedPlatform, selectedVariant) { mutableStateOf<String?>(null) }
     var selectedForRunUids by remember(selectedPlatform, selectedVariant) { mutableStateOf<Set<String>>(emptySet()) }
     var showInstagramCookieSheet by remember { mutableStateOf(false) }
+    var showFacebookLoginSheet by remember { mutableStateOf(false) }
 
     val allTikTokAccounts = remember { TikTokAccountsStore.getAccounts(context).filter { it.enabled } }
     val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
-    val facebookAccounts = remember { com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context) }
+    var facebookAccounts by remember { mutableStateOf(com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)) }
     var instagramAccounts by remember { mutableStateOf(com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram")) }
 
     if (showInstagramCookieSheet) {
@@ -96,6 +97,15 @@ fun XsmmAccountScreen(navController: NavController) {
             onDismiss = { showInstagramCookieSheet = false },
             onCookieSaved = {
                 instagramAccounts = com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram")
+            }
+        )
+    }
+
+    if (showFacebookLoginSheet) {
+        FacebookLoginBottomSheet(
+            onDismiss = { showFacebookLoginSheet = false },
+            onAccountSaved = {
+                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
             }
         )
     }
@@ -290,6 +300,20 @@ fun XsmmAccountScreen(navController: NavController) {
             } else if (selectedPlatform == "facebook") {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("Tài khoản Facebook", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                    IconButton(
+                        onClick = { showFacebookLoginSheet = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = "Đăng nhập Facebook", tint = Color(0xFF1877F2), modifier = Modifier.size(18.dp))
+                        }
+                    }
                 }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -305,7 +329,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                 .background(Color(0xFFE1306C).copy(alpha = 0.12f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.Add, contentDescription = "Thêm Cookie Instagram", tint = Color(0xFFE1306C), modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.Add, contentDescription = "Đăng nhập Instagram", tint = Color(0xFFE1306C), modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -382,8 +406,13 @@ fun XsmmAccountScreen(navController: NavController) {
                         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(Modifier.padding(20.dp)) {
-                            Text("Chưa có tài khoản Facebook nào - thêm ở phần Quản lý tài khoản Facebook trước.", color = TextSecondary, fontSize = 13.sp)
+                        Column(
+                            Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Chưa có tài khoản Facebook nào.", color = TextSecondary, fontSize = 13.sp)
+                            Spacer(Modifier.height(4.dp))
+                            Text("Bấm dấu + để đăng nhập tài khoản Facebook.", color = TextSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
                         }
                     }
                 } else {
@@ -433,21 +462,12 @@ fun XsmmAccountScreen(navController: NavController) {
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
-                            Modifier.padding(20.dp),
+                            Modifier.padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("Chưa có Cookie Instagram nào.", color = TextSecondary, fontSize = 13.sp)
-                            Spacer(Modifier.height(10.dp))
-                            Button(
-                                onClick = { showInstagramCookieSheet = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE1306C)),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.height(36.dp)
-                            ) {
-                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Nhập Cookie Instagram", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
+                            Text("Chưa có tài khoản Instagram nào.", color = TextSecondary, fontSize = 13.sp)
+                            Spacer(Modifier.height(4.dp))
+                            Text("Bấm dấu + để đăng nhập tài khoản Instagram.", color = TextSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
                         }
                     }
                 } else {
@@ -493,7 +513,7 @@ fun XsmmAccountScreen(navController: NavController) {
             Spacer(Modifier.height(90.dp))
         }
 
-        // ---- 2 nút cố định dưới cùng: Cấu hình chạy + Chạy (kèm nút + nhập cookie Instagram) ----
+        // ---- 2 nút cố định dưới cùng: Cấu hình chạy + Chạy (kèm nút + đăng nhập) ----
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -511,17 +531,28 @@ fun XsmmAccountScreen(navController: NavController) {
                 Text("Cấu hình", maxLines = 1)
             }
             IconButton(
-                onClick = { showInstagramCookieSheet = true },
+                onClick = {
+                    when (selectedPlatform) {
+                        "facebook" -> showFacebookLoginSheet = true
+                        "instagram" -> showInstagramCookieSheet = true
+                        else -> navController.navigate(Routes.TIKTOK_LINK_ACCOUNT)
+                    }
+                },
                 modifier = Modifier.size(46.dp)
             ) {
+                val plusColor = when (selectedPlatform) {
+                    "facebook" -> Color(0xFF1877F2)
+                    "instagram" -> Color(0xFFE1306C)
+                    else -> XsmmAccentEnd
+                }
                 Box(
                     modifier = Modifier
                         .size(42.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFFE1306C).copy(alpha = 0.12f)),
+                        .background(plusColor.copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Thêm Cookie Instagram", tint = Color(0xFFE1306C), modifier = Modifier.size(24.dp))
+                    Icon(Icons.Filled.Add, contentDescription = "Đăng nhập tài khoản", tint = plusColor, modifier = Modifier.size(24.dp))
                 }
             }
             Button(

@@ -59,6 +59,7 @@ fun XsmmRunConfigScreen(navController: NavController) {
     var returnHomeAndSwipe by remember { mutableStateOf(saved.returnHomeAndSwipe) }
 
     var showInstagramCookieSheet by remember { mutableStateOf(false) }
+    var showFacebookLoginSheet by remember { mutableStateOf(false) }
 
     fun saveAndBack() {
         XsmmRunConfigStore.save(
@@ -84,6 +85,12 @@ fun XsmmRunConfigScreen(navController: NavController) {
         )
     }
 
+    if (showFacebookLoginSheet) {
+        FacebookLoginBottomSheet(
+            onDismiss = { showFacebookLoginSheet = false }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -95,17 +102,21 @@ fun XsmmRunConfigScreen(navController: NavController) {
             Spacer(Modifier.width(6.dp))
             Text("Cấu hình chạy", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary, modifier = Modifier.weight(1f))
             IconButton(
-                onClick = { showInstagramCookieSheet = true },
+                onClick = {
+                    if (platform == "facebook") showFacebookLoginSheet = true
+                    else showInstagramCookieSheet = true
+                },
                 modifier = Modifier.size(36.dp)
             ) {
+                val plusColor = if (platform == "facebook") Color(0xFF1877F2) else Color(0xFFE1306C)
                 Box(
                     modifier = Modifier
                         .size(32.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFFE1306C).copy(alpha = 0.12f)),
+                        .background(plusColor.copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Thêm Cookie Instagram", tint = Color(0xFFE1306C), modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.Add, contentDescription = "Đăng nhập", tint = plusColor, modifier = Modifier.size(20.dp))
                 }
             }
         }
