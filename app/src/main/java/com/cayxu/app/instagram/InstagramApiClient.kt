@@ -240,7 +240,7 @@ class InstagramApiClient(
                 .build()
 
             val request = Request.Builder()
-                .url("$BASE_URL/graphql/query")
+                .url("$BASE_URL/api/graphql")
                 .headers(headers)
                 .post(formBody)
                 .build()
@@ -296,7 +296,7 @@ class InstagramApiClient(
             .build()
 
         val gqlRequest = Request.Builder()
-            .url("$BASE_URL/graphql/query")
+            .url("$BASE_URL/api/graphql")
             .headers(gqlHeaders)
             .post(gqlBody)
             .build()
@@ -356,7 +356,7 @@ class InstagramApiClient(
             .build()
 
         val request = Request.Builder()
-            .url("$BASE_URL/graphql/query")
+            .url("$BASE_URL/api/graphql")
             .headers(buildStandardHeaders(csrf, referer = "$BASE_URL/"))
             .post(formBody)
             .build()
