@@ -31,11 +31,12 @@ class InstagramApiClient(
         const val APP_ID = "1217981644879628"
         const val APP_ID_DESKTOP = "936619743392459"
         const val ASBD_ID = "359341"
-        const val AJAX_ROLLOUT = "1047421128"
+        const val AJAX_ROLLOUT = "1047426856"
 
         const val DOC_ID_LIKE_MUTATION = "9595477160535898"
-        const val DOC_ID_PROFILE_QUERY = "28322872020710458"
-        const val DOC_ID_FOLLOW_MUTATION = "6828551470557454"
+        const val DOC_ID_PROFILE_POSTS = "28322872020710458"
+        const val DOC_ID_PROFILE_PAGE = "28036671149327607"
+        const val DOC_ID_FOLLOW_MUTATION = "26508036048874888"
 
         val PATTERN_CSRF: Pattern = Pattern.compile("csrftoken=([^;]+)")
         val PATTERN_USER_ID: Pattern = Pattern.compile("userID\":\"([^\"]+)\"")
@@ -71,8 +72,8 @@ class InstagramApiClient(
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .followSslRedirects(true)
+            .followRedirects(false)
+            .followSslRedirects(false)
 
         if (proxyConfig != null) {
             setupProxy(builder, proxyConfig)
@@ -194,7 +195,7 @@ class InstagramApiClient(
     }
 
     /**
-     * Tra cứu user ID từ username bằng duy nhất GraphQL PolarisProfilePostsQuery chuẩn F12
+     * Tra cứu user ID từ username bằng GraphQL PolarisProfilePageContentQuery / PolarisProfilePostsQuery
      */
     fun getUserIdFromUsername(username: String): String? {
         val cleanName = cleanInstagramUsername(username)
@@ -206,18 +207,21 @@ class InstagramApiClient(
         try {
             val variables = JSONObject().apply {
                 put("data", JSONObject().apply {
-                    put("count", 1)
-                    put("include_reel_media_seen_timestamp", false)
+                    put("count", 12)
+                    put("include_reel_media_seen_timestamp", true)
                     put("include_relationship_info", true)
-                    put("latest_besties_reel_media", false)
-                    put("latest_reel_media", false)
+                    put("latest_besties_reel_media", true)
+                    put("latest_reel_media", true)
                 })
                 put("username", cleanName)
+                put("__relay_internal__pv__PolarisMultiCaptionCarouselEnabledrelayprovider", true)
+                put("__relay_internal__pv__PolarisShortDramaEnabledrelayprovider", false)
+                put("__relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider", false)
             }.toString()
 
             val formBody = FormBody.Builder()
                 .add("variables", variables)
-                .add("doc_id", DOC_ID_PROFILE_QUERY)
+                .add("doc_id", DOC_ID_PROFILE_POSTS)
                 .build()
 
             val headers = Headers.Builder()
@@ -241,7 +245,7 @@ class InstagramApiClient(
                 .build()
 
             val request = Request.Builder()
-                .url("$BASE_URL/api/graphql")
+                .url("$BASE_URL/graphql/query")
                 .headers(headers)
                 .post(formBody)
                 .build()
@@ -261,7 +265,7 @@ class InstagramApiClient(
     }
 
     /**
-     * Follow tài khoản Instagram bằng User ID (Sử dụng duy nhất GraphQL Polaris Follow Mutation chuẩn F12)
+     * Follow tài khoản Instagram bằng User ID (Sử dụng chính xác 100% cURL usePolarisFollowMutation doc_id 26508036048874888)
      */
     @Throws(Exception::class)
     fun followUser(targetUserId: String): Boolean {
@@ -269,7 +273,9 @@ class InstagramApiClient(
         val cleanTargetId = targetUserId.trim()
 
         val variables = JSONObject().apply {
-            put("user_id", cleanTargetId)
+            put("target_user_id", cleanTargetId)
+            put("container_module", "profile")
+            put("nav_chain", "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start")
         }.toString()
 
         val gqlBody = FormBody.Builder()
@@ -305,7 +311,7 @@ class InstagramApiClient(
 
         httpClient.newCall(gqlRequest).execute().use { response ->
             val body = response.body?.string() ?: ""
-            if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"following\":true") || body.contains("\"is_following\":true") || body.contains("\"outgoing_request\":true"))) {
+            if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"following\":true") || body.contains("\"is_following\":true") || body.contains("\"outgoing_request\":true") || body.contains("\"xdt_create_friendship\""))) {
                 return true
             }
             if (body.contains("feedback_required") || body.contains("spam")) {
