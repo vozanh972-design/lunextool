@@ -34,43 +34,55 @@ object XsmmInstagramManager {
     }
 
     fun start(context: Context, accountUsername: String) {
-        val clean = accountUsername.trim()
-        if (runningAccount.value != null) {
+        startAccounts(context, listOf(accountUsername))
+    }
+
+    fun startAccounts(context: Context, accountUsernames: List<String>) {
+        val cleanList = accountUsernames.map { it.trim() }.filter { it.isNotBlank() }
+        if (cleanList.isEmpty() || runningAccount.value != null) {
             return
         }
 
-        runningAccount.value = clean
-        statusMap[clean] = "Bắt đầu khởi động tác vụ..."
-        successCountMap[clean] = 0
-        errorCountMap[clean] = 0
+        val primary = cleanList.first()
+        runningAccount.value = primary
+        statusMap[primary] = "Bắt đầu khởi động tác vụ..."
+        successCountMap[primary] = 0
+        errorCountMap[primary] = 0
 
         currentJob = scope.launch {
             try {
                 XsmmInstagramTaskRunner.run(
                     context = context.applicationContext,
-                    accountUsernames = listOf(clean),
+                    accountUsernames = cleanList,
                     onStatusUpdate = { status ->
                         scope.launch(Dispatchers.Main) {
-                            statusMap[clean] = status
+                            val cur = runningAccount.value ?: primary
+                            statusMap[cur] = status
                         }
                     },
                     onProgressUpdate = { status, success, errors ->
                         scope.launch(Dispatchers.Main) {
-                            statusMap[clean] = status
-                            successCountMap[clean] = success
-                            errorCountMap[clean] = errors
+                            val cur = runningAccount.value ?: primary
+                            statusMap[cur] = status
+                            successCountMap[cur] = success
+                            errorCountMap[cur] = errors
                         }
                     }
                 )
-            } catch (e: Exception) {
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Người dùng chủ động bấm Dừng -> không coi là lỗi
+                val cur = runningAccount.value ?: primary
                 scope.launch(Dispatchers.Main) {
-                    statusMap[clean] = "Lỗi ngoài ý muốn: ${e.message}"
+                    statusMap[cur] = "Đã dừng chạy"
+                }
+            } catch (e: Exception) {
+                val cur = runningAccount.value ?: primary
+                scope.launch(Dispatchers.Main) {
+                    statusMap[cur] = "Lỗi: ${e.message ?: "Không xác định"}"
                 }
             } finally {
                 scope.launch(Dispatchers.Main) {
-                    if (runningAccount.value == clean) {
-                        runningAccount.value = null
-                    }
+                    runningAccount.value = null
                 }
             }
         }

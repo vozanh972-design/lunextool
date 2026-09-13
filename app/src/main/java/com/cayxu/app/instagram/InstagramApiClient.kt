@@ -270,14 +270,16 @@ class InstagramApiClient(
      */
     @Throws(Exception::class)
     fun followUser(targetUserId: String): Boolean {
-        val csrf = extractCsrfToken() ?: throw IllegalStateException("Không có CSRF token trong Cookie")
+        val csrf = extractCsrfToken() ?: throw IllegalStateException("Cookie thiếu CSRF token (Hãy đăng nhập lại Instagram)")
         val cleanTargetId = targetUserId.trim()
 
         val requestBody = FormBody.Builder()
             .add("user_id", cleanTargetId)
             .build()
 
-        // 1. Thử endpoint Web API chuẩn của Instagram
+        var lastErrorMsg: String? = null
+
+        // 1. Thử endpoint Web API chuẩn: /api/v1/web/friendships/$cleanTargetId/follow/
         val webUrl = "$BASE_URL/api/v1/web/friendships/$cleanTargetId/follow/"
         val webRequest = Request.Builder()
             .url(webUrl)
@@ -291,10 +293,20 @@ class InstagramApiClient(
                 if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
                     return true
                 }
+                if (body.contains("feedback_required") || body.contains("spam")) {
+                    throw IllegalStateException("Instagram chặn hành động (Spam/Feedback required)")
+                }
+                if (body.contains("login_required") || body.contains("checkpoint_required")) {
+                    throw IllegalStateException("Cookie DIE hoặc yêu cầu checkpoint / đăng nhập lại")
+                }
+                lastErrorMsg = "Web API error (code ${response.code}): $body"
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            if (e is IllegalStateException) throw e
+            lastErrorMsg = e.message
+        }
 
-        // 2. Thử endpoint i.instagram.com
+        // 2. Thử endpoint i.instagram.com API
         val apiUrl = "$API_BASE_URL/api/v1/web/friendships/$cleanTargetId/follow/"
         val apiRequest = Request.Builder()
             .url(apiUrl)
@@ -308,8 +320,13 @@ class InstagramApiClient(
                 if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
                     return true
                 }
+                if (body.contains("feedback_required") || body.contains("spam")) {
+                    throw IllegalStateException("Instagram chặn hành động (Spam/Feedback required)")
+                }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            if (e is IllegalStateException) throw e
+        }
 
         // 3. Thử friendships create
         val createUrl = "$BASE_URL/api/v1/friendships/create/$cleanTargetId/"
@@ -319,10 +336,21 @@ class InstagramApiClient(
             .post(requestBody)
             .build()
 
-        httpClient.newCall(createReq).execute().use { response ->
-            val body = response.body?.string() ?: ""
-            return response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))
+        try {
+            httpClient.newCall(createReq).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            if (e is IllegalStateException) throw e
         }
+
+        if (lastErrorMsg != null) {
+            throw IllegalStateException(lastErrorMsg)
+        }
+        return false
     }
 
     /**
@@ -331,6 +359,9 @@ class InstagramApiClient(
     @Throws(Exception::class)
     fun followTarget(targetIdOrUsername: String): Boolean {
         val clean = cleanInstagramUsername(targetIdOrUsername)
+        if (clean.isBlank()) {
+            throw IllegalStateException("Link hoặc ID đối tượng rỗng")
+        }
         if (clean.all { it.isDigit() }) {
             return followUser(clean)
         }
@@ -338,6 +369,7 @@ class InstagramApiClient(
         if (!userId.isNullOrBlank()) {
             return followUser(userId)
         }
+        // Thử follow trực tiếp bằng clean identifier nếu không tra cứu được id
         return followUser(clean)
     }
 

@@ -936,6 +936,52 @@ fun XsmmAccountScreen(navController: NavController) {
                             }
                         }
 
+                        // Nút Chạy tất cả / Dừng tất cả (Dành cho Instagram)
+                        if (isIg && instagramAccounts.isNotEmpty()) {
+                            val isAnyIgRunning = runningIgAccount != null
+                            IconButton(
+                                onClick = {
+                                    if (isAnyIgRunning) {
+                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.stopAll()
+                                        android.widget.Toast.makeText(context, "Đã dừng tất cả tác vụ", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        val accountsToRun = if (selectedForRunUids.isNotEmpty()) {
+                                            selectedForRunUids.toList()
+                                        } else {
+                                            instagramAccounts
+                                        }
+                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.startAccounts(context, accountsToRun)
+                                        android.widget.Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Instagram", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isAnyIgRunning) DangerRed else platformColor),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isAnyIgRunning) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(11.dp)
+                                                .clip(RoundedCornerShape(2.dp))
+                                                .background(Color.White)
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Filled.PlayArrow,
+                                            contentDescription = "Chạy tất cả",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         // Nút Thêm acc (+)
                         IconButton(
                             onClick = {
@@ -949,7 +995,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     .size(36.dp)
                                     .clip(CircleShape)
                                     .background(platformColor),
-                                contentAlignment = Alignment.Center
+                                    contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.Add,

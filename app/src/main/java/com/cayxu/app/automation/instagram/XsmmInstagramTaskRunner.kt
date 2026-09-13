@@ -157,9 +157,12 @@ object XsmmInstagramTaskRunner {
                                             val likeTarget = task.idorlink.ifBlank { task.targetUrl }
                                             actionSuccess = apiClient.likeTarget(likeTarget, fbDtsg = account.fbDtsg)
                                         }
+                                        if (!actionSuccess) {
+                                            notify("[$cleanUsername] Instagram không phản hồi thành công")
+                                        }
                                     } catch (e: Exception) {
-                                        totalErrors++
-                                        notify("[$cleanUsername] Lỗi tương tác Instagram: ${e.message}")
+                                        actionSuccess = false
+                                        notify("[$cleanUsername] Lỗi Instagram: ${e.message}")
                                     }
 
                                     // Đếm ngược từng giây an toàn sau khi tương tác
