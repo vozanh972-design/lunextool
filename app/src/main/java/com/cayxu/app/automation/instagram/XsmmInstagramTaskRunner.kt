@@ -117,6 +117,7 @@ object XsmmInstagramTaskRunner {
             val taskTypesToTry = listOf("instagram_follow", "instagram_like")
             var consecutiveNoTasks = 0
             val maxNoTaskRetries = config.stopAfterNoTaskCount.coerceAtLeast(3)
+            val pendingFollowTaskIds = mutableListOf<String>()
 
             while (coroutineContext.isActive) {
                 var foundAnyTasks = false
@@ -124,7 +125,8 @@ object XsmmInstagramTaskRunner {
                 for (taskType in taskTypesToTry) {
                     if (!coroutineContext.isActive) break
 
-                    val readableType = if (taskType.contains("follow")) "Theo dõi (Follow)" else "Thích (Like)"
+                    val isFollow = taskType.contains("follow", ignoreCase = true)
+                    val readableType = if (isFollow) "Theo dõi (Follow)" else "Thích (Like)"
                     notify("[$cleanUsername] Đang tìm job $readableType...")
                     val tasksRes = XsmmTasksRepository.getTasks2(token, taskType, xsmmUid)
 
@@ -148,7 +150,7 @@ object XsmmInstagramTaskRunner {
 
                                     var actionSuccess = false
                                     try {
-                                        if (task.type.contains("follow", ignoreCase = true) || taskType.contains("follow")) {
+                                        if (isFollow || task.type.contains("follow", ignoreCase = true)) {
                                             val followTarget = task.idorlink.ifBlank { task.targetUrl }
                                             actionSuccess = apiClient.followTarget(followTarget)
                                         } else {
@@ -164,45 +166,106 @@ object XsmmInstagramTaskRunner {
                                     val delaySec = config.doTaskDurationSeconds.coerceAtLeast(3)
                                     for (s in delaySec downTo 1) {
                                         if (!coroutineContext.isActive) break
-                                        notify("[$cleanUsername] Chờ ${s}s để xác nhận hoàn thành...")
+                                        notify("[$cleanUsername] Chờ ${s}s an toàn...")
                                         delay(1000L)
                                     }
                                     if (!coroutineContext.isActive) break
 
-                                    // 4. Gửi xác nhận hoàn thành (tasks2/complete)
-                                    notify("[$cleanUsername] Đang gửi xác nhận hoàn thành...")
-                                    val compRes = XsmmTasksRepository.completeTasks2(
-                                        rawToken = token,
-                                        type = task.type.ifBlank { taskType },
-                                        taskIds = listOf(task.id),
-                                        uid = xsmmUid
-                                    )
-
-                                    if (compRes.success || compRes.points > 0) {
-                                        totalCompleted++
-                                        val earned = if (compRes.points > 0) compRes.points else 0
-                                        totalEarnedPoints += earned
-
-                                        if (earned > 0) {
-                                            val currentPts = XsmmAccountStore.getPoints(context) + earned
-                                            XsmmAccountStore.updatePoints(context, currentPts)
-                                            XsmmSession.points.value = currentPts
+                                    // 4. Xử lý nhận xu theo cơ chế 12 Follow / lần
+                                    if (isFollow) {
+                                        if (actionSuccess) {
+                                            pendingFollowTaskIds.add(task.id)
+                                            totalCompleted++
+                                            notify("[$cleanUsername] Đã Follow (${pendingFollowTaskIds.size}/12) - Đủ 12 job sẽ nhận xu")
+                                        } else {
+                                            totalErrors++
                                         }
 
-                                        val successMsg = if (compRes.message.isNotBlank()) compRes.message else "Hoàn thành +$earned điểm"
-                                        notify("[$cleanUsername] $successMsg")
-                                    } else {
-                                        totalErrors++
-                                        val errMsg = if (compRes.message.isNotBlank()) compRes.message else "Không được duyệt"
-                                        notify("[$cleanUsername] Thất bại: $errMsg")
-                                    }
+                                        // Khi đủ 12 job Follow -> Gửi nhận xu 1 lần
+                                        if (pendingFollowTaskIds.size >= 12) {
+                                            val batchToClaim = pendingFollowTaskIds.take(12)
+                                            notify("[$cleanUsername] Đã tích lũy đủ 12 job Follow, đang gửi nhận xu...")
+                                            val compRes = XsmmTasksRepository.completeTasks2(
+                                                rawToken = token,
+                                                type = "instagram_follow",
+                                                taskIds = batchToClaim,
+                                                uid = xsmmUid
+                                            )
 
-                                    // Đếm ngược từng giây trước khi sang job tiếp theo
-                                    val waitAfter = if (compRes.countdown > 0) compRes.countdown else config.fetchTaskIntervalSeconds.coerceAtLeast(2)
-                                    for (s in waitAfter downTo 1) {
-                                        if (!coroutineContext.isActive) break
-                                        notify("[$cleanUsername] Chờ ${s}s lấy nhiệm vụ tiếp theo...")
-                                        delay(1000L)
+                                            if (compRes.success || compRes.points > 0) {
+                                                val earned = if (compRes.points > 0) compRes.points else 0
+                                                totalEarnedPoints += earned
+
+                                                if (earned > 0) {
+                                                    val currentPts = XsmmAccountStore.getPoints(context) + earned
+                                                    XsmmAccountStore.updatePoints(context, currentPts)
+                                                    XsmmSession.points.value = currentPts
+                                                }
+
+                                                pendingFollowTaskIds.removeAll(batchToClaim)
+                                                val successMsg = if (compRes.message.isNotBlank()) compRes.message else "Nhận xu thành công +$earned điểm (12 job Follow)"
+                                                notify("[$cleanUsername] $successMsg")
+                                            } else {
+                                                totalErrors++
+                                                val errMsg = if (compRes.message.isNotBlank()) compRes.message else "Lỗi nhận xu 12 job"
+                                                notify("[$cleanUsername] Thất bại: $errMsg")
+                                                pendingFollowTaskIds.removeAll(batchToClaim)
+                                            }
+
+                                            val waitAfter = if (compRes.countdown > 0) compRes.countdown else config.fetchTaskIntervalSeconds.coerceAtLeast(2)
+                                            for (s in waitAfter downTo 1) {
+                                                if (!coroutineContext.isActive) break
+                                                notify("[$cleanUsername] Chờ ${s}s lấy nhiệm vụ tiếp theo...")
+                                                delay(1000L)
+                                            }
+                                        } else {
+                                            // Chưa đủ 12 job -> đếm ngược giãn cách lấy job tiếp theo
+                                            val waitAfter = config.fetchTaskIntervalSeconds.coerceAtLeast(2)
+                                            for (s in waitAfter downTo 1) {
+                                                if (!coroutineContext.isActive) break
+                                                notify("[$cleanUsername] Đã xong ${pendingFollowTaskIds.size}/12 Follow. Chờ ${s}s tiếp tục...")
+                                                delay(1000L)
+                                            }
+                                        }
+                                    } else {
+                                        // Với Like: Gửi hoàn thành nhận xu theo từng job
+                                        if (actionSuccess) {
+                                            notify("[$cleanUsername] Đang gửi xác nhận hoàn thành Like...")
+                                            val compRes = XsmmTasksRepository.completeTasks2(
+                                                rawToken = token,
+                                                type = task.type.ifBlank { taskType },
+                                                taskIds = listOf(task.id),
+                                                uid = xsmmUid
+                                            )
+
+                                            if (compRes.success || compRes.points > 0) {
+                                                totalCompleted++
+                                                val earned = if (compRes.points > 0) compRes.points else 0
+                                                totalEarnedPoints += earned
+
+                                                if (earned > 0) {
+                                                    val currentPts = XsmmAccountStore.getPoints(context) + earned
+                                                    XsmmAccountStore.updatePoints(context, currentPts)
+                                                    XsmmSession.points.value = currentPts
+                                                }
+
+                                                val successMsg = if (compRes.message.isNotBlank()) compRes.message else "Hoàn thành +$earned điểm"
+                                                notify("[$cleanUsername] $successMsg")
+                                            } else {
+                                                totalErrors++
+                                                val errMsg = if (compRes.message.isNotBlank()) compRes.message else "Không được duyệt"
+                                                notify("[$cleanUsername] Thất bại: $errMsg")
+                                            }
+
+                                            val waitAfter = if (compRes.countdown > 0) compRes.countdown else config.fetchTaskIntervalSeconds.coerceAtLeast(2)
+                                            for (s in waitAfter downTo 1) {
+                                                if (!coroutineContext.isActive) break
+                                                notify("[$cleanUsername] Chờ ${s}s lấy nhiệm vụ tiếp theo...")
+                                                delay(1000L)
+                                            }
+                                        } else {
+                                            totalErrors++
+                                        }
                                     }
 
                                     if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) {
