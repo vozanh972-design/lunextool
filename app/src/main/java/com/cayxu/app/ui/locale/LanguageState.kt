@@ -22,15 +22,15 @@ object LanguageState {
     private const val PREFS_NAME = "cayxu_ui_prefs"
     private const val KEY_LANGUAGE = "app_language"
 
-    var language by mutableStateOf(AppLanguage.VI)
+    var language by mutableStateOf(AppLanguage.EN)
         private set
 
     /** Gọi 1 lần khi mở app (MainActivity.onCreate) để nạp lựa chọn đã lưu trước đó. */
     fun init(context: Context) {
         val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val saved = prefs.getString(KEY_LANGUAGE, AppLanguage.VI.name)
-        language = runCatching { AppLanguage.valueOf(saved ?: AppLanguage.VI.name) }
-            .getOrDefault(AppLanguage.VI)
+        val saved = prefs.getString(KEY_LANGUAGE, AppLanguage.EN.name)
+        language = runCatching { AppLanguage.valueOf(saved ?: AppLanguage.EN.name) }
+            .getOrDefault(AppLanguage.EN)
     }
 
     /** Gọi khi người dùng chọn ngôn ngữ khác ở dropdown (màn Welcome, Cài đặt...). */
