@@ -163,6 +163,7 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             navController = navController,
             startDestination = when {
                 securePrefs.isPermanentlyBlocked() -> Routes.BLOCKED
+                !securePrefs.hasSeenWelcome() -> Routes.WELCOME
                 else -> Routes.LOGIN
             },
             modifier = Modifier.padding(innerPadding),

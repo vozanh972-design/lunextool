@@ -1,252 +1,273 @@
 package com.cayxu.app.ui.screens.welcome
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cayxu.app.R
-import com.cayxu.app.ui.locale.AppLanguage
-import com.cayxu.app.ui.locale.LanguageState
-import com.cayxu.app.ui.locale.Str
-import com.cayxu.app.ui.theme.*
+import kotlinx.coroutines.delay
 
 /**
- * Màn "Chào mừng" - CHỈ hiện đúng 1 LẦN DUY NHẤT ở lần mở app đầu tiên sau khi cài (xem
- * SecurePrefs.hasSeenWelcome). Không đụng gì tới logic key - chỉ là bước giới thiệu trước
- * khi vào màn nhập Key kích hoạt.
- *
- * Bố cục dựng theo ảnh mẫu do bên làm app (Lunex) cung cấp:
- *   [logo Lunex + nút chọn ngôn ngữ] -> [ảnh minh họa] -> [tiêu đề] -> [mô tả] ->
- *   [nút Bắt đầu ngay] -> [điều khoản, "Điều khoản sử dụng"/"Chính sách bảo mật" bấm được].
- * Phần ảnh minh họa ở giữa là ảnh tĩnh cắt từ mẫu gốc (ill_welcome_hero) - không dựng lại
- * bằng code vì đây là ảnh dựng 3D phức tạp, đúng như yêu cầu "cắt gắn vô".
+ * Luồng 2 màn hình ban đầu chuẩn phong cách AutoLunex:
+ * 1. Màn Splash (Chào mừng) với nền chuyển sắc ấm và logo AutoLunex + Tagline
+ * 2. Màn Onboarding (Giới thiệu) với hình minh họa làm nhiệm vụ, tiêu đề, dot indicator và nút Tiếp tục
  */
 @Composable
 fun WelcomeScreen(onGetStarted: () -> Unit) {
-    val context = LocalContext.current
-    var languageMenuExpanded by remember { mutableStateOf(false) }
-    var showTermsDialog by remember { mutableStateOf(false) }
-    var showPrivacyDialog by remember { mutableStateOf(false) }
+    var currentStep by remember { mutableStateOf(1) }
+
+    // Tự động chuyển từ Màn 1 (Splash) sang Màn 2 (Onboarding) sau 2 giây
+    LaunchedEffect(Unit) {
+        delay(2000)
+        if (currentStep == 1) {
+            currentStep = 2
+        }
+    }
+
+    AnimatedContent(
+        targetState = currentStep,
+        transitionSpec = {
+            fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(400))
+        },
+        label = "WelcomeScreenPager"
+    ) { step ->
+        if (step == 1) {
+            SplashScreenView(onSkip = { currentStep = 2 })
+        } else {
+            OnboardingScreenView(onContinue = onGetStarted)
+        }
+    }
+}
+
+/**
+ * GIAO DIỆN 1: MÀN CHÀO MỪNG (SPLASH)
+ * Nền ấm, Logo AutoLunex ở giữa và Slogan truyền cảm hứng.
+ */
+@Composable
+private fun SplashScreenView(onSkip: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFFFFF9F5),
+                        Color(0xFFFFEDE4),
+                        Color(0xFFFF7A3D),
+                        Color(0xFFFF5E1E)
+                    )
+                )
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onSkip() },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 32.dp)
+        ) {
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Logo AutoLunex tông cam ấm
+            Image(
+                painter = painterResource(R.drawable.ic_autolunex_warm_logo),
+                contentDescription = "AutoLunex",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxWidth(0.8f)
+                    .height(68.dp)
+            )
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // Tagline / Slogan
+            Text(
+                text = "Kiếm xu mỗi ngày",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E293B),
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Tự do tài chính trong tầm tay",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF7C2D12),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.weight(1.2f))
+        }
+    }
+}
+
+/**
+ * GIAO DIỆN 2: MÀN GIỚI THIỆU (ONBOARDING)
+ * Nút Bỏ qua, Hình minh họa nhiệm vụ, Tiêu đề, Mô tả, Indicator và Nút Tiếp tục
+ */
+@Composable
+private fun OnboardingScreenView(onContinue: () -> Unit) {
+    val brandOrange = Color(0xFFFF5E1E)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(AppBackground)
+            .background(Color(0xFFFCFBF9))
+            .padding(horizontal = 24.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp),
+                .statusBarsPadding()
+                .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(20.dp))
-
-            // ---- Hàng trên cùng: logo Lunex (thương hiệu làm ra app) + chọn ngôn ngữ ----
-            Box(modifier = Modifier.fillMaxWidth()) {
-                Image(
-                    painter = painterResource(R.drawable.ic_lunex_logo),
-                    contentDescription = "Lunex",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .height(40.dp)
-                )
-
-                Box(modifier = Modifier.align(Alignment.CenterEnd)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(CardWhite)
-                            .clickable { languageMenuExpanded = true }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Icon(
-                            Icons.Filled.Language,
-                            contentDescription = null,
-                            tint = Primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(Str.welcomeLanguageLabel, fontSize = 13.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.width(2.dp))
-                        Icon(
-                            Icons.Filled.KeyboardArrowDown,
-                            contentDescription = null,
-                            tint = TextSecondary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = languageMenuExpanded,
-                        onDismissRequest = { languageMenuExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Tiếng Việt") },
-                            onClick = {
-                                LanguageState.setLanguage(context, AppLanguage.VI)
-                                languageMenuExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("English") },
-                            onClick = {
-                                LanguageState.setLanguage(context, AppLanguage.EN)
-                                languageMenuExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // ---- Ảnh minh họa (cắt từ mẫu gốc) ----
-            Image(
-                painter = painterResource(R.drawable.ill_welcome_hero),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
+            // Thanh trên cùng: Nút "Bỏ qua"
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f, fill = false)
-            )
-
-            Spacer(Modifier.height(20.dp))
-
-            Text(
-                Str.welcomeTitleLine1,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = TextPrimary,
-                textAlign = TextAlign.Center,
-                lineHeight = 32.sp
-            )
-            Text(
-                Str.welcomeTitleLine2,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = Primary,
-                textAlign = TextAlign.Center,
-                lineHeight = 32.sp
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            Text(
-                Str.welcomeSubtitle,
-                fontSize = 14.sp,
-                color = TextSecondary,
-                textAlign = TextAlign.Center,
-                lineHeight = 20.sp
-            )
-
-            Spacer(Modifier.height(22.dp))
-
-            // ---- Nút Bắt đầu ngay - pill xanh nhạt, chữ + icon xanh đậm, đúng màu mẫu ----
-            Button(
-                onClick = onGetStarted,
-                shape = RoundedCornerShape(28.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD7EAFE)),
-                modifier = Modifier.fillMaxWidth().height(56.dp)
+                    .padding(top = 16.dp),
+                contentAlignment = Alignment.CenterEnd
             ) {
-                Text(Str.welcomeGetStarted, color = Primary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Spacer(Modifier.width(8.dp))
+                TextButton(onClick = onContinue) {
+                    Text(
+                        text = "Bỏ qua",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF64748B)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Hình minh họa Onboarding (Laptop, quà tặng, đồng xu)
+            Image(
+                painter = painterResource(R.drawable.ill_onboarding_warm),
+                contentDescription = "Làm nhiệm vụ kiếm thu nhập",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxWidth(0.88f)
+                    .height(270.dp)
+            )
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // Tiêu đề chính 2 dòng
+            Text(
+                text = "Làm nhiệm vụ",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color(0xFF1E293B),
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "Kiếm thu nhập thật",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = brandOrange,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Mô tả
+            Text(
+                text = "Thực hiện các nhiệm vụ, đơn giản và nhận ngay xu thưởng.",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color(0xFF64748B),
+                textAlign = TextAlign.Center,
+                lineHeight = 22.sp,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Dải chấm tròn phân trang (Page indicator: 4 chấm, chấm đầu tiên là pill cam)
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 28.dp)
+            ) {
+                // Active pill dot
                 Box(
-                    modifier = Modifier.size(26.dp).clip(CircleShape).background(CardWhite),
-                    contentAlignment = Alignment.Center
+                    modifier = Modifier
+                        .size(width = 24.dp, height = 6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(brandOrange)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                // Inactive dots
+                repeat(3) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFE2E8F0))
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+            }
+
+            // Nút "Tiếp tục →"
+            Button(
+                onClick = onContinue,
+                shape = RoundedCornerShape(28.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = brandOrange),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+                    .shadow(elevation = 6.dp, shape = RoundedCornerShape(28.dp), spotColor = brandOrange)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
                 ) {
-                    Icon(Icons.Filled.ArrowForward, contentDescription = null, tint = Primary, modifier = Modifier.size(15.dp))
+                    Text(
+                        text = "Tiếp tục",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
-
-            // ---- "Điều khoản sử dụng" / "Chính sách bảo mật" bấm vào mở bảng đọc nội dung ----
-            val termsPrefix = Str.welcomeTermsPrefix
-            val termsLink = Str.welcomeTermsLink
-            val termsMiddle = Str.welcomeTermsMiddle
-            val privacyLink = Str.welcomePrivacyLink
-            val termsSuffix = Str.welcomeTermsSuffix
-
-            val annotatedTerms = buildAnnotatedString {
-                append(termsPrefix)
-                pushStringAnnotation(tag = "terms", annotation = "terms")
-                withStyle(SpanStyle(color = Primary, fontWeight = FontWeight.SemiBold)) { append(termsLink) }
-                pop()
-                append(termsMiddle)
-                pushStringAnnotation(tag = "privacy", annotation = "privacy")
-                withStyle(SpanStyle(color = Primary, fontWeight = FontWeight.SemiBold)) { append(privacyLink) }
-                pop()
-                append(termsSuffix)
-            }
-
-            ClickableText(
-                text = annotatedTerms,
-                style = androidx.compose.ui.text.TextStyle(
-                    fontSize = 11.sp,
-                    color = TextSecondary,
-                    textAlign = TextAlign.Center
-                ),
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { offset ->
-                    annotatedTerms.getStringAnnotations(tag = "terms", start = offset, end = offset)
-                        .firstOrNull()?.let { showTermsDialog = true }
-                    annotatedTerms.getStringAnnotations(tag = "privacy", start = offset, end = offset)
-                        .firstOrNull()?.let { showPrivacyDialog = true }
-                }
-            )
-
-            Spacer(Modifier.height(20.dp))
-        }
-
-        if (showTermsDialog) {
-            AlertDialog(
-                onDismissRequest = { showTermsDialog = false },
-                title = { Text(Str.termsDialogTitle, fontWeight = FontWeight.Bold) },
-                text = { Text(Str.termsDialogBody, fontSize = 13.sp, lineHeight = 19.sp) },
-                confirmButton = {
-                    TextButton(onClick = { showTermsDialog = false }) { Text(Str.dialogCloseButton) }
-                }
-            )
-        }
-
-        if (showPrivacyDialog) {
-            AlertDialog(
-                onDismissRequest = { showPrivacyDialog = false },
-                title = { Text(Str.privacyDialogTitle, fontWeight = FontWeight.Bold) },
-                text = { Text(Str.privacyDialogBody, fontSize = 13.sp, lineHeight = 19.sp) },
-                confirmButton = {
-                    TextButton(onClick = { showPrivacyDialog = false }) { Text(Str.dialogCloseButton) }
-                }
-            )
+            Spacer(modifier = Modifier.height(36.dp))
         }
     }
 }
