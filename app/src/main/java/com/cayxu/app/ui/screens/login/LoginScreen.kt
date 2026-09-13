@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -116,7 +117,7 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 32.dp),
-            contentAlignment = Alignment(horizontalBias = 0f, verticalBias = logoVerticalBias)
+            contentAlignment = BiasAlignment(0f, logoVerticalBias)
         ) {
             Image(
                 painter = painterResource(R.drawable.ic_autolunex_logo_clean),
