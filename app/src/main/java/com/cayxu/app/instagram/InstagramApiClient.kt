@@ -21,15 +21,15 @@ import java.util.regex.Pattern
  */
 class InstagramApiClient(
     var cookie: String = "",
-    var userAgent: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    var userAgent: String = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1",
     proxyConfig: ProxyConfig? = null
 ) {
     companion object {
         const val BASE_URL = "https://www.instagram.com"
         const val API_BASE_URL = "https://i.instagram.com"
 
-        const val APP_ID = "936619743392459"
-        const val APP_ID_MOBILE = "1217981644879628"
+        const val APP_ID = "1217981644879628"
+        const val APP_ID_DESKTOP = "936619743392459"
         const val ASBD_ID = "359341"
         const val AJAX_ROLLOUT = "1047421128"
 
@@ -117,7 +117,7 @@ class InstagramApiClient(
             .add("User-Agent", userAgent)
             .add("Cookie", cookie)
             .add("Accept", "*/*")
-            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,ja-JP;q=0.8,ja;q=0.7,en-JP;q=0.6,en;q=0.5")
             .add("Origin", BASE_URL)
             .add("Referer", ref)
             .add("X-CSRFToken", csrf)
@@ -128,6 +128,9 @@ class InstagramApiClient(
             .add("Sec-Fetch-Dest", "empty")
             .add("Sec-Fetch-Mode", "cors")
             .add("Sec-Fetch-Site", "same-origin")
+            .add("sec-ch-ua-mobile", "?1")
+            .add("sec-ch-ua-platform", "\"iOS\"")
+            .add("x-ig-max-touch-points", "1")
             .build()
     }
 
@@ -191,7 +194,7 @@ class InstagramApiClient(
     }
 
     /**
-     * Tra cứu user ID từ username với nhiều tầng: GraphQL PolarisProfilePostsQuery, web_profile_info, HTML page, TopSearch
+     * Tra cứu user ID từ username bằng duy nhất GraphQL PolarisProfilePostsQuery chuẩn F12
      */
     fun getUserIdFromUsername(username: String): String? {
         val cleanName = cleanInstagramUsername(username)
@@ -200,7 +203,6 @@ class InstagramApiClient(
 
         val csrf = extractCsrfToken() ?: ""
 
-        // Cách 1: Qua GraphQL PolarisProfilePostsQuery chuẩn nhất (doc_id: 28322872020710458)
         try {
             val variables = JSONObject().apply {
                 put("data", JSONObject().apply {
@@ -215,19 +217,26 @@ class InstagramApiClient(
 
             val formBody = FormBody.Builder()
                 .add("variables", variables)
-                .add("doc_id", "28322872020710458")
+                .add("doc_id", DOC_ID_PROFILE_QUERY)
                 .build()
 
             val headers = Headers.Builder()
                 .add("User-Agent", userAgent)
                 .add("Cookie", cookie)
                 .add("Accept", "*/*")
+                .add("Accept-Language", "vi-VN,vi;q=0.9,ja-JP;q=0.8,ja;q=0.7,en-JP;q=0.6,en;q=0.5")
                 .add("Origin", BASE_URL)
                 .add("Referer", "$BASE_URL/$cleanName/")
                 .add("X-CSRFToken", csrf)
                 .add("X-IG-App-ID", APP_ID)
                 .add("X-ASBD-ID", ASBD_ID)
                 .add("X-FB-Friendly-Name", "PolarisProfilePostsQuery")
+                .add("Sec-Fetch-Dest", "empty")
+                .add("Sec-Fetch-Mode", "cors")
+                .add("Sec-Fetch-Site", "same-origin")
+                .add("sec-ch-ua-mobile", "?1")
+                .add("sec-ch-ua-platform", "\"iOS\"")
+                .add("x-ig-max-touch-points", "1")
                 .build()
 
             val request = Request.Builder()
@@ -247,226 +256,64 @@ class InstagramApiClient(
             }
         } catch (_: Exception) {}
 
-        // Cách 2: Qua web_profile_info
-        try {
-            val request = Request.Builder()
-                .url("$BASE_URL/api/v1/users/web_profile_info/?username=$cleanName")
-                .headers(buildStandardHeaders())
-                .get()
-                .build()
-
-            httpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val id = json.optJSONObject("data")?.optJSONObject("user")?.optString("id")
-                    if (!id.isNullOrBlank()) return id
-                }
-            }
-        } catch (_: Exception) {}
-
-        // Cách 3: Đọc trực tiếp HTML profile page
-        try {
-            val request = Request.Builder()
-                .url("$BASE_URL/$cleanName/")
-                .headers(buildStandardHeaders())
-                .get()
-                .build()
-
-            httpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val m1 = Pattern.compile("\"id\":\"(\\d+)\"").matcher(body)
-                    if (m1.find()) return m1.group(1)
-                    val m2 = Pattern.compile("\"user_id\":\"(\\d+)\"").matcher(body)
-                    if (m2.find()) return m2.group(1)
-                    val m3 = Pattern.compile("\"profile_id\":\"(\\d+)\"").matcher(body)
-                    if (m3.find()) return m3.group(1)
-                    val m4 = Pattern.compile("profilePage_([0-9]+)").matcher(body)
-                    if (m4.find()) return m4.group(1)
-                }
-            }
-        } catch (_: Exception) {}
-
-        // Cách 4: Qua web search topsearch API
-        try {
-            val request = Request.Builder()
-                .url("$BASE_URL/web/search/topsearch/?context=blended&query=$cleanName&rank_token=0.5")
-                .headers(buildStandardHeaders())
-                .get()
-                .build()
-
-            httpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val usersArr = json.optJSONArray("users")
-                    if (usersArr != null && usersArr.length() > 0) {
-                        for (i in 0 until usersArr.length()) {
-                            val u = usersArr.getJSONObject(i).optJSONObject("user")
-                            val uName = u?.optString("username")
-                            if (uName.equals(cleanName, ignoreCase = true)) {
-                                val pk = u.optString("pk").ifBlank { u.optString("id") }
-                                if (pk.isNotBlank()) return pk
-                            }
-                        }
-                        val firstUser = usersArr.getJSONObject(0).optJSONObject("user")
-                        val pk = firstUser?.optString("pk")?.ifBlank { firstUser.optString("id") }
-                        if (!pk.isNullOrBlank()) return pk
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-
         return null
     }
 
     /**
-     * Follow tài khoản Instagram bằng User ID
+     * Follow tài khoản Instagram bằng User ID (Sử dụng duy nhất GraphQL Polaris Follow Mutation chuẩn F12)
      */
     @Throws(Exception::class)
     fun followUser(targetUserId: String): Boolean {
         val csrf = extractCsrfToken() ?: throw IllegalStateException("Cookie thiếu CSRF token (Hãy đăng nhập lại Instagram)")
         val cleanTargetId = targetUserId.trim()
 
-        var lastErrorMsg: String? = null
+        val variables = JSONObject().apply {
+            put("user_id", cleanTargetId)
+        }.toString()
 
-        // 1. Thử GraphQL Relay mutation (PolarisFollowUserMutation: doc_id 6828551470557454) - Chuẩn F12 mới nhất
-        try {
-            val variables = JSONObject().apply {
-                put("user_id", cleanTargetId)
-            }.toString()
-
-            val gqlBody = FormBody.Builder()
-                .add("variables", variables)
-                .add("doc_id", DOC_ID_FOLLOW_MUTATION)
-                .build()
-
-            val gqlHeaders = Headers.Builder()
-                .add("User-Agent", userAgent)
-                .add("Cookie", cookie)
-                .add("Accept", "*/*")
-                .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
-                .add("Origin", BASE_URL)
-                .add("Referer", "$BASE_URL/")
-                .add("X-CSRFToken", csrf)
-                .add("X-IG-App-ID", APP_ID)
-                .add("X-ASBD-ID", ASBD_ID)
-                .add("X-FB-Friendly-Name", "usePolarisFollowMutation")
-                .add("Sec-Fetch-Dest", "empty")
-                .add("Sec-Fetch-Mode", "cors")
-                .add("Sec-Fetch-Site", "same-origin")
-                .build()
-
-            val gqlRequest = Request.Builder()
-                .url("$BASE_URL/graphql/query")
-                .headers(gqlHeaders)
-                .post(gqlBody)
-                .build()
-
-            httpClient.newCall(gqlRequest).execute().use { response ->
-                val body = response.body?.string() ?: ""
-                if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"following\":true") || body.contains("\"is_following\":true") || body.contains("\"outgoing_request\":true"))) {
-                    return true
-                }
-                if (body.contains("feedback_required") || body.contains("spam")) {
-                    throw IllegalStateException("Instagram chặn follow (Spam/Action blocked)")
-                }
-                if (body.contains("login_required") || body.contains("checkpoint_required")) {
-                    throw IllegalStateException("Cookie DIE hoặc yêu cầu checkpoint / đăng nhập lại")
-                }
-                lastErrorMsg = "GraphQL error (code ${response.code}): $body"
-            }
-        } catch (e: Exception) {
-            if (e is IllegalStateException) throw e
-            lastErrorMsg = e.message
-        }
-
-        // 2. Thử Web API endpoint chuẩn: /api/v1/web/friendships/$cleanTargetId/follow/
-        val webUrl = "$BASE_URL/api/v1/web/friendships/$cleanTargetId/follow/"
-        val requestBody = FormBody.Builder()
-            .add("user_id", cleanTargetId)
+        val gqlBody = FormBody.Builder()
+            .add("variables", variables)
+            .add("doc_id", DOC_ID_FOLLOW_MUTATION)
             .build()
 
-        val webHeaders = Headers.Builder()
+        val gqlHeaders = Headers.Builder()
             .add("User-Agent", userAgent)
             .add("Cookie", cookie)
             .add("Accept", "*/*")
-            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,ja-JP;q=0.8,ja;q=0.7,en-JP;q=0.6,en;q=0.5")
             .add("Origin", BASE_URL)
             .add("Referer", "$BASE_URL/")
             .add("X-CSRFToken", csrf)
             .add("X-IG-App-ID", APP_ID)
             .add("X-ASBD-ID", ASBD_ID)
-            .add("X-Instagram-AJAX", AJAX_ROLLOUT)
-            .add("X-Requested-With", "XMLHttpRequest")
+            .add("X-FB-Friendly-Name", "usePolarisFollowMutation")
             .add("Sec-Fetch-Dest", "empty")
             .add("Sec-Fetch-Mode", "cors")
             .add("Sec-Fetch-Site", "same-origin")
+            .add("sec-ch-ua-mobile", "?1")
+            .add("sec-ch-ua-platform", "\"iOS\"")
+            .add("x-ig-max-touch-points", "1")
             .build()
 
-        val webRequest = Request.Builder()
-            .url(webUrl)
-            .headers(webHeaders)
-            .post(requestBody)
+        val gqlRequest = Request.Builder()
+            .url("$BASE_URL/graphql/query")
+            .headers(gqlHeaders)
+            .post(gqlBody)
             .build()
 
-        try {
-            httpClient.newCall(webRequest).execute().use { response ->
-                val body = response.body?.string() ?: ""
-                if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
-                    return true
-                }
-                if (body.contains("feedback_required") || body.contains("spam")) {
-                    throw IllegalStateException("Instagram chặn follow (Spam/Action blocked)")
-                }
-                if (body.contains("login_required") || body.contains("checkpoint_required")) {
-                    throw IllegalStateException("Cookie DIE hoặc yêu cầu checkpoint / đăng nhập lại")
-                }
-                lastErrorMsg = "Web API error (code ${response.code}): $body"
+        httpClient.newCall(gqlRequest).execute().use { response ->
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"following\":true") || body.contains("\"is_following\":true") || body.contains("\"outgoing_request\":true"))) {
+                return true
             }
-        } catch (e: Exception) {
-            if (e is IllegalStateException) throw e
-            lastErrorMsg = e.message
-        }
-
-        // 3. Thử Mobile Web App ID với friendships create
-        try {
-            val mobileHeaders = Headers.Builder()
-                .add("User-Agent", userAgent)
-                .add("Cookie", cookie)
-                .add("Accept", "*/*")
-                .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
-                .add("Origin", BASE_URL)
-                .add("Referer", "$BASE_URL/")
-                .add("X-CSRFToken", csrf)
-                .add("X-IG-App-ID", APP_ID_MOBILE)
-                .add("X-ASBD-ID", ASBD_ID)
-                .add("X-Instagram-AJAX", AJAX_ROLLOUT)
-                .add("X-Requested-With", "XMLHttpRequest")
-                .build()
-
-            val createUrl = "$BASE_URL/api/v1/friendships/create/$cleanTargetId/"
-            val createReq = Request.Builder()
-                .url(createUrl)
-                .headers(mobileHeaders)
-                .post(requestBody)
-                .build()
-
-            httpClient.newCall(createReq).execute().use { response ->
-                val body = response.body?.string() ?: ""
-                if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
-                    return true
-                }
+            if (body.contains("feedback_required") || body.contains("spam")) {
+                throw IllegalStateException("Instagram chặn follow (Spam/Action blocked)")
             }
-        } catch (e: Exception) {
-            if (e is IllegalStateException) throw e
+            if (body.contains("login_required") || body.contains("checkpoint_required")) {
+                throw IllegalStateException("Cookie DIE hoặc yêu cầu checkpoint / đăng nhập lại")
+            }
+            throw IllegalStateException("Instagram trả về lỗi (code ${response.code}): $body")
         }
-
-        if (lastErrorMsg != null) {
-            throw IllegalStateException(lastErrorMsg)
-        }
-        return false
     }
 
     /**
@@ -490,32 +337,10 @@ class InstagramApiClient(
     }
 
     /**
-     * Like bài viết qua REST API
+     * Like bài viết qua Instagram GraphQL Mutation (usePolarisLikeMediaLikeMutation)
      */
     @Throws(Exception::class)
-    fun likeMedia(mediaId: String): Boolean {
-        val csrf = extractCsrfToken() ?: throw IllegalStateException("Không có CSRF token")
-        val cleanMediaId = mediaId.trim()
-        val url = "$BASE_URL/api/v1/web/likes/$cleanMediaId/like/"
-        val requestBody = FormBody.Builder().build()
-
-        val request = Request.Builder()
-            .url(url)
-            .headers(buildStandardHeaders(csrf))
-            .post(requestBody)
-            .build()
-
-        httpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string() ?: ""
-            return response.isSuccessful && body.contains("\"status\":\"ok\"")
-        }
-    }
-
-    /**
-     * Like bài viết qua Instagram GraphQL Mutation
-     */
-    @Throws(Exception::class)
-    fun likeMediaGraphQL(mediaId: String, fbDtsg: String?): Boolean {
+    fun likeMediaGraphQL(mediaId: String, fbDtsg: String? = null): Boolean {
         val csrf = extractCsrfToken() ?: throw IllegalStateException("Không có CSRF token")
         val variables = JSONObject().apply {
             put("media_id", mediaId)
@@ -532,19 +357,23 @@ class InstagramApiClient(
 
         val request = Request.Builder()
             .url("$BASE_URL/graphql/query")
-            .headers(buildStandardHeaders(csrf))
+            .headers(buildStandardHeaders(csrf, referer = "$BASE_URL/"))
             .post(formBody)
             .build()
 
         httpClient.newCall(request).execute().use { response ->
             val body = response.body?.string() ?: ""
-            if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"is_final\":true"))) {
+            if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"is_final\":true") || body.contains("\"viewer_has_liked\":true"))) {
                 return true
             }
+            if (body.contains("feedback_required") || body.contains("spam")) {
+                throw IllegalStateException("Instagram chặn Like (Spam/Action blocked)")
+            }
+            if (body.contains("login_required") || body.contains("checkpoint_required")) {
+                throw IllegalStateException("Cookie DIE hoặc yêu cầu checkpoint / đăng nhập lại")
+            }
+            throw IllegalStateException("Instagram trả về lỗi Like (code ${response.code}): $body")
         }
-
-        // Fallback to REST like
-        return likeMedia(mediaId)
     }
 
     /**
@@ -554,7 +383,7 @@ class InstagramApiClient(
     fun likeTarget(targetMediaIdOrUrl: String, fbDtsg: String? = null): Boolean {
         val clean = targetMediaIdOrUrl.trim()
         if (clean.all { it.isDigit() }) {
-            return if (!fbDtsg.isNullOrBlank()) likeMediaGraphQL(clean, fbDtsg) else likeMedia(clean)
+            return likeMediaGraphQL(clean, fbDtsg)
         }
 
         val codeMatch = Regex("""/(?:p|reel|tv)/([a-zA-Z0-9_-]+)""").find(clean)
@@ -572,13 +401,11 @@ class InstagramApiClient(
                 val mediaIdMatch = Pattern.compile("\"id\"\\s*:\\s*\"([0-9]+)\"").matcher(body)
                 if (mediaIdMatch.find()) {
                     val mediaId = mediaIdMatch.group(1)
-                    return if (!fbDtsg.isNullOrBlank()) likeMediaGraphQL(mediaId, fbDtsg) else likeMedia(mediaId)
+                    return likeMediaGraphQL(mediaId, fbDtsg)
                 }
             }
-        } catch (e: Exception) {
-            // Ignore
-        }
+        } catch (_: Exception) {}
 
-        return likeMedia(clean)
+        return likeMediaGraphQL(clean, fbDtsg)
     }
 }
