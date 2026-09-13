@@ -49,15 +49,6 @@ fun LinkAccountScreen(navController: NavController, platform: String, iconRes: I
     val context = LocalContext.current
     var accounts by remember { mutableStateOf(LinkedAccountsStore.getAccounts(context, platform)) }
 
-    // TODO: 2 dòng seed dưới đây chỉ để demo giao diện danh sách có sẵn vài mục, không phải
-    // tài khoản thật. Xoá đoạn seed này khi có API backend quản lý tài khoản liên kết thật.
-    LaunchedEffect(platform) {
-        if (LinkedAccountsStore.getAccounts(context, platform).isEmpty()) {
-            LinkedAccountsStore.addAccount(context, platform, "uid_mau_001 (mẫu)")
-            LinkedAccountsStore.addAccount(context, platform, "uid_mau_002 (mẫu)")
-            accounts = LinkedAccountsStore.getAccounts(context, platform)
-        }
-    }
 
     // Tự làm mới danh sách mỗi khi quay lại màn này (ví dụ sau khi thêm UID mới ở màn kế tiếp).
     val lifecycleOwner = LocalLifecycleOwner.current

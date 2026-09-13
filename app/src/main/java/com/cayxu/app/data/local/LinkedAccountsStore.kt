@@ -18,7 +18,7 @@ object LinkedAccountsStore {
     fun getAccounts(context: Context, platform: String): List<String> {
         val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val raw = prefs.getString(key(platform), null) ?: return emptyList()
-        return raw.split(SEPARATOR).filter { it.isNotBlank() }
+        return raw.split(SEPARATOR).filter { it.isNotBlank() && !it.contains("uid_mau") && !it.contains("mẫu") && !it.contains("(mau)") }
     }
 
     fun addAccount(context: Context, platform: String, uid: String) {

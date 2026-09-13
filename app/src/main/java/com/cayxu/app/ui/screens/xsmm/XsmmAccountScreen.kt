@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ExitToApp
@@ -83,11 +84,21 @@ fun XsmmAccountScreen(navController: NavController) {
     var addingUid by remember { mutableStateOf<String?>(null) }
     var selectedAccountUid by remember(selectedPlatform, selectedVariant) { mutableStateOf<String?>(null) }
     var selectedForRunUids by remember(selectedPlatform, selectedVariant) { mutableStateOf<Set<String>>(emptySet()) }
+    var showInstagramCookieSheet by remember { mutableStateOf(false) }
 
     val allTikTokAccounts = remember { TikTokAccountsStore.getAccounts(context).filter { it.enabled } }
     val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
     val facebookAccounts = remember { com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context) }
-    val instagramAccounts = remember { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
+    var instagramAccounts by remember { mutableStateOf(com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram")) }
+
+    if (showInstagramCookieSheet) {
+        InstagramCookieBottomSheet(
+            onDismiss = { showInstagramCookieSheet = false },
+            onCookieSaved = {
+                instagramAccounts = com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram")
+            }
+        )
+    }
 
     LaunchedEffect(selectedPlatform, selectedVariant) {
         val token = XsmmAccountStore.getToken(context) ?: return@LaunchedEffect
@@ -283,6 +294,20 @@ fun XsmmAccountScreen(navController: NavController) {
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("Tài khoản Instagram", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                    IconButton(
+                        onClick = { showInstagramCookieSheet = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFE1306C).copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = "Thêm Cookie Instagram", tint = Color(0xFFE1306C), modifier = Modifier.size(18.dp))
+                        }
+                    }
                 }
             }
 
@@ -407,8 +432,22 @@ fun XsmmAccountScreen(navController: NavController) {
                         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(Modifier.padding(20.dp)) {
-                            Text("Chưa có tài khoản Instagram nào - thêm ở phần Liên kết tài khoản Instagram trước.", color = TextSecondary, fontSize = 13.sp)
+                        Column(
+                            Modifier.padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Chưa có Cookie Instagram nào.", color = TextSecondary, fontSize = 13.sp)
+                            Spacer(Modifier.height(10.dp))
+                            Button(
+                                onClick = { showInstagramCookieSheet = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE1306C)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Nhập Cookie Instagram", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 } else {
@@ -442,7 +481,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     Column(Modifier.weight(1f)) {
                                         Text(cleanIg, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
                                         Spacer(Modifier.height(2.dp))
-                                        Text("Instagram", color = TextSecondary, fontSize = 12.sp)
+                                        Text("Instagram Cookie", color = TextSecondary, fontSize = 12.sp)
                                     }
                                 }
                             }
@@ -454,21 +493,36 @@ fun XsmmAccountScreen(navController: NavController) {
             Spacer(Modifier.height(90.dp))
         }
 
-        // ---- 2 nút cố định dưới cùng: Cấu hình chạy + Chạy ----
+        // ---- 2 nút cố định dưới cùng: Cấu hình chạy + Chạy (kèm nút + nhập cookie Instagram) ----
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedButton(
                 onClick = {
                     navController.navigate(Routes.XSMM_RUN_CONFIG)
                 },
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = XsmmAccentEnd),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).height(48.dp)
             ) {
                 Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Cấu hình chạy")
+                Spacer(Modifier.width(4.dp))
+                Text("Cấu hình", maxLines = 1)
+            }
+            IconButton(
+                onClick = { showInstagramCookieSheet = true },
+                modifier = Modifier.size(46.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE1306C).copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Thêm Cookie Instagram", tint = Color(0xFFE1306C), modifier = Modifier.size(24.dp))
+                }
             }
             Button(
                 onClick = {
@@ -511,7 +565,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     com.cayxu.app.ui.overlay.xsmm.startXsmmJobRunnerOverlay(context, handles)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = XsmmAccentEnd),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).height(48.dp)
             ) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
