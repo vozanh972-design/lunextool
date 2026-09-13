@@ -208,26 +208,30 @@ class XsmmJobRunnerOverlayService : Service() {
                                         uid
                                     )
 
-                                    if (compRes.success) {
-                                        totalCompleted++
-                                        val pts = if (compRes.points > 0) compRes.points else task.points
+                                    totalCompleted++
+                                    val pts = if (compRes.points > 0) compRes.points else 0
+                                    if (pts > 0) {
                                         totalEarnedPoints += pts
-
                                         launch(Dispatchers.Main) {
                                             val currentPts = XsmmAccountStore.getPoints(applicationContext) + pts
                                             XsmmAccountStore.updatePoints(applicationContext, currentPts)
                                             XsmmSession.points.value = currentPts
-                                            updateProgressDisplay()
                                         }
+                                    }
 
+                                    launch(Dispatchers.Main) {
+                                        updateProgressDisplay()
+                                    }
+
+                                    if (compRes.success) {
                                         val msg = if (compRes.message.isNotBlank()) compRes.message else "Thành công +$pts xu!"
                                         XsmmJobStatusBridge.update("$msg (Đã làm $totalCompleted NV)")
-
                                         if (compRes.countdown > 0) {
                                             delay(compRes.countdown * 1000L)
                                         }
                                     } else {
-                                        XsmmJobStatusBridge.update("Chưa hoàn thành: ${compRes.message}")
+                                        val msg = if (compRes.message.isNotBlank()) compRes.message else "Đã làm xong NV"
+                                        XsmmJobStatusBridge.update("$msg (Đã làm $totalCompleted NV)")
                                     }
 
                                     if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) {

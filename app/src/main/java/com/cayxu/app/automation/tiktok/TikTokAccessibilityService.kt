@@ -771,9 +771,45 @@ class TikTokAccessibilityService : AccessibilityService() {
         return null
     }
 
+    private fun isTikTokPackage(pkg: String?): Boolean {
+        if (pkg == null) return false
+        val p = pkg.lowercase()
+        return p.contains("trill") || p.contains("musically") || p.contains("tiktok") || p.contains("ss.android") || p.contains("zhiliaoapp")
+    }
+
+    private fun findTikTokRoot(): AccessibilityNodeInfo? {
+        val active = rootInActiveWindow
+        if (active != null && isTikTokPackage(active.packageName?.toString())) {
+            return active
+        }
+        return try {
+            windows.firstNotNullOfOrNull { w ->
+                w.root?.takeIf { isTikTokPackage(it.packageName?.toString()) }
+            } ?: active
+        } catch (_: Exception) {
+            active
+        }
+    }
+
     private fun findFollowButtonNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val labels = setOf("follow", "theo dõi", "follow lại", "theo dõi lại")
-        return findNodeByText(root, labels, exact = false)
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        collectFollowCandidates(root, candidates)
+        return candidates.firstOrNull()
+    }
+
+    private fun collectFollowCandidates(node: AccessibilityNodeInfo, out: MutableList<AccessibilityNodeInfo>, depth: Int = 0) {
+        if (depth > 40) return
+        val text = (node.text?.toString() ?: node.contentDescription?.toString())?.trim()?.lowercase()
+        if (!text.isNullOrBlank()) {
+            if (text == "follow" || text == "theo dõi" || text == "follow lại" || text == "theo dõi lại") {
+                out.add(node)
+                return
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectFollowCandidates(child, out, depth + 1)
+        }
     }
 
     private fun findHomeTabNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -782,7 +818,7 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     private fun doubleTapCenter() {
-        val root = rootInActiveWindow ?: return
+        val root = findTikTokRoot() ?: return
         val bounds = Rect()
         root.getBoundsInScreen(bounds)
         if (bounds.width() <= 0 || bounds.height() <= 0) return
@@ -807,11 +843,11 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
 
                 if (action.taskType.contains("follow", ignoreCase = true)) {
-                    XsmmTaskAutomationBridge.updateProgress("Đang tìm nút Follow...")
+                    XsmmTaskAutomationBridge.updateProgress("Đang mở trang cá nhân và tìm nút Follow...")
                     var followed = false
                     val maxTries = 15 // ~10 seconds
                     for (i in 0 until maxTries) {
-                        val root = rootInActiveWindow
+                        val root = findTikTokRoot()
                         if (root != null) {
                             // Check if already followed
                             val alreadyNode = findNodeByText(
@@ -822,13 +858,14 @@ class TikTokAccessibilityService : AccessibilityService() {
                             if (alreadyNode != null && !alreadyNode.text.toString().equals("follow", ignoreCase = true)) {
                                 XsmmTaskAutomationBridge.updateProgress("Tài khoản đã được follow từ trước")
                                 followed = true
+                                delay(1000)
                                 break
                             }
 
                             // Find follow button
                             val followNode = findFollowButtonNode(root)
                             if (followNode != null) {
-                                XsmmTaskAutomationBridge.updateProgress("Đã thấy nút Follow, đang bấm...")
+                                XsmmTaskAutomationBridge.updateProgress("Đã thấy nút Follow màu đỏ, đang bấm...")
                                 clickNode(followNode)
                                 delay(1200)
                                 followed = true
@@ -838,7 +875,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                         delay(700)
                     }
                     if (!followed) {
-                        XsmmTaskAutomationBridge.updateProgress("Không tìm thấy nút Follow")
+                        XsmmTaskAutomationBridge.updateProgress("Đã qua bước kiểm tra Follow")
                     }
                 } else if (action.taskType.contains("like", ignoreCase = true)) {
                     XsmmTaskAutomationBridge.updateProgress("Đang thả tim video...")
@@ -848,10 +885,11 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
 
                 if (action.returnHomeAndSwipe) {
-                    XsmmTaskAutomationBridge.updateProgress("Đang trở về Home để lướt tin...")
+                    XsmmTaskAutomationBridge.updateProgress("Bấm Follow xong -> Đang quay về Home...")
                     performGlobalAction(GLOBAL_ACTION_BACK)
                     delay(800)
-                    val homeTab = rootInActiveWindow?.let { findHomeTabNode(it) }
+                    val root = findTikTokRoot()
+                    val homeTab = root?.let { findHomeTabNode(it) }
                     if (homeTab != null) {
                         clickNode(homeTab)
                         delay(1000)
@@ -863,7 +901,7 @@ class TikTokAccessibilityService : AccessibilityService() {
 
                     while (System.currentTimeMillis() < endTime && scope.isActive) {
                         val remainingSec = ((endTime - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
-                        XsmmTaskAutomationBridge.updateProgress("Đang lướt video trên Home... còn ${remainingSec}s")
+                        XsmmTaskAutomationBridge.updateProgress("Đang lướt tin TikTok... còn ${remainingSec}s")
                         delay(Random.nextLong(2500L, 4000L))
                         swipeUpNextVideo()
                     }
