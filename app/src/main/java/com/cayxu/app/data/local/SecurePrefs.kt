@@ -84,6 +84,10 @@ class SecurePrefs(context: Context) {
      */
     fun hasSeenWelcome(): Boolean = prefs.getBoolean(KEY_SEEN_WELCOME, false)
 
+    fun setSeenWelcome() {
+        prefs.edit().putBoolean(KEY_SEEN_WELCOME, true).apply()
+    }
+
     fun saveBuyerUsername(name: String?) {
         prefs.edit().putString(KEY_BUYER_USERNAME, name).apply()
     }
