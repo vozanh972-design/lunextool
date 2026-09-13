@@ -928,88 +928,150 @@ class TikTokAccessibilityService : AccessibilityService() {
 
     private fun startXsmmVerifyAccountExecution(action: XsmmTaskAction.VerifyAndSwitchAccount) {
         xsmmTaskJob?.cancel()
+        var hasTappedProfileTab = false
+        var hasTappedMenuIcon = false
+        var menuTapAttempts = 0
+        var hasTappedSettingsRow = false
+        var hasTappedSwitchRow = false
+        val target = action.targetHandle.trim().removePrefix("@").lowercase()
+
         xsmmTaskJob = scope.launch {
-            try {
-                XsmmTaskAutomationBridge.updateProgress("Đang kiểm tra tài khoản trên TikTok...")
-                val target = action.targetHandle.trim().removePrefix("@").lowercase()
-
-                var checkedHandle = ""
-                var matched = false
-
-                // Dò tối đa ~10 giây
-                for (attempt in 0 until 12) {
+            var attempt = 0
+            while (attempt < MAX_POLL_ATTEMPTS && isActive) {
+                attempt++
+                try {
                     val root = findTikTokRoot()
-                    if (root != null) {
-                        val handleNode = findHandleNode(root)
-                        if (handleNode != null) {
-                            val text = handleNode.text?.toString()?.trim()?.removePrefix("@")?.lowercase().orEmpty()
-                            if (text.isNotBlank()) {
-                                checkedHandle = text
-                                if (text == target) {
-                                    matched = true
-                                    XsmmTaskAutomationBridge.updateProgress("Đã khớp tài khoản @$target")
+                    if (root == null) {
+                        XsmmTaskAutomationBridge.updateProgress("Đang đợi TikTok tải xong...")
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
+
+                    // Bước 5: Đã bấm dòng "Chuyển đổi tài khoản" trong màn Cài đặt
+                    if (hasTappedSwitchRow) {
+                        val sheetTitleNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
+                        val addAccountNode = findNodeByText(root, ADD_ACCOUNT_LABELS, exact = false)
+                        if (sheetTitleNode != null && addAccountNode != null) {
+                            XsmmTaskAutomationBridge.updateProgress("Đã mở danh sách tài khoản, đang tìm @$target...")
+                            val rows = mutableListOf<AccessibilityNodeInfo>()
+                            findClickableRowsWithText(root, rows)
+                            var foundTargetRow: AccessibilityNodeInfo? = null
+                            for (row in rows) {
+                                val label = firstMeaningfulText(row)?.trim()?.lowercase() ?: continue
+                                if (label.contains(target) || target.contains(label)) {
+                                    foundTargetRow = row
                                     break
                                 }
                             }
+                            if (foundTargetRow != null) {
+                                XsmmTaskAutomationBridge.updateProgress("Đã thấy @$target, đang bấm chuyển...")
+                                clickNode(foundTargetRow)
+                                delay(2500)
+                                XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đã chuyển sang tài khoản @$target")
+                                return@launch
+                            } else {
+                                XsmmTaskAutomationBridge.updateProgress("Không tìm thấy @$target trong danh sách")
+                                delay(1500)
+                                performGlobalAction(GLOBAL_ACTION_BACK)
+                                XsmmTaskAutomationBridge.completeTask(action.actionId, false, "Không tìm thấy @$target trong danh sách")
+                                return@launch
+                            }
+                        } else if (sheetTitleNode != null && addAccountNode == null) {
+                            XsmmTaskAutomationBridge.updateProgress("Đang mở danh sách tài khoản...")
                         } else {
-                            val tabNode = findProfileTabNode(root)
-                            if (tabNode != null) {
-                                clickNode(tabNode)
-                                delay(1000)
+                            val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
+                            if (switchRowNode != null) {
+                                XsmmTaskAutomationBridge.updateProgress("Đang mở danh sách tài khoản...")
+                                clickNode(switchRowNode)
                             }
                         }
+                        delay(POLL_INTERVAL_MS)
+                        continue
                     }
-                    delay(800)
-                }
 
-                if (matched) {
-                    XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đúng tài khoản @$target")
-                    return@launch
-                }
+                    // Bước 4: Đã ở màn Cài đặt (đã bấm Cài đặt và quyền riêng tư) -> Cuộn xuống tìm "Chuyển đổi tài khoản"
+                    if (hasTappedSettingsRow) {
+                        val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
+                        if (switchRowNode != null) {
+                            XsmmTaskAutomationBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
+                            clickNode(switchRowNode)
+                            hasTappedSwitchRow = true
+                            XsmmTaskAutomationBridge.updateProgress("Đang chờ danh sách tài khoản hiện ra...")
+                        } else {
+                            XsmmTaskAutomationBridge.updateProgress("Đang cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
+                            scrollDown(root)
+                        }
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
 
-                if (checkedHandle.isNotBlank() && checkedHandle != target) {
-                    XsmmTaskAutomationBridge.updateProgress("Đang ở @$checkedHandle -> Tìm cách chuyển sang @$target...")
-                    // Thử mở menu Cài đặt -> Chuyển đổi tài khoản
-                    val root = findTikTokRoot()
-                    if (root != null) {
-                        val menuIcon = findMenuIcon(root, 0)
-                        if (menuIcon != null) {
-                            clickNode(menuIcon)
-                            delay(1000)
-                            val menuRoot = findTikTokRoot()
-                            val settingsNode = menuRoot?.let { findNodeByText(it, SETTINGS_PRIVACY_LABELS, exact = false) }
-                            if (settingsNode != null) {
-                                clickNode(settingsNode)
-                                delay(1200)
-                                val setRoot = findTikTokRoot()
-                                setRoot?.let { scrollDown(it) }
-                                delay(800)
-                                val switchNode = findTikTokRoot()?.let { findNodeByText(it, SWITCH_SHEET_TITLE, exact = false) }
-                                if (switchNode != null) {
-                                    clickNode(switchNode)
-                                    delay(1200)
-                                    val sheetRoot = findTikTokRoot()
-                                    if (sheetRoot != null) {
-                                        val targetNode = findNodeByText(sheetRoot, setOf(target), exact = false)
-                                        if (targetNode != null) {
-                                            XsmmTaskAutomationBridge.updateProgress("Đã thấy @$target trong danh sách, đang chuyển...")
-                                            clickNode(targetNode)
-                                            delay(2500)
-                                            XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đã chuyển sang @$target")
-                                            return@launch
-                                        }
+                    // Bước 3: Menu (☰) đã bấm -> Tìm và bấm "Cài đặt và quyền riêng tư"
+                    if (hasTappedMenuIcon) {
+                        val settingsRowNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
+                        if (settingsRowNode != null) {
+                            XsmmTaskAutomationBridge.updateProgress("Đã thấy \"Cài đặt và quyền riêng tư\", đang bấm...")
+                            clickNode(settingsRowNode)
+                            hasTappedSettingsRow = true
+                            XsmmTaskAutomationBridge.updateProgress("Đang chờ mở màn Cài đặt...")
+                        } else {
+                            XsmmTaskAutomationBridge.updateProgress("Đang mở menu...")
+                            val menuNode = findMenuIcon(root, menuTapAttempts)
+                            if (menuNode != null) {
+                                clickNode(menuNode)
+                                menuTapAttempts++
+                            }
+                        }
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
+
+                    // Bước 2: Đã ở trang Hồ sơ -> Kiểm tra @handle hiện tại
+                    if (hasTappedProfileTab) {
+                        val handleNode = findHandleNode(root)
+                        if (handleNode != null) {
+                            val currentHandle = handleNode.text?.toString()?.trim()?.removePrefix("@")?.lowercase().orEmpty()
+                            if (currentHandle.isNotBlank()) {
+                                if (currentHandle == target || currentHandle.contains(target) || target.contains(currentHandle)) {
+                                    XsmmTaskAutomationBridge.updateProgress("Khớp tài khoản @$target")
+                                    delay(800)
+                                    XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đúng tài khoản @$target")
+                                    return@launch
+                                } else {
+                                    // Không trùng tài khoản -> Cần mở menu để chuyển
+                                    XsmmTaskAutomationBridge.updateProgress("Đang ở @$currentHandle -> Mở menu chuyển sang @$target...")
+                                    val menuNode = findMenuIcon(root, menuTapAttempts)
+                                    if (menuNode != null) {
+                                        clickNode(menuNode)
+                                        menuTapAttempts++
+                                        hasTappedMenuIcon = true
+                                        XsmmTaskAutomationBridge.updateProgress("Đã bấm menu (☰), chờ mở...")
                                     }
                                 }
                             }
+                        } else {
+                            XsmmTaskAutomationBridge.updateProgress("Đang chờ trang Hồ sơ hiện @...")
                         }
+                        delay(POLL_INTERVAL_MS)
+                        continue
                     }
-                    XsmmTaskAutomationBridge.updateProgress("Đang dùng @$checkedHandle (chưa tự chuyển được sang @$target)")
-                }
 
-                XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Hoàn tất kiểm tra")
-            } catch (e: Exception) {
-                XsmmTaskAutomationBridge.completeTask(action.actionId, false, e.message ?: "Lỗi kiểm tra acc")
+                    // Bước 1: Bấm tab "Hồ sơ" ở thanh dưới cùng
+                    val tabNode = findProfileTabNode(root)
+                    if (tabNode != null) {
+                        XsmmTaskAutomationBridge.updateProgress("Đã thấy tab \"Hồ sơ\", đang bấm...")
+                        clickNode(tabNode)
+                        hasTappedProfileTab = true
+                        XsmmTaskAutomationBridge.updateProgress("Đã bấm tab \"Hồ sơ\", đang chờ trang tải...")
+                    } else {
+                        XsmmTaskAutomationBridge.updateProgress("Đang tìm tab \"Hồ sơ\" ở thanh dưới cùng...")
+                    }
+                    delay(POLL_INTERVAL_MS)
+                } catch (e: Exception) {
+                    delay(POLL_INTERVAL_MS)
+                }
             }
+
+            XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Hoàn tất kiểm tra")
         }
     }
 }
