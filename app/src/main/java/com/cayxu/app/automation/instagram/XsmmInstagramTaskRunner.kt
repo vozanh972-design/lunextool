@@ -182,6 +182,7 @@ object XsmmInstagramTaskRunner {
                                             notify("[$cleanUsername] Đã Follow (${pendingFollowTaskIds.size}/12) - Đủ 12 job sẽ nhận xu")
                                         } else {
                                             totalErrors++
+                                            notify("[$cleanUsername] Lỗi Follow: Instagram từ chối / không thể Follow")
                                         }
 
                                         // Khi đủ 12 job Follow -> Gửi nhận xu 1 lần

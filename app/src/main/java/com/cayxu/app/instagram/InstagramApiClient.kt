@@ -29,11 +29,12 @@ class InstagramApiClient(
         const val API_BASE_URL = "https://i.instagram.com"
 
         const val APP_ID = "936619743392459"
-        const val ASBD_ID = "198387"
-        const val AJAX_ROLLOUT = "1006309104"
+        const val ASBD_ID = "359341"
+        const val AJAX_ROLLOUT = "1047421128"
 
         const val DOC_ID_LIKE_MUTATION = "9595477160535898"
-        const val DOC_ID_PROFILE_QUERY = "24644030398570558"
+        const val DOC_ID_PROFILE_QUERY = "28322872020710458"
+        const val DOC_ID_FOLLOW_MUTATION = "6828551470557454"
 
         val PATTERN_CSRF: Pattern = Pattern.compile("csrftoken=([^;]+)")
         val PATTERN_USER_ID: Pattern = Pattern.compile("userID\":\"([^\"]+)\"")
@@ -108,20 +109,24 @@ class InstagramApiClient(
         return null
     }
 
-    private fun buildStandardHeaders(csrfToken: String? = null): Headers {
+    private fun buildStandardHeaders(csrfToken: String? = null, referer: String? = null): Headers {
         val csrf = csrfToken ?: extractCsrfToken() ?: ""
+        val ref = referer ?: "$BASE_URL/"
         return Headers.Builder()
             .add("User-Agent", userAgent)
             .add("Cookie", cookie)
             .add("Accept", "*/*")
-            .add("Accept-Language", "vi,en-US;q=0.9,en;q=0.8")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
             .add("Origin", BASE_URL)
-            .add("Referer", "$BASE_URL/")
+            .add("Referer", ref)
             .add("X-CSRFToken", csrf)
             .add("X-IG-App-ID", APP_ID)
             .add("X-ASBD-ID", ASBD_ID)
             .add("X-Instagram-AJAX", AJAX_ROLLOUT)
             .add("X-Requested-With", "XMLHttpRequest")
+            .add("Sec-Fetch-Dest", "empty")
+            .add("Sec-Fetch-Mode", "cors")
+            .add("Sec-Fetch-Site", "same-origin")
             .build()
     }
 
@@ -323,17 +328,34 @@ class InstagramApiClient(
         val csrf = extractCsrfToken() ?: throw IllegalStateException("Cookie thiếu CSRF token (Hãy đăng nhập lại Instagram)")
         val cleanTargetId = targetUserId.trim()
 
+        var lastErrorMsg: String? = null
+
+        // 1. Thử Web API endpoint chuẩn: /api/v1/web/friendships/$cleanTargetId/follow/
+        val webUrl = "$BASE_URL/api/v1/web/friendships/$cleanTargetId/follow/"
         val requestBody = FormBody.Builder()
             .add("user_id", cleanTargetId)
             .build()
 
-        var lastErrorMsg: String? = null
+        val webHeaders = Headers.Builder()
+            .add("User-Agent", userAgent)
+            .add("Cookie", cookie)
+            .add("Accept", "*/*")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+            .add("Origin", BASE_URL)
+            .add("Referer", "$BASE_URL/")
+            .add("X-CSRFToken", csrf)
+            .add("X-IG-App-ID", APP_ID)
+            .add("X-ASBD-ID", ASBD_ID)
+            .add("X-Instagram-AJAX", AJAX_ROLLOUT)
+            .add("X-Requested-With", "XMLHttpRequest")
+            .add("Sec-Fetch-Dest", "empty")
+            .add("Sec-Fetch-Mode", "cors")
+            .add("Sec-Fetch-Site", "same-origin")
+            .build()
 
-        // 1. Thử endpoint Web API chuẩn: /api/v1/web/friendships/$cleanTargetId/follow/
-        val webUrl = "$BASE_URL/api/v1/web/friendships/$cleanTargetId/follow/"
         val webRequest = Request.Builder()
             .url(webUrl)
-            .headers(buildStandardHeaders(csrf))
+            .headers(webHeaders)
             .post(requestBody)
             .build()
 
@@ -344,7 +366,7 @@ class InstagramApiClient(
                     return true
                 }
                 if (body.contains("feedback_required") || body.contains("spam")) {
-                    throw IllegalStateException("Instagram chặn hành động (Spam/Feedback required)")
+                    throw IllegalStateException("Instagram chặn follow (Spam/Action blocked)")
                 }
                 if (body.contains("login_required") || body.contains("checkpoint_required")) {
                     throw IllegalStateException("Cookie DIE hoặc yêu cầu checkpoint / đăng nhập lại")
@@ -356,22 +378,39 @@ class InstagramApiClient(
             lastErrorMsg = e.message
         }
 
-        // 2. Thử endpoint i.instagram.com API
-        val apiUrl = "$API_BASE_URL/api/v1/web/friendships/$cleanTargetId/follow/"
-        val apiRequest = Request.Builder()
-            .url(apiUrl)
-            .headers(buildStandardHeaders(csrf))
-            .post(requestBody)
-            .build()
-
+        // 2. Thử GraphQL Relay mutation (PolarisFollowUserMutation)
         try {
-            httpClient.newCall(apiRequest).execute().use { response ->
+            val variables = JSONObject().apply {
+                put("user_id", cleanTargetId)
+            }.toString()
+
+            val gqlBody = FormBody.Builder()
+                .add("variables", variables)
+                .add("doc_id", DOC_ID_FOLLOW_MUTATION)
+                .build()
+
+            val gqlHeaders = Headers.Builder()
+                .add("User-Agent", userAgent)
+                .add("Cookie", cookie)
+                .add("Accept", "*/*")
+                .add("Origin", BASE_URL)
+                .add("Referer", "$BASE_URL/")
+                .add("X-CSRFToken", csrf)
+                .add("X-IG-App-ID", APP_ID)
+                .add("X-ASBD-ID", ASBD_ID)
+                .add("X-FB-Friendly-Name", "usePolarisFollowMutation")
+                .build()
+
+            val gqlRequest = Request.Builder()
+                .url("$BASE_URL/graphql/query")
+                .headers(gqlHeaders)
+                .post(gqlBody)
+                .build()
+
+            httpClient.newCall(gqlRequest).execute().use { response ->
                 val body = response.body?.string() ?: ""
-                if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
+                if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"following\":true") || body.contains("\"is_following\":true"))) {
                     return true
-                }
-                if (body.contains("feedback_required") || body.contains("spam")) {
-                    throw IllegalStateException("Instagram chặn hành động (Spam/Feedback required)")
                 }
             }
         } catch (e: Exception) {
@@ -382,7 +421,7 @@ class InstagramApiClient(
         val createUrl = "$BASE_URL/api/v1/friendships/create/$cleanTargetId/"
         val createReq = Request.Builder()
             .url(createUrl)
-            .headers(buildStandardHeaders(csrf))
+            .headers(webHeaders)
             .post(requestBody)
             .build()
 
