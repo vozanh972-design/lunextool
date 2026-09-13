@@ -179,7 +179,8 @@ fun InstagramCookieBottomSheet(
                                                     cookie = cookiePart,
                                                     fullName = userInfo.fullName,
                                                     avatar = userInfo.profilePicUrl ?: "",
-                                                    fbDtsg = userInfo.fbDtsg ?: ""
+                                                    fbDtsg = userInfo.fbDtsg ?: "",
+                                                    lsd = userInfo.lsd ?: ""
                                                 )
                                             )
                                             LinkedAccountsStore.addAccount(context, "Instagram", accountIdentifier)

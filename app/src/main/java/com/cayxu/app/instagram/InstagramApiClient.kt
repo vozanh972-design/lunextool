@@ -266,9 +266,10 @@ class InstagramApiClient(
 
     /**
      * Follow tài khoản Instagram bằng User ID (Sử dụng chính xác 100% cURL usePolarisFollowMutation doc_id 26508036048874888)
+     * BẮTBUỘC truyền fbDtsg và lsd — thiếu 2 token này Instagram trả HTML thay vì JSON
      */
     @Throws(Exception::class)
-    fun followUser(targetUserId: String): Boolean {
+    fun followUser(targetUserId: String, fbDtsg: String? = null, lsd: String? = null): Boolean {
         val csrf = extractCsrfToken() ?: throw IllegalStateException("Cookie thiếu CSRF token (Hãy đăng nhập lại Instagram)")
         val cleanTargetId = targetUserId.trim()
 
@@ -279,6 +280,10 @@ class InstagramApiClient(
         }.toString()
 
         val gqlBody = FormBody.Builder()
+            .add("fb_dtsg", fbDtsg ?: "")
+            .add("lsd", lsd ?: "")
+            .add("fb_api_caller_class", "RelayModern")
+            .add("fb_api_req_friendly_name", "usePolarisFollowMutation")
             .add("variables", variables)
             .add("doc_id", DOC_ID_FOLLOW_MUTATION)
             .build()
@@ -328,20 +333,20 @@ class InstagramApiClient(
      * Follow tài khoản theo username hoặc target_id
      */
     @Throws(Exception::class)
-    fun followTarget(targetIdOrUsername: String): Boolean {
+    fun followTarget(targetIdOrUsername: String, fbDtsg: String? = null, lsd: String? = null): Boolean {
         val clean = cleanInstagramUsername(targetIdOrUsername)
         if (clean.isBlank()) {
             throw IllegalStateException("Link hoặc ID đối tượng rỗng")
         }
         if (clean.all { it.isDigit() }) {
-            return followUser(clean)
+            return followUser(clean, fbDtsg, lsd)
         }
         val userId = getUserIdFromUsername(clean)
         if (!userId.isNullOrBlank()) {
-            return followUser(userId)
+            return followUser(userId, fbDtsg, lsd)
         }
         // Thử follow trực tiếp bằng clean identifier nếu không tra cứu được id
-        return followUser(clean)
+        return followUser(clean, fbDtsg, lsd)
     }
 
     /**

@@ -158,7 +158,7 @@ object XsmmInstagramTaskRunner {
                                     try {
                                         if (isFollow || task.type.contains("follow", ignoreCase = true)) {
                                             val followTarget = task.idorlink.ifBlank { task.targetUrl }
-                                            actionSuccess = apiClient.followTarget(followTarget)
+                                            actionSuccess = apiClient.followTarget(followTarget, fbDtsg = account.fbDtsg, lsd = account.lsd)
                                         } else {
                                             val likeTarget = task.idorlink.ifBlank { task.targetUrl }
                                             actionSuccess = apiClient.likeTarget(likeTarget, fbDtsg = account.fbDtsg)

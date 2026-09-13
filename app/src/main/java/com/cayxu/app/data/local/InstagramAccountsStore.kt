@@ -12,7 +12,8 @@ data class InstagramAccount(
     val isLive: Boolean = true,
     val fullName: String = "",
     val avatar: String = "",
-    val fbDtsg: String = ""
+    val fbDtsg: String = "",
+    val lsd: String = ""
 )
 
 object InstagramAccountsStore {
@@ -41,7 +42,8 @@ object InstagramAccountsStore {
                         isLive = parts.getOrElse(5) { "true" } == "true",
                         fullName = parts.getOrElse(6) { "" },
                         avatar = parts.getOrElse(7) { "" },
-                        fbDtsg = parts.getOrElse(8) { "" }
+                        fbDtsg = parts.getOrElse(8) { "" },
+                        lsd = parts.getOrElse(9) { "" }
                     )
                 } catch (e: Exception) {
                     null
@@ -108,7 +110,8 @@ object InstagramAccountsStore {
                 if (acc.isLive) "true" else "false",
                 acc.fullName,
                 acc.avatar,
-                acc.fbDtsg
+                acc.fbDtsg,
+                acc.lsd
             ).joinToString(FIELD_SEPARATOR)
         }
         prefs(context).edit().putString(KEY_ACCOUNTS, raw).apply()
