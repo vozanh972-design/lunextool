@@ -30,8 +30,8 @@ object Str {
 
     val welcomeSubtitle: String
         @Composable get() = pick(
-            "CayXu giúp bạn kiếm tiền dễ dàng với nhiều nhiệm vụ hấp dẫn và thu nhập hấp dẫn.",
-            "CayXu helps you earn money easily with exciting tasks and attractive income."
+            "AutoLunex giúp bạn kiếm tiền dễ dàng với nhiều nhiệm vụ hấp dẫn và thu nhập hấp dẫn.",
+            "AutoLunex helps you earn money easily with exciting tasks and attractive income."
         )
 
     val welcomeGetStarted: String
@@ -59,16 +59,16 @@ object Str {
 
     val termsDialogBody: String
         @Composable get() = pick(
-            "Bằng việc sử dụng CayXu, bạn đồng ý sử dụng ứng dụng đúng mục đích, không can thiệp, " +
+            "Bằng việc sử dụng AutoLunex, bạn đồng ý sử dụng ứng dụng đúng mục đích, không can thiệp, " +
                 "chỉnh sửa hay khai thác trái phép hệ thống dưới bất kỳ hình thức nào.\n\n" +
-                "CayXu có quyền tạm ngưng hoặc thu hồi quyền truy cập nếu phát hiện hành vi gian lận, " +
+                "AutoLunex có quyền tạm ngưng hoặc thu hồi quyền truy cập nếu phát hiện hành vi gian lận, " +
                 "vi phạm điều khoản hoặc vi phạm pháp luật hiện hành.\n\n" +
                 "Nội dung, nhiệm vụ và phần thưởng trong ứng dụng có thể được điều chỉnh theo thời gian " +
                 "để đảm bảo trải nghiệm an toàn, minh bạch cho tất cả người dùng. Ứng dụng không chứa " +
                 "và không hỗ trợ bất kỳ nội dung, chức năng nào trái quy định pháp luật.",
-            "By using CayXu, you agree to use the app for its intended purpose only, and not to " +
+            "By using AutoLunex, you agree to use the app for its intended purpose only, and not to " +
                 "interfere with, modify, or exploit the system in any unauthorized way.\n\n" +
-                "CayXu reserves the right to suspend or revoke access if fraudulent activity, a " +
+                "AutoLunex reserves the right to suspend or revoke access if fraudulent activity, a " +
                 "violation of these terms, or a violation of applicable law is detected.\n\n" +
                 "Content, tasks, and rewards within the app may be adjusted over time to keep the " +
                 "experience safe and transparent for all users. The app does not contain or support " +
@@ -80,19 +80,19 @@ object Str {
 
     val privacyDialogBody: String
         @Composable get() = pick(
-            "CayXu không thu thập, lưu trữ hay chia sẻ bất kỳ thông tin cá nhân nhạy cảm nào của " +
+            "AutoLunex không thu thập, lưu trữ hay chia sẻ bất kỳ thông tin cá nhân nhạy cảm nào của " +
                 "bạn cho bên thứ ba.\n\n" +
                 "Ứng dụng chỉ sử dụng những dữ liệu tối thiểu, cần thiết để vận hành tính năng (như xác " +
                 "thực key kích hoạt) và không truy cập mật khẩu hay dữ liệu riêng tư khác trên thiết bị " +
                 "của bạn.\n\n" +
-                "CayXu cam kết hoạt động minh bạch, tuân thủ quy định pháp luật hiện hành về bảo vệ " +
+                "AutoLunex cam kết hoạt động minh bạch, tuân thủ quy định pháp luật hiện hành về bảo vệ " +
                 "dữ liệu người dùng, không chứa và không thực hiện bất kỳ hành vi thu thập dữ liệu trái phép nào.",
-            "CayXu does not collect, store, or share any of your sensitive personal information with " +
+            "AutoLunex does not collect, store, or share any of your sensitive personal information with " +
                 "third parties.\n\n" +
                 "The app only uses the minimum data necessary to operate its features (such as " +
                 "activation key verification) and does not access your passwords or other private data " +
                 "on your device.\n\n" +
-                "CayXu is committed to operating transparently, in compliance with applicable data " +
+                "AutoLunex is committed to operating transparently, in compliance with applicable data " +
                 "protection regulations, and does not contain or engage in any unauthorized data " +
                 "collection."
         )

@@ -67,29 +67,18 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-            // Header: Mã máy
+            // Header: Thương hiệu AutoLunex
             Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Image(
                     painter = painterResource(com.cayxu.app.R.drawable.ic_app_logo),
-                    contentDescription = null,
+                    contentDescription = "AUTOLUNEX",
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(44.dp)
+                    modifier = Modifier.height(34.dp)
                 )
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("CAYXU", style = MaterialTheme.typography.bodyMedium, color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    Text(uiState.androidId, fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 15.sp)
-                }
-                IconButton(onClick = {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("android_id", uiState.androidId))
-                    Toast.makeText(context, "Đã sao chép mã máy", Toast.LENGTH_SHORT).show()
-                }) {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = "Sao chép", tint = Primary)
-                }
                 IconButton(onClick = { /* TODO: thông báo */ }) {
                     Icon(Icons.Filled.Notifications, contentDescription = null, tint = TextPrimary)
                 }
