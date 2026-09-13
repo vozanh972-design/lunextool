@@ -534,7 +534,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         // Nút Reload (Làm mới)
                                         IconButton(
                                             onClick = {
-                                                android.widget.Toast.makeText(context, "Đang làm mới $cleanIg...", android.widget.Toast.SHORT).show()
+                                                android.widget.Toast.makeText(context, "Đang làm mới $cleanIg...", android.widget.Toast.LENGTH_SHORT).show()
                                             },
                                             modifier = Modifier.size(32.dp)
                                         ) {
@@ -559,7 +559,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         // Nút Tam giác Chạy (Play)
                                         IconButton(
                                             onClick = {
-                                                android.widget.Toast.makeText(context, "Chạy $cleanIg...", android.widget.Toast.SHORT).show()
+                                                android.widget.Toast.makeText(context, "Chạy $cleanIg...", android.widget.Toast.LENGTH_SHORT).show()
                                             },
                                             modifier = Modifier.size(32.dp)
                                         ) {
