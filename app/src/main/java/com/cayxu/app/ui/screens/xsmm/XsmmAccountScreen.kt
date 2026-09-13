@@ -93,7 +93,18 @@ fun XsmmAccountScreen(navController: NavController) {
         isCheckingLinked = true
         when (val result = XsmmAccountsRepository.getAccounts(token, accountType = "tiktok")) {
             is XsmmAccountsResult.Success -> {
-                linkedHandles = result.accounts.mapNotNull { acc ->
+                val accMap = mutableMapOf<String, String>()
+                val internalMap = mutableMapOf<String, String>()
+                result.accounts.forEach { acc ->
+                    val handle = acc.linkAccount.substringAfterLast("@").trim('/').lowercase()
+                    if (handle.isNotBlank()) {
+                        if (!acc.accountId.isNullOrBlank()) accMap[handle] = acc.accountId
+                        if (!acc.id.isNullOrBlank()) internalMap[handle] = acc.id
+                    }
+                }
+                XsmmAccountStore.saveAccountIdMap(context, accMap)
+                XsmmAccountStore.saveInternalIdMap(context, internalMap)
+                linkedHandles = accMap.keys + result.accounts.mapNotNull { acc ->
                     acc.linkAccount.substringAfterLast("@").trim('/').lowercase().takeIf { it.isNotBlank() }
                 }.toSet()
             }

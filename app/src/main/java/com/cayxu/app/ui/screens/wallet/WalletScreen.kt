@@ -44,7 +44,7 @@ private data class WalletHistoryItem(
 private data class WalletTab(val title: String, val gradientColors: List<Color>)
 
 private val walletTabs = listOf(
-    WalletTab("Ví Traodoisub", listOf(Color(0xFF418DFC), Color(0xFF7950F6))),
+    WalletTab("Ví Nhiemvucheo", listOf(Color(0xFF418DFC), Color(0xFF7950F6))),
     WalletTab("Ví Tuongtaccheo", listOf(Color(0xFFF472B6), Color(0xFFEC4899))),
     WalletTab("Ví XSMM", listOf(Color(0xFF34D399), Color(0xFF16A34A)))
 )

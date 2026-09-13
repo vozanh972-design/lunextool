@@ -153,13 +153,14 @@ fun SimpleTaskPlatformScreen(navController: NavController, service: String) {
 }
 
 private fun accentColorFor(service: String): Color = when (service) {
-    "Traodoisub" -> Color(0xFF2563EB)
+    "Nhiemvucheo", "Traodoisub" -> Color(0xFF2563EB)
     "Tuongtaccheo" -> Color(0xFFEC4899)
     "XSMM" -> Color(0xFF16A34A)
     else -> Color(0xFF2563EB)
 }
 
 private fun displayNameFor(service: String): String = when (service) {
+    "Nhiemvucheo" -> "Nhiệm vụ chéo"
     "Traodoisub" -> "Trao đổi Sub"
     "Tuongtaccheo" -> "Tương tác chéo"
     "XSMM" -> "XSMM"

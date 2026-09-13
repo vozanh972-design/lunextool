@@ -4,6 +4,8 @@ import android.content.Context
 
 /** Cấu hình "Chạy" cho XSMM - lưu SharedPreferences riêng (cayxu_xsmm_run_config). */
 data class XsmmRunConfig(
+    /** Loại nhiệm vụ (mặc định: tiktok_follow) */
+    val taskType: String = "tiktok_follow",
     /** Thời gian giữa các lần lấy nhiệm vụ (giây). */
     val fetchTaskIntervalSeconds: Int = 10,
     /** Thời gian "làm" 1 nhiệm vụ trước khi báo hoàn thành (giây). */
@@ -22,6 +24,7 @@ data class XsmmRunConfig(
 
 object XsmmRunConfigStore {
     private const val PREFS_NAME = "cayxu_xsmm_run_config"
+    private const val KEY_TASK_TYPE = "task_type"
     private const val KEY_FETCH_INTERVAL = "fetch_task_interval_seconds"
     private const val KEY_DO_DURATION = "do_task_duration_seconds"
     private const val KEY_TASK_COUNT_TARGET = "task_count_target"
@@ -30,12 +33,35 @@ object XsmmRunConfigStore {
     private const val KEY_SWIPE_BEFORE = "swipe_before_task"
     private const val KEY_RETURN_HOME_SWIPE = "return_home_and_swipe"
 
+    val supportedTaskTypes = listOf(
+        "tiktok_follow" to "TikTok Follow",
+        "tiktok_like" to "TikTok Like (Thả tim)",
+        "tiktok_comment" to "TikTok Comment",
+        "facebook_like" to "Facebook Like",
+        "facebook_follow" to "Facebook Follow",
+        "facebook_comment" to "Facebook Comment",
+        "facebook_share" to "Facebook Share",
+        "facebook_likepage" to "Facebook Like Page",
+        "facebook_member" to "Facebook Tham gia nhóm",
+        "facebook_likecmt" to "Facebook Like Comment",
+        "facebook_review" to "Facebook Đánh giá",
+        "instagram_follow" to "Instagram Follow",
+        "instagram_like" to "Instagram Like",
+        "instagram_comment" to "Instagram Comment",
+        "thread_follow" to "Threads Follow",
+        "thread_like" to "Threads Like",
+        "youtube_follow" to "YouTube Subscribe",
+        "youtube_comment" to "YouTube Comment",
+        "google_review" to "Google Review"
+    )
+
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun get(context: Context): XsmmRunConfig {
         val p = prefs(context)
         return XsmmRunConfig(
+            taskType = p.getString(KEY_TASK_TYPE, "tiktok_follow") ?: "tiktok_follow",
             fetchTaskIntervalSeconds = p.getInt(KEY_FETCH_INTERVAL, 10),
             doTaskDurationSeconds = p.getInt(KEY_DO_DURATION, 10),
             taskCountTarget = p.getInt(KEY_TASK_COUNT_TARGET, 0),
@@ -48,6 +74,7 @@ object XsmmRunConfigStore {
 
     fun save(context: Context, config: XsmmRunConfig) {
         prefs(context).edit()
+            .putString(KEY_TASK_TYPE, config.taskType)
             .putInt(KEY_FETCH_INTERVAL, config.fetchTaskIntervalSeconds)
             .putInt(KEY_DO_DURATION, config.doTaskDurationSeconds)
             .putInt(KEY_TASK_COUNT_TARGET, config.taskCountTarget)

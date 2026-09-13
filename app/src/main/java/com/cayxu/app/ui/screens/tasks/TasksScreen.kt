@@ -51,8 +51,8 @@ private data class PlatformOption(
 
 private val platformOptions = listOf(
     PlatformOption(
-        name = "Traodoisub",
-        subtitle = "Nhiệm vụ đăng ký kênh, tăng sub, view YouTube",
+        name = "Nhiemvucheo",
+        subtitle = "Nhiệm vụ tăng sub, view, tương tác đa kênh",
         icon = Icons.Filled.SwapHoriz,
         accentColor = Color(0xFF2563EB)
     ),

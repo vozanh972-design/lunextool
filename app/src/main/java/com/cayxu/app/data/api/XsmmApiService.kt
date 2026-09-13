@@ -12,8 +12,8 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 /**
- * Endpoint XSMM (Task API) - xem "API Documentation - Task Endpoints (/api/taskapi)" người
- * dùng cung cấp. Base URL: https://xsmm.net/ (xem XsmmRetrofitClient).
+ * Endpoint XSMM (Task API đa luồng) - theo đúng API Documentation (/api/taskapi).
+ * Base URL: https://xsmm.net/
  */
 interface XsmmApiService {
 
@@ -23,9 +23,8 @@ interface XsmmApiService {
     @GET("api/taskapi/user")
     suspend fun getUser(@Header("Authorization") authorization: String): Response<JsonObject>
 
-    /** Lấy danh sách tài khoản đã thêm vào XSMM (có phân trang) - dùng account_type để lọc
-     *  riêng từng loại (vd "tiktok"), search để tìm theo tên/link cụ thể. */
-    @GET("api/taskapi/accounts")
+    /** Lấy danh sách tài khoản (accounts2) */
+    @GET("api/taskapi/accounts2")
     suspend fun getAccounts(
         @Header("Authorization") authorization: String,
         @Query("search") search: String? = null,
@@ -37,8 +36,8 @@ interface XsmmApiService {
     @GET("api/taskapi/accounts/active")
     suspend fun getActiveAccount(@Header("Authorization") authorization: String): Response<JsonObject>
 
-    /** Thêm tài khoản mới. Body: {"type": "...", "link_account": "...", "active": true?} */
-    @POST("api/taskapi/accounts")
+    /** Thêm tài khoản mới (accounts2) Body: {"type": "facebook"|"tiktok", "link_account": "..."} */
+    @POST("api/taskapi/accounts2")
     suspend fun addAccount(
         @Header("Authorization") authorization: String,
         @Body body: JsonObject
@@ -51,17 +50,18 @@ interface XsmmApiService {
         @Path("id") id: String
     ): Response<JsonObject>
 
-    /** Lấy danh sách nhiệm vụ khả dụng (tasks2 - có uid của acc đang chạy).
-     *  [type]: vd "tiktok_follow", [uid]: account_id của acc TikTok đã set-active trên XSMM. */
+    /** Lấy danh sách nhiệm vụ khả dụng (tasks2 - có type, uid, typejob).
+     *  [type]: vd "tiktok_follow", "tiktok_like", "facebook_like"...
+     *  [uid]: account_id của acc trên XSMM */
     @GET("api/taskapi/tasks2")
     suspend fun getTasks2(
         @Header("Authorization") authorization: String,
         @Query("type") type: String,
         @Query("uid") uid: String,
-        @Query("typejob") typejob: String? = null
+        @Query("typejob") typejob: String? = "normal,better,best"
     ): Response<com.google.gson.JsonArray>
 
-    /** Hoàn thành nhiệm vụ (tasks2/complete - có uid). Body: {"type":..., "task_id":[...], "uid":...} */
+    /** Hoàn thành nhiệm vụ (tasks2/complete). Body: {"type": "...", "task_id": [...], "uid": "..."} */
     @POST("api/taskapi/tasks2/complete")
     suspend fun completeTasks2(
         @Header("Authorization") authorization: String,

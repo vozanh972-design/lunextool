@@ -44,6 +44,7 @@ fun XsmmRunConfigScreen(navController: NavController) {
     val context = LocalContext.current
     val saved = remember { XsmmRunConfigStore.get(context) }
 
+    var taskType by remember { mutableStateOf(saved.taskType) }
     var fetchTaskInterval by remember { mutableStateOf(saved.fetchTaskIntervalSeconds.toString()) }
     var doTaskDuration by remember { mutableStateOf(saved.doTaskDurationSeconds.toString()) }
     var taskCountTarget by remember { mutableStateOf(if (saved.taskCountTarget > 0) saved.taskCountTarget.toString() else "") }
@@ -56,6 +57,7 @@ fun XsmmRunConfigScreen(navController: NavController) {
         XsmmRunConfigStore.save(
             context,
             XsmmRunConfig(
+                taskType = taskType,
                 fetchTaskIntervalSeconds = fetchTaskInterval.toIntOrNull()?.coerceAtLeast(1) ?: 10,
                 doTaskDurationSeconds = doTaskDuration.toIntOrNull()?.coerceAtLeast(1) ?: 10,
                 taskCountTarget = taskCountTarget.toIntOrNull()?.coerceAtLeast(0) ?: 0,
@@ -88,6 +90,10 @@ fun XsmmRunConfigScreen(navController: NavController) {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            ConfigTaskTypeSelector(
+                selectedType = taskType,
+                onSelectType = { taskType = it }
+            )
             ConfigNumberField(
                 label = "Thời gian lấy nhiệm vụ",
                 suffix = "giây",
@@ -200,6 +206,62 @@ private fun ConfigSwitchRow(
                 onCheckedChange = onCheckedChange,
                 colors = SwitchDefaults.colors(checkedTrackColor = XsmmAccent)
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConfigTaskTypeSelector(
+    selectedType: String,
+    onSelectType: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val options = XsmmRunConfigStore.supportedTaskTypes
+    val currentLabel = options.firstOrNull { it.first == selectedType }?.second ?: selectedType
+
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text("Loại nhiệm vụ", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(8.dp))
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = currentLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = XsmmAccent,
+                        cursorColor = XsmmAccent
+                    ),
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    options.forEach { (typeKey, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label, fontWeight = if (typeKey == selectedType) FontWeight.Bold else FontWeight.Normal) },
+                            onClick = {
+                                onSelectType(typeKey)
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 }
