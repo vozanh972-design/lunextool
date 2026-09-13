@@ -76,22 +76,22 @@ fun XsmmAccountScreen(navController: NavController) {
     val points by XsmmSession.points
     var isRefreshing by remember { mutableStateOf(false) }
 
+    var selectedPlatform by remember { mutableStateOf("tiktok") }
     var selectedVariant by remember { mutableStateOf(TikTokAppVariant.STANDARD) }
     var linkedHandles by remember { mutableStateOf<Set<String>>(emptySet()) }
     var isCheckingLinked by remember { mutableStateOf(false) }
     var addingUid by remember { mutableStateOf<String?>(null) }
-    var selectedAccountUid by remember(selectedVariant) { mutableStateOf<String?>(null) }
-    var selectedForRunUids by remember(selectedVariant) { mutableStateOf<Set<String>>(emptySet()) }
+    var selectedAccountUid by remember(selectedPlatform, selectedVariant) { mutableStateOf<String?>(null) }
+    var selectedForRunUids by remember(selectedPlatform, selectedVariant) { mutableStateOf<Set<String>>(emptySet()) }
 
     val allTikTokAccounts = remember { TikTokAccountsStore.getAccounts(context).filter { it.enabled } }
     val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
+    val facebookAccounts = remember { com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context) }
 
-    // Gọi THẬT GET /api/taskapi/accounts?account_type=tiktok mỗi khi vào màn/đổi tab, để biết
-    // acc nào ĐÃ có trên XSMM rồi (tự ẩn nút "Thêm"), acc nào chưa (hiện nút "Thêm").
-    LaunchedEffect(selectedVariant) {
+    LaunchedEffect(selectedPlatform, selectedVariant) {
         val token = XsmmAccountStore.getToken(context) ?: return@LaunchedEffect
         isCheckingLinked = true
-        when (val result = XsmmAccountsRepository.getAccounts(token, accountType = "tiktok")) {
+        when (val result = XsmmAccountsRepository.getAccounts(token, accountType = selectedPlatform)) {
             is XsmmAccountsResult.Success -> {
                 val accMap = mutableMapOf<String, String>()
                 val internalMap = mutableMapOf<String, String>()
@@ -108,7 +108,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     acc.linkAccount.substringAfterLast("@").trim('/').lowercase().takeIf { it.isNotBlank() }
                 }.toSet()
             }
-            is XsmmAccountsResult.Error -> Unit // giữ danh sách cũ, coi như chưa xác định được
+            is XsmmAccountsResult.Error -> Unit
         }
         isCheckingLinked = false
     }
@@ -209,33 +209,67 @@ fun XsmmAccountScreen(navController: NavController) {
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("Tài khoản TikTok", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                val allUidsInTab = accountsForVariant.filter { it.handle.trim().removePrefix("@").lowercase() in linkedHandles }.map { it.uid }
-                val allSelected = allUidsInTab.isNotEmpty() && allUidsInTab.all { it in selectedForRunUids }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable {
-                        selectedForRunUids = if (allSelected) selectedForRunUids - allUidsInTab.toSet()
-                        else selectedForRunUids + allUidsInTab.toSet()
-                    }
-                ) {
-                    Checkbox(
-                        checked = allSelected,
-                        onCheckedChange = null,
-                        colors = CheckboxDefaults.colors(checkedColor = XsmmAccentEnd)
-                    )
-                    Text("Tất cả", color = TextSecondary, fontSize = 12.sp)
-                }
-            }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // ---- 3 tab: TikTok / TikTok Lite / TikTok Studio ----
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                VariantTabChip("TikTok", TikTokAppVariant.STANDARD, selectedVariant, allTikTokAccounts) { selectedVariant = it }
-                VariantTabChip("TikTok Lite", TikTokAppVariant.LITE, selectedVariant, allTikTokAccounts) { selectedVariant = it }
-                VariantTabChip("TikTok Studio", TikTokAppVariant.STUDIO, selectedVariant, allTikTokAccounts) { selectedVariant = it }
+            // ---- Chọn nền tảng (TikTok / Facebook) ----
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                FilterChip(
+                    selected = selectedPlatform == "tiktok",
+                    onClick = { selectedPlatform = "tiktok" },
+                    label = { Text("TikTok (${allTikTokAccounts.size})", fontWeight = FontWeight.Bold) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = XsmmAccentEnd.copy(alpha = 0.15f),
+                        selectedLabelColor = XsmmAccentEnd
+                    )
+                )
+                FilterChip(
+                    selected = selectedPlatform == "facebook",
+                    onClick = { selectedPlatform = "facebook" },
+                    label = { Text("Facebook (${facebookAccounts.size})", fontWeight = FontWeight.Bold) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFF1877F2).copy(alpha = 0.15f),
+                        selectedLabelColor = Color(0xFF1877F2)
+                    )
+                )
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            if (selectedPlatform == "tiktok") {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Tài khoản TikTok", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                    val allUidsInTab = accountsForVariant.filter { it.handle.trim().removePrefix("@").lowercase() in linkedHandles }.map { it.uid }
+                    val allSelected = allUidsInTab.isNotEmpty() && allUidsInTab.all { it in selectedForRunUids }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable {
+                            selectedForRunUids = if (allSelected) selectedForRunUids - allUidsInTab.toSet()
+                            else selectedForRunUids + allUidsInTab.toSet()
+                        }
+                    ) {
+                        Checkbox(
+                            checked = allSelected,
+                            onCheckedChange = null,
+                            colors = CheckboxDefaults.colors(checkedColor = XsmmAccentEnd)
+                        )
+                        Text("Tất cả", color = TextSecondary, fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+
+                // ---- 3 tab: TikTok / TikTok Lite / TikTok Studio ----
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    VariantTabChip("TikTok", TikTokAppVariant.STANDARD, selectedVariant, allTikTokAccounts) { selectedVariant = it }
+                    VariantTabChip("TikTok Lite", TikTokAppVariant.LITE, selectedVariant, allTikTokAccounts) { selectedVariant = it }
+                    VariantTabChip("TikTok Studio", TikTokAppVariant.STUDIO, selectedVariant, allTikTokAccounts) { selectedVariant = it }
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Tài khoản Facebook", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                }
             }
 
             Spacer(Modifier.height(12.dp))
@@ -248,55 +282,108 @@ fun XsmmAccountScreen(navController: NavController) {
                 }
             }
 
-            if (accountsForVariant.isEmpty()) {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = CardWhite),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(Modifier.padding(20.dp)) {
-                        Text("Chưa có tài khoản nào ở loại này - thêm ở phần Quản lý tài khoản TikTok trước.", color = TextSecondary, fontSize = 13.sp)
+            if (selectedPlatform == "tiktok") {
+                if (accountsForVariant.isEmpty()) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardWhite),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(20.dp)) {
+                            Text("Chưa có tài khoản nào ở loại này - thêm ở phần Quản lý tài khoản TikTok trước.", color = TextSecondary, fontSize = 13.sp)
+                        }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        accountsForVariant.forEach { account ->
+                            val handleLower = account.handle.trim().removePrefix("@").lowercase()
+                            val isLinked = handleLower in linkedHandles
+                            XsmmTikTokAccountCard(
+                                account = account,
+                                isSelected = account.uid == selectedAccountUid,
+                                isAdded = isLinked,
+                                isAdding = addingUid == account.uid,
+                                isCheckedForRun = account.uid in selectedForRunUids,
+                                onCheckedForRunChange = { checked ->
+                                    if (!isLinked) return@XsmmTikTokAccountCard
+                                    selectedForRunUids = if (checked) selectedForRunUids + account.uid
+                                    else selectedForRunUids - account.uid
+                                },
+                                onClick = { selectedAccountUid = account.uid },
+                                onAddClick = {
+                                    val token = XsmmAccountStore.getToken(context)
+                                    if (token.isNullOrBlank()) {
+                                        android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                        return@XsmmTikTokAccountCard
+                                    }
+                                    addingUid = account.uid
+                                    scope.launch {
+                                        when (val result = XsmmAccountsRepository.addTikTokAccount(token, account.handle)) {
+                                            is XsmmAddAccountResult.Success -> {
+                                                linkedHandles = linkedHandles + handleLower
+                                                android.widget.Toast.makeText(context, "Đã thêm @${account.handle} vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                            is XsmmAddAccountResult.Error -> {
+                                                android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                        addingUid = null
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    accountsForVariant.forEach { account ->
-                        val handleLower = account.handle.trim().removePrefix("@").lowercase()
-                        val isLinked = handleLower in linkedHandles
-                        XsmmTikTokAccountCard(
-                            account = account,
-                            isSelected = account.uid == selectedAccountUid,
-                            isAdded = isLinked,
-                            isAdding = addingUid == account.uid,
-                            isCheckedForRun = account.uid in selectedForRunUids,
-                            onCheckedForRunChange = { checked ->
-                                if (!isLinked) return@XsmmTikTokAccountCard
-                                selectedForRunUids = if (checked) selectedForRunUids + account.uid
-                                else selectedForRunUids - account.uid
-                            },
-                            onClick = { selectedAccountUid = account.uid },
-                            onAddClick = {
-                                val token = XsmmAccountStore.getToken(context)
-                                if (token.isNullOrBlank()) {
-                                    android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
-                                    return@XsmmTikTokAccountCard
-                                }
-                                addingUid = account.uid
-                                scope.launch {
-                                    when (val result = XsmmAccountsRepository.addTikTokAccount(token, account.handle)) {
-                                        is XsmmAddAccountResult.Success -> {
-                                            linkedHandles = linkedHandles + handleLower
-                                            android.widget.Toast.makeText(context, "Đã thêm @${account.handle} vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                        is XsmmAddAccountResult.Error -> {
-                                            android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
-                                        }
+                if (facebookAccounts.isEmpty()) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardWhite),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(20.dp)) {
+                            Text("Chưa có tài khoản Facebook nào - thêm ở phần Quản lý tài khoản Facebook trước.", color = TextSecondary, fontSize = 13.sp)
+                        }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        facebookAccounts.forEach { account ->
+                            val uidLower = account.uid.trim().lowercase()
+                            val isLinked = uidLower in linkedHandles
+                            Card(
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (account.uid == selectedAccountUid) Color(0xFF1877F2).copy(alpha = 0.08f) else CardWhite
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    width = 1.dp,
+                                    color = if (account.uid == selectedAccountUid) Color(0xFF1877F2) else Color(0xFFEEF1F5)
+                                ),
+                                modifier = Modifier.fillMaxWidth().clickable { selectedAccountUid = account.uid }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = account.uid in selectedForRunUids,
+                                        onCheckedChange = { checked ->
+                                            selectedForRunUids = if (checked) selectedForRunUids + account.uid
+                                            else selectedForRunUids - account.uid
+                                        },
+                                        colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2))
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(account.name.ifBlank { account.uid }, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
+                                        Spacer(Modifier.height(2.dp))
+                                        Text("UID: ${account.uid}", color = TextSecondary, fontSize = 12.sp)
                                     }
-                                    addingUid = null
                                 }
                             }
-                        )
+                        }
                     }
                 }
             }
@@ -322,9 +409,15 @@ fun XsmmAccountScreen(navController: NavController) {
             }
             Button(
                 onClick = {
-                    val handles = accountsForVariant
-                        .filter { it.uid in selectedForRunUids }
-                        .map { it.handle.trim().removePrefix("@") }
+                    val handles = if (selectedPlatform == "tiktok") {
+                        accountsForVariant
+                            .filter { it.uid in selectedForRunUids }
+                            .map { it.handle.trim().removePrefix("@") }
+                    } else {
+                        facebookAccounts
+                            .filter { it.uid in selectedForRunUids }
+                            .map { it.uid.trim() }
+                    }
                     com.cayxu.app.ui.overlay.xsmm.startXsmmJobRunnerOverlay(context, handles)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = XsmmAccentEnd),

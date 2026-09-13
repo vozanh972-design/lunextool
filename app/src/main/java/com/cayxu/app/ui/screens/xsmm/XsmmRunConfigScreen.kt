@@ -44,6 +44,7 @@ fun XsmmRunConfigScreen(navController: NavController) {
     val context = LocalContext.current
     val saved = remember { XsmmRunConfigStore.get(context) }
 
+    var platform by remember { mutableStateOf(saved.platform) }
     var taskType by remember { mutableStateOf(saved.taskType) }
     var fetchTaskInterval by remember { mutableStateOf(saved.fetchTaskIntervalSeconds.toString()) }
     var doTaskDuration by remember { mutableStateOf(saved.doTaskDurationSeconds.toString()) }
@@ -57,6 +58,7 @@ fun XsmmRunConfigScreen(navController: NavController) {
         XsmmRunConfigStore.save(
             context,
             XsmmRunConfig(
+                platform = platform,
                 taskType = taskType,
                 fetchTaskIntervalSeconds = fetchTaskInterval.toIntOrNull()?.coerceAtLeast(1) ?: 10,
                 doTaskDurationSeconds = doTaskDuration.toIntOrNull()?.coerceAtLeast(1) ?: 10,
@@ -90,7 +92,16 @@ fun XsmmRunConfigScreen(navController: NavController) {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            ConfigPlatformSelector(
+                selectedPlatform = platform,
+                onSelectPlatform = {
+                    platform = it
+                    val defaultTask = XsmmRunConfigStore.taskTypesFor(it).firstOrNull()?.first ?: "tiktok_follow"
+                    taskType = defaultTask
+                }
+            )
             ConfigTaskTypeSelector(
+                platform = platform,
                 selectedType = taskType,
                 onSelectType = { taskType = it }
             )
@@ -212,12 +223,69 @@ private fun ConfigSwitchRow(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun ConfigPlatformSelector(
+    selectedPlatform: String,
+    onSelectPlatform: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val platforms = XsmmRunConfigStore.supportedPlatforms
+    val currentLabel = platforms.firstOrNull { it.first == selectedPlatform }?.second ?: selectedPlatform
+
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text("Chọn nền tảng chạy", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(8.dp))
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = currentLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = XsmmAccent,
+                        cursorColor = XsmmAccent
+                    ),
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    platforms.forEach { (platKey, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label, fontWeight = if (platKey == selectedPlatform) FontWeight.Bold else FontWeight.Normal) },
+                            onClick = {
+                                onSelectPlatform(platKey)
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun ConfigTaskTypeSelector(
+    platform: String,
     selectedType: String,
     onSelectType: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val options = XsmmRunConfigStore.supportedTaskTypes
+    val options = XsmmRunConfigStore.taskTypesFor(platform)
     val currentLabel = options.firstOrNull { it.first == selectedType }?.second ?: selectedType
 
     Card(

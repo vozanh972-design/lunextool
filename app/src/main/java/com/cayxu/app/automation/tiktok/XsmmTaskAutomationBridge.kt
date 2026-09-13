@@ -6,6 +6,11 @@ import kotlinx.coroutines.flow.asStateFlow
 
 sealed class XsmmTaskAction {
     data object Idle : XsmmTaskAction()
+    data class VerifyAndSwitchAccount(
+        val targetHandle: String,
+        val variant: com.cayxu.app.data.local.TikTokAppVariant = com.cayxu.app.data.local.TikTokAppVariant.STANDARD,
+        val actionId: Long = System.currentTimeMillis()
+    ) : XsmmTaskAction()
     data class DoTask(
         val taskType: String,
         val swipeBefore: Boolean,
@@ -23,7 +28,7 @@ sealed class XsmmTaskActionResult {
 
 /**
  * Cầu nối giữa XsmmJobRunnerOverlayService và TikTokAccessibilityService.
- * Giúp tự động bấm Follow, thả tim (Like), quay về Home và lướt tin video TikTok.
+ * Giúp tự động kiểm tra tài khoản TikTok, bấm Follow, thả tim (Like), quay về Home và lướt tin video TikTok.
  */
 object XsmmTaskAutomationBridge {
     private val _action = MutableStateFlow<XsmmTaskAction>(XsmmTaskAction.Idle)
@@ -31,6 +36,20 @@ object XsmmTaskAutomationBridge {
 
     private val _result = MutableStateFlow<XsmmTaskActionResult>(XsmmTaskActionResult.Idle)
     val result: StateFlow<XsmmTaskActionResult> = _result.asStateFlow()
+
+    fun triggerVerifyAccount(
+        targetHandle: String,
+        variant: com.cayxu.app.data.local.TikTokAppVariant = com.cayxu.app.data.local.TikTokAppVariant.STANDARD
+    ): Long {
+        val id = System.currentTimeMillis()
+        _result.value = XsmmTaskActionResult.InProgress("Đang kiểm tra tài khoản TikTok...")
+        _action.value = XsmmTaskAction.VerifyAndSwitchAccount(
+            targetHandle = targetHandle.trim().removePrefix("@"),
+            variant = variant,
+            actionId = id
+        )
+        return id
+    }
 
     fun triggerTask(
         taskType: String,

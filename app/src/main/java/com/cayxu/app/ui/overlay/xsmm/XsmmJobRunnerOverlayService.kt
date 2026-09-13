@@ -135,6 +135,24 @@ class XsmmJobRunnerOverlayService : Service() {
                         updateProgressDisplay()
                     }
 
+                    // Kiểm tra xem TikTok có đang ở đúng tài khoản cần chạy không
+                    if (cleanHandle.isNotBlank() && config.taskType.contains("tiktok", ignoreCase = true)) {
+                        XsmmJobStatusBridge.update("Đang kiểm tra tài khoản @$cleanHandle trên TikTok...")
+                        val verifyActionId = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.triggerVerifyAccount(cleanHandle)
+                        val verifyStartTime = System.currentTimeMillis()
+                        while (isActive && (System.currentTimeMillis() - verifyStartTime) < 15000L) {
+                            val res = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.result.value
+                            if (res is com.cayxu.app.automation.tiktok.XsmmTaskActionResult.InProgress) {
+                                XsmmJobStatusBridge.update(res.message)
+                            } else if (res is com.cayxu.app.automation.tiktok.XsmmTaskActionResult.Completed && res.actionId == verifyActionId) {
+                                XsmmJobStatusBridge.update(res.message)
+                                delay(1000L)
+                                break
+                            }
+                            delay(500L)
+                        }
+                    }
+
                     XsmmJobStatusBridge.update("Đang lấy nhiệm vụ cho @$cleanHandle...")
                     val taskResult = XsmmTasksRepository.getTasks2(token, config.taskType, uid)
 

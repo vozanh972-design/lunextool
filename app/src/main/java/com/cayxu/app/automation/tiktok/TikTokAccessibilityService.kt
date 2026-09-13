@@ -115,13 +115,19 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
             }
         }
-        // Theo dõi nhiệm vụ chạy tự động XSMM (bấm Follow, like, quay về Home lướt tin)
+        // Theo dõi nhiệm vụ chạy tự động XSMM (bấm Follow, like, quay về Home lướt tin, kiểm tra đúng tài khoản)
         scope.launch {
             XsmmTaskAutomationBridge.action.collect { action ->
-                if (action is XsmmTaskAction.DoTask) {
-                    startXsmmTaskExecution(action)
-                } else {
-                    xsmmTaskJob?.cancel()
+                when (action) {
+                    is XsmmTaskAction.VerifyAndSwitchAccount -> {
+                        startXsmmVerifyAccountExecution(action)
+                    }
+                    is XsmmTaskAction.DoTask -> {
+                        startXsmmTaskExecution(action)
+                    }
+                    else -> {
+                        xsmmTaskJob?.cancel()
+                    }
                 }
             }
         }
@@ -916,6 +922,93 @@ class TikTokAccessibilityService : AccessibilityService() {
                 XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đã hoàn thành thao tác")
             } catch (e: Exception) {
                 XsmmTaskAutomationBridge.completeTask(action.actionId, false, e.message ?: "Lỗi tự động hóa")
+            }
+        }
+    }
+
+    private fun startXsmmVerifyAccountExecution(action: XsmmTaskAction.VerifyAndSwitchAccount) {
+        xsmmTaskJob?.cancel()
+        xsmmTaskJob = scope.launch {
+            try {
+                XsmmTaskAutomationBridge.updateProgress("Đang kiểm tra tài khoản trên TikTok...")
+                val target = action.targetHandle.trim().removePrefix("@").lowercase()
+
+                var checkedHandle = ""
+                var matched = false
+
+                // Dò tối đa ~10 giây
+                for (attempt in 0 until 12) {
+                    val root = findTikTokRoot()
+                    if (root != null) {
+                        val handleNode = findHandleNode(root)
+                        if (handleNode != null) {
+                            val text = handleNode.text?.toString()?.trim()?.removePrefix("@")?.lowercase().orEmpty()
+                            if (text.isNotBlank()) {
+                                checkedHandle = text
+                                if (text == target) {
+                                    matched = true
+                                    XsmmTaskAutomationBridge.updateProgress("Đã khớp tài khoản @$target")
+                                    break
+                                }
+                            }
+                        } else {
+                            val tabNode = findProfileTabNode(root)
+                            if (tabNode != null) {
+                                clickNode(tabNode)
+                                delay(1000)
+                            }
+                        }
+                    }
+                    delay(800)
+                }
+
+                if (matched) {
+                    XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đúng tài khoản @$target")
+                    return@launch
+                }
+
+                if (checkedHandle.isNotBlank() && checkedHandle != target) {
+                    XsmmTaskAutomationBridge.updateProgress("Đang ở @$checkedHandle -> Tìm cách chuyển sang @$target...")
+                    // Thử mở menu Cài đặt -> Chuyển đổi tài khoản
+                    val root = findTikTokRoot()
+                    if (root != null) {
+                        val menuIcon = findMenuIcon(root, 0)
+                        if (menuIcon != null) {
+                            clickNode(menuIcon)
+                            delay(1000)
+                            val menuRoot = findTikTokRoot()
+                            val settingsNode = menuRoot?.let { findNodeByText(it, SETTINGS_PRIVACY_LABELS, exact = false) }
+                            if (settingsNode != null) {
+                                clickNode(settingsNode)
+                                delay(1200)
+                                val setRoot = findTikTokRoot()
+                                setRoot?.let { scrollDown(it) }
+                                delay(800)
+                                val switchNode = findTikTokRoot()?.let { findNodeByText(it, SWITCH_SHEET_TITLE, exact = false) }
+                                if (switchNode != null) {
+                                    clickNode(switchNode)
+                                    delay(1200)
+                                    val sheetRoot = findTikTokRoot()
+                                    if (sheetRoot != null) {
+                                        val targetNode = findNodeByText(sheetRoot, setOf(target), exact = false)
+                                        if (targetNode != null) {
+                                            XsmmTaskAutomationBridge.updateProgress("Đã thấy @$target trong danh sách, đang chuyển...")
+                                            clickNode(targetNode)
+                                            delay(2500)
+                                            XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đã chuyển sang @$target")
+                                            return@launch
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    XsmmTaskAutomationBridge.updateProgress("Đang dùng @$checkedHandle (chưa tự chuyển được sang @$target)")
+                }
+
+                XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Hoàn tất kiểm tra")
+            } catch (e: Exception) {
+                XsmmTaskAutomationBridge.completeTask(action.actionId, false, e.message ?: "Lỗi kiểm tra acc")
             }
         }
     }
