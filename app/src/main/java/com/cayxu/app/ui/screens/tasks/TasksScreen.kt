@@ -72,6 +72,7 @@ private val platformOptions = listOf(
 
 @Composable
 fun TasksScreen(navController: NavController) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var selectedPlatform by remember { mutableIntStateOf(0) }
 
     Column(
