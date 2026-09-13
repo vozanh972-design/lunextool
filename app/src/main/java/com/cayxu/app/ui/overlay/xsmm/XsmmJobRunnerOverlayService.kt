@@ -18,6 +18,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.cayxu.app.R
 import com.cayxu.app.automation.tiktok.TikTokAppLauncher
+import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.data.local.XsmmAccountStore
 import com.cayxu.app.data.local.XsmmRunConfigStore
 import com.cayxu.app.data.repository.XsmmAccountsRepository
