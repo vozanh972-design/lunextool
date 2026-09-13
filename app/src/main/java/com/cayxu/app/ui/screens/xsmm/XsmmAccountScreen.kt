@@ -535,7 +535,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     when (selectedPlatform) {
                         "facebook" -> showFacebookLoginSheet = true
                         "instagram" -> showInstagramCookieSheet = true
-                        else -> navController.navigate(Routes.TIKTOK_LINK_ACCOUNT)
+                        else -> navController.navigate(Routes.LINK_ACCOUNT_TIKTOK)
                     }
                 },
                 modifier = Modifier.size(46.dp)
