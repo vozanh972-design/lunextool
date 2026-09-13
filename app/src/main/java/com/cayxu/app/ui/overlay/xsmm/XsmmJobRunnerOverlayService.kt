@@ -119,10 +119,11 @@ class XsmmJobRunnerOverlayService : Service() {
                 XsmmJobStatusBridge.update("Bắt đầu chạy nhiệm vụ Instagram...")
                 val result = com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner.run(
                     context = applicationContext,
-                    accountUsernames = accountHandles
-                ) { status ->
-                    XsmmJobStatusBridge.update(status)
-                }
+                    accountUsernames = accountHandles,
+                    onStatusUpdate = { status ->
+                        XsmmJobStatusBridge.update(status)
+                    }
+                )
                 totalCompleted = result.totalCompleted
                 totalEarnedPoints = result.totalEarnedPoints.toLong()
                 launch(Dispatchers.Main) {

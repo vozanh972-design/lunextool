@@ -37,8 +37,8 @@ object XsmmInstagramTaskRunner {
     suspend fun run(
         context: Context,
         accountUsernames: List<String>,
-        onStatusUpdate: ((String) -> Unit)? = null,
-        onProgressUpdate: ((status: String, successCount: Int, errorCount: Int) -> Unit)? = null
+        onProgressUpdate: ((status: String, successCount: Int, errorCount: Int) -> Unit)? = null,
+        onStatusUpdate: ((String) -> Unit)? = null
     ): RunResult {
         val token = XsmmAccountStore.getToken(context)
         if (token.isNullOrBlank()) {
