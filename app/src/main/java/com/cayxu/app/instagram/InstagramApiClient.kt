@@ -29,6 +29,7 @@ class InstagramApiClient(
         const val API_BASE_URL = "https://i.instagram.com"
 
         const val APP_ID = "936619743392459"
+        const val APP_ID_MOBILE = "1217981644879628"
         const val ASBD_ID = "359341"
         const val AJAX_ROLLOUT = "1047421128"
 
@@ -109,7 +110,7 @@ class InstagramApiClient(
         return null
     }
 
-    private fun buildStandardHeaders(csrfToken: String? = null, referer: String? = null): Headers {
+    private fun buildStandardHeaders(csrfToken: String? = null, referer: String? = null, appId: String = APP_ID): Headers {
         val csrf = csrfToken ?: extractCsrfToken() ?: ""
         val ref = referer ?: "$BASE_URL/"
         return Headers.Builder()
@@ -120,7 +121,7 @@ class InstagramApiClient(
             .add("Origin", BASE_URL)
             .add("Referer", ref)
             .add("X-CSRFToken", csrf)
-            .add("X-IG-App-ID", APP_ID)
+            .add("X-IG-App-ID", appId)
             .add("X-ASBD-ID", ASBD_ID)
             .add("X-Instagram-AJAX", AJAX_ROLLOUT)
             .add("X-Requested-With", "XMLHttpRequest")
@@ -330,7 +331,58 @@ class InstagramApiClient(
 
         var lastErrorMsg: String? = null
 
-        // 1. Thử Web API endpoint chuẩn: /api/v1/web/friendships/$cleanTargetId/follow/
+        // 1. Thử GraphQL Relay mutation (PolarisFollowUserMutation: doc_id 6828551470557454) - Chuẩn F12 mới nhất
+        try {
+            val variables = JSONObject().apply {
+                put("user_id", cleanTargetId)
+            }.toString()
+
+            val gqlBody = FormBody.Builder()
+                .add("variables", variables)
+                .add("doc_id", DOC_ID_FOLLOW_MUTATION)
+                .build()
+
+            val gqlHeaders = Headers.Builder()
+                .add("User-Agent", userAgent)
+                .add("Cookie", cookie)
+                .add("Accept", "*/*")
+                .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+                .add("Origin", BASE_URL)
+                .add("Referer", "$BASE_URL/")
+                .add("X-CSRFToken", csrf)
+                .add("X-IG-App-ID", APP_ID)
+                .add("X-ASBD-ID", ASBD_ID)
+                .add("X-FB-Friendly-Name", "usePolarisFollowMutation")
+                .add("Sec-Fetch-Dest", "empty")
+                .add("Sec-Fetch-Mode", "cors")
+                .add("Sec-Fetch-Site", "same-origin")
+                .build()
+
+            val gqlRequest = Request.Builder()
+                .url("$BASE_URL/graphql/query")
+                .headers(gqlHeaders)
+                .post(gqlBody)
+                .build()
+
+            httpClient.newCall(gqlRequest).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"following\":true") || body.contains("\"is_following\":true") || body.contains("\"outgoing_request\":true"))) {
+                    return true
+                }
+                if (body.contains("feedback_required") || body.contains("spam")) {
+                    throw IllegalStateException("Instagram chặn follow (Spam/Action blocked)")
+                }
+                if (body.contains("login_required") || body.contains("checkpoint_required")) {
+                    throw IllegalStateException("Cookie DIE hoặc yêu cầu checkpoint / đăng nhập lại")
+                }
+                lastErrorMsg = "GraphQL error (code ${response.code}): $body"
+            }
+        } catch (e: Exception) {
+            if (e is IllegalStateException) throw e
+            lastErrorMsg = e.message
+        }
+
+        // 2. Thử Web API endpoint chuẩn: /api/v1/web/friendships/$cleanTargetId/follow/
         val webUrl = "$BASE_URL/api/v1/web/friendships/$cleanTargetId/follow/"
         val requestBody = FormBody.Builder()
             .add("user_id", cleanTargetId)
@@ -378,54 +430,29 @@ class InstagramApiClient(
             lastErrorMsg = e.message
         }
 
-        // 2. Thử GraphQL Relay mutation (PolarisFollowUserMutation)
+        // 3. Thử Mobile Web App ID với friendships create
         try {
-            val variables = JSONObject().apply {
-                put("user_id", cleanTargetId)
-            }.toString()
-
-            val gqlBody = FormBody.Builder()
-                .add("variables", variables)
-                .add("doc_id", DOC_ID_FOLLOW_MUTATION)
-                .build()
-
-            val gqlHeaders = Headers.Builder()
+            val mobileHeaders = Headers.Builder()
                 .add("User-Agent", userAgent)
                 .add("Cookie", cookie)
                 .add("Accept", "*/*")
+                .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
                 .add("Origin", BASE_URL)
                 .add("Referer", "$BASE_URL/")
                 .add("X-CSRFToken", csrf)
-                .add("X-IG-App-ID", APP_ID)
+                .add("X-IG-App-ID", APP_ID_MOBILE)
                 .add("X-ASBD-ID", ASBD_ID)
-                .add("X-FB-Friendly-Name", "usePolarisFollowMutation")
+                .add("X-Instagram-AJAX", AJAX_ROLLOUT)
+                .add("X-Requested-With", "XMLHttpRequest")
                 .build()
 
-            val gqlRequest = Request.Builder()
-                .url("$BASE_URL/graphql/query")
-                .headers(gqlHeaders)
-                .post(gqlBody)
+            val createUrl = "$BASE_URL/api/v1/friendships/create/$cleanTargetId/"
+            val createReq = Request.Builder()
+                .url(createUrl)
+                .headers(mobileHeaders)
+                .post(requestBody)
                 .build()
 
-            httpClient.newCall(gqlRequest).execute().use { response ->
-                val body = response.body?.string() ?: ""
-                if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"following\":true") || body.contains("\"is_following\":true"))) {
-                    return true
-                }
-            }
-        } catch (e: Exception) {
-            if (e is IllegalStateException) throw e
-        }
-
-        // 3. Thử friendships create
-        val createUrl = "$BASE_URL/api/v1/friendships/create/$cleanTargetId/"
-        val createReq = Request.Builder()
-            .url(createUrl)
-            .headers(webHeaders)
-            .post(requestBody)
-            .build()
-
-        try {
             httpClient.newCall(createReq).execute().use { response ->
                 val body = response.body?.string() ?: ""
                 if (response.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
