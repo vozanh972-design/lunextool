@@ -39,9 +39,9 @@ private data class OnboardingPageData(
 )
 
 /**
- * Gồm 2 màn hình ban đầu chuẩn phong cách AutoLunex:
- * 1. Màn Splash (Chào mừng): Có thanh tiến trình loading chạy từ từ ở đáy màn hình, sau khi load xong tự động chuyển sang Màn 2.
- * 2. Màn Giới thiệu (Onboarding): Slider 4 trang tự chạy/vuốt/bấm Tiếp tục, dot indicator chạy động theo từng trang.
+ * Luồng khởi động AutoLunex:
+ * 1. Màn Splash (Chào mừng): Logo chữ A sắc nét, slogan, thanh loading đáy màn hình.
+ * 2. Màn Giới thiệu (Onboarding): Slider tự động trượt trang sau mỗi 3 giây, nút Bỏ qua kéo sát đỉnh, chuyển tiếp mượt mà.
  */
 @Composable
 fun WelcomeScreen(onGetStarted: () -> Unit) {
@@ -64,14 +64,9 @@ fun WelcomeScreen(onGetStarted: () -> Unit) {
 
 /**
  * GIAO DIỆN 1: MÀN CHÀO MỪNG (SPLASH SCREEN)
- * - Nền sóng màu cam ấm chuẩn mẫu
- * - Logo AutoLunex sắc nét, nền trong suốt
- * - Slogan: "Kiếm xu mỗi ngày - Tự do tài chính trong tầm tay"
- * - Thanh loading dưới đáy chạy từ từ rồi chuyển sang Màn 2
  */
 @Composable
 private fun SplashScreenView(onFinishSplash: () -> Unit) {
-    // Animation thanh loading chạy từ 0f -> 1f trong 2.3 giây
     val progress = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
@@ -91,7 +86,7 @@ private fun SplashScreenView(onFinishSplash: () -> Unit) {
                 indication = null
             ) { onFinishSplash() }
     ) {
-        // Nền sóng cam ấm chuẩn mẫu gốc
+        // Nền sóng cam ấm chất lượng cao
         Image(
             painter = painterResource(R.drawable.bg_splash_warm_waves),
             contentDescription = null,
@@ -108,7 +103,7 @@ private fun SplashScreenView(onFinishSplash: () -> Unit) {
         ) {
             Spacer(modifier = Modifier.weight(0.9f))
 
-            // Logo AutoLunex chuẩn, sắc nét, không bị viền trắng
+            // Logo AutoLunex chuẩn, sắc nét, trong suốt
             Image(
                 painter = painterResource(R.drawable.ic_autolunex_warm_logo),
                 contentDescription = "AutoLunex Logo",
@@ -162,12 +157,8 @@ private fun SplashScreenView(onFinishSplash: () -> Unit) {
 
 /**
  * GIAO DIỆN 2: MÀN GIỚI THIỆU (ONBOARDING)
- * - Nền sáng có sóng cam ở chân trang
- * - Nút Bỏ qua ở trên cùng bên phải
- * - Hình minh họa sắc nét
- * - Tiêu đề & mô tả nhiệm vụ
- * - Thanh 4 chấm chỉ báo trang chạy động
- * - Nút "Tiếp tục →"
+ * - Nút "Bỏ qua" kéo lên trên sát mép đỉnh
+ * - Tự động trượt trang sau mỗi 3 giây
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -206,12 +197,23 @@ private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
 
     val pagerState = rememberPagerState(pageCount = { pages.size })
 
+    // Tự động nhảy trang sau 3 giây
+    LaunchedEffect(pagerState.currentPage) {
+        delay(3000)
+        if (pagerState.currentPage < pages.size - 1) {
+            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+        } else {
+            // Sau khi trang cuối cùng hiển thị 3s, tự động chuyển vào Màn 3
+            onFinish()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFFCFBF9))
     ) {
-        // Nền sóng cam mềm mại dưới chân màn hình
+        // Nền sóng cam chân trang
         Image(
             painter = painterResource(R.drawable.bg_bottom_warm_waves),
             contentDescription = null,
@@ -229,14 +231,17 @@ private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Nút "Bỏ qua" ở góc trên bên phải
+            // Nút "Bỏ qua" kéo lên trên cao sát mép đỉnh
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 16.dp),
+                    .padding(top = 4.dp),
                 contentAlignment = Alignment.CenterEnd
             ) {
-                TextButton(onClick = onFinish) {
+                TextButton(
+                    onClick = onFinish,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
                     Text(
                         text = "Bỏ qua",
                         fontSize = 15.sp,
@@ -246,9 +251,9 @@ private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // Khung nội dung 4 trang Onboarding
+            // Slider 4 trang Onboarding
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
@@ -261,7 +266,6 @@ private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    // Ảnh minh họa sắc nét
                     Image(
                         painter = painterResource(page.imageRes),
                         contentDescription = page.titleLine1,
@@ -273,7 +277,6 @@ private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
 
                     Spacer(modifier = Modifier.height(28.dp))
 
-                    // Tiêu đề 2 dòng
                     Text(
                         text = page.titleLine1,
                         fontSize = 26.sp,
@@ -291,7 +294,6 @@ private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Mô tả
                     Text(
                         text = page.description,
                         fontSize = 15.sp,
@@ -304,7 +306,7 @@ private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
                 }
             }
 
-            // Thanh chấm tròn phân trang (Page indicator: 4 chấm)
+            // Dải 4 chấm chỉ báo trang chạy động
             Row(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,

@@ -45,13 +45,10 @@ import com.cayxu.app.R
 
 /**
  * GIAO DIỆN 3: MÀN ĐĂNG NHẬP / NHẬP KEY (LOGIN SCREEN)
- * - Nền sáng kết hợp sóng cam ở chân màn hình
- * - Logo AutoLunex chuẩn nét ở trên
+ * - Logo AutoLunex ở trên
  * - Tiêu đề "Đăng nhập vào tài khoản"
- * - Ô nhập Key/Mật khẩu viền bo tròn có icon Khóa & nút Ẩn/Hiện / Dán
- * - Checkbox "Nhớ tài khoản" & link "Quên mật khẩu / Mua key"
- * - Nút "Đăng nhập" cam ấm
- * - Dòng "Chưa có tài khoản? Đăng ký ngay"
+ * - Khu vực nhập Key và Nút Đăng nhập được dời xuống gần phía dưới cùng của màn hình
+ * - Vùng bấm ẩn "Chưa có key? Mua key ngay" tàng hình cùng màu nền dẫn tới lunex.io.vn
  */
 @Composable
 fun LoginScreen(
@@ -92,7 +89,7 @@ fun LoginScreen(
                 indication = null
             ) { focusManager.clearFocus() }
     ) {
-        // Nền sóng cam ấm ở chân màn hình
+        // Nền sóng cam ở chân màn hình
         Image(
             painter = painterResource(R.drawable.bg_bottom_warm_waves),
             contentDescription = null,
@@ -122,7 +119,7 @@ fun LoginScreen(
                     .height(90.dp)
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
             // Tiêu đề
             Text(
@@ -133,7 +130,8 @@ fun LoginScreen(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
+            // Đẩy toàn bộ khu vực Nhập Key và Đăng nhập xuống gần phía dưới cùng
+            Spacer(modifier = Modifier.weight(1f))
 
             // Ô NHẬP KEY / MẬT KHẨU
             Box(
@@ -301,30 +299,30 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(48.dp))
 
-            // Dòng "Chưa có tài khoản? Đăng ký ngay" / Mua key ở dưới
+            // Vùng tàng hình "Chưa có key ? Mua key ngay" (Màu trong suốt/trùng nền tàng hình nhưng chạm vào sẽ mở link lunex.io.vn)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 32.dp),
+                    .padding(bottom = 24.dp)
+                    .clickable {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://lunex.io.vn/"))
+                        runCatching { context.startActivity(intent) }
+                    },
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Chưa có tài khoản? ",
+                    text = "Chưa có key ? ",
                     fontSize = 14.sp,
-                    color = Color(0xFF64748B)
+                    color = Color.Transparent
                 )
                 Text(
-                    text = "Đăng ký ngay",
+                    text = "Mua key ngay",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = brandOrange,
-                    modifier = Modifier.clickable {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://lunex.io.vn/"))
-                        runCatching { context.startActivity(intent) }
-                    }
+                    color = Color.Transparent
                 )
             }
         }
