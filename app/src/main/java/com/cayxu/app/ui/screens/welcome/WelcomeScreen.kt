@@ -1,12 +1,15 @@
 package com.cayxu.app.ui.screens.welcome
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,7 +20,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -27,86 +29,98 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cayxu.app.R
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+private data class OnboardingPageData(
+    val imageRes: Int,
+    val titleLine1: String,
+    val titleLine2: String,
+    val description: String
+)
 
 /**
- * Luồng 2 màn hình ban đầu chuẩn phong cách AutoLunex:
- * 1. Màn Splash (Chào mừng) với nền chuyển sắc ấm và logo AutoLunex + Tagline
- * 2. Màn Onboarding (Giới thiệu) với hình minh họa làm nhiệm vụ, tiêu đề, dot indicator và nút Tiếp tục
+ * Gồm 2 màn hình ban đầu chuẩn phong cách AutoLunex:
+ * 1. Màn Splash (Chào mừng): Có thanh tiến trình loading chạy từ từ ở đáy màn hình, sau khi load xong tự động chuyển sang Màn 2.
+ * 2. Màn Giới thiệu (Onboarding): Slider 4 trang tự chạy/vuốt/bấm Tiếp tục, dot indicator chạy động theo từng trang.
  */
 @Composable
 fun WelcomeScreen(onGetStarted: () -> Unit) {
-    var currentStep by remember { mutableStateOf(1) }
-
-    // Tự động chuyển từ Màn 1 (Splash) sang Màn 2 (Onboarding) sau 2 giây
-    LaunchedEffect(Unit) {
-        delay(2000)
-        if (currentStep == 1) {
-            currentStep = 2
-        }
-    }
+    var isSplash by remember { mutableStateOf(true) }
 
     AnimatedContent(
-        targetState = currentStep,
+        targetState = isSplash,
         transitionSpec = {
-            fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(400))
+            fadeIn(animationSpec = tween(450)) togetherWith fadeOut(animationSpec = tween(450))
         },
-        label = "WelcomeScreenPager"
-    ) { step ->
-        if (step == 1) {
-            SplashScreenView(onSkip = { currentStep = 2 })
+        label = "WelcomeTransition"
+    ) { splashState ->
+        if (splashState) {
+            SplashScreenView(onFinishSplash = { isSplash = false })
         } else {
-            OnboardingScreenView(onContinue = onGetStarted)
+            OnboardingPagerScreenView(onFinish = onGetStarted)
         }
     }
 }
 
 /**
- * GIAO DIỆN 1: MÀN CHÀO MỪNG (SPLASH)
- * Nền ấm, Logo AutoLunex ở giữa và Slogan truyền cảm hứng.
+ * GIAO DIỆN 1: MÀN CHÀO MỪNG (SPLASH SCREEN)
+ * - Nền sóng màu cam ấm chuẩn mẫu
+ * - Logo AutoLunex sắc nét, nền trong suốt
+ * - Slogan: "Kiếm xu mỗi ngày - Tự do tài chính trong tầm tay"
+ * - Thanh loading dưới đáy chạy từ từ rồi chuyển sang Màn 2
  */
 @Composable
-private fun SplashScreenView(onSkip: () -> Unit) {
+private fun SplashScreenView(onFinishSplash: () -> Unit) {
+    // Animation thanh loading chạy từ 0f -> 1f trong 2.3 giây
+    val progress = remember { Animatable(0f) }
+
+    LaunchedEffect(Unit) {
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 2300, easing = LinearEasing)
+        )
+        delay(100)
+        onFinishSplash()
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFFFFF9F5),
-                        Color(0xFFFFEDE4),
-                        Color(0xFFFF7A3D),
-                        Color(0xFFFF5E1E)
-                    )
-                )
-            )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
-            ) { onSkip() },
-        contentAlignment = Alignment.Center
+            ) { onFinishSplash() }
     ) {
+        // Nền sóng cam ấm chuẩn mẫu gốc
+        Image(
+            painter = painterResource(R.drawable.bg_splash_warm_waves),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 32.dp)
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.weight(0.9f))
 
-            // Logo AutoLunex tông cam ấm
+            // Logo AutoLunex chuẩn, sắc nét, không bị viền trắng
             Image(
                 painter = painterResource(R.drawable.ic_autolunex_warm_logo),
-                contentDescription = "AutoLunex",
+                contentDescription = "AutoLunex Logo",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .fillMaxWidth(0.8f)
-                    .height(68.dp)
+                    .fillMaxWidth(0.7f)
+                    .height(90.dp)
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Tagline / Slogan
+            // Slogan
             Text(
                 text = "Kiếm xu mỗi ngày",
                 fontSize = 24.sp,
@@ -118,128 +132,211 @@ private fun SplashScreenView(onSkip: () -> Unit) {
             Text(
                 text = "Tự do tài chính trong tầm tay",
                 fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF7C2D12),
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF475569),
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.weight(1.2f))
+            Spacer(modifier = Modifier.weight(1.3f))
+
+            // Thanh Loading bo tròn ở dưới đáy màn hình
+            Box(
+                modifier = Modifier
+                    .padding(bottom = 48.dp)
+                    .width(160.dp)
+                    .height(5.dp)
+                    .clip(RoundedCornerShape(2.5.dp))
+                    .background(Color.White.copy(alpha = 0.35f))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(progress.value)
+                        .clip(RoundedCornerShape(2.5.dp))
+                        .background(Color.White)
+                )
+            }
         }
     }
 }
 
 /**
  * GIAO DIỆN 2: MÀN GIỚI THIỆU (ONBOARDING)
- * Nút Bỏ qua, Hình minh họa nhiệm vụ, Tiêu đề, Mô tả, Indicator và Nút Tiếp tục
+ * - Nền sáng có sóng cam ở chân trang
+ * - Nút Bỏ qua ở trên cùng bên phải
+ * - Hình minh họa sắc nét
+ * - Tiêu đề & mô tả nhiệm vụ
+ * - Thanh 4 chấm chỉ báo trang chạy động
+ * - Nút "Tiếp tục →"
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun OnboardingScreenView(onContinue: () -> Unit) {
+private fun OnboardingPagerScreenView(onFinish: () -> Unit) {
     val brandOrange = Color(0xFFFF5E1E)
+    val coroutineScope = rememberCoroutineScope()
+
+    val pages = remember {
+        listOf(
+            OnboardingPageData(
+                imageRes = R.drawable.ill_onboarding_warm,
+                titleLine1 = "Làm nhiệm vụ",
+                titleLine2 = "Kiếm thu nhập thật",
+                description = "Thực hiện các nhiệm vụ, đơn giản và nhận ngay xu thưởng."
+            ),
+            OnboardingPageData(
+                imageRes = R.drawable.ill_wallet_growth,
+                titleLine1 = "Nuôi tài khoản",
+                titleLine2 = "Tự động tương tác",
+                description = "Tự động nuôi và tương tác Facebook, TikTok an toàn, bền bỉ."
+            ),
+            OnboardingPageData(
+                imageRes = R.drawable.ic_mascot_coin,
+                titleLine1 = "Đổi thưởng nhanh",
+                titleLine2 = "Uy tín tuyệt đối",
+                description = "Quy đổi xu thưởng thành tiền mặt hoặc thẻ cào trong tích tắc."
+            ),
+            OnboardingPageData(
+                imageRes = R.drawable.ill_key_3d,
+                titleLine1 = "Bảo mật an toàn",
+                titleLine2 = "Hỗ trợ 24/7",
+                description = "Hệ thống mã hóa dữ liệu độc quyền và hỗ trợ tận tâm mọi lúc."
+            )
+        )
+    }
+
+    val pagerState = rememberPagerState(pageCount = { pages.size })
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFFCFBF9))
-            .padding(horizontal = 24.dp)
     ) {
+        // Nền sóng cam mềm mại dưới chân màn hình
+        Image(
+            painter = painterResource(R.drawable.bg_bottom_warm_waves),
+            contentDescription = null,
+            contentScale = ContentScale.FillWidth,
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Thanh trên cùng: Nút "Bỏ qua"
+            // Nút "Bỏ qua" ở góc trên bên phải
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp),
                 contentAlignment = Alignment.CenterEnd
             ) {
-                TextButton(onClick = onContinue) {
+                TextButton(onClick = onFinish) {
                     Text(
                         text = "Bỏ qua",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color(0xFF64748B)
+                        color = Color(0xFF475569)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Hình minh họa Onboarding (Laptop, quà tặng, đồng xu)
-            Image(
-                painter = painterResource(R.drawable.ill_onboarding_warm),
-                contentDescription = "Làm nhiệm vụ kiếm thu nhập",
-                contentScale = ContentScale.Fit,
+            // Khung nội dung 4 trang Onboarding
+            HorizontalPager(
+                state = pagerState,
                 modifier = Modifier
-                    .fillMaxWidth(0.88f)
-                    .height(270.dp)
-            )
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) { pageIndex ->
+                val page = pages[pageIndex]
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    // Ảnh minh họa sắc nét
+                    Image(
+                        painter = painterResource(page.imageRes),
+                        contentDescription = page.titleLine1,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth(0.88f)
+                            .height(260.dp)
+                    )
 
-            Spacer(modifier = Modifier.height(28.dp))
+                    Spacer(modifier = Modifier.height(28.dp))
 
-            // Tiêu đề chính 2 dòng
-            Text(
-                text = "Làm nhiệm vụ",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = Color(0xFF1E293B),
-                textAlign = TextAlign.Center
-            )
-            Text(
-                text = "Kiếm thu nhập thật",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = brandOrange,
-                textAlign = TextAlign.Center
-            )
+                    // Tiêu đề 2 dòng
+                    Text(
+                        text = page.titleLine1,
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFF1E293B),
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = page.titleLine2,
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFF1E293B),
+                        textAlign = TextAlign.Center
+                    )
 
-            Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-            // Mô tả
-            Text(
-                text = "Thực hiện các nhiệm vụ, đơn giản và nhận ngay xu thưởng.",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Normal,
-                color = Color(0xFF64748B),
-                textAlign = TextAlign.Center,
-                lineHeight = 22.sp,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
+                    // Mô tả
+                    Text(
+                        text = page.description,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = Color(0xFF475569),
+                        textAlign = TextAlign.Center,
+                        lineHeight = 22.sp,
+                        modifier = Modifier.padding(horizontal = 20.dp)
+                    )
+                }
+            }
 
-            Spacer(modifier = Modifier.weight(1f))
-
-            // Dải chấm tròn phân trang (Page indicator: 4 chấm, chấm đầu tiên là pill cam)
+            // Thanh chấm tròn phân trang (Page indicator: 4 chấm)
             Row(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 28.dp)
+                modifier = Modifier.padding(bottom = 26.dp)
             ) {
-                // Active pill dot
-                Box(
-                    modifier = Modifier
-                        .size(width = 24.dp, height = 6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(brandOrange)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                // Inactive dots
-                repeat(3) {
+                repeat(pages.size) { index ->
+                    val isSelected = pagerState.currentPage == index
                     Box(
                         modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFE2E8F0))
+                            .padding(horizontal = 4.dp)
+                            .size(
+                                width = if (isSelected) 20.dp else 7.dp,
+                                height = 7.dp
+                            )
+                            .clip(if (isSelected) RoundedCornerShape(3.5.dp) else CircleShape)
+                            .background(if (isSelected) brandOrange else Color(0xFFCBD5E1))
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
                 }
             }
 
-            // Nút "Tiếp tục →"
+            // Nút "Tiếp tục →" / "Bắt đầu ngay"
+            val isLastPage = pagerState.currentPage == pages.size - 1
             Button(
-                onClick = onContinue,
+                onClick = {
+                    if (isLastPage) {
+                        onFinish()
+                    } else {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                        }
+                    }
+                },
                 shape = RoundedCornerShape(28.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = brandOrange),
                 modifier = Modifier
@@ -252,7 +349,7 @@ private fun OnboardingScreenView(onContinue: () -> Unit) {
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "Tiếp tục",
+                        text = if (isLastPage) "Bắt đầu ngay" else "Tiếp tục",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -267,7 +364,7 @@ private fun OnboardingScreenView(onContinue: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(34.dp))
         }
     }
 }
