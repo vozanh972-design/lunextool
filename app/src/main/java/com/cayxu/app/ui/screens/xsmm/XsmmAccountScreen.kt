@@ -318,6 +318,31 @@ fun XsmmAccountScreen(navController: NavController) {
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("Tài khoản Instagram", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                    
+                    val allInstagramSelected = instagramAccounts.isNotEmpty() && instagramAccounts.all { it.trim() in selectedForRunUids }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                val cleanAccounts = instagramAccounts.map { it.trim() }.toSet()
+                                selectedForRunUids = if (allInstagramSelected) selectedForRunUids - cleanAccounts
+                                else selectedForRunUids + cleanAccounts
+                            }
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Checkbox(
+                            checked = allInstagramSelected,
+                            onCheckedChange = null,
+                            colors = CheckboxDefaults.colors(checkedColor = Color(0xFFE1306C)),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Tất cả", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
+
+                    Spacer(Modifier.width(6.dp))
+
                     IconButton(
                         onClick = { showInstagramCookieSheet = true },
                         modifier = Modifier.size(32.dp)
@@ -383,7 +408,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     addingUid = account.uid
                                     scope.launch {
                                         when (val result = XsmmAccountsRepository.addTikTokAccount(token, account.handle)) {
-                                            is XsmmAddAccountResult.Success -> {
+                                             is XsmmAddAccountResult.Success -> {
                                                 linkedHandles = linkedHandles + handleLower
                                                 android.widget.Toast.makeText(context, "Đã thêm @${account.handle} vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
                                             }
@@ -471,37 +496,126 @@ fun XsmmAccountScreen(navController: NavController) {
                         }
                     }
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         instagramAccounts.forEach { igUid ->
                             val cleanIg = igUid.trim()
                             Card(
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (cleanIg == selectedAccountUid) Color(0xFFE1306C).copy(alpha = 0.08f) else CardWhite
+                                    containerColor = if (cleanIg == selectedAccountUid) Color(0xFFE1306C).copy(alpha = 0.06f) else CardWhite
                                 ),
                                 border = androidx.compose.foundation.BorderStroke(
                                     width = 1.dp,
                                     color = if (cleanIg == selectedAccountUid) Color(0xFFE1306C) else Color(0xFFEEF1F5)
                                 ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                                 modifier = Modifier.fillMaxWidth().clickable { selectedAccountUid = cleanIg }
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = cleanIg in selectedForRunUids,
-                                        onCheckedChange = { checked ->
-                                            selectedForRunUids = if (checked) selectedForRunUids + cleanIg
-                                            else selectedForRunUids - cleanIg
-                                        },
-                                        colors = CheckboxDefaults.colors(checkedColor = Color(0xFFE1306C))
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(cleanIg, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
-                                        Spacer(Modifier.height(2.dp))
-                                        Text("Instagram Cookie", color = TextSecondary, fontSize = 12.sp)
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Checkbox(
+                                            checked = cleanIg in selectedForRunUids,
+                                            onCheckedChange = { checked ->
+                                                selectedForRunUids = if (checked) selectedForRunUids + cleanIg
+                                                else selectedForRunUids - cleanIg
+                                            },
+                                            colors = CheckboxDefaults.colors(checkedColor = Color(0xFFE1306C))
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(cleanIg, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = TextPrimary)
+                                            Spacer(Modifier.height(2.dp))
+                                            Text("Instagram Cookie", color = TextSecondary, fontSize = 12.sp)
+                                        }
+
+                                        // Nút Reload (Làm mới)
+                                        IconButton(
+                                            onClick = {
+                                                android.widget.Toast.makeText(context, "Đang làm mới $cleanIg...", android.widget.Toast.SHORT).show()
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFFE1306C).copy(alpha = 0.1f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Refresh,
+                                                    contentDescription = "Làm mới",
+                                                    tint = Color(0xFFE1306C),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(Modifier.width(6.dp))
+
+                                        // Nút Tam giác Chạy (Play)
+                                        IconButton(
+                                            onClick = {
+                                                android.widget.Toast.makeText(context, "Chạy $cleanIg...", android.widget.Toast.SHORT).show()
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFFE1306C)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.PlayArrow,
+                                                    contentDescription = "Chạy",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(Modifier.height(10.dp))
+
+                                    // Khu vực hiển thị trạng thái kéo dài xuống dưới
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFFF8F9FA))
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(7.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color(0xFF16A34A))
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                                Text(
+                                                    "Trạng thái: Sẵn sàng",
+                                                    fontSize = 11.5.sp,
+                                                    color = TextSecondary,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
+                                            Text(
+                                                "0 nhiệm vụ",
+                                                fontSize = 11.sp,
+                                                color = TextSecondary.copy(alpha = 0.8f)
+                                            )
+                                        }
                                     }
                                 }
                             }
