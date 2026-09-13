@@ -140,6 +140,48 @@ object XsmmAccountsRepository {
         }
     }
 
+    /** Thêm acc Instagram mới vào XSMM theo username/handle */
+    suspend fun addInstagramAccount(rawToken: String, username: String, setActive: Boolean = true): XsmmAddAccountResult {
+        val cleanName = username.trim().removePrefix("@")
+        if (cleanName.isBlank()) return XsmmAddAccountResult.Error("Thiếu username Instagram để thêm")
+
+        val body = JsonObject().apply {
+            addProperty("type", "instagram")
+            addProperty("link_account", "https://www.instagram.com/$cleanName/")
+            addProperty("active", setActive)
+        }
+
+        return try {
+            val response = XsmmRetrofitClient.api.addAccount(authHeader(rawToken), body)
+            if (!response.isSuccessful) {
+                return XsmmAddAccountResult.Error(readError(response.errorBody()?.string(), "Lỗi thêm tài khoản Instagram (mã HTTP: ${response.code()})"))
+            }
+            val json = response.body()
+            val errorField = json?.get("error")?.takeIf { it.isJsonPrimitive }?.asString
+            if (!errorField.isNullOrBlank()) return XsmmAddAccountResult.Error(errorField)
+
+            val accountObj = json?.takeIf { it.has("id") }
+                ?: json?.get("account")?.takeIf { it.isJsonObject }?.asJsonObject
+
+            if (accountObj != null) {
+                XsmmAddAccountResult.Success(parseAccount(accountObj))
+            } else {
+                XsmmAddAccountResult.Success(
+                    XsmmAccount(
+                        id = "",
+                        type = "instagram",
+                        accountId = "",
+                        name = cleanName,
+                        linkAccount = "https://www.instagram.com/$cleanName/",
+                        isActive = setActive
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            XsmmAddAccountResult.Error(e.message ?: "Lỗi kết nối mạng")
+        }
+    }
+
     /** Đặt 1 acc (theo id) làm "nick chạy". */
     suspend fun setActiveAccount(rawToken: String, accountId: String): Boolean {
         return try {

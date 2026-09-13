@@ -115,6 +115,23 @@ class XsmmJobRunnerOverlayService : Service() {
             val activeList = accountHandles.ifEmpty { listOf("") }
             XsmmJobStatusBridge.update("Bắt đầu chạy nhiệm vụ ${config.taskType}...")
 
+            if (config.taskType.contains("instagram", ignoreCase = true) || accountHandles.any { com.cayxu.app.data.local.InstagramAccountsStore.getAccount(applicationContext, it) != null }) {
+                XsmmJobStatusBridge.update("Bắt đầu chạy nhiệm vụ Instagram...")
+                val result = com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner.run(
+                    context = applicationContext,
+                    accountUsernames = accountHandles
+                ) { status ->
+                    XsmmJobStatusBridge.update(status)
+                }
+                totalCompleted = result.totalCompleted
+                totalEarnedPoints = result.totalEarnedPoints.toLong()
+                launch(Dispatchers.Main) {
+                    updateProgressDisplay()
+                }
+                XsmmJobStatusBridge.update(result.message)
+                return@launch
+            }
+
             while (isActive) {
                 for (handle in activeList) {
                     if (!isActive) break

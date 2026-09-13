@@ -3,6 +3,7 @@ package com.cayxu.app.ui.screens.xsmm
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -46,7 +47,9 @@ import com.cayxu.app.data.repository.XsmmAuthRepository
 import com.cayxu.app.data.repository.XsmmLoginResult
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.theme.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val XsmmAccentStart = Color(0xFF34D399)
 private val XsmmAccentEnd = Color(0xFF16A34A)
@@ -91,6 +94,8 @@ fun XsmmAccountScreen(navController: NavController) {
     val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
     var facebookAccounts by remember { mutableStateOf(com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)) }
     var instagramAccounts by remember { mutableStateOf(com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram")) }
+    var runningIgAccount by remember { mutableStateOf<String?>(null) }
+    var igStatusMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
     if (showInstagramCookieSheet) {
         InstagramCookieBottomSheet(
@@ -444,23 +449,34 @@ fun XsmmAccountScreen(navController: NavController) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         facebookAccounts.forEach { account ->
                             val uidLower = account.uid.trim().lowercase()
+                            val isChecked = account.uid in selectedForRunUids
                             Card(
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (account.uid == selectedAccountUid) Color(0xFF1877F2).copy(alpha = 0.08f) else CardWhite
+                                    containerColor = if (isChecked) Color(0xFF1877F2).copy(alpha = 0.05f) else CardWhite
                                 ),
                                 border = androidx.compose.foundation.BorderStroke(
-                                    width = 1.dp,
-                                    color = if (account.uid == selectedAccountUid) Color(0xFF1877F2) else Color(0xFFEEF1F5)
+                                    width = if (isChecked) 1.5.dp else 1.dp,
+                                    color = if (isChecked) Color(0xFF1877F2) else Color(0xFFEEF1F5)
                                 ),
-                                modifier = Modifier.fillMaxWidth().clickable { selectedAccountUid = account.uid }
+                                elevation = CardDefaults.cardElevation(defaultElevation = if (isChecked) 0.dp else 1.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        selectedForRunUids = if (isChecked) selectedForRunUids - account.uid
+                                        else selectedForRunUids + account.uid
+                                    }
                             ) {
                                 Row(
                                     modifier = Modifier.padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Checkbox(
-                                        checked = account.uid in selectedForRunUids,
+                                        checked = isChecked,
                                         onCheckedChange = { checked ->
                                             selectedForRunUids = if (checked) selectedForRunUids + account.uid
                                             else selectedForRunUids - account.uid
@@ -499,17 +515,27 @@ fun XsmmAccountScreen(navController: NavController) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         instagramAccounts.forEach { igUid ->
                             val cleanIg = igUid.trim()
+                            val isChecked = cleanIg in selectedForRunUids
                             Card(
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (cleanIg == selectedAccountUid) Color(0xFFE1306C).copy(alpha = 0.06f) else CardWhite
+                                    containerColor = if (isChecked) Color(0xFFE1306C).copy(alpha = 0.05f) else CardWhite
                                 ),
                                 border = androidx.compose.foundation.BorderStroke(
-                                    width = 1.dp,
-                                    color = if (cleanIg == selectedAccountUid) Color(0xFFE1306C) else Color(0xFFEEF1F5)
+                                    width = if (isChecked) 1.5.dp else 1.dp,
+                                    color = if (isChecked) Color(0xFFE1306C) else Color(0xFFEEF1F5)
                                 ),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                                modifier = Modifier.fillMaxWidth().clickable { selectedAccountUid = cleanIg }
+                                elevation = CardDefaults.cardElevation(defaultElevation = if (isChecked) 0.dp else 1.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        selectedForRunUids = if (isChecked) selectedForRunUids - cleanIg
+                                        else selectedForRunUids + cleanIg
+                                    }
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
                                     Row(
@@ -517,7 +543,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Checkbox(
-                                            checked = cleanIg in selectedForRunUids,
+                                            checked = isChecked,
                                             onCheckedChange = { checked ->
                                                 selectedForRunUids = if (checked) selectedForRunUids + cleanIg
                                                 else selectedForRunUids - cleanIg
@@ -534,8 +560,35 @@ fun XsmmAccountScreen(navController: NavController) {
                                         // Nút Reload (Làm mới)
                                         IconButton(
                                             onClick = {
-                                                android.widget.Toast.makeText(context, "Đang làm mới $cleanIg...", android.widget.Toast.LENGTH_SHORT).show()
+                                                scope.launch(Dispatchers.IO) {
+                                                    val acc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanIg)
+                                                    if (acc == null || acc.cookie.isBlank()) {
+                                                        withContext(Dispatchers.Main) {
+                                                            igStatusMap = igStatusMap + (cleanIg to "Chưa lưu cookie")
+                                                            android.widget.Toast.makeText(context, "Không tìm thấy cookie cho $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
+                                                        }
+                                                        return@launch
+                                                    }
+                                                    try {
+                                                        withContext(Dispatchers.Main) {
+                                                            igStatusMap = igStatusMap + (cleanIg to "Đang kiểm tra cookie...")
+                                                        }
+                                                        val client = com.cayxu.app.instagram.InstagramApiClient(cookie = acc.cookie)
+                                                        val info = client.fetchUserInfo()
+                                                        withContext(Dispatchers.Main) {
+                                                            val nameDisplay = if (info.fullName.isNotBlank()) info.fullName else info.username
+                                                            igStatusMap = igStatusMap + (cleanIg to "Live - $nameDisplay")
+                                                            android.widget.Toast.makeText(context, "Tài khoản $cleanIg còn LIVE", android.widget.Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        withContext(Dispatchers.Main) {
+                                                            igStatusMap = igStatusMap + (cleanIg to "Lỗi: Cookie DIE / Checkpoint")
+                                                            android.widget.Toast.makeText(context, "Lỗi kiểm tra $cleanIg: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                }
                                             },
+                                            enabled = runningIgAccount == null,
                                             modifier = Modifier.size(32.dp)
                                         ) {
                                             Box(
@@ -557,25 +610,50 @@ fun XsmmAccountScreen(navController: NavController) {
                                         Spacer(Modifier.width(6.dp))
 
                                         // Nút Tam giác Chạy (Play)
+                                        val isRunningThis = runningIgAccount == cleanIg
                                         IconButton(
                                             onClick = {
-                                                android.widget.Toast.makeText(context, "Chạy $cleanIg...", android.widget.Toast.LENGTH_SHORT).show()
+                                                if (runningIgAccount != null) return@IconButton
+                                                runningIgAccount = cleanIg
+                                                scope.launch(Dispatchers.IO) {
+                                                    com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner.run(
+                                                        context = context,
+                                                        accountUsernames = listOf(cleanIg),
+                                                        onStatusUpdate = { status ->
+                                                            scope.launch(Dispatchers.Main) {
+                                                                igStatusMap = igStatusMap + (cleanIg to status)
+                                                            }
+                                                        }
+                                                    )
+                                                    withContext(Dispatchers.Main) {
+                                                        runningIgAccount = null
+                                                    }
+                                                }
                                             },
+                                            enabled = runningIgAccount == null || isRunningThis,
                                             modifier = Modifier.size(32.dp)
                                         ) {
                                             Box(
                                                 modifier = Modifier
                                                     .size(28.dp)
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFFE1306C)),
+                                                    .background(if (isRunningThis) Color(0xFF16A34A) else Color(0xFFE1306C)),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.PlayArrow,
-                                                    contentDescription = "Chạy",
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
+                                                if (isRunningThis) {
+                                                    CircularProgressIndicator(
+                                                        color = Color.White,
+                                                        strokeWidth = 2.dp,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                } else {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.PlayArrow,
+                                                        contentDescription = "Chạy",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -583,6 +661,10 @@ fun XsmmAccountScreen(navController: NavController) {
                                     Spacer(Modifier.height(10.dp))
 
                                     // Khu vực hiển thị trạng thái kéo dài xuống dưới
+                                    val currentStatus = igStatusMap[cleanIg] ?: "Trạng thái: Sẵn sàng"
+                                    val isError = currentStatus.contains("Lỗi", ignoreCase = true) || currentStatus.contains("DIE", ignoreCase = true)
+                                    val isRunningNow = runningIgAccount == cleanIg
+
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -595,23 +677,33 @@ fun XsmmAccountScreen(navController: NavController) {
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
                                                 Box(
                                                     modifier = Modifier
                                                         .size(7.dp)
                                                         .clip(CircleShape)
-                                                        .background(Color(0xFF16A34A))
+                                                        .background(
+                                                            when {
+                                                                isRunningNow -> Color(0xFF3B82F6)
+                                                                isError -> Color(0xFFDC2626)
+                                                                else -> Color(0xFF16A34A)
+                                                            }
+                                                        )
                                                 )
                                                 Spacer(Modifier.width(6.dp))
                                                 Text(
-                                                    "Trạng thái: Sẵn sàng",
+                                                    currentStatus,
                                                     fontSize = 11.5.sp,
-                                                    color = TextSecondary,
-                                                    fontWeight = FontWeight.Medium
+                                                    color = if (isError) Color(0xFFDC2626) else TextSecondary,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1
                                                 )
                                             }
                                             Text(
-                                                "0 nhiệm vụ",
+                                                if (isRunningNow) "Đang chạy" else "Nhiệm vụ",
                                                 fontSize = 11.sp,
                                                 color = TextSecondary.copy(alpha = 0.8f)
                                             )
@@ -743,13 +835,25 @@ private fun XsmmTikTokAccountCard(
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = if (isSelected) XsmmAccentEnd.copy(alpha = 0.06f) else CardWhite),
+        colors = CardDefaults.cardColors(containerColor = if (isCheckedForRun) XsmmAccentEnd.copy(alpha = 0.05f) else CardWhite),
         border = androidx.compose.foundation.BorderStroke(
-            width = if (isSelected) 1.5.dp else 1.dp,
-            color = if (isSelected) XsmmAccentEnd else Color(0xFFEEF1F5)
+            width = if (isCheckedForRun) 1.5.dp else 1.dp,
+            color = if (isCheckedForRun) XsmmAccentEnd else Color(0xFFEEF1F5)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 0.dp else 1.dp),
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isCheckedForRun) 0.dp else 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
+                if (isAdded) {
+                    onCheckedForRunChange(!isCheckedForRun)
+                } else {
+                    onClick()
+                }
+            }
     ) {
         Row(
             modifier = Modifier.padding(14.dp),

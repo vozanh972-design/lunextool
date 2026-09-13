@@ -171,6 +171,17 @@ fun InstagramCookieBottomSheet(
                                         }
 
                                         withContext(Dispatchers.Main) {
+                                            com.cayxu.app.data.local.InstagramAccountsStore.addAccount(
+                                                context,
+                                                com.cayxu.app.data.local.InstagramAccount(
+                                                    username = accountIdentifier,
+                                                    userId = userInfo.userId,
+                                                    cookie = cookiePart,
+                                                    fullName = userInfo.fullName,
+                                                    avatar = userInfo.profilePicUrl ?: "",
+                                                    fbDtsg = userInfo.fbDtsg ?: ""
+                                                )
+                                            )
                                             LinkedAccountsStore.addAccount(context, "Instagram", accountIdentifier)
                                             addedAccounts.add(accountIdentifier)
                                         }
@@ -181,6 +192,14 @@ fun InstagramCookieBottomSheet(
                                         if (match != null) {
                                             val fallbackId = "IG_${match.groupValues[1]}"
                                             withContext(Dispatchers.Main) {
+                                                com.cayxu.app.data.local.InstagramAccountsStore.addAccount(
+                                                    context,
+                                                    com.cayxu.app.data.local.InstagramAccount(
+                                                        username = fallbackId,
+                                                        userId = match.groupValues[1],
+                                                        cookie = line
+                                                    )
+                                                )
                                                 LinkedAccountsStore.addAccount(context, "Instagram", fallbackId)
                                                 addedAccounts.add(fallbackId)
                                             }
