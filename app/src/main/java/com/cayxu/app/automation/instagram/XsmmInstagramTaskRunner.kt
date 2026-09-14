@@ -110,25 +110,41 @@ object XsmmInstagramTaskRunner {
         val ua = if (account.userAgent.isNotBlank()) account.userAgent else defaultUA
         val apiClient = InstagramApiClient(cookie = account.cookie, userAgent = ua)
 
-        // Tự động kiểm tra và làm mới token (fb_dtsg, lsd, actorId) nếu tài khoản chưa có
-        var activeDtsg = account.fbDtsg
-        var activeLsd = account.lsd
+        // Luôn luôn fetch fresh fb_dtsg + lsd + actorId trước khi chạy (bắt buộc với đa luồng)
+        var activeDtsg = ""
+        var activeLsd = ""
         var activeActorId = account.userId
-        if (activeDtsg.isBlank() || activeLsd.isBlank()) {
-            try {
-                notify("Đang trích xuất token bảo mật Instagram...")
-                val profile = apiClient.fetchUserInfo()
-                if (!profile.fbDtsg.isNullOrBlank()) activeDtsg = profile.fbDtsg
-                if (!profile.lsd.isNullOrBlank()) activeLsd = profile.lsd
-                if (!profile.actorId.isNullOrBlank()) activeActorId = profile.actorId
-                notify("Đã kết nối Instagram an toàn")
-                
-                // Cập nhật lại vào Store để lần sau không cần fetch lại
-                val updatedAccount = account.copy(fbDtsg = activeDtsg, lsd = activeLsd, userId = activeActorId)
-                InstagramAccountsStore.updateAccount(context, updatedAccount)
-            } catch (e: Exception) {
-                notify("Lưu ý: ${e.message}")
+
+        notify("Đang xác thực cookie Instagram...")
+        try {
+            val profile = apiClient.fetchUserInfo()
+            if (!profile.fbDtsg.isNullOrBlank()) {
+                activeDtsg = profile.fbDtsg
             }
+            if (!profile.lsd.isNullOrBlank()) {
+                activeLsd = profile.lsd
+            }
+            if (!profile.actorId.isNullOrBlank()) {
+                activeActorId = profile.actorId
+            }
+            // Cập nhật lại vào Store với token mới nhất
+            val updatedAccount = account.copy(fbDtsg = activeDtsg, lsd = activeLsd, userId = activeActorId, isLive = true)
+            InstagramAccountsStore.updateAccount(context, updatedAccount)
+            notify("Cookie hợp lệ - Sẵn sàng chạy nhiệm vụ")
+        } catch (e: Exception) {
+            // Cookie DIE hoặc checkpoint - dừng luôn, không chạy
+            val errMsg = e.message ?: "Cookie không hợp lệ hoặc đã hết hạn"
+            notify("Lỗi xác thực: $errMsg")
+            reportError(cleanUsername, errMsg)
+            val deadAccount = account.copy(isLive = false)
+            InstagramAccountsStore.updateAccount(context, deadAccount)
+            return RunResult(0, 1, 0, "Dừng: $errMsg")
+        }
+
+        if (activeDtsg.isBlank() || activeLsd.isBlank()) {
+            // Fallback: dùng token đã lưu nếu có
+            if (account.fbDtsg.isNotBlank()) activeDtsg = account.fbDtsg
+            if (account.lsd.isNotBlank()) activeLsd = account.lsd
         }
 
         // 3. Vòng lặp lấy nhiệm vụ: Tự động Follow -> hết thì chuyển Like

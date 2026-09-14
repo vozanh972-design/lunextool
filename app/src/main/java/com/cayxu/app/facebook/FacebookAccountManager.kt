@@ -96,12 +96,14 @@ class FacebookAccountManager {
         val form = FormBody.Builder()
             .add("format", "json")
             .add("generate_session_cookies", "1")
+            .add("new_app_id", "350685531728")
             .build()
 
         val request = Request.Builder()
             .url("https://api.facebook.com/method/auth.getSessionForApp")
             .header("Cookie", cookieStr)
             .header("User-Agent", com.cayxu.app.util.NativeSecurity.getFbDalvikUA())
+            .header("Accept", "application/json")
             .post(form)
             .build()
 

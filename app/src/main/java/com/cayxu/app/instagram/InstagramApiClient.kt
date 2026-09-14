@@ -441,7 +441,15 @@ class InstagramApiClient(
             .build()
 
         httpClient.newCall(request).execute().use { response ->
+            // Nếu Instagram redirect (301/302/303) -> cookie hết hạn / cần đăng nhập lại
+            if (response.code in listOf(301, 302, 303, 307, 308)) {
+                throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (redirect ${response.code})")
+            }
             val responseBody = response.body?.string() ?: ""
+            // Body rỗng khi response code không phải 2xx
+            if (responseBody.isBlank()) {
+                throw IllegalStateException("Instagram không phản hồi (HTTP ${response.code}) - Cookie có thể hết hạn")
+            }
             if (responseBody.contains("\"xdt_create_friendship\"") || responseBody.contains("\"following\":true") || responseBody.contains("\"outgoing_request\":true") || responseBody.contains("\"status\":\"ok\"")) {
                 return true
             }
@@ -451,7 +459,11 @@ class InstagramApiClient(
             if (responseBody.contains("\"require_login\":true") || responseBody.contains("login_required") || responseBody.contains("checkpoint_required")) {
                 throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
             }
-            throw IllegalStateException("Instagram trả về lỗi: $responseBody")
+            // Nếu body là HTML (trang login) thay vì JSON
+            if (responseBody.trimStart().startsWith("<")) {
+                throw IllegalStateException("Instagram trả về trang HTML - Cookie hết hạn hoặc checkpoint")
+            }
+            throw IllegalStateException("Instagram từ chối follow: HTTP ${response.code}")
         }
     }
 
@@ -537,7 +549,13 @@ class InstagramApiClient(
             .build()
 
         httpClient.newCall(request).execute().use { response ->
+            if (response.code in listOf(301, 302, 303, 307, 308)) {
+                throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (redirect ${response.code})")
+            }
             val responseBody = response.body?.string() ?: ""
+            if (responseBody.isBlank()) {
+                throw IllegalStateException("Instagram không phản hồi (HTTP ${response.code}) - Cookie có thể hết hạn")
+            }
             if (responseBody.contains("\"viewer_has_liked\":true") || responseBody.contains("\"status\":\"ok\"") || responseBody.contains("\"is_final\":true")) {
                 return true
             }
@@ -547,7 +565,10 @@ class InstagramApiClient(
             if (responseBody.contains("\"require_login\":true") || responseBody.contains("login_required") || responseBody.contains("checkpoint_required")) {
                 throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
             }
-            throw IllegalStateException("Instagram trả về lỗi Like: $responseBody")
+            if (responseBody.trimStart().startsWith("<")) {
+                throw IllegalStateException("Instagram trả về trang HTML - Cookie hết hạn hoặc checkpoint")
+            }
+            throw IllegalStateException("Instagram từ chối Like: HTTP ${response.code}")
         }
     }
 
