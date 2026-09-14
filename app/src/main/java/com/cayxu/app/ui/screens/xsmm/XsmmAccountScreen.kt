@@ -1827,6 +1827,7 @@ fun XsmmAccountScreen(navController: NavController) {
     if (showDeleteConfirmSheet) {
         val uidsToDelete = selectedForRunUids.toList()
         DeleteConfirmBottomSheet(
+            platformName = if (selectedPlatform == "instagram") "Instagram" else "Facebook",
             accountList = uidsToDelete,
             onDismiss = { showDeleteConfirmSheet = false },
             onConfirmDelete = {

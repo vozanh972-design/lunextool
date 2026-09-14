@@ -124,6 +124,13 @@ object InstagramAccountsStore {
         save(context, current)
     }
 
+    fun removeAccounts(context: Context, usernames: List<String>) {
+        val cleanSet = usernames.map { it.trim().removePrefix("@").lowercase() }.toSet()
+        val current = getAccounts(context).toMutableList()
+        current.removeAll { it.username.trim().removePrefix("@").lowercase() in cleanSet }
+        save(context, current)
+    }
+
     private fun save(context: Context, accounts: List<InstagramAccount>) {
         val raw = accounts.joinToString(ENTRY_SEPARATOR) { acc ->
             listOf(
