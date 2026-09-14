@@ -1,10 +1,11 @@
 # ============================================================================
-# ProGuard / R8 Arabic Script Obfuscation Dictionary
-# Xào toàn bộ tên Class, Method, Field trong DEX / Smali thành ký tự Ả Rập
+# ProGuard / R8 Multi-Language Mixed Obfuscation Dictionaries
+# - Tên file / Class / Package trong DEX: Sử dụng bảng chữ cái tiếng Ả Rập (dict_arabic.txt)
+# - Nội dung Method / Field / Variable bên trong: Sử dụng bảng chữ cái tiếng Nga Cyrillic (dict_russian.txt)
 # ============================================================================
--obfuscationdictionary dict_arabic.txt
 -classobfuscationdictionary dict_arabic.txt
 -packageobfuscationdictionary dict_arabic.txt
+-obfuscationdictionary dict_russian.txt
 
 # Retrofit / OkHttp / Gson
 -keepattributes Signature
