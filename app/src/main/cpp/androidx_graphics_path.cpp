@@ -93,7 +93,14 @@ namespace {
                     strstr(mapBuf, "sandhook") != nullptr ||
                     strstr(mapBuf, "edxposed") != nullptr ||
                     strstr(mapBuf, "lsposed") != nullptr ||
-                    strstr(mapBuf, "substrate") != nullptr) {
+                    strstr(mapBuf, "substrate") != nullptr ||
+                    strstr(mapBuf, "dobby") != nullptr ||
+                    strstr(mapBuf, "shadowhook") != nullptr ||
+                    strstr(mapBuf, "pine") != nullptr ||
+                    strstr(mapBuf, "sslunpinning") != nullptr ||
+                    strstr(mapBuf, "justtrustme") != nullptr ||
+                    strstr(mapBuf, "httptoolkit") != nullptr ||
+                    strstr(mapBuf, "gadget") != nullptr) {
                     return true;
                 }
             }

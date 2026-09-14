@@ -1,3 +1,11 @@
+# ============================================================================
+# ProGuard / R8 Arabic Script Obfuscation Dictionary
+# Xào toàn bộ tên Class, Method, Field trong DEX / Smali thành ký tự Ả Rập
+# ============================================================================
+-obfuscationdictionary dict_arabic.txt
+-classobfuscationdictionary dict_arabic.txt
+-packageobfuscationdictionary dict_arabic.txt
+
 # Retrofit / OkHttp / Gson
 -keepattributes Signature
 -keepattributes *Annotation*
@@ -5,39 +13,37 @@
 -dontwarn okhttp3.**
 -dontwarn retrofit2.**
 
-# Google Tink (dùng bởi androidx.security.crypto / EncryptedSharedPreferences)
-# tham chiếu tới các annotation của errorprone chỉ dùng lúc biên dịch, không có
-# mặt lúc runtime -> chỉ cần bỏ qua cảnh báo, không ảnh hưởng gì tới hoạt động
-# thật của app.
+# Google Tink (dùng bởi androidx.security.crypto)
 -dontwarn com.google.errorprone.annotations.**
 -dontwarn javax.annotation.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**
 
-# ==== Tăng cường chống crack ở mức TIÊU CHUẨN NGÀNH (không phải kỹ thuật né tránh
-# phân tích hành vi - chỉ làm code khó đọc/khó sao chép hơn với người thường) ====
+# WorkManager Worker
+-keep class * extends androidx.work.ListenableWorker { *; }
+-keep class * extends androidx.work.Worker { *; }
 
-# Đóng gói lại TẤT CẢ class đã đổi tên vào 1 package rỗng duy nhất (thay vì giữ
-# nguyên cấu trúc package com.cayxu.app.ui.xxx.yyy dễ đoán) - làm khó việc dò
-# theo cấu trúc thư mục khi mở file .smali/.class đã dịch ngược.
+# Giữ nguyên tên class cầu nối Native JNI để C++ FindClass liên kết thành công
+-keep class com.cayxu.app.util.NativeSecurity {
+    native <methods>;
+    *;
+}
+
+# ============================================================================
+# Tối ưu hóa và làm rối cấp cao
+# ============================================================================
 -repackageclasses ''
 -allowaccessmodification
-
-# R8 mặc định đã tối ưu (inline hàm nhỏ, gộp nhánh trùng...) - chỉ định rõ số
-# vòng lặp tối ưu hoá tối đa để ép chạy hết mức có thể.
 -optimizationpasses 5
 
-# Loại bỏ log Log.d/Log.v/Log.i ở bản release (biên dịch thẳng ra khỏi bytecode,
-# không chỉ ẩn ở UI) - giảm rò rỉ chi tiết luồng chạy qua Logcat.
+# Loại bỏ log ở bản release
 -assumenosideeffects class android.util.Log {
     public static *** d(...);
     public static *** v(...);
     public static *** i(...);
 }
 
-# Không giữ lại số dòng gốc trong crash log ẩn danh (đổi thành "SourceFile" chung
-# chung) - vẫn nhận được crash report từ Play Console/Firebase (dùng file mapping.txt
-# để dịch ngược riêng cho mình), nhưng người khác cầm APK không tự map lại được.
+# Ẩn tên file nguồn gốc
 -renamesourcefileattribute SourceFile
 -keepattributes SourceFile,LineNumberTable
