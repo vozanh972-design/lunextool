@@ -1,4 +1,4 @@
-﻿package com.cayxu.app.util
+package com.cayxu.app.util
 
 import android.content.Context
 
@@ -70,6 +70,12 @@ object NativeSecurity {
             } catch (_: Throwable) {}
         }
         return sha256("$key|$deviceId|$sigHash|fallback_guard_2026")
+    }
+
+    private fun sha256(text: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        val hash = digest.digest(text.toByteArray(Charsets.UTF_8))
+        return hash.joinToString("") { "%02x".format(it) }
     }
 
     @JvmStatic
