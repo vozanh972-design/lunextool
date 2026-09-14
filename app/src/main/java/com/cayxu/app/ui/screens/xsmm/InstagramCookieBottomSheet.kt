@@ -181,18 +181,34 @@ fun InstagramCookieBottomSheet(
                                         var avatar = ""
                                         var fbDtsg = ""
                                         var lsd = ""
+                                        var biography = ""
+                                        var followersCount = 0
+                                        var followingCount = 0
+                                        var postsCount = 0
 
-                                        // Thử verify để lấy thêm thông tin (username, avatar...)
-                                        // Nếu lỗi vẫn lưu account bằng ds_user_id
+                                        // Thử fetch thông tin đầy đủ (username, avatar, tiểu sử, stats...)
                                         try {
-                                            val userInfo = authService.verifyCookieAndGetUserInfo(cookiePart, desktopUA)
+                                            val client = com.cayxu.app.instagram.InstagramApiClient(cookie = cookiePart, userAgent = desktopUA)
+                                            val userInfo = client.fetchAccountDetails()
                                             if (userInfo.username.isNotBlank()) username = userInfo.username
                                             fullName = userInfo.fullName
                                             avatar = userInfo.profilePicUrl ?: ""
                                             fbDtsg = userInfo.fbDtsg ?: ""
                                             lsd = userInfo.lsd ?: ""
+                                            biography = userInfo.biography
+                                            followersCount = userInfo.followersCount
+                                            followingCount = userInfo.followingCount
+                                            postsCount = userInfo.postsCount
                                         } catch (_: Exception) {
-                                            // Không lấy được thông tin chi tiết — vẫn lưu với ds_user_id
+                                            // Fallback sang authService nếu cần
+                                            try {
+                                                val userInfo = authService.verifyCookieAndGetUserInfo(cookiePart, desktopUA)
+                                                if (userInfo.username.isNotBlank()) username = userInfo.username
+                                                fullName = userInfo.fullName
+                                                avatar = userInfo.profilePicUrl ?: ""
+                                                fbDtsg = userInfo.fbDtsg ?: ""
+                                                lsd = userInfo.lsd ?: ""
+                                            } catch (_: Exception) {}
                                         }
 
                                         withContext(Dispatchers.Main) {
@@ -206,7 +222,11 @@ fun InstagramCookieBottomSheet(
                                                     fullName = fullName,
                                                     avatar = avatar,
                                                     fbDtsg = fbDtsg,
-                                                    lsd = lsd
+                                                    lsd = lsd,
+                                                    biography = biography,
+                                                    followersCount = followersCount,
+                                                    followingCount = followingCount,
+                                                    postsCount = postsCount
                                                 )
                                             )
                                             LinkedAccountsStore.addAccount(context, "Instagram", username)

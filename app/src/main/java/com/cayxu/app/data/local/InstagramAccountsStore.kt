@@ -13,7 +13,11 @@ data class InstagramAccount(
     val fullName: String = "",
     val avatar: String = "",
     val fbDtsg: String = "",
-    val lsd: String = ""
+    val lsd: String = "",
+    val biography: String = "",
+    val followersCount: Int = 0,
+    val followingCount: Int = 0,
+    val postsCount: Int = 0
 )
 
 object InstagramAccountsStore {
@@ -43,7 +47,11 @@ object InstagramAccountsStore {
                         fullName = parts.getOrElse(6) { "" },
                         avatar = parts.getOrElse(7) { "" },
                         fbDtsg = parts.getOrElse(8) { "" },
-                        lsd = parts.getOrElse(9) { "" }
+                        lsd = parts.getOrElse(9) { "" },
+                        biography = parts.getOrElse(10) { "" },
+                        followersCount = parts.getOrElse(11) { "0" }.toIntOrNull() ?: 0,
+                        followingCount = parts.getOrElse(12) { "0" }.toIntOrNull() ?: 0,
+                        postsCount = parts.getOrElse(13) { "0" }.toIntOrNull() ?: 0
                     )
                 } catch (e: Exception) {
                     null
@@ -74,7 +82,8 @@ object InstagramAccountsStore {
                     cookie = it.cookie.trim(),
                     userAgent = it.userAgent.trim(),
                     proxy = it.proxy.trim(),
-                    fullName = it.fullName.trim()
+                    fullName = it.fullName.trim(),
+                    biography = it.biography.trim()
                 )
             }
             .filter { it.username.isNotEmpty() }
@@ -90,6 +99,10 @@ object InstagramAccountsStore {
             }
         }
         save(context, current)
+    }
+
+    fun updateAccount(context: Context, account: InstagramAccount) {
+        addAccount(context, account)
     }
 
     fun removeAccount(context: Context, username: String) {
@@ -111,7 +124,11 @@ object InstagramAccountsStore {
                 acc.fullName,
                 acc.avatar,
                 acc.fbDtsg,
-                acc.lsd
+                acc.lsd,
+                acc.biography,
+                acc.followersCount.toString(),
+                acc.followingCount.toString(),
+                acc.postsCount.toString()
             ).joinToString(FIELD_SEPARATOR)
         }
         prefs(context).edit().putString(KEY_ACCOUNTS, raw).apply()

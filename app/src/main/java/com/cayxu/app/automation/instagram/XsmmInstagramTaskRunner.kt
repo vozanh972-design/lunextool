@@ -116,9 +116,30 @@ object XsmmInstagramTaskRunner {
                 XsmmAccountsRepository.setActiveAccount(token, xsmmAcc.id)
             }
 
-            val desktopUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            val ua = if (account.userAgent.isNotBlank()) account.userAgent else desktopUA
+            val defaultUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
+            val ua = if (account.userAgent.isNotBlank()) account.userAgent else defaultUA
             val apiClient = InstagramApiClient(cookie = account.cookie, userAgent = ua)
+
+            // Tự động kiểm tra và làm mới token (fb_dtsg, lsd, actorId) nếu tài khoản chưa có
+            var activeDtsg = account.fbDtsg
+            var activeLsd = account.lsd
+            var activeActorId = account.userId
+            if (activeDtsg.isBlank() || activeLsd.isBlank()) {
+                try {
+                    notify("[$cleanUsername] Đang trích xuất token bảo mật Instagram...")
+                    val profile = apiClient.fetchUserInfo()
+                    if (!profile.fbDtsg.isNullOrBlank()) activeDtsg = profile.fbDtsg
+                    if (!profile.lsd.isNullOrBlank()) activeLsd = profile.lsd
+                    if (!profile.actorId.isNullOrBlank()) activeActorId = profile.actorId
+                    notify("[$cleanUsername] Đã kết nối Instagram an toàn")
+                    
+                    // Cập nhật lại vào Store để lần sau không cần fetch lại
+                    val updatedAccount = account.copy(fbDtsg = activeDtsg, lsd = activeLsd, userId = activeActorId)
+                    store.updateAccount(updatedAccount)
+                } catch (e: Exception) {
+                    notify("[$cleanUsername] Lưu ý: ${e.message}")
+                }
+            }
 
             // 3. Vòng lặp lấy nhiệm vụ: Tự động Follow -> hết thì chuyển Like
             val taskTypesToTry = listOf("instagram_follow", "instagram_like")
@@ -160,10 +181,10 @@ object XsmmInstagramTaskRunner {
                                     try {
                                         if (isFollow || task.type.contains("follow", ignoreCase = true)) {
                                             val followTarget = task.idorlink.ifBlank { task.targetUrl }
-                                            actionSuccess = apiClient.followTarget(followTarget, fbDtsg = account.fbDtsg, lsd = account.lsd, actorId = account.userId)
+                                            actionSuccess = apiClient.followTarget(followTarget, fbDtsg = activeDtsg, lsd = activeLsd, actorId = activeActorId)
                                         } else {
                                             val likeTarget = task.idorlink.ifBlank { task.targetUrl }
-                                            actionSuccess = apiClient.likeTarget(likeTarget, fbDtsg = account.fbDtsg, lsd = account.lsd, actorId = account.userId)
+                                            actionSuccess = apiClient.likeTarget(likeTarget, fbDtsg = activeDtsg, lsd = activeLsd, actorId = activeActorId)
                                         }
                                         if (!actionSuccess) {
                                             lastActionError = "Instagram trả về thất bại (Không thể hoàn thành hành động)"

@@ -33,10 +33,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import androidx.navigation.NavController
 import com.cayxu.app.data.local.TikTokAccount
 import com.cayxu.app.data.local.TikTokAccountsStore
@@ -553,6 +555,9 @@ fun XsmmAccountScreen(navController: NavController) {
                         instagramAccounts.forEach { igUid ->
                             val cleanIg = igUid.trim()
                             val isChecked = cleanIg in selectedForRunUids
+                            val igAcc = remember(cleanIg, instagramAccounts) {
+                                com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanIg)
+                            }
                             Card(
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(containerColor = CardWhite),
@@ -585,11 +590,94 @@ fun XsmmAccountScreen(navController: NavController) {
                                             },
                                             colors = CheckboxDefaults.colors(checkedColor = Color(0xFFE1306C))
                                         )
-                                        Spacer(Modifier.width(8.dp))
+                                        Spacer(Modifier.width(6.dp))
+
+                                        // Avatar Instagram
+                                        if (!igAcc?.avatar.isNullOrBlank()) {
+                                            AsyncImage(
+                                                model = igAcc?.avatar,
+                                                contentDescription = "Avatar",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .size(42.dp)
+                                                    .clip(CircleShape)
+                                                    .border(1.dp, Color(0xFFE1306C).copy(alpha = 0.4f), CircleShape)
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(42.dp)
+                                                    .clip(CircleShape)
+                                                    .background(
+                                                        Brush.linearGradient(
+                                                            colors = listOf(
+                                                                Color(0xFF833AB4),
+                                                                Color(0xFFFD1D1D),
+                                                                Color(0xFFF77737)
+                                                            )
+                                                        )
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Person,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(Modifier.width(10.dp))
+
                                         Column(Modifier.weight(1f)) {
-                                            Text(cleanIg, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = TextPrimary)
-                                            Spacer(Modifier.height(2.dp))
-                                            Text("Instagram Cookie", color = TextSecondary, fontSize = 12.sp)
+                                            val displayName = igAcc?.fullName?.takeIf { it.isNotBlank() } ?: cleanIg
+                                            Text(
+                                                text = displayName,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.5.sp,
+                                                color = TextPrimary,
+                                                maxLines = 1
+                                            )
+                                            if (igAcc?.fullName?.isNotBlank() == true && !igAcc.username.equals(displayName, ignoreCase = true)) {
+                                                Text(
+                                                    text = "@${igAcc.username}",
+                                                    color = TextSecondary,
+                                                    fontSize = 12.sp,
+                                                    maxLines = 1
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = "@$cleanIg",
+                                                    color = TextSecondary,
+                                                    fontSize = 12.sp,
+                                                    maxLines = 1
+                                                )
+                                            }
+                                            if (!igAcc?.biography.isNullOrBlank()) {
+                                                Spacer(Modifier.height(2.dp))
+                                                Text(
+                                                    text = igAcc!!.biography,
+                                                    color = TextSecondary.copy(alpha = 0.9f),
+                                                    fontSize = 11.5.sp,
+                                                    maxLines = 2,
+                                                    lineHeight = 14.sp
+                                                )
+                                            }
+                                            val stats = buildList {
+                                                if ((igAcc?.followersCount ?: 0) > 0) add("${igAcc?.followersCount} follower")
+                                                if ((igAcc?.followingCount ?: 0) > 0) add("${igAcc?.followingCount} đang theo dõi")
+                                                if ((igAcc?.postsCount ?: 0) > 0) add("${igAcc?.postsCount} bài viết")
+                                            }
+                                            if (stats.isNotEmpty()) {
+                                                Spacer(Modifier.height(2.dp))
+                                                Text(
+                                                    text = stats.joinToString(" • "),
+                                                    color = Color(0xFFE1306C),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
                                         }
 
                                         // Nút Reload (Làm mới)
@@ -606,14 +694,28 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     }
                                                     try {
                                                         withContext(Dispatchers.Main) {
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Đang kiểm tra cookie..."
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Đang lấy thông tin..."
                                                         }
                                                         val client = com.cayxu.app.instagram.InstagramApiClient(cookie = acc.cookie)
-                                                        val info = client.fetchUserInfo()
+                                                        val info = client.fetchAccountDetails(acc.username)
+                                                        val updatedAcc = acc.copy(
+                                                            username = info.username.ifBlank { acc.username },
+                                                            fullName = info.fullName,
+                                                            avatar = info.profilePicUrl ?: acc.avatar,
+                                                            fbDtsg = info.fbDtsg ?: acc.fbDtsg,
+                                                            lsd = info.lsd ?: acc.lsd,
+                                                            biography = info.biography,
+                                                            followersCount = info.followersCount,
+                                                            followingCount = info.followingCount,
+                                                            postsCount = info.postsCount,
+                                                            isLive = true
+                                                        )
+                                                        com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updatedAcc)
                                                         withContext(Dispatchers.Main) {
                                                             val nameDisplay = if (info.fullName.isNotBlank()) info.fullName else info.username
                                                             com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Live - $nameDisplay"
-                                                            android.widget.Toast.makeText(context, "Tài khoản $cleanIg còn LIVE", android.widget.Toast.LENGTH_SHORT).show()
+                                                            instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+                                                            android.widget.Toast.makeText(context, "Đã cập nhật thông tin: $nameDisplay", android.widget.Toast.LENGTH_SHORT).show()
                                                         }
                                                     } catch (e: Exception) {
                                                         withContext(Dispatchers.Main) {

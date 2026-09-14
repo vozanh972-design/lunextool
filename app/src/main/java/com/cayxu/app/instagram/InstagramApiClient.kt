@@ -40,14 +40,21 @@ class InstagramApiClient(
         const val DOC_ID_PROFILE_POSTS = "28322872020710458"
 
         val PATTERN_CSRF: Pattern = Pattern.compile("csrftoken=([^;]+)")
-        val PATTERN_USER_ID: Pattern = Pattern.compile("userID\\\":\\\"([^\\\"]+)\\\"")
-        val PATTERN_ACTOR_ID: Pattern = Pattern.compile("actorID\\\":\\\"([^\\\"]+)\\\"")
+        val PATTERN_USER_ID: Pattern = Pattern.compile("(?:userID|raw_user_id)\\\":\\\"([^\\\"]+)\\\"")
+        val PATTERN_ACTOR_ID: Pattern = Pattern.compile("(?:actorID|actor_id)\\\":\\\"([^\\\"]+)\\\"")
         val PATTERN_DS_USER_ID: Pattern = Pattern.compile("ds_user_id=([^;]+)")
         val PATTERN_USERNAME: Pattern = Pattern.compile("\\\"username\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
         val PATTERN_FULL_NAME: Pattern = Pattern.compile("\\\"full_name\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
         val PATTERN_PROFILE_PIC: Pattern = Pattern.compile("\\\"profile_pic_url\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
-        val PATTERN_DTSG: Pattern = Pattern.compile("DTSGInitialData[^\\\"]*\\\"token\\\":\\\"([^\\\"]+)\\\"")
+        val PATTERN_BIOGRAPHY: Pattern = Pattern.compile("\\\"biography\\\"\\s*:\\s*\\\"([^\\\"]*)\\\"")
+        val PATTERN_FOLLOWERS: Pattern = Pattern.compile("(?:edge_followed_by|followed_by)\\\"\\s*:\\s*\\{\\s*\\\"count\\\"\\s*:\\s*(\\d+)")
+        val PATTERN_FOLLOWING: Pattern = Pattern.compile("(?:edge_follow|follow)\\\"\\s*:\\s*\\{\\s*\\\"count\\\"\\s*:\\s*(\\d+)")
+        val PATTERN_POSTS: Pattern = Pattern.compile("(?:edge_owner_to_timeline_media|media)\\\"\\s*:\\s*\\{\\s*\\\"count\\\"\\s*:\\s*(\\d+)")
+        val PATTERN_DTSG: Pattern = Pattern.compile("(?:DTSGInitialData[^\"]*\"token\"|\"DTSGInitialData\"[^\"]*\"token\"|\"token\"\\s*:\\s*\"NA[^\"]+\")[^\"]*\"([^\"]+)\"")
+        val PATTERN_DTSG_SIMPLE: Pattern = Pattern.compile("\"token\"\\s*:\\s*\"(NA[^\"]+)\"")
         val PATTERN_LSD: Pattern = Pattern.compile("\\\"LSD\\\"\\s*,\\s*\\[\\s*],\\s*\\{\\\"token\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+        val PATTERN_SPIN_R: Pattern = Pattern.compile("\"__spin_r\"\\s*:\\s*(\\d+)")
+        val PATTERN_HS: Pattern = Pattern.compile("\"haste_session\"\\s*:\\s*\"([^\"]+)\"")
     }
 
     data class ProxyConfig(
@@ -66,7 +73,13 @@ class InstagramApiClient(
         val profilePicUrl: String?,
         val csrfToken: String?,
         val fbDtsg: String?,
-        val lsd: String?
+        val lsd: String?,
+        val spinR: String? = null,
+        val hs: String? = null,
+        val biography: String = "",
+        val followersCount: Int = 0,
+        val followingCount: Int = 0,
+        val postsCount: Int = 0
     )
 
     private var httpClient: OkHttpClient
@@ -121,7 +134,7 @@ class InstagramApiClient(
         return null
     }
 
-    private fun buildStandardHeaders(csrfToken: String? = null, referer: String? = null, appId: String = APP_ID, friendlyName: String? = null, lsdToken: String? = null): Headers {
+    private fun buildStandardHeaders(csrfToken: String? = null, referer: String? = null, appId: String = APP_ID, friendlyName: String? = null, lsdToken: String? = null, rolloutAjax: String = AJAX_ROLLOUT): Headers {
         val csrf = csrfToken ?: extractCsrfToken() ?: ""
         val ref = referer ?: "$BASE_URL/"
         val builder = Headers.Builder()
@@ -135,7 +148,7 @@ class InstagramApiClient(
             .add("X-CSRFToken", csrf)
             .add("X-IG-App-ID", appId)
             .add("X-ASBD-ID", ASBD_ID)
-            .add("X-Instagram-AJAX", AJAX_ROLLOUT)
+            .add("X-Instagram-AJAX", rolloutAjax)
             .add("Sec-Fetch-Dest", "empty")
             .add("Sec-Fetch-Mode", "cors")
             .add("Sec-Fetch-Site", "same-origin")
@@ -158,7 +171,7 @@ class InstagramApiClient(
     }
 
     /**
-     * Lấy thông tin tài khoản & trích xuất tokens (fb_dtsg, lsd, actorID)
+     * Lấy thông tin tài khoản & trích xuất tokens (fb_dtsg, lsd, actorID, __spin_r, __hs)
      */
     @Throws(Exception::class)
     fun fetchUserInfo(): UserProfile {
@@ -181,8 +194,18 @@ class InstagramApiClient(
             val pic = PATTERN_PROFILE_PIC.matcher(body).let {
                 if (it.find()) it.group(1).replace("\\u0026", "&").replace("\\/", "/") else null
             }
-            val dtsg = PATTERN_DTSG.matcher(body).let { if (it.find()) it.group(1) else null }
+            val bio = PATTERN_BIOGRAPHY.matcher(body).let { if (it.find()) it.group(1) else "" }
+            val followers = PATTERN_FOLLOWERS.matcher(body).let { if (it.find()) it.group(1).toIntOrNull() ?: 0 else 0 }
+            val following = PATTERN_FOLLOWING.matcher(body).let { if (it.find()) it.group(1).toIntOrNull() ?: 0 else 0 }
+            val posts = PATTERN_POSTS.matcher(body).let { if (it.find()) it.group(1).toIntOrNull() ?: 0 else 0 }
+
+            var dtsg = PATTERN_DTSG.matcher(body).let { if (it.find()) it.group(1) else null }
+            if (dtsg == null) {
+                dtsg = PATTERN_DTSG_SIMPLE.matcher(body).let { if (it.find()) it.group(1) else null }
+            }
             val lsd = PATTERN_LSD.matcher(body).let { if (it.find()) it.group(1) else null }
+            val spinR = PATTERN_SPIN_R.matcher(body).let { if (it.find()) it.group(1) else null }
+            val hs = PATTERN_HS.matcher(body).let { if (it.find()) it.group(1) else null }
 
             return UserProfile(
                 userId = uid,
@@ -192,9 +215,80 @@ class InstagramApiClient(
                 profilePicUrl = pic,
                 csrfToken = extractCsrfToken(),
                 fbDtsg = dtsg,
-                lsd = lsd
+                lsd = lsd,
+                spinR = spinR,
+                hs = hs,
+                biography = bio,
+                followersCount = followers,
+                followingCount = following,
+                postsCount = posts
             )
         }
+    }
+
+    /**
+     * Lấy đầy đủ thông tin chi tiết tài khoản (tên, tiểu sử, số follow, bài viết, avatar) qua Web Profile API
+     */
+    @Throws(Exception::class)
+    fun fetchAccountDetails(targetUsername: String? = null): UserProfile {
+        // Nếu không truyền username, trước tiên lấy cơ bản từ fetchUserInfo
+        val baseInfo = try {
+            fetchUserInfo()
+        } catch (e: Exception) {
+            null
+        }
+
+        val targetUser = targetUsername?.takeIf { it.isNotBlank() } 
+            ?: baseInfo?.username?.takeIf { it.isNotBlank() }
+            ?: return baseInfo ?: throw IllegalStateException("Không xác định được username")
+
+        val cleanUser = cleanInstagramUsername(targetUser)
+        val csrf = extractCsrfToken() ?: ""
+
+        val request = Request.Builder()
+            .url("$BASE_URL/api/v1/users/web_profile_info/?username=$cleanUser")
+            .headers(buildStandardHeaders(csrfToken = csrf, referer = "$BASE_URL/$cleanUser/"))
+            .get()
+            .build()
+
+        try {
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    val userData = json.optJSONObject("data")?.optJSONObject("user")
+                    if (userData != null) {
+                        val uid = userData.optString("id", baseInfo?.userId ?: "")
+                        val uname = userData.optString("username", cleanUser)
+                        val fname = userData.optString("full_name", "")
+                        val bio = userData.optString("biography", "")
+                        val picUrl = userData.optString("profile_pic_url_hd", userData.optString("profile_pic_url", ""))
+                        val followers = userData.optJSONObject("edge_followed_by")?.optInt("count") ?: 0
+                        val following = userData.optJSONObject("edge_follow")?.optInt("count") ?: 0
+                        val posts = userData.optJSONObject("edge_owner_to_timeline_media")?.optInt("count") ?: 0
+
+                        return UserProfile(
+                            userId = uid,
+                            actorId = baseInfo?.actorId ?: uid,
+                            username = uname,
+                            fullName = fname,
+                            profilePicUrl = picUrl.takeIf { it.isNotBlank() } ?: baseInfo?.profilePicUrl,
+                            csrfToken = baseInfo?.csrfToken ?: csrf,
+                            fbDtsg = baseInfo?.fbDtsg,
+                            lsd = baseInfo?.lsd,
+                            spinR = baseInfo?.spinR,
+                            hs = baseInfo?.hs,
+                            biography = bio,
+                            followersCount = followers,
+                            followingCount = following,
+                            postsCount = posts
+                        )
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        return baseInfo ?: throw IllegalStateException("Không thể lấy thông tin tài khoản $cleanUser")
     }
 
     /**
@@ -370,6 +464,7 @@ class InstagramApiClient(
 
 
 
+
     /**
      * Like bài viết qua Instagram GraphQL usePolarisLikeMediaLikeMutation (DOC_ID: 9595477160535898)
      */
@@ -475,5 +570,83 @@ class InstagramApiClient(
 
         return likeMediaGraphQL(clean, fbDtsg, lsd, actorId)
     }
+
+    /**
+     * Đổi ảnh đại diện (Avatar) tài khoản Instagram qua Web API
+     * @param imageBytes Dữ liệu nhị phân của ảnh (JPEG/PNG)
+     * @return URL của ảnh đại diện mới nếu thành công
+     */
+    @Throws(Exception::class)
+    fun changeProfilePicture(imageBytes: ByteArray): String? {
+        val csrf = extractCsrfToken() ?: throw IllegalStateException("Cookie thiếu CSRF token")
+        
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "profile_pic",
+                "profile_pic.jpg",
+                imageBytes.toRequestBody("image/jpeg".toMediaType())
+            )
+            .build()
+
+        val headers = Headers.Builder()
+            .add("User-Agent", userAgent)
+            .add("Cookie", cookie)
+            .add("Accept", "*/*")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+            .add("Origin", BASE_URL)
+            .add("Referer", "$BASE_URL/accounts/edit/")
+            .add("X-CSRFToken", csrf)
+            .add("X-IG-App-ID", APP_ID)
+            .add("X-ASBD-ID", ASBD_ID)
+            .add("X-Instagram-AJAX", AJAX_ROLLOUT)
+            .add("X-Requested-With", "XMLHttpRequest")
+            .add("Sec-Fetch-Dest", "empty")
+            .add("Sec-Fetch-Mode", "cors")
+            .add("Sec-Fetch-Site", "same-origin")
+            .build()
+
+        val request = Request.Builder()
+            .url("$BASE_URL/api/v1/web/accounts/web_change_profile_picture/")
+            .headers(headers)
+            .post(requestBody)
+            .build()
+
+        httpClient.newCall(request).execute().use { response ->
+            val responseBody = response.body?.string() ?: ""
+            if (!response.isSuccessful && response.code !in listOf(200, 201)) {
+                if (responseBody.contains("login_required") || responseBody.contains("checkpoint_required")) {
+                    throw IllegalStateException("Cookie DIE hoặc yêu cầu checkpoint đăng nhập lại")
+                }
+                throw IllegalStateException("Lỗi đổi ảnh (${response.code}): $responseBody")
+            }
+
+            try {
+                val json = JSONObject(responseBody)
+                if (json.optString("status") == "ok" || json.optBoolean("has_profile_pic", false)) {
+                    return json.optString("profile_pic_url", null)
+                }
+                val message = json.optString("message", responseBody)
+                throw IllegalStateException("Đổi avatar thất bại: $message")
+            } catch (e: Exception) {
+                if (responseBody.contains("\"status\":\"ok\"")) {
+                    return null
+                }
+                throw e
+            }
+        }
+    }
+
+    /**
+     * Đổi ảnh đại diện qua File ảnh
+     */
+    @Throws(Exception::class)
+    fun changeProfilePicture(imageFile: File): String? {
+        if (!imageFile.exists() || !imageFile.canRead()) {
+            throw IllegalArgumentException("File ảnh không tồn tại hoặc không thể đọc: ${imageFile.absolutePath}")
+        }
+        return changeProfilePicture(imageFile.readBytes())
+    }
 }
+
 
