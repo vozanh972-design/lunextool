@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -213,25 +214,27 @@ fun FacebookLoginBottomSheet(
             Text("Dữ liệu tài khoản (mỗi dòng 1 nick):", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Spacer(Modifier.height(6.dp))
 
-            OutlinedTextField(
-                value = inputText,
-                onValueChange = { inputText = it },
-                placeholder = {
-                    Text(
-                        "Phân tách bằng dấu \"|\"\nVí dụ:\n$placeholderExample",
-                        color = TextSecondary.copy(alpha = 0.7f),
-                        fontSize = 12.sp
-                    )
-                },
-                minLines = 5,
-                maxLines = 8,
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFF1877F2),
-                    cursorColor = Color(0xFF1877F2)
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
+            SelectionContainer {
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { inputText = it },
+                    placeholder = {
+                        Text(
+                            "Phân tách bằng dấu \"|\"\nVí dụ:\n$placeholderExample",
+                            color = TextSecondary.copy(alpha = 0.7f),
+                            fontSize = 12.sp
+                        )
+                    },
+                    minLines = 5,
+                    maxLines = 8,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF1877F2),
+                        cursorColor = Color(0xFF1877F2)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
             Spacer(Modifier.height(20.dp))
 
@@ -313,7 +316,7 @@ fun FacebookLoginBottomSheet(
                                 async {
                                     var currentAcc = acc
 
-                                    // 1. Nếu có Token, ưu tiên lấy Full Info + Danh sách Fanpage/Profile+ qua Graph API
+                                    // TH1: Có Token, lấy Full Info + Danh sách Fanpage qua Graph API
                                     if (currentAcc.bio.isNotBlank() && currentAcc.bio.startsWith("EAA")) {
                                         try {
                                             val mgr = FacebookAccountManager()
@@ -327,7 +330,7 @@ fun FacebookLoginBottomSheet(
                                                     isLive = true
                                                 )
                                             }
-                                            currentAcc = currentAcc.copy(
+                                            return@async currentAcc.copy(
                                                 uid = if (details.id.isNotBlank()) details.id else currentAcc.uid,
                                                 name = if (details.name.isNotBlank()) details.name else currentAcc.name,
                                                 avatar = details.avatarUrl ?: currentAcc.avatar,
@@ -335,11 +338,28 @@ fun FacebookLoginBottomSheet(
                                                 isLive = true,
                                                 pages = pageItems
                                             )
-                                            return@async currentAcc
-                                        } catch (_: Exception) {}
+                                        } catch (_: Exception) {
+                                            return@async currentAcc.copy(isLive = false)
+                                        }
                                     }
 
-                                    // 2. Nếu có Cookie, kiểm tra Live + Avatar + Tên thật
+                                    // TH2: Có UID + Pass (hoặc 2FA) -> Thực hiện Đăng nhập THẬT để lấy Cookie, Token, kiểm tra Live/Die
+                                    if (currentAcc.uid.isNotBlank() && currentAcc.name.isNotBlank() && currentAcc.note.isBlank()) {
+                                        val authenticator = com.cayxu.app.facebook.FacebookAuthenticator()
+                                        val authResult = authenticator.login(
+                                            uid = currentAcc.uid,
+                                            pass = currentAcc.name,
+                                            twoFaSecret = currentAcc.link,
+                                            proxyStr = currentAcc.phone.ifBlank { null }
+                                        )
+                                        if (authResult.isSuccess) {
+                                            return@async authResult.account
+                                        } else {
+                                            return@async authResult.account.copy(isLive = false)
+                                        }
+                                    }
+
+                                    // TH3: Có Cookie, kiểm tra Live + Avatar + Tên thật
                                     val cookie = currentAcc.note
                                     if (cookie.isNotBlank()) {
                                         suspendCancellableCoroutine { cont ->
@@ -357,8 +377,7 @@ fun FacebookLoginBottomSheet(
                                             )
                                         }
                                     } else {
-                                        // Nếu không có Cookie/Token, mặc định coi là tài khoản cần đăng nhập sau
-                                        currentAcc.copy(isLive = currentAcc.name.isNotBlank())
+                                        currentAcc.copy(isLive = false)
                                     }
                                 }
                             }.awaitAll()
@@ -367,17 +386,10 @@ fun FacebookLoginBottomSheet(
                             withContext(Dispatchers.Main) {
                                 isLoading = false
                                 val liveCount = checkedAccounts.count { it.isLive }
-                                val dieCount = checkedAccounts.size - liveCount
-                                when {
-                                    dieCount == 0 -> {
-                                        Toast.makeText(context, "✅ Đăng nhập thành công $liveCount tài khoản Facebook (100% Live)", Toast.LENGTH_LONG).show()
-                                    }
-                                    liveCount == 0 -> {
-                                        Toast.makeText(context, "❌ Thất bại: $dieCount tài khoản DIE hoặc Cookie hết hạn!", Toast.LENGTH_LONG).show()
-                                    }
-                                    else -> {
-                                        Toast.makeText(context, "⚠️ Đã lưu: $liveCount Live, $dieCount Die/lỗi", Toast.LENGTH_LONG).show()
-                                    }
+                                if (liveCount > 0) {
+                                    Toast.makeText(context, "Đăng nhập thành công", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Đăng nhập thất bại: Tài khoản DIE hoặc sai thông tin", Toast.LENGTH_LONG).show()
                                 }
                                 checkedAccounts.firstOrNull()?.let { onAccountSaved?.invoke(it) }
                                 onDismiss()

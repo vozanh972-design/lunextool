@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -92,26 +93,28 @@ fun InstagramCookieBottomSheet(
 
             Text("Cookie Instagram", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Spacer(Modifier.height(6.dp))
-            OutlinedTextField(
-                value = cookieText,
-                onValueChange = { cookieText = it },
-                enabled = !isLoading,
-                placeholder = { 
-                    Text(
-                        "Dán cookie hoặc định dạng user|pass|cookie...\n(sessionid=...; ds_user_id=...; csrftoken=...)", 
-                        color = TextSecondary, 
-                        fontSize = 13.sp
-                    ) 
-                },
-                minLines = 5,
-                maxLines = 8,
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFFE1306C),
-                    cursorColor = Color(0xFFE1306C)
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
+            SelectionContainer {
+                OutlinedTextField(
+                    value = cookieText,
+                    onValueChange = { cookieText = it },
+                    enabled = !isLoading,
+                    placeholder = { 
+                        Text(
+                            "Dán cookie hoặc định dạng user|pass|cookie...\n(sessionid=...; ds_user_id=...; csrftoken=...)", 
+                            color = TextSecondary, 
+                            fontSize = 13.sp
+                        ) 
+                    },
+                    minLines = 5,
+                    maxLines = 8,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFFE1306C),
+                        cursorColor = Color(0xFFE1306C)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
             if (statusMessage != null) {
                 Spacer(Modifier.height(10.dp))

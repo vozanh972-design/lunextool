@@ -38,20 +38,24 @@ object FacebookAccountsStore {
     private const val ENTRY_SEPARATOR = "\u0001"
     private const val FIELD_SEPARATOR = "\u0002"
     private val gson = Gson()
+    private var memoryCache: MutableList<FacebookAccount>? = null
 
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun getAccounts(context: Context): List<FacebookAccount> {
+        memoryCache?.let { return it.toList() }
         val raw = prefs(context).getString(KEY_ACCOUNTS, null) ?: return emptyList()
         // Kiểm tra định dạng JSON mới
         if (raw.trimStart().startsWith("[")) {
-            return try {
+            val list = try {
                 val type = object : TypeToken<List<FacebookAccount>>() {}.type
                 gson.fromJson<List<FacebookAccount>>(raw, type) ?: emptyList()
             } catch (_: Exception) {
                 emptyList()
             }
+            memoryCache = list.toMutableList()
+            return list
         }
 
         // Fallback định dạng phân tách cũ
@@ -206,9 +210,10 @@ object FacebookAccountsStore {
     }
 
     private fun save(context: Context, accounts: List<FacebookAccount>) {
+        memoryCache = accounts.toMutableList()
         try {
             val json = gson.toJson(accounts)
-            prefs(context).edit().putString(KEY_ACCOUNTS, json).apply()
+            prefs(context).edit().putString(KEY_ACCOUNTS, json).commit()
         } catch (_: Exception) {
             val raw = accounts.joinToString(ENTRY_SEPARATOR) { acc ->
                 listOf(
@@ -222,7 +227,7 @@ object FacebookAccountsStore {
                     acc.avatar
                 ).joinToString(FIELD_SEPARATOR)
             }
-            prefs(context).edit().putString(KEY_ACCOUNTS, raw).apply()
+            prefs(context).edit().putString(KEY_ACCOUNTS, raw).commit()
         }
     }
 }
