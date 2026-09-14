@@ -686,7 +686,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 }
                                             }
 
-                                            // Lớp phủ và icon camera nằm bên trong đáy avatar
+                                            // Lớp phủ và icon bút/camera sửa ảnh nằm bên trong đáy avatar
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -696,7 +696,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Filled.CameraAlt,
+                                                    imageVector = Icons.Filled.Edit,
                                                     contentDescription = "Đổi avatar",
                                                     tint = Color.White,
                                                     modifier = Modifier.size(11.dp)
