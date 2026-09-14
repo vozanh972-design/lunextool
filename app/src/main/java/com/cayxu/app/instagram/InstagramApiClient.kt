@@ -55,6 +55,19 @@ class InstagramApiClient(
         val PATTERN_LSD: Pattern = Pattern.compile("\\\"LSD\\\"\\s*,\\s*\\[\\s*],\\s*\\{\\\"token\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
         val PATTERN_SPIN_R: Pattern = Pattern.compile("\"__spin_r\"\\s*:\\s*(\\d+)")
         val PATTERN_HS: Pattern = Pattern.compile("\"haste_session\"\\s*:\\s*\"([^\"]+)\"")
+
+        fun unescapeUnicode(input: String): String {
+            if (!input.contains("\\u")) return input
+            val regex = Regex("""\\u([0-9a-fA-F]{4})""")
+            return regex.replace(input) { matchResult ->
+                try {
+                    val hex = matchResult.groupValues[1]
+                    hex.toInt(16).toChar().toString()
+                } catch (_: Exception) {
+                    matchResult.value
+                }
+            }
+        }
     }
 
     data class ProxyConfig(
@@ -189,12 +202,12 @@ class InstagramApiClient(
 
             val uid = PATTERN_USER_ID.matcher(body).let { if (it.find()) it.group(1) else extractDsUserId() ?: "" }
             val actorId = PATTERN_ACTOR_ID.matcher(body).let { if (it.find()) it.group(1) else uid }
-            val uname = PATTERN_USERNAME.matcher(body).let { if (it.find()) it.group(1) else "" }
-            val fname = PATTERN_FULL_NAME.matcher(body).let { if (it.find()) it.group(1) else "" }
+            val uname = PATTERN_USERNAME.matcher(body).let { if (it.find()) unescapeUnicode(it.group(1)) else "" }
+            val fname = PATTERN_FULL_NAME.matcher(body).let { if (it.find()) unescapeUnicode(it.group(1)) else "" }
             val pic = PATTERN_PROFILE_PIC.matcher(body).let {
                 if (it.find()) it.group(1).replace("\\u0026", "&").replace("\\/", "/") else null
             }
-            val bio = PATTERN_BIOGRAPHY.matcher(body).let { if (it.find()) it.group(1) else "" }
+            val bio = PATTERN_BIOGRAPHY.matcher(body).let { if (it.find()) unescapeUnicode(it.group(1)) else "" }
             val followers = PATTERN_FOLLOWERS.matcher(body).let { if (it.find()) it.group(1).toIntOrNull() ?: 0 else 0 }
             val following = PATTERN_FOLLOWING.matcher(body).let { if (it.find()) it.group(1).toIntOrNull() ?: 0 else 0 }
             val posts = PATTERN_POSTS.matcher(body).let { if (it.find()) it.group(1).toIntOrNull() ?: 0 else 0 }
@@ -259,9 +272,9 @@ class InstagramApiClient(
                     val userData = json.optJSONObject("data")?.optJSONObject("user")
                     if (userData != null) {
                         val uid = userData.optString("id", baseInfo?.userId ?: "")
-                        val uname = userData.optString("username", cleanUser)
-                        val fname = userData.optString("full_name", "")
-                        val bio = userData.optString("biography", "")
+                        val uname = unescapeUnicode(userData.optString("username", cleanUser))
+                        val fname = unescapeUnicode(userData.optString("full_name", ""))
+                        val bio = unescapeUnicode(userData.optString("biography", ""))
                         val picUrl = userData.optString("profile_pic_url_hd", userData.optString("profile_pic_url", ""))
                         val followers = userData.optJSONObject("edge_followed_by")?.optInt("count") ?: 0
                         val following = userData.optJSONObject("edge_follow")?.optInt("count") ?: 0

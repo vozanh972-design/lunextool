@@ -111,6 +111,56 @@ fun XsmmAccountScreen(navController: NavController) {
     val igErrorDetailMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.lastErrorDetail
 
     var selectedErrorDetailAccount by remember { mutableStateOf<String?>(null) }
+    var targetAvatarChangeUsername by remember { mutableStateOf<String?>(null) }
+    var isUploadingAvatar by remember { mutableStateOf(false) }
+
+    val pickAvatarLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        val username = targetAvatarChangeUsername ?: return@rememberLauncherForActivityResult
+        if (uri != null) {
+            isUploadingAvatar = true
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    if (bytes == null || bytes.isEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Không thể đọc file ảnh", android.widget.Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                        return@launch
+                    }
+                    val acc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, username)
+                    if (acc == null || acc.cookie.isBlank()) {
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Không tìm thấy cookie cho $username", android.widget.Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                        return@launch
+                    }
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "Đang đổi ảnh đại diện Instagram...", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    val client = com.cayxu.app.instagram.InstagramApiClient(cookie = acc.cookie)
+                    val newPicUrl = client.changeProfilePicture(bytes)
+                    val updatedAcc = acc.copy(
+                        avatar = newPicUrl ?: acc.avatar
+                    )
+                    com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updatedAcc)
+                    withContext(Dispatchers.Main) {
+                        instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+                        android.widget.Toast.makeText(context, "Đổi avatar Instagram thành công!", android.widget.Toast.LENGTH_SHORT).show()
+                        isUploadingAvatar = false
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "Lỗi đổi avatar: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                        isUploadingAvatar = false
+                    }
+                }
+            }
+        }
+    }
 
     if (selectedErrorDetailAccount != null) {
         val targetUser = selectedErrorDetailAccount ?: ""
@@ -592,38 +642,82 @@ fun XsmmAccountScreen(navController: NavController) {
                                         )
                                         Spacer(Modifier.width(6.dp))
 
-                                        // Avatar Instagram
-                                        if (!igAcc?.avatar.isNullOrBlank()) {
-                                            AsyncImage(
-                                                model = igAcc?.avatar,
-                                                contentDescription = "Avatar",
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier
-                                                    .size(42.dp)
-                                                    .clip(CircleShape)
-                                                    .border(1.dp, Color(0xFFE1306C).copy(alpha = 0.4f), CircleShape)
-                                            )
-                                        } else {
+                                        // Avatar Instagram kèm nút sửa nhỏ ở góc
+                                        val isThisUploading = isUploadingAvatar && targetAvatarChangeUsername == cleanIg
+                                        Box(
+                                            modifier = Modifier.size(46.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (!igAcc?.avatar.isNullOrBlank()) {
+                                                AsyncImage(
+                                                    model = igAcc?.avatar,
+                                                    contentDescription = "Avatar",
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .size(42.dp)
+                                                        .clip(CircleShape)
+                                                        .border(1.dp, Color(0xFFE1306C).copy(alpha = 0.4f), CircleShape)
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(42.dp)
+                                                        .clip(CircleShape)
+                                                        .background(
+                                                            Brush.linearGradient(
+                                                                colors = listOf(
+                                                                    Color(0xFF833AB4),
+                                                                    Color(0xFFFD1D1D),
+                                                                    Color(0xFFF77737)
+                                                                )
+                                                            )
+                                                        ),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Person,
+                                                        contentDescription = null,
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(22.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            if (isThisUploading) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(42.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color.Black.copy(alpha = 0.4f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    CircularProgressIndicator(
+                                                        color = Color.White,
+                                                        strokeWidth = 2.dp,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            // Nút sửa nhỏ ở góc avatar để người dùng đổi ảnh đại diện
                                             Box(
                                                 modifier = Modifier
-                                                    .size(42.dp)
+                                                    .align(Alignment.BottomEnd)
+                                                    .size(17.dp)
                                                     .clip(CircleShape)
-                                                    .background(
-                                                        Brush.linearGradient(
-                                                            colors = listOf(
-                                                                Color(0xFF833AB4),
-                                                                Color(0xFFFD1D1D),
-                                                                Color(0xFFF77737)
-                                                            )
-                                                        )
-                                                    ),
+                                                    .background(Color(0xFFE1306C))
+                                                    .border(1.5.dp, Color.White, CircleShape)
+                                                    .clickable(enabled = !isUploadingAvatar) {
+                                                        targetAvatarChangeUsername = cleanIg
+                                                        pickAvatarLauncher.launch("image/*")
+                                                    },
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Filled.Person,
-                                                    contentDescription = null,
+                                                    imageVector = Icons.Filled.Edit,
+                                                    contentDescription = "Đổi avatar",
                                                     tint = Color.White,
-                                                    modifier = Modifier.size(22.dp)
+                                                    modifier = Modifier.size(9.dp)
                                                 )
                                             }
                                         }
@@ -631,7 +725,9 @@ fun XsmmAccountScreen(navController: NavController) {
                                         Spacer(Modifier.width(10.dp))
 
                                         Column(Modifier.weight(1f)) {
-                                            val displayName = igAcc?.fullName?.takeIf { it.isNotBlank() } ?: cleanIg
+                                            val rawDisplayName = igAcc?.fullName?.takeIf { it.isNotBlank() } ?: cleanIg
+                                            val displayName = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(rawDisplayName)
+                                            val cleanUname = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(igAcc?.username ?: cleanIg)
                                             Text(
                                                 text = displayName,
                                                 fontWeight = FontWeight.Bold,
@@ -639,25 +735,26 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 color = TextPrimary,
                                                 maxLines = 1
                                             )
-                                            if (igAcc?.fullName?.isNotBlank() == true && !igAcc.username.equals(displayName, ignoreCase = true)) {
+                                            if (igAcc?.fullName?.isNotBlank() == true && !cleanUname.equals(displayName, ignoreCase = true)) {
                                                 Text(
-                                                    text = "@${igAcc.username}",
+                                                    text = "@$cleanUname",
                                                     color = TextSecondary,
                                                     fontSize = 12.sp,
                                                     maxLines = 1
                                                 )
                                             } else {
                                                 Text(
-                                                    text = "@$cleanIg",
+                                                    text = "@$cleanUname",
                                                     color = TextSecondary,
                                                     fontSize = 12.sp,
                                                     maxLines = 1
                                                 )
                                             }
                                             if (!igAcc?.biography.isNullOrBlank()) {
+                                                val cleanBio = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(igAcc!!.biography)
                                                 Spacer(Modifier.height(2.dp))
                                                 Text(
-                                                    text = igAcc!!.biography,
+                                                    text = cleanBio,
                                                     color = TextSecondary.copy(alpha = 0.9f),
                                                     fontSize = 11.5.sp,
                                                     maxLines = 2,

@@ -29,6 +29,18 @@ object InstagramAccountsStore {
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    private fun unescape(str: String): String {
+        if (!str.contains("\\u")) return str
+        val regex = Regex("""\\u([0-9a-fA-F]{4})""")
+        return regex.replace(str) { matchResult ->
+            try {
+                matchResult.groupValues[1].toInt(16).toChar().toString()
+            } catch (_: Exception) {
+                matchResult.value
+            }
+        }
+    }
+
     fun getAccounts(context: Context): List<InstagramAccount> {
         val raw = prefs(context).getString(KEY_ACCOUNTS, null) ?: return emptyList()
         return raw.split(ENTRY_SEPARATOR)
@@ -38,17 +50,17 @@ object InstagramAccountsStore {
                 if (parts.size < 3) return@mapNotNull null
                 try {
                     InstagramAccount(
-                        username = parts[0],
+                        username = unescape(parts[0]),
                         userId = parts.getOrElse(1) { "" },
                         cookie = parts.getOrElse(2) { "" },
                         userAgent = parts.getOrElse(3) { "" },
                         proxy = parts.getOrElse(4) { "" },
                         isLive = parts.getOrElse(5) { "true" } == "true",
-                        fullName = parts.getOrElse(6) { "" },
+                        fullName = unescape(parts.getOrElse(6) { "" }),
                         avatar = parts.getOrElse(7) { "" },
                         fbDtsg = parts.getOrElse(8) { "" },
                         lsd = parts.getOrElse(9) { "" },
-                        biography = parts.getOrElse(10) { "" },
+                        biography = unescape(parts.getOrElse(10) { "" }),
                         followersCount = parts.getOrElse(11) { "0" }.toIntOrNull() ?: 0,
                         followingCount = parts.getOrElse(12) { "0" }.toIntOrNull() ?: 0,
                         postsCount = parts.getOrElse(13) { "0" }.toIntOrNull() ?: 0
