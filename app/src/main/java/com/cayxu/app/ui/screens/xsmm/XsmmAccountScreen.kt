@@ -189,7 +189,10 @@ fun XsmmAccountScreen(navController: NavController) {
 
     if (showFacebookLoginSheet) {
         FacebookLoginBottomSheet(
-            onDismiss = { showFacebookLoginSheet = false },
+            onDismiss = {
+                showFacebookLoginSheet = false
+                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
+            },
             onAccountSaved = {
                 facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
             }
@@ -245,6 +248,15 @@ fun XsmmAccountScreen(navController: NavController) {
     }
 
     LaunchedEffect(selectedPlatform, selectedVariant) {
+        if (selectedPlatform == "facebook") {
+            facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
+        } else if (selectedPlatform == "instagram") {
+            instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+                .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
+        } else {
+            allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+        }
+
         val token = XsmmAccountStore.getToken(context) ?: return@LaunchedEffect
         isCheckingLinked = true
         when (val result = XsmmAccountsRepository.getAccounts(token, accountType = selectedPlatform)) {

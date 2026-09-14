@@ -309,16 +309,45 @@ fun FacebookLoginBottomSheet(
                         scope.launch {
                             val checkedAccounts = accountsToAdd.map { acc ->
                                 async {
-                                    val cookie = acc.note
+                                    var currentAcc = acc
+
+                                    // 1. Nếu có Token, ưu tiên lấy Full Info + Danh sách Fanpage/Profile+ qua Graph API
+                                    if (currentAcc.bio.isNotBlank() && currentAcc.bio.startsWith("EAA")) {
+                                        try {
+                                            val mgr = com.cayxu.app.facebook.FacebookAccountManager()
+                                            val details = mgr.fetchAccountDetails(currentAcc.bio, currentAcc.phone.ifBlank { null })
+                                            val pageItems = details.pages.map { p ->
+                                                com.cayxu.app.data.local.FacebookPageItem(
+                                                    pageId = p.pageId,
+                                                    pageName = p.pageName,
+                                                    pageToken = p.pageToken ?: "",
+                                                    additionalProfileId = p.additionalProfileId ?: "",
+                                                    isLive = true
+                                                )
+                                            }
+                                            currentAcc = currentAcc.copy(
+                                                uid = if (details.id.isNotBlank()) details.id else currentAcc.uid,
+                                                name = if (details.name.isNotBlank()) details.name else currentAcc.name,
+                                                avatar = details.avatarUrl ?: currentAcc.avatar,
+                                                email = details.email ?: currentAcc.email,
+                                                isLive = true,
+                                                pages = pageItems
+                                            )
+                                            return@async currentAcc
+                                        } catch (_: Exception) {}
+                                    }
+
+                                    // 2. Nếu có Cookie, kiểm tra Live + Avatar + Tên thật
+                                    val cookie = currentAcc.note
                                     if (cookie.isNotBlank()) {
                                         suspendCancellableCoroutine { cont ->
                                             FacebookLiveChecker.checkCookieWithAvatarAndName(
                                                 cookieString = cookie,
                                                 onResult = { uidRes, isLive, avatarUrl, fullName ->
-                                                    val updated = acc.copy(
-                                                        uid = uidRes ?: acc.uid,
-                                                        name = fullName ?: acc.name,
-                                                        avatar = avatarUrl ?: acc.avatar,
+                                                    val updated = currentAcc.copy(
+                                                        uid = uidRes ?: currentAcc.uid,
+                                                        name = fullName ?: currentAcc.name,
+                                                        avatar = avatarUrl ?: currentAcc.avatar,
                                                         isLive = isLive
                                                     )
                                                     cont.resume(updated)
@@ -326,7 +355,8 @@ fun FacebookLoginBottomSheet(
                                             )
                                         }
                                     } else {
-                                        acc
+                                        // Nếu không có Cookie/Token, mặc định coi là tài khoản cần đăng nhập sau
+                                        currentAcc.copy(isLive = currentAcc.name.isNotBlank())
                                     }
                                 }
                             }.awaitAll()
@@ -334,7 +364,19 @@ fun FacebookLoginBottomSheet(
                             FacebookAccountsStore.addAccounts(context, checkedAccounts)
                             withContext(Dispatchers.Main) {
                                 isLoading = false
-                                Toast.makeText(context, "Đã đăng nhập ${checkedAccounts.size} tài khoản Facebook", Toast.LENGTH_SHORT).show()
+                                val liveCount = checkedAccounts.count { it.isLive }
+                                val dieCount = checkedAccounts.size - liveCount
+                                when {
+                                    dieCount == 0 -> {
+                                        Toast.makeText(context, "✅ Đăng nhập thành công $liveCount tài khoản Facebook (100% Live)", Toast.LENGTH_LONG).show()
+                                    }
+                                    liveCount == 0 -> {
+                                        Toast.makeText(context, "❌ Thất bại: $dieCount tài khoản DIE hoặc Cookie hết hạn!", Toast.LENGTH_LONG).show()
+                                    }
+                                    else -> {
+                                        Toast.makeText(context, "⚠️ Đã lưu: $liveCount Live, $dieCount Die/lỗi", Toast.LENGTH_LONG).show()
+                                    }
+                                }
                                 checkedAccounts.firstOrNull()?.let { onAccountSaved?.invoke(it) }
                                 onDismiss()
                             }

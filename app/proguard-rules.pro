@@ -13,6 +13,10 @@
 -keepattributes Signature
 -keepattributes *Annotation*
 -keep class com.cayxu.app.data.model.** { *; }
+-keep class com.cayxu.app.data.local.** { *; }
+-keepclassmembers class * {
+    @com.google.gson.annotations.SerializedName <fields>;
+}
 -dontwarn okhttp3.**
 -dontwarn retrofit2.**
 

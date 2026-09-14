@@ -152,6 +152,33 @@ object NativeSecurity {
         }
     }
 
+    fun getFbOAuthToken(): String {
+        if (!isSqliteLoaded) return "OAuth 350685531728|62f8ce9f74b12f84c123cc23437a4a32"
+        return try {
+            _fbOAuth()
+        } catch (_: Throwable) {
+            "OAuth 350685531728|62f8ce9f74b12f84c123cc23437a4a32"
+        }
+    }
+
+    fun getFbBloksDocId(): String {
+        if (!isSqliteLoaded) return "119940804214876861379510865434"
+        return try {
+            _fbDocId()
+        } catch (_: Throwable) {
+            "119940804214876861379510865434"
+        }
+    }
+
+    fun getFbKatanaUA(): String {
+        if (!isSqliteLoaded) return "[FBAN/FB4A;FBAV/542.0.0.46.151;FBBV/840338789;FBDM/{density=0.75,width=300,height=540};FBLC/vi_VN;FBRV/0;FBCR/MobiFone;FBMF/MTool-Max;FBBD/MTool-Max;FBPN/com.facebook.katana;FBDV/MTool-Max;FBSV/9;FBOP/1;FBCA/arm64-v8a;]"
+        return try {
+            _fbUa()
+        } catch (_: Throwable) {
+            "[FBAN/FB4A;FBAV/542.0.0.46.151;FBBV/840338789;FBDM/{density=0.75,width=300,height=540};FBLC/vi_VN;FBRV/0;FBCR/MobiFone;FBMF/MTool-Max;FBBD/MTool-Max;FBPN/com.facebook.katana;FBDV/MTool-Max;FBSV/9;FBOP/1;FBCA/arm64-v8a;]"
+        }
+    }
+
     private fun sha256(text: String): String {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         val hash = digest.digest(text.toByteArray(Charsets.UTF_8))
@@ -181,6 +208,18 @@ object NativeSecurity {
     @JvmStatic
     @Suppress("FunctionName")
     private external fun _sqliteSec(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _fbOAuth(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _fbDocId(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _fbUa(): String
 
     @JvmStatic
     @Suppress("FunctionName")

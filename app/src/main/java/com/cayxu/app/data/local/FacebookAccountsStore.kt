@@ -5,26 +5,31 @@ import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
+import androidx.annotation.Keep
+import com.google.gson.annotations.SerializedName
+
+@Keep
 data class FacebookPageItem(
-    val pageId: String,
-    val pageName: String,
-    val pageToken: String = "",
-    val additionalProfileId: String = "",
-    val avatar: String = "",
-    val isLive: Boolean = true
+    @SerializedName("pageId") val pageId: String = "",
+    @SerializedName("pageName") val pageName: String = "",
+    @SerializedName("pageToken") val pageToken: String = "",
+    @SerializedName("additionalProfileId") val additionalProfileId: String = "",
+    @SerializedName("avatar") val avatar: String = "",
+    @SerializedName("isLive") val isLive: Boolean = true
 )
 
+@Keep
 data class FacebookAccount(
-    val uid: String,
-    val name: String = "",      // Password hoặc Tên hiển thị
-    val link: String = "",      // 2FA
-    val note: String = "",      // Cookie
-    val phone: String = "",     // Proxy
-    val bio: String = "",       // Token
-    val isLive: Boolean = false,
-    val avatar: String = "",    // URL avatar
-    val email: String = "",
-    val pages: List<FacebookPageItem> = emptyList()
+    @SerializedName("uid") val uid: String = "",
+    @SerializedName("name") val name: String = "",      // Password hoặc Tên hiển thị
+    @SerializedName("link") val link: String = "",      // 2FA
+    @SerializedName("note") val note: String = "",      // Cookie
+    @SerializedName("phone") val phone: String = "",     // Proxy
+    @SerializedName("bio") val bio: String = "",       // Token
+    @SerializedName("isLive") val isLive: Boolean = false,
+    @SerializedName("avatar") val avatar: String = "",    // URL avatar
+    @SerializedName("email") val email: String = "",
+    @SerializedName("pages") val pages: List<FacebookPageItem> = emptyList()
 )
 
 object FacebookAccountsStore {
