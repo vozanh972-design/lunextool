@@ -37,7 +37,7 @@ class FacebookAccountManager {
         const val BASE_URL = "https://www.facebook.com"
         const val GRAPH_BASE_URL = "https://graph.facebook.com"
         const val GRAPH_API_VERSION = "v19.0"
-        const val GRAPH_ME_FIELDS = "id,name,birthday,email,facebook_pages{access_token,additional_profile_id,id,name}"
+        const val GRAPH_ME_FIELDS = "id,name,email"
 
         val C_USER_REGEX = Pattern.compile("c_user=([0-9]+)")
         val XS_REGEX = Pattern.compile("xs=([^;]+)")
@@ -93,7 +93,7 @@ class FacebookAccountManager {
         val client = if (!proxyStr.isNullOrEmpty()) buildProxiedClient(proxyStr) else httpClient
 
         val cUserMatcher = C_USER_REGEX.matcher(cookieStr)
-        val uid = if (cUserMatcher.find()) cUserMatcher.group(1) ?: "" else ""
+        var uid = if (cUserMatcher.find()) cUserMatcher.group(1) ?: "" else ""
 
         val form = FormBody.Builder()
             .add("format", "json")
@@ -116,6 +116,7 @@ class FacebookAccountManager {
                 if (json.has("access_token")) {
                     val rawToken = json.getString("access_token")
                     val eaaaa = convertToken(rawToken, "350685531728", proxyStr) ?: rawToken
+                    val realUid = if (uid.isNotBlank()) uid else json.optString("uid", "")
                     
                     // Lấy session cookies mới
                     val cookieBuilder = StringBuilder()
@@ -130,10 +131,30 @@ class FacebookAccountManager {
                     }
                     val finalCookie = if (cookieBuilder.isNotEmpty()) cookieBuilder.toString().trimEnd(' ', ';') else cookieStr
 
-                    // Lấy đầy đủ thông tin bằng Token
-                    fetchAccountDetailsWithToken(eaaaa, proxyStr).copy(
-                        uid = if (uid.isNotBlank()) uid else json.optString("uid", ""),
-                        note = finalCookie
+                    // Lấy thêm thông tin chi tiết qua Graph API
+                    var name = realUid
+                    var avatarUrl = if (realUid.isNotBlank()) "$GRAPH_BASE_URL/$realUid/picture?type=large" else ""
+                    var email = ""
+                    var pages = emptyList<FacebookPageItem>()
+
+                    try {
+                        val details = fetchAccountDetailsWithToken(eaaaa, proxyStr)
+                        if (details.name.isNotBlank()) name = details.name
+                        if (details.avatar.isNotBlank()) avatarUrl = details.avatar
+                        if (details.email.isNotBlank()) email = details.email
+                        if (details.pages.isNotEmpty()) pages = details.pages
+                    } catch (_: Exception) {}
+
+                    FacebookAccount(
+                        uid = realUid.ifBlank { "FB_${System.currentTimeMillis() % 1000000}" },
+                        name = name.ifBlank { realUid },
+                        avatar = avatarUrl,
+                        note = finalCookie,
+                        bio = eaaaa,
+                        email = email,
+                        pages = pages,
+                        phone = proxyStr.orEmpty(),
+                        isLive = true
                     )
                 } else {
                     null

@@ -229,7 +229,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updatedAcc)
                     withContext(Dispatchers.Main) {
                         avatarVersion = System.currentTimeMillis()
-                        facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
+                        facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
                         android.widget.Toast.makeText(context, "Đổi avatar Facebook thành công!", android.widget.Toast.LENGTH_SHORT).show()
                         isUploadingAvatar = false
                     }
@@ -266,10 +266,10 @@ fun XsmmAccountScreen(navController: NavController) {
         FacebookLoginBottomSheet(
             onDismiss = {
                 showFacebookLoginSheet = false
-                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
+                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
             },
             onAccountSaved = {
-                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
+                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
             }
         )
     }
@@ -305,7 +305,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     }
                     "facebook" -> {
                         com.cayxu.app.data.local.FacebookAccountsStore.removeAccounts(context, targetUids)
-                        facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
+                        facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
                     }
                     "tiktok" -> {
                         TikTokAccountsStore.removeAccounts(context, targetUids)
