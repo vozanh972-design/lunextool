@@ -158,31 +158,41 @@ class InstagramApiClient(
         return null
     }
 
-    private fun buildStandardHeaders(csrfToken: String? = null, referer: String? = null, appId: String = APP_ID, friendlyName: String? = null, lsdToken: String? = null, rolloutAjax: String = AJAX_ROLLOUT): Headers {
+    private fun buildStandardHeaders(
+        csrfToken: String? = null,
+        referer: String? = null,
+        appId: String = APP_ID,
+        friendlyName: String? = null,
+        lsdToken: String? = null,
+        rolloutAjax: String = AJAX_ROLLOUT
+    ): Headers {
         val csrf = csrfToken ?: extractCsrfToken() ?: ""
         val ref = referer ?: "$BASE_URL/"
         val builder = Headers.Builder()
             .add("User-Agent", userAgent)
             .add("Cookie", cookie)
             .add("Accept", "*/*")
-            .add("Accept-Language", "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
             .add("Origin", BASE_URL)
             .add("Referer", ref)
-            .add("Priority", "u=1, i")
             .add("X-CSRFToken", csrf)
             .add("X-IG-App-ID", appId)
             .add("X-ASBD-ID", ASBD_ID)
             .add("X-Instagram-AJAX", rolloutAjax)
+            .add("X-Requested-With", "XMLHttpRequest")
             .add("Sec-Fetch-Dest", "empty")
             .add("Sec-Fetch-Mode", "cors")
             .add("Sec-Fetch-Site", "same-origin")
-            .add("sec-ch-prefers-color-scheme", "dark")
-            .add("sec-ch-ua", "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"")
-            .add("sec-ch-ua-mobile", "?1")
-            .add("sec-ch-ua-model", "\"iPhone\"")
-            .add("sec-ch-ua-platform", "\"iOS\"")
-            .add("sec-ch-ua-platform-version", "\"18.5\"")
-            .add("x-ig-max-touch-points", "1")
+
+        if (userAgent.contains("Windows", ignoreCase = true)) {
+            builder.add("sec-ch-ua", "\"Chromium\";v=\"122\", \"Not(A:Brand\";v=\"24\", \"Google Chrome\";v=\"122\"")
+            builder.add("sec-ch-ua-mobile", "?0")
+            builder.add("sec-ch-ua-platform", "\"Windows\"")
+        } else if (userAgent.contains("Android", ignoreCase = true)) {
+            builder.add("sec-ch-ua", "\"Chromium\";v=\"122\", \"Not(A:Brand\";v=\"24\", \"Google Chrome\";v=\"122\"")
+            builder.add("sec-ch-ua-mobile", "?1")
+            builder.add("sec-ch-ua-platform", "\"Android\"")
+        }
 
         if (!friendlyName.isNullOrBlank()) {
             builder.add("X-FB-Friendly-Name", friendlyName)
@@ -392,11 +402,61 @@ class InstagramApiClient(
     }
 
     /**
-     * Follow tài khoản Instagram chuẩn xác 100% GraphQL usePolarisFollowMutation (Đã xác thực test thực tế thành công)
+     * Follow qua REST API (Endpoint chính thức của Web Instagram, nhẹ và hạn chế bị 429)
      */
-    @Throws(Exception::class)
-    fun followUser(targetUserId: String, fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
-        val csrf = extractCsrfToken() ?: throw IllegalStateException("Cookie thiếu CSRF token")
+    private fun followViaRest(targetUserId: String, csrfToken: String): Boolean {
+        val endpoints = listOf(
+            "$BASE_URL/api/v1/friendships/create/$targetUserId/",
+            "$BASE_URL/api/v1/web/friendships/$targetUserId/follow/"
+        )
+
+        val formBody = FormBody.Builder()
+            .add("user_id", targetUserId)
+            .build()
+
+        for (endpoint in endpoints) {
+            val headers = buildStandardHeaders(
+                csrfToken = csrfToken,
+                referer = "$BASE_URL/web/friendships/$targetUserId/follow/"
+            )
+            val request = Request.Builder()
+                .url(endpoint)
+                .headers(headers)
+                .post(formBody)
+                .build()
+
+            try {
+                httpClient.newCall(request).execute().use { response ->
+                    if (response.code in listOf(301, 302, 303, 307, 308)) {
+                        throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập")
+                    }
+                    val body = response.body?.string() ?: ""
+                    if (response.isSuccessful || response.code == 200) {
+                        if (body.contains("\"following\":true") || body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"outgoing_request\":true")) {
+                            return true
+                        }
+                    }
+                    if (body.contains("\"spam\":true") || body.contains("feedback_required")) {
+                        throw IllegalStateException("Instagram chặn follow (Spam/Action blocked)")
+                    }
+                    if (body.contains("\"require_login\":true") || body.contains("login_required")) {
+                        throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
+                    }
+                    if (response.code == 429) {
+                        throw IllegalStateException("HTTP 429")
+                    }
+                }
+            } catch (e: Exception) {
+                if (e.message?.contains("DIE") == true || e.message?.contains("Spam") == true) throw e
+            }
+        }
+        return false
+    }
+
+    /**
+     * Follow tài khoản qua GraphQL Mutation
+     */
+    private fun followViaGraphQL(targetUserId: String, csrfToken: String, fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
         val cleanTargetId = targetUserId.trim()
         val av = if (!actorId.isNullOrBlank()) actorId else (extractDsUserId() ?: "0")
 
@@ -440,7 +500,7 @@ class InstagramApiClient(
             .build()
 
         val headers = buildStandardHeaders(
-            csrfToken = csrf,
+            csrfToken = csrfToken,
             friendlyName = "usePolarisFollowMutation",
             lsdToken = lsd
         )
@@ -452,12 +512,10 @@ class InstagramApiClient(
             .build()
 
         httpClient.newCall(request).execute().use { response ->
-            // Nếu Instagram redirect (301/302/303) -> cookie hết hạn / cần đăng nhập lại
             if (response.code in listOf(301, 302, 303, 307, 308)) {
                 throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (redirect ${response.code})")
             }
             val responseBody = response.body?.string() ?: ""
-            // Body rỗng khi response code không phải 2xx
             if (responseBody.isBlank()) {
                 throw IllegalStateException("Instagram không phản hồi (HTTP ${response.code}) - Cookie có thể hết hạn")
             }
@@ -470,11 +528,46 @@ class InstagramApiClient(
             if (responseBody.contains("\"require_login\":true") || responseBody.contains("login_required") || responseBody.contains("checkpoint_required")) {
                 throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
             }
-            // Nếu body là HTML (trang login) thay vì JSON
-            if (responseBody.trimStart().startsWith("<")) {
-                throw IllegalStateException("Instagram trả về trang HTML - Cookie hết hạn hoặc checkpoint")
+            if (response.code == 429) {
+                throw IllegalStateException("HTTP 429")
             }
             throw IllegalStateException("Instagram từ chối follow: HTTP ${response.code}")
+        }
+    }
+
+    /**
+     * Follow tài khoản Instagram với cơ chế đa tầng (REST + GraphQL) & xử lý 429 Rate Limit an toàn
+     */
+    @Throws(Exception::class)
+    fun followUser(targetUserId: String, fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
+        val csrf = extractCsrfToken() ?: throw IllegalStateException("Cookie thiếu CSRF token")
+        val cleanTargetId = targetUserId.trim()
+
+        // 1. Thử REST API trước
+        try {
+            if (followViaRest(cleanTargetId, csrf)) {
+                return true
+            }
+        } catch (e: Exception) {
+            val msg = e.message.orEmpty()
+            if (msg.contains("Spam", ignoreCase = true) || msg.contains("DIE", ignoreCase = true) || msg.contains("checkpoint", ignoreCase = true)) {
+                throw e
+            }
+        }
+
+        // 2. Thử GraphQL Mutation
+        try {
+            return followViaGraphQL(cleanTargetId, csrf, fbDtsg, lsd, actorId)
+        } catch (e: Exception) {
+            val msg = e.message.orEmpty()
+            if (msg.contains("429")) {
+                // Giãn cách 2 giây và thử lại 1 lần cuối qua REST endpoint
+                try {
+                    Thread.sleep(2000L)
+                    return followViaRest(cleanTargetId, csrf)
+                } catch (_: Exception) {}
+            }
+            throw e
         }
     }
 
@@ -498,8 +591,51 @@ class InstagramApiClient(
         return followUser(clean, fbDtsg, lsd, actorId)
     }
 
+    /**
+     * Like qua REST API
+     */
+    private fun likeViaRest(mediaId: String, csrfToken: String): Boolean {
+        val endpoints = listOf(
+            "$BASE_URL/api/v1/web/likes/$mediaId/like/",
+            "$BASE_URL/api/v1/media/$mediaId/like/"
+        )
+        val formBody = FormBody.Builder().build()
 
+        for (endpoint in endpoints) {
+            val headers = buildStandardHeaders(
+                csrfToken = csrfToken,
+                referer = "$BASE_URL/"
+            )
+            val request = Request.Builder()
+                .url(endpoint)
+                .headers(headers)
+                .post(formBody)
+                .build()
 
+            try {
+                httpClient.newCall(request).execute().use { response ->
+                    if (response.code in listOf(301, 302, 303, 307, 308)) {
+                        throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập")
+                    }
+                    val body = response.body?.string() ?: ""
+                    if (response.isSuccessful || response.code == 200) {
+                        if (body.contains("\"status\":\"ok\"") || body.contains("\"viewer_has_liked\":true")) {
+                            return true
+                        }
+                    }
+                    if (body.contains("\"spam\":true") || body.contains("feedback_required")) {
+                        throw IllegalStateException("Instagram chặn Like (Spam/Action blocked)")
+                    }
+                    if (body.contains("\"require_login\":true") || body.contains("login_required")) {
+                        throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
+                    }
+                }
+            } catch (e: Exception) {
+                if (e.message?.contains("DIE") == true || e.message?.contains("Spam") == true) throw e
+            }
+        }
+        return false
+    }
 
     /**
      * Like bài viết qua Instagram GraphQL usePolarisLikeMediaLikeMutation (DOC_ID: 9595477160535898)
@@ -507,6 +643,16 @@ class InstagramApiClient(
     @Throws(Exception::class)
     fun likeMediaGraphQL(mediaId: String, fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
         val csrf = extractCsrfToken() ?: throw IllegalStateException("Không có CSRF token")
+
+        // 1. Thử REST Like trước
+        try {
+            if (likeViaRest(mediaId, csrf)) return true
+        } catch (e: Exception) {
+            val msg = e.message.orEmpty()
+            if (msg.contains("Spam", ignoreCase = true) || msg.contains("DIE", ignoreCase = true)) throw e
+        }
+
+        // 2. Thử GraphQL Like
         val av = if (!actorId.isNullOrBlank()) actorId else (extractDsUserId() ?: "0")
 
         val variables = JSONObject().apply {

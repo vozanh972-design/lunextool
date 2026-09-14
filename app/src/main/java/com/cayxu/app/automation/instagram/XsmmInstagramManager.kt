@@ -34,7 +34,7 @@ object XsmmInstagramManager {
         return runningJobs.isNotEmpty()
     }
 
-    fun start(context: Context, accountUsername: String) {
+    fun start(context: Context, accountUsername: String, startDelayMs: Long = 0L) {
         val clean = accountUsername.trim().lowercase()
         if (clean.isBlank() || runningJobs.containsKey(clean)) {
             return
@@ -43,11 +43,20 @@ object XsmmInstagramManager {
         if (!runningAccounts.contains(clean)) {
             runningAccounts.add(clean)
         }
-        statusMap[clean] = "Bắt đầu khởi động tác vụ..."
+        statusMap[clean] = if (startDelayMs > 0) "Chờ khởi động lệch luồng (${startDelayMs / 1000}s)..." else "Bắt đầu khởi động tác vụ..."
         successCountMap[clean] = 0
         errorCountMap[clean] = 0
 
         val job = scope.launch {
+            if (startDelayMs > 0) {
+                val totalSec = (startDelayMs / 1000).toInt()
+                for (s in totalSec downTo 1) {
+                    scope.launch(Dispatchers.Main) {
+                        statusMap[clean] = "Chờ khởi động (${s}s)..."
+                    }
+                    kotlinx.coroutines.delay(1000L)
+                }
+            }
             try {
                 XsmmInstagramTaskRunner.runSingleAccount(
                     context = context.applicationContext,
@@ -91,8 +100,8 @@ object XsmmInstagramManager {
 
     fun startAccounts(context: Context, accountUsernames: List<String>) {
         val cleanList = accountUsernames.map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
-        for (username in cleanList) {
-            start(context, username)
+        for ((index, username) in cleanList.withIndex()) {
+            start(context, username, startDelayMs = index * 5000L)
         }
     }
 
