@@ -170,9 +170,16 @@ fun FacebookAccountDetailSheet(
                 InfoBoxItem("Access Token", account.bio) { copyToClipboard("Token", account.bio) }
             }
 
-            // 8. Danh sách Page con (nếu có)
-            if (account.pages.isNotEmpty()) {
-                Spacer(Modifier.height(16.dp))
+            // 8. Danh sách Page con
+            Spacer(Modifier.height(16.dp))
+            if (account.pages.isEmpty()) {
+                Text(
+                    text = "Tài khoản không có page",
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    fontSize = 12.5.sp,
+                    color = TextSecondary.copy(alpha = 0.8f)
+                )
+            } else {
                 Text(
                     text = "Danh sách Page / Profile Plus (${account.pages.size}):",
                     fontWeight = FontWeight.Bold,
@@ -268,7 +275,7 @@ private fun PageDetailItem(page: FacebookPageItem, onCopy: () -> Unit) {
         Icon(Icons.Filled.Flag, contentDescription = null, tint = Color(0xFF1877F2), modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(page.pageName, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = TextPrimary)
+            Text("Page: ${page.pageName.ifBlank { page.pageId }}", fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = TextPrimary)
             Text("ID: ${page.pageId}", fontSize = 11.sp, color = TextSecondary)
         }
         IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {

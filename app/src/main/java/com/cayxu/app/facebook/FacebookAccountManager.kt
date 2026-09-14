@@ -453,6 +453,43 @@ class FacebookAccountManager {
         )
     }
 
+    /**
+     * Đổi avatar Facebook qua Graph API /me/photos hoặc Cookie Web
+     */
+    @Throws(Exception::class)
+    fun changeProfilePicture(token: String, imageBytes: ByteArray, proxyStr: String? = null): String? {
+        val client = if (!proxyStr.isNullOrEmpty()) buildProxiedClient(proxyStr) else httpClient
+        val mediaType = "image/jpeg".toMediaType()
+        val reqBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("access_token", token)
+            .addFormDataPart("published", "true")
+            .addFormDataPart(
+                "source",
+                "avatar_${System.currentTimeMillis()}.jpg",
+                imageBytes.toRequestBody(mediaType)
+            )
+            .build()
+
+        val request = Request.Builder()
+            .url("$GRAPH_BASE_URL/me/photos")
+            .post(reqBody)
+            .build()
+
+        return try {
+            client.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val json = JSONObject(body)
+                val photoId = json.optString("id", "")
+                if (photoId.isNotBlank()) {
+                    "$GRAPH_BASE_URL/$photoId/picture?type=large&access_token=$token"
+                } else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun unescapeUnicode(str: String): String {
         val sb = StringBuilder()
         var i = 0

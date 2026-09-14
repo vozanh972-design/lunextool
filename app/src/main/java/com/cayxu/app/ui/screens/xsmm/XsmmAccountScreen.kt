@@ -119,6 +119,7 @@ fun XsmmAccountScreen(navController: NavController) {
 
     var selectedErrorDetailAccount by remember { mutableStateOf<String?>(null) }
     var targetAvatarChangeUsername by remember { mutableStateOf<String?>(null) }
+    var targetFbAvatarChangeUid by remember { mutableStateOf<String?>(null) }
     var isUploadingAvatar by remember { mutableStateOf(false) }
 
     val pickAvatarLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -166,6 +167,59 @@ fun XsmmAccountScreen(navController: NavController) {
                         avatarVersion = System.currentTimeMillis()
                         instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
                         android.widget.Toast.makeText(context, "Đổi avatar Instagram thành công!", android.widget.Toast.LENGTH_SHORT).show()
+                        isUploadingAvatar = false
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "Lỗi đổi avatar: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                        isUploadingAvatar = false
+                    }
+                }
+            }
+        }
+    }
+
+    val pickFbAvatarLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        val uid = targetFbAvatarChangeUid ?: return@rememberLauncherForActivityResult
+        if (uri != null) {
+            isUploadingAvatar = true
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    if (bytes == null || bytes.isEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Không thể đọc file ảnh", android.widget.Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                        return@launch
+                    }
+                    val acc = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context).firstOrNull { it.uid == uid }
+                    if (acc == null) {
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Không tìm thấy tài khoản Facebook $uid", android.widget.Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                        return@launch
+                    }
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "Đang đổi ảnh đại diện Facebook...", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    val fbManager = com.cayxu.app.facebook.FacebookAccountManager()
+                    val token = acc.bio.ifBlank { null }
+                    var newPicUrl: String? = null
+                    if (!token.isNullOrBlank()) {
+                        newPicUrl = fbManager.changeProfilePicture(token, bytes, acc.phone.ifBlank { null })
+                    }
+                    val fallbackPic = "https://graph.facebook.com/v19.0/$uid/picture?type=large"
+                    val finalAvatar = newPicUrl ?: fallbackPic
+                    val updatedAcc = acc.copy(avatar = finalAvatar)
+                    com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updatedAcc)
+                    withContext(Dispatchers.Main) {
+                        avatarVersion = System.currentTimeMillis()
+                        facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
+                        android.widget.Toast.makeText(context, "Đổi avatar Facebook thành công!", android.widget.Toast.LENGTH_SHORT).show()
                         isUploadingAvatar = false
                     }
                 } catch (e: Exception) {
@@ -640,6 +694,15 @@ fun XsmmAccountScreen(navController: NavController) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         facebookAccounts.forEach { account ->
                             val isChecked = account.uid in selectedForRunUids
+                            val fbAvatarModel = remember(account.avatar, avatarVersion) {
+                                if (account.avatar.isBlank()) null
+                                else coil.request.ImageRequest.Builder(context)
+                                    .data(account.avatar)
+                                    .crossfade(true)
+                                    .memoryCacheKey("${account.avatar}_$avatarVersion")
+                                    .diskCacheKey("${account.avatar}_$avatarVersion")
+                                    .build()
+                            }
                             Card(
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(
@@ -649,7 +712,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     width = if (isChecked) 1.5.dp else 1.dp,
                                     color = if (isChecked) Color(0xFF1877F2) else Color(0xFFEEF1F5)
                                 ),
-                                elevation = CardDefaults.cardElevation(defaultElevation = if (isChecked) 0.dp else 1.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
@@ -662,7 +725,6 @@ fun XsmmAccountScreen(navController: NavController) {
                                     }
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
-                                    // Hàng 1: Checkbox + Avatar + Tên Facebook (UID)
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically
@@ -677,17 +739,22 @@ fun XsmmAccountScreen(navController: NavController) {
                                         )
                                         Spacer(Modifier.width(6.dp))
 
-                                        // Avatar Facebook
+                                        // Avatar Facebook có nút đổi ảnh cây bút nhỏ nằm bên trong
+                                        val isThisFbUploading = isUploadingAvatar && targetFbAvatarChangeUid == account.uid
                                         Box(
                                             modifier = Modifier
-                                                .size(44.dp)
+                                                .size(46.dp)
                                                 .clip(CircleShape)
-                                                .border(1.5.dp, Color(0xFF1877F2).copy(alpha = 0.3f), CircleShape),
+                                                .border(1.5.dp, Color(0xFF1877F2).copy(alpha = 0.6f), CircleShape)
+                                                .clickable(enabled = !isUploadingAvatar) {
+                                                    targetFbAvatarChangeUid = account.uid
+                                                    pickFbAvatarLauncher.launch("image/*")
+                                                },
                                             contentAlignment = Alignment.Center
                                         ) {
                                             if (account.avatar.isNotBlank()) {
                                                 AsyncImage(
-                                                    model = account.avatar,
+                                                    model = fbAvatarModel,
                                                     contentDescription = "Avatar Facebook",
                                                     contentScale = ContentScale.Crop,
                                                     modifier = Modifier.fillMaxSize()
@@ -707,19 +774,81 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     )
                                                 }
                                             }
+
+                                            // Lớp phủ và icon bút sửa ảnh nằm bên trong đáy avatar
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(16.dp)
+                                                    .align(Alignment.BottomCenter)
+                                                    .background(Color.Black.copy(alpha = 0.45f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Edit,
+                                                    contentDescription = "Đổi avatar",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(11.dp)
+                                                )
+                                            }
+
+                                            if (isThisFbUploading) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(Color.Black.copy(alpha = 0.6f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    CircularProgressIndicator(
+                                                        color = Color.White,
+                                                        strokeWidth = 2.dp,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+                                            }
                                         }
 
                                         Spacer(Modifier.width(10.dp))
 
                                         Column(Modifier.weight(1f)) {
-                                            Text(
-                                                account.name.ifBlank { account.uid },
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp,
-                                                color = TextPrimary,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    account.name.ifBlank { account.uid },
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.5.sp,
+                                                    color = TextPrimary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+
+                                                // Nút Live/Die nằm ngay cạnh tên acc
+                                                val isLive = account.isLive
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(if (isLive) Color(0xFF22C55E).copy(alpha = 0.12f) else DangerRed.copy(alpha = 0.12f))
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(6.dp)
+                                                            .clip(CircleShape)
+                                                            .background(if (isLive) Color(0xFF16A34A) else DangerRed)
+                                                    )
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(
+                                                        if (isLive) "Live" else "Die",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isLive) Color(0xFF16A34A) else DangerRed
+                                                    )
+                                                }
+                                            }
+
                                             Spacer(Modifier.height(2.dp))
                                             Text(
                                                 "UID: ${account.uid}",
@@ -729,39 +858,103 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                         }
-                                    }
 
-                                    Spacer(Modifier.height(10.dp))
-
-                                    // Hàng 2: Trạng thái Live/Die + Nút dấu chấm than (i) xem Full Info
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        // Badge Live/Die
-                                        val isLive = account.isLive
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(if (isLive) Color(0xFF22C55E).copy(alpha = 0.12f) else DangerRed.copy(alpha = 0.12f))
-                                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                        // Nút Reload (Làm mới) màu xanh chủ đạo Facebook
+                                        IconButton(
+                                            onClick = {
+                                                scope.launch(Dispatchers.IO) {
+                                                    val mgr = com.cayxu.app.facebook.FacebookAccountManager()
+                                                    val token = account.bio.ifBlank { null }
+                                                    if (!token.isNullOrBlank()) {
+                                                        try {
+                                                            val details = mgr.fetchAccountDetailsWithToken(token, account.phone.ifBlank { null })
+                                                            val updated = account.copy(
+                                                                name = details.name.ifBlank { account.name },
+                                                                avatar = details.avatar.ifBlank { account.avatar },
+                                                                email = details.email,
+                                                                pages = details.pages,
+                                                                isLive = true
+                                                            )
+                                                            com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
+                                                            withContext(Dispatchers.Main) {
+                                                                avatarVersion = System.currentTimeMillis()
+                                                                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
+                                                                android.widget.Toast.makeText(context, "Đã làm mới thông tin: ${updated.name}", android.widget.Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            withContext(Dispatchers.Main) {
+                                                                android.widget.Toast.makeText(context, "Lỗi kiểm tra Facebook: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    } else if (account.note.contains("c_user=")) {
+                                                        try {
+                                                            val directAcc = mgr.getTokenFromCookie(account.note, account.phone.ifBlank { null })
+                                                            if (directAcc != null && directAcc.isLive) {
+                                                                val updated = account.copy(
+                                                                    name = directAcc.name.ifBlank { account.name },
+                                                                    avatar = directAcc.avatar.ifBlank { account.avatar },
+                                                                    bio = directAcc.bio,
+                                                                    isLive = true
+                                                                )
+                                                                com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
+                                                                withContext(Dispatchers.Main) {
+                                                                    avatarVersion = System.currentTimeMillis()
+                                                                    facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
+                                                                    android.widget.Toast.makeText(context, "Đã làm mới thông tin: ${updated.name}", android.widget.Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            withContext(Dispatchers.Main) {
+                                                                android.widget.Toast.makeText(context, "Lỗi kiểm tra Facebook: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.size(32.dp)
                                         ) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(7.dp)
+                                                    .size(28.dp)
                                                     .clip(CircleShape)
-                                                    .background(if (isLive) Color(0xFF16A34A) else DangerRed)
-                                            )
-                                            Spacer(Modifier.width(5.dp))
-                                            Text(
-                                                if (isLive) "Live" else "Die",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isLive) Color(0xFF16A34A) else DangerRed
-                                            )
+                                                    .background(Color(0xFF1877F2).copy(alpha = 0.1f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Refresh,
+                                                    contentDescription = "Làm mới",
+                                                    tint = Color(0xFF1877F2),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
                                         }
+
+                                        Spacer(Modifier.width(6.dp))
+
+                                        // Nút Chạy (Play tam giác màu xanh Facebook)
+                                        IconButton(
+                                            onClick = {
+                                                android.widget.Toast.makeText(context, "Sẵn sàng chạy Facebook: ${account.name.ifBlank { account.uid }}", android.widget.Toast.LENGTH_SHORT).show()
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF1877F2)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.PlayArrow,
+                                                    contentDescription = "Chạy",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(Modifier.width(6.dp))
 
                                         // Nút chấm than (i) xem Full Info
                                         IconButton(
@@ -785,13 +978,22 @@ fun XsmmAccountScreen(navController: NavController) {
                                         }
                                     }
 
-                                    // Nếu acc có Fanpage/Profile+ thì hiển thị danh sách ở ngay dưới acc chính
-                                    if (account.pages.isNotEmpty()) {
-                                        Spacer(Modifier.height(10.dp))
-                                        HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
-                                        Spacer(Modifier.height(8.dp))
+                                    // Trạng thái Page: Nếu không có page -> hiển thị "Tài khoản không có page", nếu có page -> hiển thị danh sách với chữ "Page: " ở trước tên
+                                    Spacer(Modifier.height(10.dp))
+                                    HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
+                                    Spacer(Modifier.height(8.dp))
+
+                                    if (account.pages.isEmpty()) {
                                         Text(
-                                            "Trang Fanpage / Profile+ (${account.pages.size}):",
+                                            "Tài khoản không có page",
+                                            fontSize = 11.5.sp,
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                            color = TextSecondary.copy(alpha = 0.8f),
+                                            modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 2.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            "Danh sách Page / Profile+ (${account.pages.size}):",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = TextSecondary,
@@ -836,7 +1038,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     Spacer(Modifier.width(8.dp))
                                                     Column(modifier = Modifier.weight(1f)) {
                                                         Text(
-                                                            page.pageName.ifBlank { page.pageId },
+                                                            "Page: ${page.pageName.ifBlank { page.pageId }}",
                                                             fontSize = 12.sp,
                                                             fontWeight = FontWeight.SemiBold,
                                                             color = TextPrimary,
