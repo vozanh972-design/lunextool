@@ -14,6 +14,7 @@
 -keepattributes *Annotation*
 -keep class com.cayxu.app.data.model.** { *; }
 -keep class com.cayxu.app.data.local.** { *; }
+-keep class com.cayxu.app.facebook.** { *; }
 -keepclassmembers class * {
     @com.google.gson.annotations.SerializedName <fields>;
 }

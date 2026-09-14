@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
+import com.cayxu.app.facebook.FacebookAccountManager
+import com.cayxu.app.facebook.FacebookPage
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
@@ -314,9 +316,9 @@ fun FacebookLoginBottomSheet(
                                     // 1. Nếu có Token, ưu tiên lấy Full Info + Danh sách Fanpage/Profile+ qua Graph API
                                     if (currentAcc.bio.isNotBlank() && currentAcc.bio.startsWith("EAA")) {
                                         try {
-                                            val mgr = com.cayxu.app.facebook.FacebookAccountManager()
+                                            val mgr = FacebookAccountManager()
                                             val details = mgr.fetchAccountDetails(currentAcc.bio, currentAcc.phone.ifBlank { null })
-                                            val pageItems = details.pages.map { p ->
+                                            val pageItems: List<com.cayxu.app.data.local.FacebookPageItem> = details.pages.map { p: FacebookPage ->
                                                 com.cayxu.app.data.local.FacebookPageItem(
                                                     pageId = p.pageId,
                                                     pageName = p.pageName,

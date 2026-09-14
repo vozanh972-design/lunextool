@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <string>
+#include <string.h>
 
 // ============================================================================
 // Module: sqlitejni (libsqlitejni.so)
