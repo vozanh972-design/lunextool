@@ -30,6 +30,7 @@ data class FacebookAuthResult(
 /**
  * Mã hóa mật khẩu Facebook bằng RSA + AES-256-GCM theo đúng giao thức Meta pwd_key_fetch.
  */
+@Keep
 object FacebookPasswordEncryptor {
 
     private val httpClient = OkHttpClient.Builder()
@@ -118,6 +119,7 @@ object FacebookPasswordEncryptor {
     }
 }
 
+@Keep
 class FacebookAuthenticator {
 
     private val httpClient = OkHttpClient.Builder()

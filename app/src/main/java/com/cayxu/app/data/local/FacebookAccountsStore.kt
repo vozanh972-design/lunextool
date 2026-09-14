@@ -2,11 +2,10 @@ package com.cayxu.app.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-
 import androidx.annotation.Keep
 import com.google.gson.annotations.SerializedName
+import org.json.JSONArray
+import org.json.JSONObject
 
 @Keep
 data class FacebookPageItem(
@@ -38,7 +37,6 @@ object FacebookAccountsStore {
     private const val KEY_ACCOUNTS = "accounts"
     private const val ENTRY_SEPARATOR = "\u0001"
     private const val FIELD_SEPARATOR = "\u0002"
-    private val gson = Gson()
     private var memoryCache: MutableList<FacebookAccount>? = null
 
     private fun prefs(context: Context): SharedPreferences =
@@ -54,19 +52,56 @@ object FacebookAccountsStore {
             memoryCache = mutableListOf()
             return emptyList()
         }
-        // Kiểm tra định dạng JSON mới
+        // 1. Phân tích định dạng JSON không phụ thuộc Reflection (chống 100% lỗi ProGuard/R8)
         if (raw.trimStart().startsWith("[")) {
-            val list = try {
-                val type = object : TypeToken<List<FacebookAccount>>() {}.type
-                gson.fromJson<List<FacebookAccount>>(raw, type) ?: emptyList()
-            } catch (_: Exception) {
-                emptyList()
-            }
-            memoryCache = list.toMutableList()
-            return list
+            try {
+                val jsonArr = JSONArray(raw)
+                val list = mutableListOf<FacebookAccount>()
+                for (i in 0 until jsonArr.length()) {
+                    val obj = jsonArr.getJSONObject(i)
+                    val pagesList = mutableListOf<FacebookPageItem>()
+                    if (obj.has("pages")) {
+                        val pagesArr = obj.optJSONArray("pages")
+                        if (pagesArr != null) {
+                            for (j in 0 until pagesArr.length()) {
+                                val pObj = pagesArr.getJSONObject(j)
+                                pagesList.add(
+                                    FacebookPageItem(
+                                        pageId = pObj.optString("pageId", ""),
+                                        pageName = pObj.optString("pageName", ""),
+                                        pageToken = pObj.optString("pageToken", ""),
+                                        additionalProfileId = pObj.optString("additionalProfileId", ""),
+                                        avatar = pObj.optString("avatar", ""),
+                                        isLive = pObj.optBoolean("isLive", true)
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    list.add(
+                        FacebookAccount(
+                            uid = obj.optString("uid", ""),
+                            name = obj.optString("name", ""),
+                            link = obj.optString("link", ""),
+                            note = obj.optString("note", ""),
+                            phone = obj.optString("phone", ""),
+                            bio = obj.optString("bio", ""),
+                            isLive = obj.optBoolean("isLive", false),
+                            avatar = obj.optString("avatar", ""),
+                            email = obj.optString("email", ""),
+                            pages = pagesList,
+                            password = obj.optString("password", "")
+                        )
+                    )
+                }
+                val validList = list.filter { it.uid.isNotBlank() }
+                memoryCache = validList.toMutableList()
+                return validList
+            } catch (_: Exception) {}
         }
 
-        // Fallback định dạng phân tách cũ
+        // 2. Fallback định dạng phân tách cũ
         val list = raw.split(ENTRY_SEPARATOR)
             .filter { it.isNotBlank() }
             .mapNotNull { entry ->
@@ -81,9 +116,11 @@ object FacebookAccountsStore {
                         phone = parts.getOrElse(4) { "" },
                         bio = parts.getOrElse(5) { "" },
                         isLive = parts.getOrElse(6) { "die" } != "die",
-                        avatar = parts.getOrElse(7) { "" }
+                        avatar = parts.getOrElse(7) { "" },
+                        email = parts.getOrElse(8) { "" },
+                        password = parts.getOrElse(9) { "" }
                     )
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     null
                 }
             }
@@ -137,7 +174,8 @@ object FacebookAccountsStore {
                     note = it.note.trim(),
                     phone = it.phone.trim(),
                     bio = it.bio.trim(),
-                    email = it.email.trim()
+                    email = it.email.trim(),
+                    password = it.password.trim()
                 )
             }
             .filter { it.uid.isNotEmpty() }
@@ -231,8 +269,37 @@ object FacebookAccountsStore {
     private fun save(context: Context, accounts: List<FacebookAccount>) {
         memoryCache = accounts.toMutableList()
         try {
-            val json = gson.toJson(accounts)
-            prefs(context).edit().putString(KEY_ACCOUNTS, json).commit()
+            val jsonArr = JSONArray()
+            accounts.forEach { acc ->
+                val obj = JSONObject()
+                obj.put("uid", acc.uid)
+                obj.put("name", acc.name)
+                obj.put("link", acc.link)
+                obj.put("note", acc.note)
+                obj.put("phone", acc.phone)
+                obj.put("bio", acc.bio)
+                obj.put("isLive", acc.isLive)
+                obj.put("avatar", acc.avatar)
+                obj.put("email", acc.email)
+                obj.put("password", acc.password)
+
+                if (acc.pages.isNotEmpty()) {
+                    val pagesArr = JSONArray()
+                    acc.pages.forEach { p ->
+                        val pObj = JSONObject()
+                        pObj.put("pageId", p.pageId)
+                        pObj.put("pageName", p.pageName)
+                        pObj.put("pageToken", p.pageToken)
+                        pObj.put("additionalProfileId", p.additionalProfileId)
+                        pObj.put("avatar", p.avatar)
+                        pObj.put("isLive", p.isLive)
+                        pagesArr.put(pObj)
+                    }
+                    obj.put("pages", pagesArr)
+                }
+                jsonArr.put(obj)
+            }
+            prefs(context).edit().putString(KEY_ACCOUNTS, jsonArr.toString()).commit()
         } catch (_: Exception) {
             val raw = accounts.joinToString(ENTRY_SEPARATOR) { acc ->
                 listOf(
@@ -243,7 +310,9 @@ object FacebookAccountsStore {
                     acc.phone,
                     acc.bio,
                     if (acc.isLive) "live" else "die",
-                    acc.avatar
+                    acc.avatar,
+                    acc.email,
+                    acc.password
                 ).joinToString(FIELD_SEPARATOR)
             }
             prefs(context).edit().putString(KEY_ACCOUNTS, raw).commit()

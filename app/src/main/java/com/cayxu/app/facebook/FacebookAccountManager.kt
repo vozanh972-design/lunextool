@@ -31,6 +31,7 @@ data class FacebookPage(
     val parentUserId: String? = null
 )
 
+@Keep
 class FacebookAccountManager {
 
     companion object {
@@ -87,7 +88,7 @@ class FacebookAccountManager {
     }
 
     /**
-     * Lấy token và info trực tiếp từ Cookie qua getSessionForApp
+     * Lấy token và info trực tiếp từ Cookie qua getSessionForApp (chuẩn PHP)
      */
     fun getTokenFromCookie(cookieStr: String, proxyStr: String? = null): FacebookAccount? {
         val client = if (!proxyStr.isNullOrEmpty()) buildProxiedClient(proxyStr) else httpClient
@@ -98,7 +99,6 @@ class FacebookAccountManager {
         val form = FormBody.Builder()
             .add("format", "json")
             .add("generate_session_cookies", "1")
-            .add("new_app_id", "350685531728")
             .build()
 
         val request = Request.Builder()
@@ -196,47 +196,28 @@ class FacebookAccountManager {
                         cookie = trimmed
                     }
                 } else {
-                    // Có dấu | -> tách theo dấu |
+                    // Có dấu | -> tách theo định dạng uid|pass|2fa|cookie hoặc uid|pass|cookie
                     val parts = trimmed.split("|").map { it.trim() }
                     if (parts.isNotEmpty()) username = parts[0]
                     if (parts.size >= 2) password = parts[1]
 
-                    var datrPart = ""
-                    for (part in parts) {
-                        if (part.startsWith("datr=")) {
-                            datrPart = part.substring(5).trim()
-                        }
-                    }
-
-                    if (parts.size >= 3 && !parts[2].startsWith("datr=")) {
+                    if (parts.size == 3) {
                         val p2 = parts[2]
-                        if (p2.contains("c_user=") || p2.contains("xs=")) {
+                        if (p2.contains("c_user=") || p2.contains("xs=") || p2.startsWith("datr=") || p2.length > 40) {
                             cookie = p2
                         } else if (p2.startsWith("EAA")) {
                             token = p2
                         } else {
                             twoFactor = p2
                         }
-                    }
-
-                    if (parts.size >= 4) {
-                        for (idx in 3 until parts.size) {
-                            val p = parts[idx]
-                            if (p.startsWith("datr=") || p == datrPart) continue
-                            if (p.contains("c_user=") || p.contains("xs=")) {
-                                cookie = if (cookie.isBlank()) p else "$cookie; $p"
-                            } else if (p.startsWith("EAA")) {
-                                if (token.isBlank()) token = p
-                            } else if (p.contains(":") && p.any { it.isDigit() } && !p.contains("=")) {
-                                proxy = p
-                            } else if (twoFactor.isBlank()) {
-                                twoFactor = p
-                            }
+                    } else if (parts.size >= 4) {
+                        val p2 = parts[2]
+                        if (p2.contains("c_user=") || p2.contains("xs=") || p2.startsWith("datr=")) {
+                            cookie = parts.subList(2, parts.size).joinToString("|")
+                        } else {
+                            twoFactor = p2
+                            cookie = parts.subList(3, parts.size).joinToString("|")
                         }
-                    }
-
-                    if (datrPart.isNotBlank()) {
-                        cookie = if (cookie.isBlank()) "datr=$datrPart" else "datr=$datrPart; $cookie"
                     }
                 }
             } else {
@@ -255,7 +236,7 @@ class FacebookAccountManager {
             }
 
             // Tinh chỉnh thông minh: Nếu trường 2FA thực chất là Cookie hoặc Token
-            if (twoFactor.contains("c_user=") || twoFactor.contains("xs=")) {
+            if (twoFactor.contains("c_user=") || twoFactor.contains("xs=") || twoFactor.startsWith("datr=")) {
                 cookie = if (cookie.isBlank()) twoFactor else "$twoFactor; $cookie"
                 twoFactor = ""
             } else if (twoFactor.startsWith("EAA")) {

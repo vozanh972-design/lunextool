@@ -265,7 +265,20 @@ fun FacebookLoginBottomSheet(
                                         var currentAcc = acc
                                         val proxy = currentAcc.phone.ifBlank { null }
 
-                                        // 1. Nếu có UID + Mật khẩu -> Đăng nhập bằng Native Authenticator (như hàm facebookLogin trong PHP)
+                                        // 1. Ưu tiên 1: Nếu có Cookie hợp lệ (có c_user & xs) -> lấy Token EAAAA trực tiếp bằng getSessionForApp
+                                        if (currentAcc.note.isNotBlank() && (currentAcc.note.contains("c_user=") || currentAcc.note.contains("xs="))) {
+                                            try {
+                                                val directAcc = accountManager.getTokenFromCookie(currentAcc.note, proxy)
+                                                if (directAcc != null && directAcc.isLive) {
+                                                    return@async directAcc.copy(
+                                                        link = currentAcc.link.ifBlank { directAcc.link },
+                                                        password = currentAcc.password.ifBlank { directAcc.password }
+                                                    )
+                                                }
+                                            } catch (_: Exception) {}
+                                        }
+
+                                        // 2. Ưu tiên 2: Nếu có UID + Mật khẩu -> Đăng nhập bằng Native Authenticator (b-graph + 2FA TOTP + C++ signature)
                                         if (currentAcc.uid.isNotBlank() && currentAcc.password.isNotBlank()) {
                                             try {
                                                 val datr = if (currentAcc.note.contains("datr=")) {
@@ -282,58 +295,11 @@ fun FacebookLoginBottomSheet(
                                                 )
                                                 if (authResult.isSuccess) {
                                                     return@async authResult.account
-                                                } else {
-                                                    // Nếu đăng nhập b-graph thất bại nhưng có kèm Cookie trong chuỗi -> thử lấy token qua Cookie
-                                                    if (currentAcc.note.contains("c_user=") || currentAcc.note.contains("xs=")) {
-                                                        val directAcc = accountManager.getTokenFromCookie(currentAcc.note, proxy)
-                                                        if (directAcc != null && directAcc.isLive) {
-                                                            return@async directAcc.copy(
-                                                                link = currentAcc.link,
-                                                                password = currentAcc.password
-                                                            )
-                                                        }
-                                                    }
-                                                    return@async authResult.account.copy(isLive = false)
-                                                }
-                                            } catch (_: Exception) {
-                                                if (currentAcc.note.contains("c_user=") || currentAcc.note.contains("xs=")) {
-                                                    try {
-                                                        val directAcc = accountManager.getTokenFromCookie(currentAcc.note, proxy)
-                                                        if (directAcc != null && directAcc.isLive) {
-                                                            return@async directAcc.copy(
-                                                                link = currentAcc.link,
-                                                                password = currentAcc.password
-                                                            )
-                                                        }
-                                                    } catch (_: Exception) {}
-                                                }
-                                                return@async currentAcc.copy(isLive = false)
-                                            }
-                                        }
-
-                                        // 2. Nếu là Cookie thuần (không có Pass) -> Lấy Token từ Cookie (như getTokenFromCookie trong PHP)
-                                        if (currentAcc.note.isNotBlank() && (currentAcc.note.contains("c_user=") || currentAcc.note.contains("xs="))) {
-                                            try {
-                                                val directAcc = accountManager.getTokenFromCookie(currentAcc.note, proxy)
-                                                if (directAcc != null && directAcc.isLive) {
-                                                    return@async directAcc.copy(
-                                                        link = currentAcc.link,
-                                                        password = currentAcc.password
-                                                    )
-                                                }
-                                                val verifiedAcc = accountManager.verifyCookieAndGetInfo(currentAcc.note, proxy)
-                                                if (verifiedAcc.isLive) {
-                                                    return@async verifiedAcc.copy(
-                                                        link = currentAcc.link,
-                                                        bio = if (verifiedAcc.bio.isNotBlank()) verifiedAcc.bio else currentAcc.bio,
-                                                        password = currentAcc.password,
-                                                        email = if (verifiedAcc.email.isNotBlank()) verifiedAcc.email else currentAcc.email
-                                                    )
                                                 }
                                             } catch (_: Exception) {}
                                         }
 
-                                        // 3. Nếu là Token EAA... thuần
+                                        // 3. Ưu tiên 3: Nếu là Token EAA... thuần
                                         if (currentAcc.bio.isNotBlank() && currentAcc.bio.startsWith("EAA")) {
                                             try {
                                                 val detailsAcc = accountManager.fetchAccountDetailsWithToken(currentAcc.bio, proxy)
@@ -342,22 +308,20 @@ fun FacebookLoginBottomSheet(
                                                     note = currentAcc.note,
                                                     password = currentAcc.password
                                                 )
-                                            } catch (_: Exception) {
-                                                return@async currentAcc.copy(isLive = false)
-                                            }
+                                            } catch (_: Exception) {}
                                         }
 
-                                        // 4. Fallback cookie còn lại
+                                        // 4. Fallback cookie qua SSR HTML
                                         if (currentAcc.note.isNotBlank()) {
                                             try {
                                                 val verifiedAcc = accountManager.verifyCookieAndGetInfo(currentAcc.note, proxy)
-                                                return@async verifiedAcc.copy(
-                                                    link = currentAcc.link,
-                                                    password = currentAcc.password
-                                                )
-                                            } catch (_: Exception) {
-                                                return@async currentAcc.copy(isLive = false)
-                                            }
+                                                if (verifiedAcc.isLive) {
+                                                    return@async verifiedAcc.copy(
+                                                        link = currentAcc.link,
+                                                        password = currentAcc.password
+                                                    )
+                                                }
+                                            } catch (_: Exception) {}
                                         }
 
                                         currentAcc.copy(isLive = false)

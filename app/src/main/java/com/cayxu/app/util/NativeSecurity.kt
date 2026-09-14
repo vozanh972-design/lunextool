@@ -1,11 +1,13 @@
 package com.cayxu.app.util
 
 import android.content.Context
+import androidx.annotation.Keep
 
 /**
  * Native Bundle Architecture (Hệ thống 14 module C++ phân mảnh & mồi nhử)
  * Đánh lừa hoàn toàn công cụ phân tích tĩnh/động giống như các ứng dụng lớn (Meta, TikTok).
  */
+@Keep
 object NativeSecurity {
 
     private var isPathLoaded = false

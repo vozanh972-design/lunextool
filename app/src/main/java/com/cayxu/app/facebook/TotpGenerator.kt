@@ -1,11 +1,13 @@
 package com.cayxu.app.facebook
 
+import androidx.annotation.Keep
 import java.nio.ByteBuffer
 import java.security.InvalidKeyException
 import java.security.NoSuchAlgorithmException
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
+@Keep
 object TotpGenerator {
 
     /**
