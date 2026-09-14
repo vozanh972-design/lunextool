@@ -120,8 +120,84 @@ fun generateRandomDictionary(targetFiles: List<File>) {
     println("🔒 [ProGuard/R8 Hardening] Đã sinh thành công ${tokens.size} tokens từ điển ${selectedLang.displayName}")
 }
 
-// Tự động sinh từ điển ngẫu nhiên khi cấu hình / build
+// ============================================================================
+// Randomized Native Decoy .so Module Generator (15 đến 30 .so ngẫu nhiên mỗi lần build)
+// Tạo ngẫu nhiên 15 - 30 file .so rác với tên ngẫu nhiên chuẩn format native (lib*.so)
+// để đánh lừa toàn diện các công cụ phân tích tệp nhị phân và dịch ngược (IDA, Ghidra, APKTool)
+// ============================================================================
+fun generateRandomDecoySoModules(cppDir: File) {
+    val prefixes = listOf("fb", "meta", "tiktok", "breakpad", "superpack", "dextricks", "achilles", "profiler", "v8", "hermes", "folly", "flipper", "yoga", "cryptox", "secguard", "syshook", "art_opt", "dex_opt", "turbo", "xlog", "jni_helper", "distract", "shadow", "core_tracer", "libunwind", "dexmaker", "av_pipeline", "hybrid_bridge", "fbsig", "quic_engine")
+    val suffixes = listOf("jni", "core", "impl", "early", "late", "helper", "loader", "bridge", "native", "client", "tracer", "runtime", "engine", "parser", "transport", "v2", "opt", "sec", "stream", "filter")
+
+    val totalTarget = (15..30).random()
+    val coreCount = 4 // 4 module thật: androidx.graphics.path, distract-config, sqlitejni, imagepipeline
+    val decoyCount = (totalTarget - coreCount).coerceAtLeast(11)
+    val chosenNames = mutableSetOf<String>()
+
+    while (chosenNames.size < decoyCount) {
+        val p = prefixes.random()
+        val s = suffixes.random()
+        val num = if ((0..1).random() == 1) "_${(1..99).random()}" else ""
+        val name = "${p}_${s}${num}".replace("__", "_")
+        chosenNames.add(name)
+    }
+
+    val cmakeFile = File(cppDir, "CMakeLists.txt")
+    val cmakeContent = StringBuilder()
+    cmakeContent.append("""
+cmake_minimum_required(VERSION 3.22.1)
+
+project("app_native_bundle")
+
+find_library(
+    log-lib
+    log
+)
+
+set(COMMON_COMPILE_OPTIONS
+    -O3
+    -fvisibility=hidden
+    -fvisibility-inlines-hidden
+    -fomit-frame-pointer
+    -fdata-sections
+    -ffunction-sections
+    -fno-rtti
+    -fno-exceptions
+)
+
+set(COMMON_LINK_OPTIONS
+    -Wl,--gc-sections
+    -Wl,--strip-all
+    -Wl,--exclude-libs,ALL
+)
+
+macro(add_so_module TARGET_NAME SOURCE_FILE)
+    add_library(${'$'}{TARGET_NAME} SHARED ${'$'}{SOURCE_FILE})
+    target_compile_options(${'$'}{TARGET_NAME} PRIVATE ${'$'}{COMMON_COMPILE_OPTIONS})
+    target_link_options(${'$'}{TARGET_NAME} PRIVATE ${'$'}{COMMON_LINK_OPTIONS})
+    target_link_libraries(${'$'}{TARGET_NAME} ${'$'}{log-lib})
+endmacro()
+
+# 1. Các module phân mảnh cốt lõi (Core Security & Graphics & Crypto)
+add_so_module(androidx.graphics.path androidx_graphics_path.cpp)
+add_so_module(distract-config distract_config.cpp)
+add_so_module(sqlitejni sqlitejni.cpp)
+add_so_module(imagepipeline imagepipeline.cpp)
+
+# 2. Các module mồi nhử ngẫu nhiên (${chosenNames.size} .so ngẫu nhiên cho lần build này)
+""".trimIndent()).append("\n")
+
+    chosenNames.forEach { soName ->
+        cmakeContent.append("add_so_module($soName decoys.cpp)\n")
+    }
+
+    cmakeFile.writeText(cmakeContent.toString(), Charsets.UTF_8)
+    println("🔒 [Native Hardening] Đã sinh ngẫu nhiên ${chosenNames.size} module .so mồi nhử cho lần build này.")
+}
+
+// Tự động sinh từ điển ngẫu nhiên và danh sách .so mồi nhử khi cấu hình / build
 generateRandomDictionary(listOf(file("dict_random.txt"), rootProject.file("dict_random.txt")))
+generateRandomDecoySoModules(file("src/main/cpp"))
 
 android {
     namespace = "com.cayxu.app"

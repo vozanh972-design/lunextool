@@ -14,19 +14,13 @@ object NativeSecurity {
     private var isImageLoaded = false
 
     init {
-        // Nạp các thư viện mồi nhử (Decoys)
-        listOf(
-            "breakpad",
-            "breakpad_cpp_helper",
-            "fbunwindstack",
-            "superpack_common",
-            "superpack-jni",
-            "dextricks-early",
-            "appcomponentfactory-jni",
-            "fb_so_loader",
-            "achilles-jni",
-            "fb_audiopipeline"
-        ).forEach { lib ->
+        // Tự động quét và nạp an toàn các thư viện .so mồi nhử ngẫu nhiên
+        val knownDecoys = listOf(
+            "breakpad", "breakpad_cpp_helper", "fbunwindstack", "superpack_common",
+            "superpack-jni", "dextricks-early", "appcomponentfactory-jni", "fb_so_loader",
+            "achilles-jni", "fb_audiopipeline"
+        )
+        knownDecoys.forEach { lib ->
             try {
                 System.loadLibrary(lib)
             } catch (_: Throwable) {}
