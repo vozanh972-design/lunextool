@@ -103,12 +103,23 @@ fun XsmmAccountScreen(navController: NavController) {
 
     var allTikTokAccounts by remember { mutableStateOf(TikTokAccountsStore.getAccounts(context).filter { it.enabled }) }
     val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
-    var facebookAccounts by remember { mutableStateOf(com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)) }
+    var facebookAccounts by remember { mutableStateOf(com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)) }
     var instagramAccounts by remember {
         mutableStateOf(
             com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
                 .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
         )
+    }
+
+    LaunchedEffect(selectedPlatform) {
+        if (selectedPlatform == "facebook") {
+            facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+        } else if (selectedPlatform == "instagram") {
+            instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+                .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
+        } else {
+            allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+        }
     }
     var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
     val runningIgAccounts = com.cayxu.app.automation.instagram.XsmmInstagramManager.runningAccounts
@@ -1785,6 +1796,60 @@ fun XsmmAccountScreen(navController: NavController) {
                 }
             }
         }
+    }
+
+    if (showFacebookLoginSheet) {
+        FacebookLoginBottomSheet(
+            onDismiss = { showFacebookLoginSheet = false },
+            onAccountSaved = {
+                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+            }
+        )
+    }
+
+    if (showInstagramCookieSheet) {
+        InstagramCookieBottomSheet(
+            onDismiss = { showInstagramCookieSheet = false },
+            onCookieSaved = {
+                instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+                    .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
+            }
+        )
+    }
+
+    selectedFbDetailAccount?.let { acc ->
+        FacebookAccountDetailSheet(
+            account = acc,
+            onDismiss = { selectedFbDetailAccount = null }
+        )
+    }
+
+    if (showDeleteConfirmSheet) {
+        val uidsToDelete = selectedForRunUids.toList()
+        DeleteConfirmBottomSheet(
+            accountList = uidsToDelete,
+            onDismiss = { showDeleteConfirmSheet = false },
+            onConfirmDelete = {
+                if (selectedPlatform == "instagram") {
+                    com.cayxu.app.data.local.InstagramAccountsStore.removeAccounts(context, uidsToDelete)
+                    instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+                } else if (selectedPlatform == "facebook") {
+                    com.cayxu.app.data.local.FacebookAccountsStore.removeAccounts(context, uidsToDelete)
+                    facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+                }
+                selectedForRunUids = emptySet()
+                showDeleteConfirmSheet = false
+            }
+        )
+    }
+
+    selectedErrorDetailAccount?.let { cleanIg ->
+        val errorDetail = igErrorDetailMap[cleanIg] ?: (igStatusMap[cleanIg] ?: "Không có thông tin lỗi chi tiết")
+        ErrorDetailBottomSheet(
+            accountName = cleanIg,
+            errorMessage = errorDetail,
+            onDismiss = { selectedErrorDetailAccount = null }
+        )
     }
 }
 

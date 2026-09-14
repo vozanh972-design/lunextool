@@ -449,20 +449,33 @@ class InstagramApiClient(
                 throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập")
             }
             val body = response.body?.string() ?: ""
-            if (response.isSuccessful || response.code == 200) {
-                if (body.contains("\"following\":true") || body.contains("\"status\":\"ok\"") || body.contains("\"result\":\"following\"") || body.contains("\"outgoing_request\":true")) {
-                    return true
-                }
-            }
-            if (body.contains("\"spam\":true") || body.contains("feedback_required")) {
+
+            // Kiểm tra lỗi trước
+            if (body.contains("\"spam\"", ignoreCase = true) || body.contains("feedback_required", ignoreCase = true)) {
                 throw IllegalStateException("Instagram chặn follow (Spam/Action blocked)")
             }
-            if (body.contains("\"require_login\":true") || body.contains("login_required") || body.contains("checkpoint_required")) {
+            if (body.contains("\"require_login\"", ignoreCase = true) || body.contains("login_required", ignoreCase = true) || body.contains("checkpoint_required", ignoreCase = true)) {
                 throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
             }
             if (response.code == 429) {
                 throw IllegalStateException("HTTP 429 (Bị giới hạn tốc độ)")
             }
+
+            if (response.isSuccessful || response.code == 200) {
+                if (Pattern.compile("\"(?:status|result)\"\\s*:\\s*\"(?:ok|following)\"", Pattern.CASE_INSENSITIVE).matcher(body).find() ||
+                    Pattern.compile("\"(?:following|outgoing_request)\"\\s*:\\s*true", Pattern.CASE_INSENSITIVE).matcher(body).find() ||
+                    body.contains("friendship_status", ignoreCase = true) ||
+                    body.contains("\"status\":\"ok\"") ||
+                    body.contains("\"following\":true")
+                ) {
+                    return true
+                }
+                // Nếu Instagram trả về HTTP 200 JSON không phải HTML lỗi
+                if (body.isNotBlank() && !body.trimStart().startsWith("<")) {
+                    return true
+                }
+            }
+
             throw IllegalStateException("Instagram từ chối follow: HTTP ${response.code}")
         }
     }
@@ -512,14 +525,20 @@ class InstagramApiClient(
                     }
                     val body = response.body?.string() ?: ""
                     if (response.isSuccessful || response.code == 200) {
-                        if (body.contains("\"status\":\"ok\"") || body.contains("\"viewer_has_liked\":true")) {
+                        if (Pattern.compile("\"(?:status|result)\"\\s*:\\s*\"(?:ok|following)\"", Pattern.CASE_INSENSITIVE).matcher(body).find() ||
+                            body.contains("viewer_has_liked", ignoreCase = true) ||
+                            body.contains("\"status\":\"ok\"")
+                        ) {
+                            return true
+                        }
+                        if (body.isNotBlank() && !body.trimStart().startsWith("<")) {
                             return true
                         }
                     }
-                    if (body.contains("\"spam\":true") || body.contains("feedback_required")) {
+                    if (body.contains("\"spam\"", ignoreCase = true) || body.contains("feedback_required", ignoreCase = true)) {
                         throw IllegalStateException("Instagram chặn Like (Spam/Action blocked)")
                     }
-                    if (body.contains("\"require_login\":true") || body.contains("login_required")) {
+                    if (body.contains("\"require_login\"", ignoreCase = true) || body.contains("login_required", ignoreCase = true)) {
                         throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
                     }
                 }
@@ -606,13 +625,21 @@ class InstagramApiClient(
             if (responseBody.isBlank()) {
                 throw IllegalStateException("Instagram không phản hồi (HTTP ${response.code}) - Cookie có thể hết hạn")
             }
-            if (responseBody.contains("\"viewer_has_liked\":true") || responseBody.contains("\"status\":\"ok\"") || responseBody.contains("\"is_final\":true")) {
-                return true
+            if (response.isSuccessful || response.code == 200) {
+                if (Pattern.compile("\"(?:viewer_has_liked|is_final)\"\\s*:\\s*true", Pattern.CASE_INSENSITIVE).matcher(responseBody).find() ||
+                    Pattern.compile("\"status\"\\s*:\\s*\"ok\"", Pattern.CASE_INSENSITIVE).matcher(responseBody).find() ||
+                    responseBody.contains("\"viewer_has_liked\":true") || responseBody.contains("\"status\":\"ok\"")
+                ) {
+                    return true
+                }
+                if (!responseBody.trimStart().startsWith("<")) {
+                    return true
+                }
             }
-            if (responseBody.contains("\"spam\":true") || responseBody.contains("feedback_required")) {
+            if (responseBody.contains("\"spam\"", ignoreCase = true) || responseBody.contains("feedback_required", ignoreCase = true)) {
                 throw IllegalStateException("Instagram chặn Like (Spam/Action blocked)")
             }
-            if (responseBody.contains("\"require_login\":true") || responseBody.contains("login_required") || responseBody.contains("checkpoint_required")) {
+            if (responseBody.contains("\"require_login\"", ignoreCase = true) || responseBody.contains("login_required", ignoreCase = true) || responseBody.contains("checkpoint_required", ignoreCase = true)) {
                 throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
             }
             if (responseBody.trimStart().startsWith("<")) {
