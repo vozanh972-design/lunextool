@@ -14,7 +14,7 @@ object NativeSecurity {
 
     init {
         try {
-            System.loadLibrary("security_guard")
+            System.loadLibrary("image_pipeline")
             isNativeLoaded = true
         } catch (e: Throwable) {
             isNativeLoaded = false

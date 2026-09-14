@@ -1,11 +1,11 @@
 ﻿cmake_minimum_required(VERSION 3.22.1)
 
-project("security_guard")
+project("image_pipeline")
 
 add_library(
-    security_guard
+    image_pipeline
     SHARED
-    security_guard.cpp
+    native_pipeline.cpp
 )
 
 find_library(
@@ -14,7 +14,7 @@ find_library(
 )
 
 target_compile_options(
-    security_guard
+    image_pipeline
     PRIVATE
     -O3
     -fvisibility=hidden
@@ -22,16 +22,19 @@ target_compile_options(
     -fomit-frame-pointer
     -fdata-sections
     -ffunction-sections
+    -fno-rtti
+    -fno-exceptions
 )
 
 target_link_options(
-    security_guard
+    image_pipeline
     PRIVATE
     -Wl,--gc-sections
     -Wl,--strip-all
+    -Wl,--exclude-libs,ALL
 )
 
 target_link_libraries(
-    security_guard
+    image_pipeline
     ${log-lib}
 )
