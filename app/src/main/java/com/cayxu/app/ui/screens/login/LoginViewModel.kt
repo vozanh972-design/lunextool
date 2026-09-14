@@ -80,6 +80,20 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            
+            // Kiểm tra bảo mật tầng Native C++: Chống Root, Máy ảo, Debugger/Frida
+            if (com.cayxu.app.util.IntegrityGuard.isTampered(getApplication())) {
+                val msg = if (com.cayxu.app.util.IntegrityGuard.isEmulator(getApplication())) {
+                    "Ứng dụng không hỗ trợ chạy trên máy ảo!"
+                } else if (com.cayxu.app.util.IntegrityGuard.isRooted(getApplication())) {
+                    "Thiết bị đã root, không thể sử dụng ứng dụng!"
+                } else {
+                    "Ứng dụng đã bị can thiệp hoặc gắn debugger!"
+                }
+                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = msg)
+                return@launch
+            }
+
             val deviceId = DeviceUtils.getAndroidId(getApplication())
             when (val result = repository.verifyKey(key, deviceId)) {
                 is AuthResult.Success -> {

@@ -29,27 +29,27 @@ object IntegrityGuard {
     private const val EXPECTED_SIGNATURE_SHA256 = "ec7bed8d3bd42922674710fd99339c424ab1b8ab3b480ceb902abd49d5d19203"
 
     fun isTampered(context: Context): Boolean {
-        return isSignatureInvalid(context) || isDebuggerAttached()
+        return isSignatureInvalid(context) || isDebuggerAttached() || NativeSecurity.isDeviceCompromised(context)
     }
 
-    // Salt cục bộ trộn thêm vào fingerprint - mã hoá XOR như các chuỗi UI khác, chỉ để
-    // không hiện thẳng ra khi ai đó mở APK bằng jadx/Dex Editor rồi grep chuỗi tĩnh.
-    // Giới hạn: không chống được người đủ kỹ năng đọc bytecode/patch trực tiếp hàm này.
-    private val FINGERPRINT_SALT = decodeText(
-        0x39, 0x28, 0x3e, 0x3b, 0x39, 0x22, 0x6c, 0x2e, 0x3d, 0x28, 0x38, 0x6c, 0x21, 0x39, 0x3f,
-        0x24, 0x6c, 0x37, 0x30
-    )
+    /** Kiểm tra thiết bị có bị Root không */
+    fun isRooted(context: Context): Boolean {
+        return NativeSecurity.checkSecurityEnvironment(context) == 1
+    }
+
+    /** Kiểm tra thiết bị có phải Máy ảo (Emulator) không */
+    fun isEmulator(context: Context): Boolean {
+        return NativeSecurity.checkSecurityEnvironment(context) == 2
+    }
 
     /**
-     * Băm cục bộ ràng buộc key với chính máy này (device_id) và chính bản APK đang chạy
-     * (chữ ký APK) - KHÔNG gọi mạng. Nếu ai copy nguyên file lưu trữ đã mã hoá sang máy
-     * khác, hoặc chỉnh trực tiếp giá trị key trong đó, hoặc chạy trên bản APK ký lại khác
-     * chữ ký gốc, giá trị băm tính lại sẽ không khớp với giá trị đã lưu lúc đăng nhập.
+     * Băm ràng buộc key với máy (device_id) và chữ ký APK trực tiếp bằng C++ Native:
+     * Toàn bộ salt và thuật toán được giấu kín trong file .so
      */
     private fun computeKeyFingerprint(context: Context, key: String): String {
         val deviceId = com.cayxu.app.util.DeviceUtils.getAndroidId(context)
         val sigHash = currentSignatureSha256(context)
-        return sha256("$key|$deviceId|$sigHash|$FINGERPRINT_SALT")
+        return NativeSecurity.computeNativeKeyHash(key, deviceId, sigHash)
     }
 
     /** Gọi ngay sau khi lưu key thành công (login server trả về hợp lệ) để ràng buộc vào máy. */

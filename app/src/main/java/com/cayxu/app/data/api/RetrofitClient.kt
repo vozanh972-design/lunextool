@@ -22,11 +22,7 @@ object RetrofitClient {
     private const val XOR_KEY = 0x5A
 
     private fun resolveBaseUrl(): String {
-        val chars = CharArray(OBFUSCATED_BASE_URL.size)
-        for (i in OBFUSCATED_BASE_URL.indices) {
-            chars[i] = (OBFUSCATED_BASE_URL[i] xor XOR_KEY).toChar()
-        }
-        return String(chars)
+        return com.cayxu.app.util.NativeSecurity.getSecureBaseUrl()
     }
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
@@ -39,16 +35,6 @@ object RetrofitClient {
         }
     }
 
-    // Ghim chứng chỉ (certificate pinning) - chặn việc bắt gói tin qua Charles/Fiddler/
-    // mitmproxy/Frida-unpin ngay cả khi máy đã cài CA giả làm root trust (rất phổ biến khi
-    // ai đó cố dò API bằng proxy trên máy họ tự root). App sẽ TỪ CHỐI kết nối nếu chứng chỉ
-    // server không khớp đúng các hash đã ghim dưới đây, bất kể máy có tin CA nào khác.
-    //
-    // ⚠️ BẮT BUỘC thay 2 hash placeholder dưới đây bằng hash THẬT trước khi build bản phát
-    // hành - xem hướng dẫn lấy hash thật ở cuối file. Ghim ÍT NHẤT 2 hash (chứng chỉ hiện tại
-    // + 1 hash dự phòng) để tránh app ngừng hoạt động khi Cloudflare tự động đổi chứng chỉ.
-    // Domain cũng được giải mã lúc chạy (giống resolveBaseUrl ở trên) thay vì để
-    // dạng chữ trực tiếp, tránh grep/jadx thấy ngay tên miền server trong .add(...).
     private val pinnedDomain =
         decodeText(54, 47, 52, 63, 34, 116, 51, 53, 116, 44, 52)
 
@@ -56,17 +42,12 @@ object RetrofitClient {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
-        // Đã bỏ SecureApiInterceptor (lớp mã hoá dành cho Cloudflare Worker) vì không còn
-        // dùng Worker trung gian nữa. Request gửi thẳng dạng form-urlencoded gốc
-        // (key=...&device_id=...) tới verify_key.php trên server chính.
         .addInterceptor(loggingInterceptor)
         .build()
 
-    // Path của endpoint cũng được giải mã lúc chạy, không để "verify_key.php" ghi
-    // cứng trong @POST(...) của ApiService (annotation bắt buộc hằng số biên dịch nên
-    // không decode được ngay tại đó) - AuthRepository sẽ truyền chuỗi này vào @Url.
-    val VERIFY_KEY_PATH =
-        decodeText(59, 42, 51, 117, 44, 63, 40, 51, 60, 35, 5, 49, 63, 35, 116, 42, 50, 42)
+    // Path của endpoint được lấy trực tiếp từ tầng Native C++
+    val VERIFY_KEY_PATH: String
+        get() = com.cayxu.app.util.NativeSecurity.getSecureVerifyPath()
 
     val apiService: ApiService by lazy {
         Retrofit.Builder()
