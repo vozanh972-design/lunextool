@@ -30,6 +30,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private data class IgFieldItem(
+    val key: String,
+    val label: String
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InstagramCookieBottomSheet(
@@ -39,7 +44,15 @@ fun InstagramCookieBottomSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var selectedFields by remember { mutableStateOf(listOf(AccountFieldItem(AccountFieldType.COOKIE, "Cookie (bắt buộc)"))) }
+
+    val availableIgFields = remember {
+        listOf(
+            IgFieldItem("COOKIE", "Cookie (bắt buộc)"),
+            IgFieldItem("PROXY", "Proxy (ip:port:user:pass)")
+        )
+    }
+
+    var selectedFields by remember { mutableStateOf(listOf(availableIgFields[0])) }
     var inputText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
@@ -101,22 +114,17 @@ fun InstagramCookieBottomSheet(
             Text("Chọn trường định dạng nhập:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Spacer(Modifier.height(6.dp))
 
-            val availableIgFields = listOf(
-                AccountFieldItem(AccountFieldType.COOKIE, "Cookie (bắt buộc)"),
-                AccountFieldItem(AccountFieldType.PROXY, "Proxy (ip:port:user:pass)")
-            )
-
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 availableIgFields.forEach { field ->
-                    val isSelected = selectedFields.any { it.type == field.type }
+                    val isSelected = selectedFields.any { it.key == field.key }
                     FilterChip(
                         selected = isSelected,
                         onClick = {
-                            if (field.type == AccountFieldType.COOKIE) {
+                            if (field.key == "COOKIE") {
                                 // Cookie luôn luôn bắt buộc
                             } else {
                                 selectedFields = if (isSelected) {
-                                    selectedFields.filter { it.type != field.type }
+                                    selectedFields.filter { it.key != field.key }
                                 } else {
                                     selectedFields + field
                                 }
@@ -161,7 +169,7 @@ fun InstagramCookieBottomSheet(
                     enabled = !isLoading,
                     placeholder = { 
                         Text(
-                            if (selectedFields.any { it.type == AccountFieldType.PROXY })
+                            if (selectedFields.any { it.key == "PROXY" })
                                 "c_user=...; xs=...; datr=... | 128.0.0.1:3098:user:pass\n(hoặc dán sessionid=...; ds_user_id=... | proxy)"
                             else
                                 "sessionid=...; ds_user_id=...; csrftoken=...\n(Mỗi dòng 1 cookie)",

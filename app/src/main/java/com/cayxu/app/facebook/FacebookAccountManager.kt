@@ -4,6 +4,8 @@ import androidx.annotation.Keep
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookPageItem
 import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -459,7 +461,7 @@ class FacebookAccountManager {
     @Throws(Exception::class)
     fun changeProfilePicture(token: String, imageBytes: ByteArray, proxyStr: String? = null): String? {
         val client = if (!proxyStr.isNullOrEmpty()) buildProxiedClient(proxyStr) else httpClient
-        val mediaType = MediaType.parse("image/jpeg")
+        val mediaType = "image/jpeg".toMediaTypeOrNull()
         val reqBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("access_token", token)
@@ -467,7 +469,7 @@ class FacebookAccountManager {
             .addFormDataPart(
                 "source",
                 "avatar_${System.currentTimeMillis()}.jpg",
-                RequestBody.create(mediaType, imageBytes)
+                imageBytes.toRequestBody(mediaType)
             )
             .build()
 

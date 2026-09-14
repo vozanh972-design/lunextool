@@ -67,6 +67,8 @@ class InstagramApiClient(
                     matchResult.value
                 }
             }
+        }
+
         fun parseProxy(proxyStr: String?): ProxyConfig? {
             if (proxyStr.isNullOrBlank()) return null
             val parts = proxyStr.trim().split(":")
