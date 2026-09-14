@@ -135,7 +135,7 @@ object XsmmInstagramTaskRunner {
                     
                     // Cập nhật lại vào Store để lần sau không cần fetch lại
                     val updatedAccount = account.copy(fbDtsg = activeDtsg, lsd = activeLsd, userId = activeActorId)
-                    store.updateAccount(updatedAccount)
+                    InstagramAccountsStore.updateAccount(context, updatedAccount)
                 } catch (e: Exception) {
                     notify("[$cleanUsername] Lưu ý: ${e.message}")
                 }
