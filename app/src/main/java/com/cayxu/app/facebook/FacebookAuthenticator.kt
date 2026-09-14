@@ -80,20 +80,26 @@ class FacebookAuthenticator {
                                (errorData != null && errorData.has("login_first_factor"))
 
             if (is2FaRequired && totpCode.isNotBlank()) {
-                val machineId = errorData?.optString("login_first_factor", "") ?: ""
+                val machineId = errorData?.optString("machine_id")?.ifEmpty { null }
+                    ?: errorData?.optString("login_first_factor", "") ?: ""
+                val firstFactor = errorData?.optString("login_first_factor", "") ?: ""
                 val userId = errorData?.optString("uid", uid) ?: uid
 
                 val retryForm = FormBody.Builder()
                     .add("email", uid)
                     .add("password", pass)
+                    .add("credentials_type", "two_factor")
                     .add("twofactor_code", totpCode)
-                    .add("userid", userId)
+                    .add("code", totpCode)
                     .apply {
+                        if (firstFactor.isNotBlank()) add("first_factor", firstFactor)
                         if (machineId.isNotBlank()) add("machine_id", machineId)
                     }
-                    .add("credentials_type", "two_factor")
+                    .add("uid", userId)
+                    .add("userid", userId)
                     .add("access_token", appToken)
                     .add("generate_session_cookies", "1")
+                    .add("generate_machine_id", "1")
                     .add("locale", "vi_VN")
                     .add("format", "JSON")
                     .build()
@@ -101,7 +107,6 @@ class FacebookAuthenticator {
                 val retryReq = Request.Builder()
                     .url("https://b-graph.facebook.com/auth/login")
                     .header("User-Agent", userAgent)
-                    .header("Authorization", oauthToken)
                     .post(retryForm)
                     .build()
 
@@ -117,10 +122,11 @@ class FacebookAuthenticator {
                 isSuccess = false,
                 account = FacebookAccount(
                     uid = uid,
-                    name = pass,
+                    name = uid,
                     link = twoFaSecret,
                     phone = proxyStr.orEmpty(),
-                    isLive = false
+                    isLive = false,
+                    password = pass
                 ),
                 errorMessage = e.message ?: "Lỗi kết nối Facebook"
             )

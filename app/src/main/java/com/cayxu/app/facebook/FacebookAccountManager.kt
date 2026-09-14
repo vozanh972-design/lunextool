@@ -243,7 +243,7 @@ class FacebookAccountManager {
             results.add(
                 FacebookAccount(
                     uid = uid,
-                    name = if (password.isNotBlank()) password else username.ifEmpty { uid },
+                    name = if (username.isNotBlank() && !username.contains("@")) username else uid,
                     link = twoFactor,
                     note = cookie,
                     phone = proxy,

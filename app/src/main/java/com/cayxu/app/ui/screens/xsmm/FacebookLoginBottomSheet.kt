@@ -295,20 +295,19 @@ fun FacebookLoginBottomSheet(
                                         }
 
                                         // 3. Nếu có UID + Pass (và 2FA tùy chọn) -> Đăng nhập bằng Native Authenticator
-                                        if (currentAcc.uid.isNotBlank() && (currentAcc.password.isNotBlank() || currentAcc.name.isNotBlank())) {
+                                        if (currentAcc.uid.isNotBlank() && currentAcc.password.isNotBlank()) {
                                             try {
                                                 val authenticator = FacebookAuthenticator()
-                                                val authPass = currentAcc.password.ifBlank { currentAcc.name }
                                                 val authResult = authenticator.login(
                                                     uid = currentAcc.uid,
-                                                    pass = authPass,
+                                                    pass = currentAcc.password,
                                                     twoFaSecret = currentAcc.link,
                                                     proxyStr = proxy
                                                 )
                                                 if (authResult.isSuccess) {
-                                                    return@async authResult.account.copy(password = authPass)
+                                                    return@async authResult.account
                                                 } else {
-                                                    return@async authResult.account.copy(isLive = false, password = authPass)
+                                                    return@async authResult.account.copy(isLive = false)
                                                 }
                                             } catch (_: Exception) {
                                                 return@async currentAcc.copy(isLive = false)
