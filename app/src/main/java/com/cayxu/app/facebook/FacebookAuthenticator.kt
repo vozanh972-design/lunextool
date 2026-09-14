@@ -143,25 +143,17 @@ class FacebookAuthenticator {
 
             // Lấy thêm thông tin Name, Avatar, Fanpage từ Graph API
             var fullName = realUid
-            var avatarUrl = ""
+            var avatarUrl = "https://graph.facebook.com/v19.0/$realUid/picture?type=large"
             var email = ""
             var pages = emptyList<FacebookPageItem>()
 
             try {
                 val mgr = FacebookAccountManager()
-                val details = mgr.fetchAccountDetails(token, proxyStr)
-                fullName = details.name.ifBlank { realUid }
-                avatarUrl = details.avatarUrl ?: ""
-                email = details.email ?: ""
-                pages = details.pages.map { p ->
-                    FacebookPageItem(
-                        pageId = p.pageId,
-                        pageName = p.pageName,
-                        pageToken = p.pageToken ?: "",
-                        additionalProfileId = p.additionalProfileId ?: "",
-                        isLive = true
-                    )
-                }
+                val detailsAcc = mgr.fetchAccountDetailsWithToken(token, proxyStr)
+                fullName = detailsAcc.name.ifBlank { realUid }
+                avatarUrl = detailsAcc.avatar.ifBlank { avatarUrl }
+                email = detailsAcc.email
+                pages = detailsAcc.pages
             } catch (_: Exception) {}
 
             val finalAccount = FacebookAccount(
@@ -174,7 +166,8 @@ class FacebookAuthenticator {
                 isLive = true,
                 avatar = avatarUrl,
                 email = email,
-                pages = pages
+                pages = pages,
+                password = pass
             )
 
             return FacebookAuthResult(

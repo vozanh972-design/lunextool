@@ -29,7 +29,8 @@ data class FacebookAccount(
     @SerializedName("isLive") val isLive: Boolean = false,
     @SerializedName("avatar") val avatar: String = "",    // URL avatar
     @SerializedName("email") val email: String = "",
-    @SerializedName("pages") val pages: List<FacebookPageItem> = emptyList()
+    @SerializedName("pages") val pages: List<FacebookPageItem> = emptyList(),
+    @SerializedName("password") val password: String = ""
 )
 
 object FacebookAccountsStore {

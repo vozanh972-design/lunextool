@@ -662,26 +662,27 @@ fun XsmmAccountScreen(navController: NavController) {
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        // Badge Live
+                                        // Badge Live/Die
+                                        val isLive = account.isLive
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(12.dp))
-                                                .background(Color(0xFF22C55E).copy(alpha = 0.12f))
+                                                .background(if (isLive) Color(0xFF22C55E).copy(alpha = 0.12f) else DangerRed.copy(alpha = 0.12f))
                                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                                         ) {
                                             Box(
                                                 modifier = Modifier
                                                     .size(7.dp)
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFF16A34A))
+                                                    .background(if (isLive) Color(0xFF16A34A) else DangerRed)
                                             )
                                             Spacer(Modifier.width(5.dp))
                                             Text(
-                                                "Live",
+                                                if (isLive) "Live" else "Die",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = Color(0xFF16A34A)
+                                                color = if (isLive) Color(0xFF16A34A) else DangerRed
                                             )
                                         }
 

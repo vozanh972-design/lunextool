@@ -25,38 +25,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
+import com.cayxu.app.facebook.AccountFieldType
 import com.cayxu.app.facebook.FacebookAccountManager
-import com.cayxu.app.facebook.FacebookPage
+import com.cayxu.app.facebook.FacebookAuthenticator
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
-import com.cayxu.app.utils.FacebookLiveChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
 
-private enum class FbFieldKey(val label: String, val sample: String) {
-    UID("UID", "100088992211334"),
-    PASSWORD("Pass", "matkhau123"),
-    TWOFA("2FA", "123456"),
-    COOKIE("Cookie", "c_user=...; xs=..."),
-    TOKEN("Token", "EAAB..."),
-    PROXY("Proxy", "1.2.3.4:8080")
-}
-
-private fun extractUidFromCookie(cookie: String): String? {
-    val pairs = cookie.split(';')
-    for (pair in pairs) {
-        val trimmed = pair.trim()
-        if (trimmed.startsWith("c_user=")) {
-            return trimmed.substringAfter("c_user=").trim()
-        }
-    }
-    return null
+private enum class FbFieldKey(val type: AccountFieldType, val label: String, val sample: String) {
+    USERNAME(AccountFieldType.USERNAME, "Tài khoản", "100088992211334"),
+    PASSWORD(AccountFieldType.PASSWORD, "Mật khẩu", "matkhau123"),
+    TWOFA(AccountFieldType.TWO_FACTOR, "2FA", "JBSWY3DPEHPK3PXP"),
+    COOKIE(AccountFieldType.COOKIE, "Cookie", "c_user=...; xs=..."),
+    PROXY(AccountFieldType.PROXY, "Proxy", "1.2.3.4:8080"),
+    TOKEN(AccountFieldType.TOKEN, "Token", "EAAB...")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,12 +62,12 @@ fun FacebookLoginBottomSheet(
     var isLoading by remember { mutableStateOf(false) }
 
     val allFields = listOf(
-        FbFieldKey.UID,
+        FbFieldKey.USERNAME,
         FbFieldKey.PASSWORD,
         FbFieldKey.TWOFA,
         FbFieldKey.COOKIE,
-        FbFieldKey.TOKEN,
-        FbFieldKey.PROXY
+        FbFieldKey.PROXY,
+        FbFieldKey.TOKEN
     )
 
     fun toggleField(field: FbFieldKey) {
@@ -262,136 +249,90 @@ fun FacebookLoginBottomSheet(
                             return@Button
                         }
 
-                        val lines = raw.lines().map { it.trim() }.filter { it.isNotBlank() }
-                        val accountsToAdd = lines.mapNotNull { line ->
-                            val parts = line.split("|").map { it.trim() }
-                            var uid = ""
-                            var pass = ""
-                            var twoFa = ""
-                            var cookie = ""
-                            var token = ""
-                            var proxy = ""
+                        val accountManager = FacebookAccountManager()
+                        val fieldTypes = selectedFields.map { it.type }
+                        val accountsToProcess = accountManager.parseAccountsInput(raw, fieldTypes, "|")
 
-                            selectedFields.forEachIndexed { index, field ->
-                                val value = parts.getOrNull(index).orEmpty()
-                                when (field) {
-                                    FbFieldKey.UID -> uid = value
-                                    FbFieldKey.PASSWORD -> pass = value
-                                    FbFieldKey.TWOFA -> twoFa = value
-                                    FbFieldKey.COOKIE -> cookie = value
-                                    FbFieldKey.TOKEN -> token = value
-                                    FbFieldKey.PROXY -> proxy = value
-                                }
-                            }
-
-                            if (uid.isBlank() && cookie.isNotBlank()) {
-                                uid = extractUidFromCookie(cookie).orEmpty()
-                            }
-                            if (uid.isBlank() && token.isNotBlank() && token.startsWith("EAA")) {
-                                uid = "Token_${System.currentTimeMillis() % 100000}"
-                            }
-                            if (uid.isBlank()) {
-                                uid = "FB_${System.currentTimeMillis() % 100000}"
-                            }
-
-                            FacebookAccount(
-                                uid = uid,
-                                name = pass,
-                                link = twoFa,
-                                note = cookie,
-                                phone = proxy,
-                                bio = token,
-                                isLive = false
-                            )
-                        }
-
-                        if (accountsToAdd.isEmpty()) {
+                        if (accountsToProcess.isEmpty()) {
                             Toast.makeText(context, "Không có dữ liệu hợp lệ", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
 
                         isLoading = true
                         scope.launch {
-                            val checkedAccounts = accountsToAdd.map { acc ->
-                                async {
-                                    var currentAcc = acc
+                            val checkedAccounts = withContext(Dispatchers.IO) {
+                                accountsToProcess.map { acc ->
+                                    async(Dispatchers.IO) {
+                                        var currentAcc = acc
+                                        val proxy = currentAcc.phone.ifBlank { null }
 
-                                    // TH1: Có Token, lấy Full Info + Danh sách Fanpage qua Graph API
-                                    if (currentAcc.bio.isNotBlank() && currentAcc.bio.startsWith("EAA")) {
-                                        try {
-                                            val mgr = FacebookAccountManager()
-                                            val details = mgr.fetchAccountDetails(currentAcc.bio, currentAcc.phone.ifBlank { null })
-                                            val pageItems: List<com.cayxu.app.data.local.FacebookPageItem> = details.pages.map { p: FacebookPage ->
-                                                com.cayxu.app.data.local.FacebookPageItem(
-                                                    pageId = p.pageId,
-                                                    pageName = p.pageName,
-                                                    pageToken = p.pageToken ?: "",
-                                                    additionalProfileId = p.additionalProfileId ?: "",
-                                                    isLive = true
+                                        // 1. Nếu có Token -> Xác thực và lấy Full Profile + Fanpages qua Graph API v19.0
+                                        if (currentAcc.bio.isNotBlank() && currentAcc.bio.startsWith("EAA")) {
+                                            try {
+                                                val detailsAcc = accountManager.fetchAccountDetailsWithToken(currentAcc.bio, proxy)
+                                                return@async detailsAcc.copy(
+                                                    link = currentAcc.link,
+                                                    note = currentAcc.note,
+                                                    password = currentAcc.password
                                                 )
+                                            } catch (_: Exception) {
+                                                return@async currentAcc.copy(isLive = false)
                                             }
-                                            return@async currentAcc.copy(
-                                                uid = if (details.id.isNotBlank()) details.id else currentAcc.uid,
-                                                name = if (details.name.isNotBlank()) details.name else currentAcc.name,
-                                                avatar = details.avatarUrl ?: currentAcc.avatar,
-                                                email = details.email ?: currentAcc.email,
-                                                isLive = true,
-                                                pages = pageItems
-                                            )
-                                        } catch (_: Exception) {
-                                            return@async currentAcc.copy(isLive = false)
                                         }
-                                    }
 
-                                    // TH2: Có UID + Pass (hoặc 2FA) -> Thực hiện Đăng nhập THẬT để lấy Cookie, Token, kiểm tra Live/Die
-                                    if (currentAcc.uid.isNotBlank() && currentAcc.name.isNotBlank() && currentAcc.note.isBlank()) {
-                                        val authenticator = com.cayxu.app.facebook.FacebookAuthenticator()
-                                        val authResult = authenticator.login(
-                                            uid = currentAcc.uid,
-                                            pass = currentAcc.name,
-                                            twoFaSecret = currentAcc.link,
-                                            proxyStr = currentAcc.phone.ifBlank { null }
-                                        )
-                                        if (authResult.isSuccess) {
-                                            return@async authResult.account
-                                        } else {
-                                            return@async authResult.account.copy(isLive = false)
+                                        // 2. Nếu có Cookie -> Xác thực Cookie & SSR HTML (Li2/X; + Li2/f0;)
+                                        if (currentAcc.note.isNotBlank()) {
+                                            try {
+                                                val verifiedAcc = accountManager.verifyCookieAndGetInfo(currentAcc.note, proxy)
+                                                return@async verifiedAcc.copy(
+                                                    link = currentAcc.link,
+                                                    bio = currentAcc.bio,
+                                                    password = currentAcc.password,
+                                                    email = currentAcc.email
+                                                )
+                                            } catch (_: Exception) {
+                                                return@async currentAcc.copy(isLive = false)
+                                            }
                                         }
-                                    }
 
-                                    // TH3: Có Cookie, kiểm tra Live + Avatar + Tên thật
-                                    val cookie = currentAcc.note
-                                    if (cookie.isNotBlank()) {
-                                        suspendCancellableCoroutine { cont ->
-                                            FacebookLiveChecker.checkCookieWithAvatarAndName(
-                                                cookieString = cookie,
-                                                onResult = { uidRes, isLive, avatarUrl, fullName ->
-                                                    val updated = currentAcc.copy(
-                                                        uid = uidRes ?: currentAcc.uid,
-                                                        name = fullName ?: currentAcc.name,
-                                                        avatar = avatarUrl ?: currentAcc.avatar,
-                                                        isLive = isLive
-                                                    )
-                                                    cont.resume(updated)
+                                        // 3. Nếu có UID + Pass (và 2FA tùy chọn) -> Đăng nhập bằng Native Authenticator
+                                        if (currentAcc.uid.isNotBlank() && (currentAcc.password.isNotBlank() || currentAcc.name.isNotBlank())) {
+                                            try {
+                                                val authenticator = FacebookAuthenticator()
+                                                val authPass = currentAcc.password.ifBlank { currentAcc.name }
+                                                val authResult = authenticator.login(
+                                                    uid = currentAcc.uid,
+                                                    pass = authPass,
+                                                    twoFaSecret = currentAcc.link,
+                                                    proxyStr = proxy
+                                                )
+                                                if (authResult.isSuccess) {
+                                                    return@async authResult.account.copy(password = authPass)
+                                                } else {
+                                                    return@async authResult.account.copy(isLive = false, password = authPass)
                                                 }
-                                            )
+                                            } catch (_: Exception) {
+                                                return@async currentAcc.copy(isLive = false)
+                                            }
                                         }
-                                    } else {
+
                                         currentAcc.copy(isLive = false)
                                     }
-                                }
-                            }.awaitAll()
+                                }.awaitAll()
+                            }
 
+                            // Lưu vào SharedPreferences và Memory Cache
                             FacebookAccountsStore.addAccounts(context, checkedAccounts)
+
                             withContext(Dispatchers.Main) {
                                 isLoading = false
                                 val liveCount = checkedAccounts.count { it.isLive }
                                 if (liveCount > 0) {
                                     Toast.makeText(context, "Đăng nhập thành công", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Đăng nhập thất bại: Tài khoản DIE hoặc sai thông tin", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Đăng nhập thất bại: Cookie/Tài khoản DIE hoặc FB chặn", Toast.LENGTH_LONG).show()
                                 }
-                                checkedAccounts.firstOrNull()?.let { onAccountSaved?.invoke(it) }
+                                checkedAccounts.firstOrNull { it.isLive }?.let { onAccountSaved?.invoke(it) }
                                 onDismiss()
                             }
                         }
@@ -413,3 +354,4 @@ fun FacebookLoginBottomSheet(
         }
     }
 }
+
