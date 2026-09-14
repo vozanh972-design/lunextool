@@ -2,16 +2,29 @@ package com.cayxu.app.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+
+data class FacebookPageItem(
+    val pageId: String,
+    val pageName: String,
+    val pageToken: String = "",
+    val additionalProfileId: String = "",
+    val avatar: String = "",
+    val isLive: Boolean = true
+)
 
 data class FacebookAccount(
     val uid: String,
-    val name: String = "",      // Password
+    val name: String = "",      // Password hoặc Tên hiển thị
     val link: String = "",      // 2FA
     val note: String = "",      // Cookie
     val phone: String = "",     // Proxy
     val bio: String = "",       // Token
     val isLive: Boolean = false,
-    val avatar: String = ""     // URL avatar
+    val avatar: String = "",    // URL avatar
+    val email: String = "",
+    val pages: List<FacebookPageItem> = emptyList()
 )
 
 object FacebookAccountsStore {
@@ -19,12 +32,24 @@ object FacebookAccountsStore {
     private const val KEY_ACCOUNTS = "accounts"
     private const val ENTRY_SEPARATOR = "\u0001"
     private const val FIELD_SEPARATOR = "\u0002"
+    private val gson = Gson()
 
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun getAccounts(context: Context): List<FacebookAccount> {
         val raw = prefs(context).getString(KEY_ACCOUNTS, null) ?: return emptyList()
+        // Kiểm tra định dạng JSON mới
+        if (raw.trimStart().startsWith("[")) {
+            return try {
+                val type = object : TypeToken<List<FacebookAccount>>() {}.type
+                gson.fromJson<List<FacebookAccount>>(raw, type) ?: emptyList()
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+
+        // Fallback định dạng phân tách cũ
         return raw.split(ENTRY_SEPARATOR)
             .filter { it.isNotBlank() }
             .mapNotNull { entry ->
@@ -61,7 +86,9 @@ object FacebookAccountsStore {
         phone: String = "",
         bio: String = "",
         isLive: Boolean = false,
-        avatar: String = ""
+        avatar: String = "",
+        email: String = "",
+        pages: List<FacebookPageItem> = emptyList()
     ) {
         val account = FacebookAccount(
             uid = uid,
@@ -71,7 +98,9 @@ object FacebookAccountsStore {
             phone = phone,
             bio = bio,
             isLive = isLive,
-            avatar = avatar
+            avatar = avatar,
+            email = email,
+            pages = pages
         )
         addAccounts(context, listOf(account))
     }
@@ -85,8 +114,8 @@ object FacebookAccountsStore {
                     link = it.link.trim(),
                     note = it.note.trim(),
                     phone = it.phone.trim(),
-                    bio = it.bio.trim()
-                    // Không reset isLive/avatar nữa — giữ đúng kết quả đã kiểm tra cookie
+                    bio = it.bio.trim(),
+                    email = it.email.trim()
                 )
             }
             .filter { it.uid.isNotEmpty() }
@@ -95,7 +124,10 @@ object FacebookAccountsStore {
         val current = getAccounts(context).toMutableList()
         val existingUids = current.map { it.uid }.toMutableSet()
         trimmedNew.forEach { entry ->
-            if (entry.uid !in existingUids) {
+            val existingIdx = current.indexOfFirst { it.uid == entry.uid }
+            if (existingIdx >= 0) {
+                current[existingIdx] = entry
+            } else {
                 current.add(entry)
                 existingUids.add(entry.uid)
             }
@@ -145,17 +177,23 @@ object FacebookAccountsStore {
         save(context, current)
     }
 
-    /**
-     * Cập nhật kết quả kiểm tra Live cho 1 tài khoản: trạng thái live/die,
-     * avatar và tên hiển thị (nếu lấy được). Không đụng tới các field khác.
-     */
-    fun updateLiveStatus(context: Context, uid: String, isLive: Boolean, avatar: String?, name: String?) {
+    fun updateLiveStatus(
+        context: Context,
+        uid: String,
+        isLive: Boolean,
+        avatar: String?,
+        name: String?,
+        email: String? = null,
+        pages: List<FacebookPageItem>? = null
+    ) {
         val current = getAccounts(context).map { acc ->
             if (acc.uid == uid) {
                 acc.copy(
                     isLive = isLive,
                     avatar = avatar ?: acc.avatar,
-                    name = name ?: acc.name
+                    name = name ?: acc.name,
+                    email = email ?: acc.email,
+                    pages = pages ?: acc.pages
                 )
             } else acc
         }
@@ -163,18 +201,23 @@ object FacebookAccountsStore {
     }
 
     private fun save(context: Context, accounts: List<FacebookAccount>) {
-        val raw = accounts.joinToString(ENTRY_SEPARATOR) { acc ->
-            listOf(
-                acc.uid,
-                acc.name,
-                acc.link,
-                acc.note,
-                acc.phone,
-                acc.bio,
-                if (acc.isLive) "live" else "die",
-                acc.avatar
-            ).joinToString(FIELD_SEPARATOR)
+        try {
+            val json = gson.toJson(accounts)
+            prefs(context).edit().putString(KEY_ACCOUNTS, json).apply()
+        } catch (_: Exception) {
+            val raw = accounts.joinToString(ENTRY_SEPARATOR) { acc ->
+                listOf(
+                    acc.uid,
+                    acc.name,
+                    acc.link,
+                    acc.note,
+                    acc.phone,
+                    acc.bio,
+                    if (acc.isLive) "live" else "die",
+                    acc.avatar
+                ).joinToString(FIELD_SEPARATOR)
+            }
+            prefs(context).edit().putString(KEY_ACCOUNTS, raw).apply()
         }
-        prefs(context).edit().putString(KEY_ACCOUNTS, raw).apply()
     }
 }

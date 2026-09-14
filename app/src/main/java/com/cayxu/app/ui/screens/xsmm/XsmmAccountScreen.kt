@@ -16,12 +16,16 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
+import androidx.compose.ui.text.style.TextOverflow
+import com.cayxu.app.data.local.FacebookAccount
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -94,6 +98,7 @@ fun XsmmAccountScreen(navController: NavController) {
     var selectedForRunUids by remember(selectedPlatform, selectedVariant) { mutableStateOf<Set<String>>(emptySet()) }
     var showInstagramCookieSheet by remember { mutableStateOf(false) }
     var showFacebookLoginSheet by remember { mutableStateOf(false) }
+    var selectedFbDetailAccount by remember { mutableStateOf<FacebookAccount?>(null) }
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
 
     var allTikTokAccounts by remember { mutableStateOf(TikTokAccountsStore.getAccounts(context).filter { it.enabled }) }
@@ -188,6 +193,13 @@ fun XsmmAccountScreen(navController: NavController) {
             onAccountSaved = {
                 facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
             }
+        )
+    }
+
+    if (selectedFbDetailAccount != null) {
+        FacebookAccountDetailSheet(
+            account = selectedFbDetailAccount!!,
+            onDismiss = { selectedFbDetailAccount = null }
         )
     }
 
@@ -536,9 +548,8 @@ fun XsmmAccountScreen(navController: NavController) {
                         }
                     }
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         facebookAccounts.forEach { account ->
-                            val uidLower = account.uid.trim().lowercase()
                             val isChecked = account.uid in selectedForRunUids
                             Card(
                                 shape = RoundedCornerShape(16.dp),
@@ -561,23 +572,198 @@ fun XsmmAccountScreen(navController: NavController) {
                                         else selectedForRunUids + account.uid
                                     }
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = isChecked,
-                                        onCheckedChange = { checked ->
-                                            selectedForRunUids = if (checked) selectedForRunUids + account.uid
-                                            else selectedForRunUids - account.uid
-                                        },
-                                        colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2))
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(account.name.ifBlank { account.uid }, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
-                                        Spacer(Modifier.height(2.dp))
-                                        Text("UID: ${account.uid}", color = TextSecondary, fontSize = 12.sp)
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    // Hàng 1: Checkbox + Avatar + Tên Facebook (UID)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Checkbox(
+                                            checked = isChecked,
+                                            onCheckedChange = { checked ->
+                                                selectedForRunUids = if (checked) selectedForRunUids + account.uid
+                                                else selectedForRunUids - account.uid
+                                            },
+                                            colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2))
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+
+                                        // Avatar Facebook
+                                        Box(
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .clip(CircleShape)
+                                                .border(1.5.dp, Color(0xFF1877F2).copy(alpha = 0.3f), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (account.avatar.isNotBlank()) {
+                                                AsyncImage(
+                                                    model = account.avatar,
+                                                    contentDescription = "Avatar Facebook",
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(Color(0xFF1877F2)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = (account.name.firstOrNull() ?: 'F').uppercase(),
+                                                        color = Color.White,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 16.sp
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(Modifier.width(10.dp))
+
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                account.name.ifBlank { account.uid },
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = TextPrimary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Spacer(Modifier.height(2.dp))
+                                            Text(
+                                                "UID: ${account.uid}",
+                                                color = TextSecondary,
+                                                fontSize = 12.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(Modifier.height(10.dp))
+
+                                    // Hàng 2: Trạng thái Live/Die + Nút dấu chấm than (i) xem Full Info
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        // Badge Live
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(Color(0xFF22C55E).copy(alpha = 0.12f))
+                                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(7.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF16A34A))
+                                            )
+                                            Spacer(Modifier.width(5.dp))
+                                            Text(
+                                                "Live",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF16A34A)
+                                            )
+                                        }
+
+                                        // Nút chấm than (i) xem Full Info
+                                        IconButton(
+                                            onClick = { selectedFbDetailAccount = account },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.Info,
+                                                    contentDescription = "Xem thông tin chi tiết",
+                                                    tint = Color(0xFF1877F2),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Nếu acc có Fanpage/Profile+ thì hiển thị danh sách ở ngay dưới acc chính
+                                    if (account.pages.isNotEmpty()) {
+                                        Spacer(Modifier.height(10.dp))
+                                        HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
+                                        Spacer(Modifier.height(8.dp))
+                                        Text(
+                                            "Trang Fanpage / Profile+ (${account.pages.size}):",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = TextSecondary,
+                                            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+                                        )
+                                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            account.pages.forEach { page ->
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .background(Color(0xFFF8FAFC))
+                                                        .border(0.8.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
+                                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    if (page.avatar.isNotBlank()) {
+                                                        AsyncImage(
+                                                            model = page.avatar,
+                                                            contentDescription = "Page Avatar",
+                                                            contentScale = ContentScale.Crop,
+                                                            modifier = Modifier
+                                                                .size(26.dp)
+                                                                .clip(CircleShape)
+                                                        )
+                                                    } else {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(26.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color(0xFF1877F2).copy(alpha = 0.15f)),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Icon(
+                                                                Icons.Filled.Flag,
+                                                                contentDescription = null,
+                                                                tint = Color(0xFF1877F2),
+                                                                modifier = Modifier.size(14.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            page.pageName.ifBlank { page.pageId },
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            color = TextPrimary,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                        Text(
+                                                            "ID: ${page.pageId}${if (page.additionalProfileId.isNotBlank()) " • Profile: ${page.additionalProfileId}" else ""}",
+                                                            fontSize = 10.sp,
+                                                            color = TextSecondary,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
