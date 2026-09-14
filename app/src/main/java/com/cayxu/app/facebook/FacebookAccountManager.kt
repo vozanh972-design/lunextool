@@ -78,8 +78,7 @@ class FacebookAccountManager {
         return try {
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string() ?: ""
-                val json = JSONObject(body)
-                json.optString("access_token", null)
+                if (json.has("access_token")) json.getString("access_token") else null
             }
         } catch (_: Exception) {
             null

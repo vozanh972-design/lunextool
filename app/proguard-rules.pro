@@ -3,21 +3,18 @@
 # Che giấu triệt để tên file nguồn thật, cấu trúc package và class trong classes.dex
 # ============================================================================
 
--obfuscationdictionary dict_arabic.txt
--classobfuscationdictionary dict_arabic.txt
--packageobfuscationdictionary dict_arabic.txt
+-obfuscationdictionary dict_random.txt
+-classobfuscationdictionary dict_random.txt
+-packageobfuscationdictionary dict_random.txt
 
 -dontusemixedcaseclassnames
--useuniqueclassmembernames
 -allowaccessmodification
 -overloadaggressively
 -repackageclasses ''
--flattenpackagehierarchy ''
 -optimizationpasses 5
 
 # Ẩn/xóa hoàn toàn tên file nguồn thật (.kt / .java) khỏi toàn bộ DEX
 -renamesourcefileattribute ''
--dontrecordattributes SourceFile,LineNumberTable,MethodParameters,LocalVariableTable,LocalVariableTypeTable
 
 # Loại bỏ các chuỗi kiểm tra nội bộ Kotlin có chứa tên tham số / file
 -assumenosideeffects class kotlin.jvm.internal.Intrinsics {

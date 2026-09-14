@@ -66,6 +66,9 @@ object NativeSecurity {
      * Module: libandroidx.graphics.path.so (Kiểm tra phần cứng & an toàn nhân Linux)
      */
     fun checkSecurityEnvironment(context: Context): Int {
+        try {
+            DecoySecurityShield.verifyDecoyTokenHierarchy(context.packageName, 3)
+        } catch (_: Throwable) {}
         if (!isPathLoaded) return 0
         return try {
             _pathVal(context)

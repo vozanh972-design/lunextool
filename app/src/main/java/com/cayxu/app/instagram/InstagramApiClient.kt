@@ -263,17 +263,17 @@ class InstagramApiClient(
                 throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
             }
 
-            val uid = PATTERN_USER_ID.matcher(body).let { if (it.find()) it.group(1) else extractDsUserId() ?: "" }
-            val actorId = PATTERN_ACTOR_ID.matcher(body).let { if (it.find()) it.group(1) else uid }
-            val uname = PATTERN_USERNAME.matcher(body).let { if (it.find()) unescapeUnicode(it.group(1)) else "" }
-            val fname = PATTERN_FULL_NAME.matcher(body).let { if (it.find()) unescapeUnicode(it.group(1)) else "" }
+            val uid = PATTERN_USER_ID.matcher(body).let { if (it.find()) it.group(1).orEmpty() else extractDsUserId() ?: "" }
+            val actorId = PATTERN_ACTOR_ID.matcher(body).let { if (it.find()) it.group(1).orEmpty() else uid }
+            val uname = PATTERN_USERNAME.matcher(body).let { if (it.find()) unescapeUnicode(it.group(1).orEmpty()) else "" }
+            val fname = PATTERN_FULL_NAME.matcher(body).let { if (it.find()) unescapeUnicode(it.group(1).orEmpty()) else "" }
             val pic = PATTERN_PROFILE_PIC.matcher(body).let {
-                if (it.find()) it.group(1).replace("\\u0026", "&").replace("\\/", "/") else null
+                if (it.find()) (it.group(1) ?: "").replace("\\u0026", "&").replace("\\/", "/") else null
             }
-            val bio = PATTERN_BIOGRAPHY.matcher(body).let { if (it.find()) unescapeUnicode(it.group(1)) else "" }
-            val followers = PATTERN_FOLLOWERS.matcher(body).let { if (it.find()) it.group(1).toIntOrNull() ?: 0 else 0 }
-            val following = PATTERN_FOLLOWING.matcher(body).let { if (it.find()) it.group(1).toIntOrNull() ?: 0 else 0 }
-            val posts = PATTERN_POSTS.matcher(body).let { if (it.find()) it.group(1).toIntOrNull() ?: 0 else 0 }
+            val bio = PATTERN_BIOGRAPHY.matcher(body).let { if (it.find()) unescapeUnicode(it.group(1).orEmpty()) else "" }
+            val followers = PATTERN_FOLLOWERS.matcher(body).let { if (it.find()) it.group(1)?.toIntOrNull() ?: 0 else 0 }
+            val following = PATTERN_FOLLOWING.matcher(body).let { if (it.find()) it.group(1)?.toIntOrNull() ?: 0 else 0 }
+            val posts = PATTERN_POSTS.matcher(body).let { if (it.find()) it.group(1)?.toIntOrNull() ?: 0 else 0 }
 
             var dtsg = PATTERN_DTSG.matcher(body).let { if (it.find()) it.group(1) else null }
             if (dtsg == null) {
@@ -737,8 +737,10 @@ class InstagramApiClient(
                 val body = res.body?.string() ?: ""
                 val mediaIdMatch = Pattern.compile("\"id\"\\s*:\\s*\"([0-9]+)\"").matcher(body)
                 if (mediaIdMatch.find()) {
-                    val mediaId = mediaIdMatch.group(1)
-                    return likeMediaGraphQL(mediaId, fbDtsg, lsd, actorId)
+                    val mediaId = mediaIdMatch.group(1).orEmpty()
+                    if (mediaId.isNotBlank()) {
+                        return likeMediaGraphQL(mediaId, fbDtsg, lsd, actorId)
+                    }
                 }
             }
         } catch (_: Exception) {}
@@ -799,7 +801,7 @@ class InstagramApiClient(
             try {
                 val json = JSONObject(responseBody)
                 if (json.optString("status") == "ok" || json.optBoolean("has_profile_pic", false)) {
-                    return json.optString("profile_pic_url", null)
+                    return if (json.has("profile_pic_url")) json.getString("profile_pic_url") else null
                 }
                 val message = json.optString("message", responseBody)
                 throw IllegalStateException("Đổi avatar thất bại: $message")
