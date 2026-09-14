@@ -67,6 +67,15 @@ class InstagramApiClient(
                     matchResult.value
                 }
             }
+        fun parseProxy(proxyStr: String?): ProxyConfig? {
+            if (proxyStr.isNullOrBlank()) return null
+            val parts = proxyStr.trim().split(":")
+            if (parts.size < 2) return null
+            val host = parts[0].trim()
+            val port = parts[1].trim().toIntOrNull() ?: return null
+            val user = if (parts.size >= 4) parts[2].trim() else null
+            val pass = if (parts.size >= 4) parts[3].trim() else null
+            return ProxyConfig(host = host, port = port, username = user, password = pass)
         }
     }
 

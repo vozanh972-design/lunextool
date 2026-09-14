@@ -39,9 +39,15 @@ fun InstagramCookieBottomSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var cookieText by remember { mutableStateOf("") }
+    var selectedFields by remember { mutableStateOf(listOf(AccountFieldItem(AccountFieldType.COOKIE, "Cookie (bắt buộc)"))) }
+    var inputText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+
+    val formatString = remember(selectedFields) {
+        if (selectedFields.isEmpty()) "Cookie"
+        else selectedFields.joinToString(" | ") { it.label.substringBefore(" (") }
+    }
 
     ModalBottomSheet(
         onDismissRequest = { if (!isLoading) onDismiss() },
@@ -76,33 +82,91 @@ fun InstagramCookieBottomSheet(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "Nhập Cookie Instagram",
+                        "Thêm tài khoản Instagram",
                         fontWeight = FontWeight.Bold,
                         fontSize = 17.sp,
                         color = TextPrimary
                     )
                     Text(
-                        "Dán cookie tài khoản Instagram (hỗ trợ nhiều tài khoản, mỗi dòng 1 cookie)",
+                        "Hỗ trợ nhập Cookie hoặc Cookie | Proxy (Mỗi dòng 1 nick)",
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
                 }
             }
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(16.dp))
 
-            Text("Cookie Instagram", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            // Chọn trường định dạng (Cookie / Proxy)
+            Text("Chọn trường định dạng nhập:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Spacer(Modifier.height(6.dp))
+
+            val availableIgFields = listOf(
+                AccountFieldItem(AccountFieldType.COOKIE, "Cookie (bắt buộc)"),
+                AccountFieldItem(AccountFieldType.PROXY, "Proxy (ip:port:user:pass)")
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                availableIgFields.forEach { field ->
+                    val isSelected = selectedFields.any { it.type == field.type }
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            if (field.type == AccountFieldType.COOKIE) {
+                                // Cookie luôn luôn bắt buộc
+                            } else {
+                                selectedFields = if (isSelected) {
+                                    selectedFields.filter { it.type != field.type }
+                                } else {
+                                    selectedFields + field
+                                }
+                            }
+                        },
+                        label = { Text(field.label, fontSize = 11.5.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFE1306C).copy(alpha = 0.15f),
+                            selectedLabelColor = Color(0xFFE1306C)
+                        )
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // Box hiển thị định dạng hiện tại
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFFDF2F8))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "Định dạng: $formatString",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFFE1306C)
+                )
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            Text("Dữ liệu tài khoản Instagram (mỗi dòng 1 nick):", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Spacer(Modifier.height(6.dp))
+
             SelectionContainer {
                 OutlinedTextField(
-                    value = cookieText,
-                    onValueChange = { cookieText = it },
+                    value = inputText,
+                    onValueChange = { inputText = it },
                     enabled = !isLoading,
                     placeholder = { 
                         Text(
-                            "Dán cookie hoặc định dạng user|pass|cookie...\n(sessionid=...; ds_user_id=...; csrftoken=...)", 
-                            color = TextSecondary, 
-                            fontSize = 13.sp
+                            if (selectedFields.any { it.type == AccountFieldType.PROXY })
+                                "c_user=...; xs=...; datr=... | 128.0.0.1:3098:user:pass\n(hoặc dán sessionid=...; ds_user_id=... | proxy)"
+                            else
+                                "sessionid=...; ds_user_id=...; csrftoken=...\n(Mỗi dòng 1 cookie)",
+                            color = TextSecondary.copy(alpha = 0.7f), 
+                            fontSize = 12.5.sp
                         ) 
                     },
                     minLines = 5,
@@ -126,7 +190,7 @@ fun InstagramCookieBottomSheet(
                 )
             }
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(20.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -142,17 +206,16 @@ fun InstagramCookieBottomSheet(
                 }
                 Button(
                     onClick = {
-                        val rawInput = cookieText.trim()
+                        val rawInput = inputText.trim()
                         if (rawInput.isBlank()) {
                             Toast.makeText(context, "Vui lòng nhập cookie", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
 
                         isLoading = true
-                        statusMessage = "Đang kiểm tra và xác thực cookie..."
+                        statusMessage = "Đang kiểm tra và xác thực tài khoản Instagram..."
 
                         scope.launch {
-                            val authService = InstagramAuthService()
                             val lines = rawInput.lines().map { it.trim() }.filter { it.isNotBlank() }
                             val addedAccounts = mutableListOf<String>()
                             var failedCount = 0
@@ -161,18 +224,26 @@ fun InstagramCookieBottomSheet(
                                 val desktopUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                                 for (line in lines) {
                                     try {
-                                        // Tìm chuỗi cookie trong dòng (nếu dòng có dạng uid|pass|cookie)
-                                        val cookiePart = if (line.contains("sessionid=") || line.contains("csrftoken=")) {
-                                            val parts = line.split("|")
-                                            parts.firstOrNull { it.contains("sessionid=") || it.contains("csrftoken=") } ?: line
+                                        var cookiePart = ""
+                                        var proxyPart = ""
+
+                                        if (line.contains("|")) {
+                                            val parts = line.split("|").map { it.trim() }
+                                            for (p in parts) {
+                                                if (p.contains("sessionid=") || p.contains("csrftoken=") || p.contains("ds_user_id=") || p.contains("c_user=") || p.contains("mid=")) {
+                                                    cookiePart = if (cookiePart.isBlank()) p else "$cookiePart; $p"
+                                                } else if (p.contains(":") && p.any { it.isDigit() } && !p.contains("=")) {
+                                                    proxyPart = p
+                                                } else if (cookiePart.isBlank()) {
+                                                    cookiePart = p
+                                                }
+                                            }
                                         } else {
-                                            line
+                                            cookiePart = line
                                         }
 
-                                        // Trích xuất ds_user_id, sessionid và csrftoken trực tiếp từ cookie
                                         val dsUserIdMatch = Regex("ds_user_id=([0-9]+)").find(cookiePart)
                                         val sessionIdMatch = Regex("sessionid=([^;]+)").find(cookiePart)
-                                        val csrfMatch = Regex("csrftoken=([^;]+)").find(cookiePart)
 
                                         if (dsUserIdMatch == null && sessionIdMatch == null && !cookiePart.contains("sessionid")) {
                                             failedCount++
@@ -200,9 +271,14 @@ fun InstagramCookieBottomSheet(
                                         var followingCount = 0
                                         var postsCount = 0
 
-                                        // Thử fetch thông tin đầy đủ (username, avatar, tiểu sử, stats...)
+                                        val proxyConfig = com.cayxu.app.instagram.InstagramApiClient.parseProxy(proxyPart)
+                                        val client = com.cayxu.app.instagram.InstagramApiClient(
+                                            cookie = cookiePart,
+                                            userAgent = desktopUA,
+                                            proxyConfig = proxyConfig
+                                        )
+
                                         try {
-                                            val client = com.cayxu.app.instagram.InstagramApiClient(cookie = cookiePart, userAgent = desktopUA)
                                             val userInfo = client.fetchAccountDetails()
                                             if (userInfo.username.isNotBlank()) username = userInfo.username
                                             fullName = userInfo.fullName
@@ -214,14 +290,13 @@ fun InstagramCookieBottomSheet(
                                             followingCount = userInfo.followingCount
                                             postsCount = userInfo.postsCount
                                         } catch (_: Exception) {
-                                            // Fallback sang authService nếu cần
                                             try {
-                                                val userInfo = authService.verifyCookieAndGetUserInfo(cookiePart, desktopUA)
-                                                if (userInfo.username.isNotBlank()) username = userInfo.username
-                                                fullName = userInfo.fullName
-                                                avatar = userInfo.profilePicUrl ?: ""
-                                                fbDtsg = userInfo.fbDtsg ?: ""
-                                                lsd = userInfo.lsd ?: ""
+                                                val profile = client.fetchUserInfo()
+                                                if (profile.username.isNotBlank()) username = profile.username
+                                                fullName = profile.fullName
+                                                avatar = profile.profilePicUrl ?: ""
+                                                fbDtsg = profile.fbDtsg ?: ""
+                                                lsd = profile.lsd ?: ""
                                             } catch (_: Exception) {}
                                         }
 
@@ -233,6 +308,7 @@ fun InstagramCookieBottomSheet(
                                                     userId = dsUserId,
                                                     cookie = cookiePart,
                                                     userAgent = desktopUA,
+                                                    proxy = proxyPart,
                                                     fullName = fullName,
                                                     avatar = avatar,
                                                     fbDtsg = fbDtsg,
@@ -240,7 +316,8 @@ fun InstagramCookieBottomSheet(
                                                     biography = biography,
                                                     followersCount = followersCount,
                                                     followingCount = followingCount,
-                                                    postsCount = postsCount
+                                                    postsCount = postsCount,
+                                                    isLive = true
                                                 )
                                             )
                                             LinkedAccountsStore.addAccount(context, "Instagram", username)
@@ -260,7 +337,7 @@ fun InstagramCookieBottomSheet(
                                 onCookieSaved?.invoke(addedAccounts.first())
                                 onDismiss()
                             } else {
-                                val msg = "Không thể xác thực cookie Instagram. Vui lòng kiểm tra lại cookie!"
+                                val msg = "Không thể xác thực tài khoản Instagram. Vui lòng kiểm tra lại Cookie/Proxy!"
                                 statusMessage = msg
                                 Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             }

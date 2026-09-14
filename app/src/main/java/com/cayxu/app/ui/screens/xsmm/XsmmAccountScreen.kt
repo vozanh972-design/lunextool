@@ -1213,28 +1213,51 @@ fun XsmmAccountScreen(navController: NavController) {
                                             val rawDisplayName = igAcc?.fullName?.takeIf { it.isNotBlank() } ?: cleanIg
                                             val displayName = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(rawDisplayName)
                                             val cleanUname = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(igAcc?.username ?: cleanIg)
+                                            val isLive = igAcc?.isLive ?: true
+
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = displayName,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.5.sp,
+                                                    color = TextPrimary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+
+                                                // Nút Live/Die nằm ngay cạnh tên acc (không lặp lại tên)
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(if (isLive) Color(0xFF22C55E).copy(alpha = 0.12f) else DangerRed.copy(alpha = 0.12f))
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(6.dp)
+                                                            .clip(CircleShape)
+                                                            .background(if (isLive) Color(0xFF16A34A) else DangerRed)
+                                                    )
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(
+                                                        if (isLive) "Live" else "Die",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isLive) Color(0xFF16A34A) else DangerRed
+                                                    )
+                                                }
+                                            }
+
                                             Text(
-                                                text = displayName,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 14.5.sp,
-                                                color = TextPrimary,
+                                                text = "@$cleanUname",
+                                                color = TextSecondary,
+                                                fontSize = 12.sp,
                                                 maxLines = 1
                                             )
-                                            if (igAcc?.fullName?.isNotBlank() == true && !cleanUname.equals(displayName, ignoreCase = true)) {
-                                                Text(
-                                                    text = "@$cleanUname",
-                                                    color = TextSecondary,
-                                                    fontSize = 12.sp,
-                                                    maxLines = 1
-                                                )
-                                            } else {
-                                                Text(
-                                                    text = "@$cleanUname",
-                                                    color = TextSecondary,
-                                                    fontSize = 12.sp,
-                                                    maxLines = 1
-                                                )
-                                            }
                                             if (!igAcc?.biography.isNullOrBlank()) {
                                                 val cleanBio = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(igAcc!!.biography)
                                                 Spacer(Modifier.height(2.dp))
@@ -1279,7 +1302,11 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         withContext(Dispatchers.Main) {
                                                             com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Đang lấy thông tin..."
                                                         }
-                                                        val client = com.cayxu.app.instagram.InstagramApiClient(cookie = acc.cookie)
+                                                        val proxyConfig = com.cayxu.app.instagram.InstagramApiClient.parseProxy(acc.proxy)
+                                                        val client = com.cayxu.app.instagram.InstagramApiClient(
+                                                            cookie = acc.cookie,
+                                                            proxyConfig = proxyConfig
+                                                        )
                                                         val info = client.fetchAccountDetails(acc.username)
                                                         val updatedAcc = acc.copy(
                                                             username = info.username.ifBlank { acc.username },
@@ -1297,7 +1324,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         withContext(Dispatchers.Main) {
                                                             avatarVersion = System.currentTimeMillis()
                                                             val nameDisplay = if (info.fullName.isNotBlank()) info.fullName else info.username
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Live - $nameDisplay"
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Live"
                                                             instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
                                                             android.widget.Toast.makeText(context, "Đã cập nhật thông tin: $nameDisplay", android.widget.Toast.LENGTH_SHORT).show()
                                                         }
@@ -1351,7 +1378,6 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 if (isRunningThis) {
-                                                    // Ô vuông màu đỏ khi đang chạy -> bấm để DỪNG
                                                     Box(
                                                         modifier = Modifier
                                                             .size(10.dp)
@@ -1376,12 +1402,24 @@ fun XsmmAccountScreen(navController: NavController) {
                                         modifier = Modifier.padding(vertical = 10.dp)
                                     )
 
-                                    // Khu vực hiển thị trạng thái + thống kê Hoàn thành / Lỗi
+                                    // Khu vực hiển thị trạng thái + thống kê Hoàn thành / Lỗi + Proxy
                                     val currentStatus = igStatusMap[cleanIg] ?: "Trạng thái: Sẵn sàng"
                                     val successCount = igSuccessCountMap[cleanIg] ?: 0
                                     val errorCount = igErrorCountMap[cleanIg] ?: 0
                                     val isError = currentStatus.contains("Lỗi", ignoreCase = true) || currentStatus.contains("DIE", ignoreCase = true) || currentStatus.contains("Không tìm thấy", ignoreCase = true)
                                     val isRunningNow = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanIg)
+
+                                    // Hàm rút gọn proxy: 128.0.0.1:3098:user:pass -> 128......pass hoặc 128...3098
+                                    val proxyDisplay = remember(igAcc?.proxy) {
+                                        val p = igAcc?.proxy?.trim().orEmpty()
+                                        if (p.isBlank()) null
+                                        else {
+                                            val parts = p.split(":")
+                                            val first = parts.getOrNull(0)?.take(3) ?: "prx"
+                                            val last = parts.lastOrNull()?.takeLast(4) ?: "..."
+                                            "$first......$last"
+                                        }
+                                    }
 
                                     Column(
                                         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
@@ -1415,7 +1453,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             )
                                         }
 
-                                        // Dòng 2: Hiển thị Thống kê Hoàn thành / Lỗi
+                                        // Dòng 2: Hiển thị Thống kê Hoàn thành / Lỗi + Proxy bên cạnh
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1423,7 +1461,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         ) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
                                                 // Thành công
                                                 Row(
@@ -1468,11 +1506,27 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         color = DangerRed
                                                     )
                                                 }
+
+                                                // Proxy rút gọn bên cạnh nút Lỗi (nếu acc có gán proxy)
+                                                if (proxyDisplay != null) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier
+                                                            .background(Color(0xFF6B7280).copy(alpha = 0.1f), RoundedCornerShape(6.dp))
+                                                            .padding(horizontal = 7.dp, vertical = 3.dp)
+                                                    ) {
+                                                        Text(
+                                                            proxyDisplay,
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = Color(0xFF4B5563)
+                                                        )
+                                                    }
+                                                }
                                             }
 
                                             val errorDetail = igErrorDetailMap[cleanIg] ?: (if (errorCount > 0) currentStatus else null)
                                             if (errorDetail != null || errorCount > 0) {
-                                                // Icon dấu chấm than màu đỏ -> bấm để xem popup chi tiết lỗi
                                                 IconButton(
                                                     onClick = { selectedErrorDetailAccount = cleanIg },
                                                     modifier = Modifier.size(28.dp)

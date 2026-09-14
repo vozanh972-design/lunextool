@@ -108,7 +108,8 @@ object XsmmInstagramTaskRunner {
 
         val defaultUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
         val ua = if (account.userAgent.isNotBlank()) account.userAgent else defaultUA
-        val apiClient = InstagramApiClient(cookie = account.cookie, userAgent = ua)
+        val proxyConfig = InstagramApiClient.parseProxy(account.proxy)
+        val apiClient = InstagramApiClient(cookie = account.cookie, userAgent = ua, proxyConfig = proxyConfig)
 
         // Luôn luôn fetch fresh fb_dtsg + lsd + actorId trước khi chạy (bắt buộc với đa luồng)
         var activeDtsg = ""

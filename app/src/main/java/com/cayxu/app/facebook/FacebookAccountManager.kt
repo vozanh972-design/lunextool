@@ -459,7 +459,7 @@ class FacebookAccountManager {
     @Throws(Exception::class)
     fun changeProfilePicture(token: String, imageBytes: ByteArray, proxyStr: String? = null): String? {
         val client = if (!proxyStr.isNullOrEmpty()) buildProxiedClient(proxyStr) else httpClient
-        val mediaType = "image/jpeg".toMediaType()
+        val mediaType = MediaType.parse("image/jpeg")
         val reqBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("access_token", token)
@@ -467,7 +467,7 @@ class FacebookAccountManager {
             .addFormDataPart(
                 "source",
                 "avatar_${System.currentTimeMillis()}.jpg",
-                imageBytes.toRequestBody(mediaType)
+                RequestBody.create(mediaType, imageBytes)
             )
             .build()
 
