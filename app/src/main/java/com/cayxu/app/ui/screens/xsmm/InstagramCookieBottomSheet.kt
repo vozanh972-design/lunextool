@@ -155,6 +155,7 @@ fun InstagramCookieBottomSheet(
                             var failedCount = 0
 
                             withContext(Dispatchers.IO) {
+                                val desktopUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                                 for (line in lines) {
                                     try {
                                         // Tìm chuỗi cookie trong dòng (nếu dòng có dạng uid|pass|cookie)
@@ -165,48 +166,54 @@ fun InstagramCookieBottomSheet(
                                             line
                                         }
 
-                                        val userInfo = authService.verifyCookieAndGetUserInfo(cookiePart)
-                                        val accountIdentifier = userInfo.username.ifBlank {
-                                            if (userInfo.userId.isNotBlank()) "IG_${userInfo.userId}" else "IG_${System.currentTimeMillis() % 100000}"
+                                        // Trích xuất ds_user_id và csrftoken trực tiếp từ cookie (không cần HTTP)
+                                        val dsUserIdMatch = Regex("ds_user_id=([0-9]+)").find(cookiePart)
+                                        val csrfMatch = Regex("csrftoken=([^;]+)").find(cookiePart)
+
+                                        if (dsUserIdMatch == null || csrfMatch == null) {
+                                            failedCount++
+                                            continue
+                                        }
+
+                                        val dsUserId = dsUserIdMatch.groupValues[1]
+                                        var username = "IG_$dsUserId"
+                                        var fullName = ""
+                                        var avatar = ""
+                                        var fbDtsg = ""
+                                        var lsd = ""
+
+                                        // Thử verify để lấy thêm thông tin (username, avatar...)
+                                        // Nếu lỗi vẫn lưu account bằng ds_user_id
+                                        try {
+                                            val userInfo = authService.verifyCookieAndGetUserInfo(cookiePart, desktopUA)
+                                            if (userInfo.username.isNotBlank()) username = userInfo.username
+                                            fullName = userInfo.fullName
+                                            avatar = userInfo.profilePicUrl ?: ""
+                                            fbDtsg = userInfo.fbDtsg ?: ""
+                                            lsd = userInfo.lsd ?: ""
+                                        } catch (_: Exception) {
+                                            // Không lấy được thông tin chi tiết — vẫn lưu với ds_user_id
                                         }
 
                                         withContext(Dispatchers.Main) {
                                             com.cayxu.app.data.local.InstagramAccountsStore.addAccount(
                                                 context,
                                                 com.cayxu.app.data.local.InstagramAccount(
-                                                    username = accountIdentifier,
-                                                    userId = userInfo.userId,
+                                                    username = username,
+                                                    userId = dsUserId,
                                                     cookie = cookiePart,
-                                                    fullName = userInfo.fullName,
-                                                    avatar = userInfo.profilePicUrl ?: "",
-                                                    fbDtsg = userInfo.fbDtsg ?: "",
-                                                    lsd = userInfo.lsd ?: ""
+                                                    userAgent = desktopUA,
+                                                    fullName = fullName,
+                                                    avatar = avatar,
+                                                    fbDtsg = fbDtsg,
+                                                    lsd = lsd
                                                 )
                                             )
-                                            LinkedAccountsStore.addAccount(context, "Instagram", accountIdentifier)
-                                            addedAccounts.add(accountIdentifier)
+                                            LinkedAccountsStore.addAccount(context, "Instagram", username)
+                                            addedAccounts.add(username)
                                         }
                                     } catch (e: Exception) {
-                                        // Nếu không verify được trực tiếp qua HTTP nhưng có ds_user_id trong cookie
-                                        val dsUserIdRegex = Regex("""ds_user_id=([0-9a-zA-Z_.-]+)""")
-                                        val match = dsUserIdRegex.find(line)
-                                        if (match != null) {
-                                            val fallbackId = "IG_${match.groupValues[1]}"
-                                            withContext(Dispatchers.Main) {
-                                                com.cayxu.app.data.local.InstagramAccountsStore.addAccount(
-                                                    context,
-                                                    com.cayxu.app.data.local.InstagramAccount(
-                                                        username = fallbackId,
-                                                        userId = match.groupValues[1],
-                                                        cookie = line
-                                                    )
-                                                )
-                                                LinkedAccountsStore.addAccount(context, "Instagram", fallbackId)
-                                                addedAccounts.add(fallbackId)
-                                            }
-                                        } else {
-                                            failedCount++
-                                        }
+                                        failedCount++
                                     }
                                 }
                             }

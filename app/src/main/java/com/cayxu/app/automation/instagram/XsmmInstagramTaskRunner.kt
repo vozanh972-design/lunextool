@@ -116,7 +116,9 @@ object XsmmInstagramTaskRunner {
                 XsmmAccountsRepository.setActiveAccount(token, xsmmAcc.id)
             }
 
-            val apiClient = InstagramApiClient(cookie = account.cookie)
+            val desktopUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            val ua = if (account.userAgent.isNotBlank()) account.userAgent else desktopUA
+            val apiClient = InstagramApiClient(cookie = account.cookie, userAgent = ua)
 
             // 3. Vòng lặp lấy nhiệm vụ: Tự động Follow -> hết thì chuyển Like
             val taskTypesToTry = listOf("instagram_follow", "instagram_like")
@@ -158,10 +160,10 @@ object XsmmInstagramTaskRunner {
                                     try {
                                         if (isFollow || task.type.contains("follow", ignoreCase = true)) {
                                             val followTarget = task.idorlink.ifBlank { task.targetUrl }
-                                            actionSuccess = apiClient.followTarget(followTarget, fbDtsg = account.fbDtsg, lsd = account.lsd)
+                                            actionSuccess = apiClient.followTarget(followTarget, fbDtsg = account.fbDtsg, lsd = account.lsd, actorId = account.userId)
                                         } else {
                                             val likeTarget = task.idorlink.ifBlank { task.targetUrl }
-                                            actionSuccess = apiClient.likeTarget(likeTarget, fbDtsg = account.fbDtsg)
+                                            actionSuccess = apiClient.likeTarget(likeTarget, fbDtsg = account.fbDtsg, lsd = account.lsd, actorId = account.userId)
                                         }
                                         if (!actionSuccess) {
                                             lastActionError = "Instagram trả về thất bại (Không thể hoàn thành hành động)"
