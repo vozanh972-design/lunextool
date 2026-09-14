@@ -279,36 +279,61 @@ fun FacebookLoginBottomSheet(
                                             }
                                         }
 
-                                        // 2. Nếu có Cookie -> Xác thực Cookie & lấy token/pages
-                                        if (currentAcc.note.isNotBlank()) {
+                                        // 2. Nếu có Cookie (chứa c_user hoặc xs) -> Lấy Token từ Cookie (getSessionForApp)
+                                        if (currentAcc.note.isNotBlank() && (currentAcc.note.contains("c_user=") || currentAcc.note.contains("xs="))) {
                                             try {
+                                                val directAcc = accountManager.getTokenFromCookie(currentAcc.note, proxy)
+                                                if (directAcc != null && directAcc.isLive) {
+                                                    return@async directAcc.copy(
+                                                        link = currentAcc.link,
+                                                        password = currentAcc.password
+                                                    )
+                                                }
                                                 val verifiedAcc = accountManager.verifyCookieAndGetInfo(currentAcc.note, proxy)
-                                                return@async verifiedAcc.copy(
-                                                    link = currentAcc.link,
-                                                    bio = if (verifiedAcc.bio.isNotBlank()) verifiedAcc.bio else currentAcc.bio,
-                                                    password = currentAcc.password,
-                                                    email = if (verifiedAcc.email.isNotBlank()) verifiedAcc.email else currentAcc.email
-                                                )
-                                            } catch (_: Exception) {
-                                                return@async currentAcc.copy(isLive = false)
-                                            }
+                                                if (verifiedAcc.isLive) {
+                                                    return@async verifiedAcc.copy(
+                                                        link = currentAcc.link,
+                                                        bio = if (verifiedAcc.bio.isNotBlank()) verifiedAcc.bio else currentAcc.bio,
+                                                        password = currentAcc.password,
+                                                        email = if (verifiedAcc.email.isNotBlank()) verifiedAcc.email else currentAcc.email
+                                                    )
+                                                }
+                                            } catch (_: Exception) {}
                                         }
 
-                                        // 3. Nếu có UID + Pass (và 2FA tùy chọn) -> Đăng nhập bằng Native Authenticator
+                                        // 3. Nếu có UID + Pass (và 2FA / datr tùy chọn) -> Đăng nhập bằng Native Authenticator
                                         if (currentAcc.uid.isNotBlank() && currentAcc.password.isNotBlank()) {
                                             try {
+                                                val datr = if (currentAcc.note.contains("datr=")) {
+                                                    currentAcc.note.substringAfter("datr=").substringBefore(";").trim()
+                                                } else null
+
                                                 val authenticator = FacebookAuthenticator()
                                                 val authResult = authenticator.login(
                                                     uid = currentAcc.uid,
                                                     pass = currentAcc.password,
                                                     twoFaSecret = currentAcc.link,
-                                                    proxyStr = proxy
+                                                    proxyStr = proxy,
+                                                    datrCookie = datr
                                                 )
                                                 if (authResult.isSuccess) {
                                                     return@async authResult.account
                                                 } else {
                                                     return@async authResult.account.copy(isLive = false)
                                                 }
+                                            } catch (_: Exception) {
+                                                return@async currentAcc.copy(isLive = false)
+                                            }
+                                        }
+
+                                        // 4. Fallback cookie còn lại
+                                        if (currentAcc.note.isNotBlank()) {
+                                            try {
+                                                val verifiedAcc = accountManager.verifyCookieAndGetInfo(currentAcc.note, proxy)
+                                                return@async verifiedAcc.copy(
+                                                    link = currentAcc.link,
+                                                    password = currentAcc.password
+                                                )
                                             } catch (_: Exception) {
                                                 return@async currentAcc.copy(isLive = false)
                                             }

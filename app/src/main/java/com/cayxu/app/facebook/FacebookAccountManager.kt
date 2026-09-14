@@ -172,11 +172,11 @@ class FacebookAccountManager {
                     val parts = trimmed.split("|").map { it.trim() }
                     if (parts.size == 1) {
                         if (parts[0].startsWith("EAA")) token = parts[0]
-                        else if (parts[0].contains("c_user=")) cookie = parts[0]
+                        else if (parts[0].contains("c_user=") || parts[0].contains("xs=")) cookie = parts[0]
                         else username = parts[0]
                     } else if (parts.size == 2) {
                         username = parts[0]
-                        if (parts[1].contains("c_user=") || parts[1].contains("xs=")) {
+                        if (parts[1].contains("c_user=") || parts[1].contains("xs=") || parts[1].contains("datr=")) {
                             cookie = parts[1]
                         } else if (parts[1].startsWith("EAA")) {
                             token = parts[1]
@@ -186,7 +186,7 @@ class FacebookAccountManager {
                     } else if (parts.size == 3) {
                         username = parts[0]
                         password = parts[1]
-                        if (parts[2].contains("c_user=") || parts[2].contains("xs=")) {
+                        if (parts[2].contains("c_user=") || parts[2].contains("xs=") || parts[2].contains("datr=")) {
                             cookie = parts[2]
                         } else if (parts[2].startsWith("EAA")) {
                             token = parts[2]
@@ -196,12 +196,19 @@ class FacebookAccountManager {
                     } else if (parts.size >= 4) {
                         username = parts[0]
                         password = parts[1]
-                        twoFactor = parts[2]
+                        if (parts[2].contains("c_user=") || parts[2].contains("xs=") || parts[2].contains("datr=")) {
+                            cookie = parts[2]
+                        } else if (parts[2].startsWith("EAA")) {
+                            token = parts[2]
+                        } else {
+                            twoFactor = parts[2]
+                        }
                         val remaining = parts.subList(3, parts.size)
                         remaining.forEach { p ->
                             if (p.startsWith("EAA")) token = p
-                            else if (p.contains("c_user=") || p.contains("xs=")) cookie = p
+                            else if (p.contains("c_user=") || p.contains("xs=") || p.contains("datr=")) cookie = p
                             else if (p.contains(":") && p.any { it.isDigit() }) proxy = p
+                            else if (twoFactor.isBlank()) twoFactor = p
                         }
                     }
                 } else {
@@ -222,11 +229,23 @@ class FacebookAccountManager {
                 }
             }
 
+            // Tinh chỉnh thông minh: Nếu trường 2FA thực chất là Cookie hoặc Token
+            if (twoFactor.contains("c_user=") || twoFactor.contains("xs=") || twoFactor.contains("datr=")) {
+                cookie = if (cookie.isBlank()) twoFactor else "$twoFactor; $cookie"
+                twoFactor = ""
+            } else if (twoFactor.startsWith("EAA")) {
+                if (token.isBlank()) token = twoFactor
+                twoFactor = ""
+            }
+
             var uid = username
-            if (uid.isEmpty() && cookie.isNotEmpty()) {
+            if (cookie.contains("c_user=")) {
                 val matcher = C_USER_REGEX.matcher(cookie)
                 if (matcher.find()) {
-                    uid = matcher.group(1) ?: ""
+                    val cUser = matcher.group(1) ?: ""
+                    if (uid.isEmpty() || uid.contains("c_user=") || uid.startsWith("FB_") || uid == "Cookie") {
+                        uid = cUser
+                    }
                 }
             }
             if (uid.isEmpty() && token.isNotEmpty()) {
@@ -240,10 +259,12 @@ class FacebookAccountManager {
                 "$GRAPH_BASE_URL/$uid/picture?type=large"
             } else ""
 
+            val displayName = if (username.isNotBlank() && !username.contains("@") && !username.contains("c_user=")) username else uid
+
             results.add(
                 FacebookAccount(
                     uid = uid,
-                    name = if (username.isNotBlank() && !username.contains("@")) username else uid,
+                    name = displayName,
                     link = twoFactor,
                     note = cookie,
                     phone = proxy,

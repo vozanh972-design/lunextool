@@ -110,7 +110,8 @@ fun XsmmAccountScreen(navController: NavController) {
                 .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
         )
     }
-    val runningIgAccount = com.cayxu.app.automation.instagram.XsmmInstagramManager.runningAccount.value
+    var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
+    val runningIgAccounts = com.cayxu.app.automation.instagram.XsmmInstagramManager.runningAccounts
     val igStatusMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap
     val igSuccessCountMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.successCountMap
     val igErrorCountMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.errorCountMap
@@ -154,6 +155,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     )
                     com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updatedAcc)
                     withContext(Dispatchers.Main) {
+                        avatarVersion = System.currentTimeMillis()
                         instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
                         android.widget.Toast.makeText(context, "Đổi avatar Instagram thành công!", android.widget.Toast.LENGTH_SHORT).show()
                         isUploadingAvatar = false
@@ -872,8 +874,12 @@ fun XsmmAccountScreen(navController: NavController) {
                         instagramAccounts.forEach { igUid ->
                             val cleanIg = igUid.trim()
                             val isChecked = cleanIg in selectedForRunUids
-                            val igAcc = remember(cleanIg, instagramAccounts) {
+                            val igAcc = remember(cleanIg, instagramAccounts, avatarVersion) {
                                 com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanIg)
+                            }
+                            val avatarModel = remember(igAcc?.avatar, avatarVersion) {
+                                if (igAcc?.avatar.isNullOrBlank()) null
+                                else "${igAcc?.avatar}${if ((igAcc?.avatar ?: "").contains("?")) "&" else "?"}v=$avatarVersion"
                             }
                             Card(
                                 shape = RoundedCornerShape(16.dp),
@@ -924,7 +930,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         ) {
                                             if (!igAcc?.avatar.isNullOrBlank()) {
                                                 AsyncImage(
-                                                    model = igAcc?.avatar,
+                                                    model = avatarModel,
                                                     contentDescription = "Avatar",
                                                     contentScale = ContentScale.Crop,
                                                     modifier = Modifier.fillMaxSize()
@@ -1042,6 +1048,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         }
 
                                         // Nút Reload (Làm mới)
+                                        val isRunningThis = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanIg)
                                         IconButton(
                                             onClick = {
                                                 scope.launch(Dispatchers.IO) {
@@ -1073,6 +1080,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         )
                                                         com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updatedAcc)
                                                         withContext(Dispatchers.Main) {
+                                                            avatarVersion = System.currentTimeMillis()
                                                             val nameDisplay = if (info.fullName.isNotBlank()) info.fullName else info.username
                                                             com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Live - $nameDisplay"
                                                             instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
@@ -1086,7 +1094,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     }
                                                 }
                                             },
-                                            enabled = runningIgAccount == null,
+                                            enabled = !isRunningThis,
                                             modifier = Modifier.size(32.dp)
                                         ) {
                                             Box(
@@ -1108,21 +1116,16 @@ fun XsmmAccountScreen(navController: NavController) {
                                         Spacer(Modifier.width(6.dp))
 
                                         // Nút Chạy (Play tam giác) / Dừng (Stop ô vuông đỏ)
-                                        val isRunningThis = runningIgAccount == cleanIg
                                         IconButton(
                                             onClick = {
                                                 if (isRunningThis) {
                                                     com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(cleanIg)
                                                     android.widget.Toast.makeText(context, "Đã dừng chạy $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
                                                 } else {
-                                                    if (runningIgAccount != null) {
-                                                        android.widget.Toast.makeText(context, "Đang chạy tài khoản $runningIgAccount, hãy dừng trước!", android.widget.Toast.LENGTH_SHORT).show()
-                                                        return@IconButton
-                                                    }
                                                     com.cayxu.app.automation.instagram.XsmmInstagramManager.start(context, cleanIg)
+                                                    android.widget.Toast.makeText(context, "Bắt đầu chạy $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
                                                 }
                                             },
-                                            enabled = runningIgAccount == null || isRunningThis,
                                             modifier = Modifier.size(32.dp)
                                         ) {
                                             Box(
@@ -1437,7 +1440,7 @@ fun XsmmAccountScreen(navController: NavController) {
 
                         // Nút Chạy tất cả / Dừng tất cả (Dành cho Instagram)
                         if (isIg && instagramAccounts.isNotEmpty()) {
-                            val isAnyIgRunning = runningIgAccount != null
+                            val isAnyIgRunning = com.cayxu.app.automation.instagram.XsmmInstagramManager.isAnyRunning()
                             IconButton(
                                 onClick = {
                                     if (isAnyIgRunning) {
