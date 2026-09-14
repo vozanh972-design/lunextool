@@ -346,7 +346,7 @@ class InstagramApiClient(
     }
 
     /**
-     * Tra cứu user ID từ username bằng API chính thức web_profile_info của Instagram
+     * Tra cứu user ID từ URL hoặc username bằng cách truy cập trực tiếp link hoặc TopSearch
      */
     fun getUserIdFromUsername(username: String): String? {
         val cleanName = cleanInstagramUsername(username)
@@ -354,26 +354,66 @@ class InstagramApiClient(
         if (cleanName.all { it.isDigit() }) return cleanName
 
         val csrf = extractCsrfToken() ?: ""
-        val headers = buildStandardHeaders(
-            csrfToken = csrf,
-            referer = "$BASE_URL/$cleanName/",
-            appId = "936619743392459",
-            friendlyName = "PolarisProfilePageContentQuery"
-        )
-        val request = Request.Builder()
-            .url("$BASE_URL/api/v1/users/web_profile_info/?username=$cleanName")
-            .headers(headers)
-            .get()
-            .build()
+        val targetUrl = if (username.startsWith("http://") || username.startsWith("https://")) {
+            username
+        } else {
+            "$BASE_URL/$cleanName/"
+        }
 
+        // 1. Truy cập trực tiếp link trang cá nhân (như trình duyệt mở link)
         try {
+            val request = Request.Builder()
+                .url(targetUrl)
+                .headers(buildStandardHeaders(csrfToken = csrf, referer = "$BASE_URL/"))
+                .get()
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                
+                val m0 = Pattern.compile("profilePage_([0-9]+)").matcher(body)
+                if (m0.find()) return m0.group(1)
+
+                val mMeta = Pattern.compile("instapp:owner_user_id[\"']?\\s*content=[\"']?([0-9]+)").matcher(body)
+                if (mMeta.find()) return mMeta.group(1)
+
+                val m1 = Pattern.compile("\"(?:profile_id|user_id|target_id)\"\\s*:\\s*\"?([0-9]+)\"?").matcher(body)
+                if (m1.find()) return m1.group(1)
+
+                val m2 = Pattern.compile("\"owner\"\\s*:\\s*\\{\\s*\"id\"\\s*:\\s*\"([0-9]+)\"").matcher(body)
+                if (m2.find()) return m2.group(1)
+            }
+        } catch (_: Exception) {}
+
+        // 2. Dùng TopSearch API
+        try {
+            val headers = buildStandardHeaders(
+                csrfToken = csrf,
+                referer = "$BASE_URL/"
+            )
+            val request = Request.Builder()
+                .url("$BASE_URL/api/v1/web/search/topsearch/?context=blended&query=$cleanName&rank_token=0.5")
+                .headers(headers)
+                .get()
+                .build()
+
             httpClient.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: ""
-                    val m = Pattern.compile("\"user\"\\s*:\\s*\\{[^}]*?\"id\"\\s*:\\s*\"([0-9]+)\"").matcher(body)
-                    if (m.find()) return m.group(1)
-                    val m2 = Pattern.compile("\"id\"\\s*:\\s*\"([0-9]+)\"").matcher(body)
-                    if (m2.find()) return m2.group(1)
+                    val json = JSONObject(body)
+                    val users = json.optJSONArray("users")
+                    if (users != null) {
+                        for (i in 0 until users.length()) {
+                            val u = users.optJSONObject(i)?.optJSONObject("user")
+                            val uName = u?.optString("username", "") ?: ""
+                            if (uName.equals(cleanName, ignoreCase = true)) {
+                                val pk = u?.optString("pk", "")?.takeIf { it.isNotBlank() }
+                                    ?: u?.optString("pk_id", "")?.takeIf { it.isNotBlank() }
+                                    ?: u?.optString("id", "")?.takeIf { it.isNotBlank() }
+                                if (!pk.isNullOrBlank()) return pk
+                            }
+                        }
+                    }
                 }
             }
         } catch (_: Exception) {}
@@ -428,7 +468,7 @@ class InstagramApiClient(
     }
 
     /**
-     * Follow tài khoản theo username hoặc target_id
+     * Follow tài khoản theo link, username hoặc target_id
      */
     @Throws(Exception::class)
     fun followTarget(targetIdOrUsername: String, fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
@@ -439,7 +479,7 @@ class InstagramApiClient(
         val targetId = if (clean.all { it.isDigit() }) {
             clean
         } else {
-            getUserIdFromUsername(clean) ?: throw IllegalStateException("Không tìm thấy User ID của @$clean")
+            getUserIdFromUsername(targetIdOrUsername) ?: clean
         }
         return followUser(targetId, fbDtsg, lsd, actorId)
     }
