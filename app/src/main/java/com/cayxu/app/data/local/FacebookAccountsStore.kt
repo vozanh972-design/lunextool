@@ -44,8 +44,10 @@ object FacebookAccountsStore {
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun getAccounts(context: Context): List<FacebookAccount> {
-        memoryCache?.let { return it.toList() }
+    fun getAccounts(context: Context, forceReload: Boolean = false): List<FacebookAccount> {
+        if (!forceReload) {
+            memoryCache?.let { return it.toList() }
+        }
         val raw = prefs(context).getString(KEY_ACCOUNTS, null) ?: return emptyList()
         // Kiểm tra định dạng JSON mới
         if (raw.trimStart().startsWith("[")) {

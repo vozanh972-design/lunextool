@@ -376,7 +376,7 @@ fun FacebookLoginBottomSheet(
                                 } else {
                                     Toast.makeText(context, "Đăng nhập thất bại: Cookie/Tài khoản DIE hoặc FB chặn", Toast.LENGTH_LONG).show()
                                 }
-                                checkedAccounts.firstOrNull { it.isLive }?.let { onAccountSaved?.invoke(it) }
+                                checkedAccounts.firstOrNull()?.let { onAccountSaved?.invoke(it) }
                                 onDismiss()
                             }
                         }

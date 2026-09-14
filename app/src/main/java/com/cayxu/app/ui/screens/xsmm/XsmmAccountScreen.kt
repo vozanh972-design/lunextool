@@ -313,7 +313,7 @@ fun XsmmAccountScreen(navController: NavController) {
 
     LaunchedEffect(selectedPlatform, selectedVariant) {
         if (selectedPlatform == "facebook") {
-            facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
+            facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
         } else if (selectedPlatform == "instagram") {
             instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
                 .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
@@ -705,14 +705,9 @@ fun XsmmAccountScreen(navController: NavController) {
                             }
                             Card(
                                 shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isChecked) Color(0xFF1877F2).copy(alpha = 0.05f) else CardWhite
-                                ),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    width = if (isChecked) 1.5.dp else 1.dp,
-                                    color = if (isChecked) Color(0xFF1877F2) else Color(0xFFEEF1F5)
-                                ),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                                colors = CardDefaults.cardColors(containerColor = CardWhite),
+                                border = if (isChecked) androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF1877F2)) else null,
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
@@ -953,17 +948,44 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 )
                                             }
                                         }
+                                    }
 
-                                        Spacer(Modifier.width(6.dp))
+                                    // Trạng thái Page: Nếu không có page -> hiển thị "Tài khoản không có page", nếu có page -> hiển thị danh sách với chữ "Page: " ở trước tên
+                                    Spacer(Modifier.height(10.dp))
+                                    HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
+                                    Spacer(Modifier.height(8.dp))
 
-                                        // Nút chấm than (i) xem Full Info
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 4.dp, end = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        if (account.pages.isEmpty()) {
+                                            Text(
+                                                "Tài khoản không có page",
+                                                fontSize = 11.5.sp,
+                                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                                color = TextSecondary.copy(alpha = 0.8f)
+                                            )
+                                        } else {
+                                            Text(
+                                                "Danh sách Page / Profile+ (${account.pages.size}):",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = TextSecondary
+                                            )
+                                        }
+
+                                        // Nút chấm than (i) xem Full Info xuống cùng hàng với trạng thái Page
                                         IconButton(
                                             onClick = { selectedFbDetailAccount = account },
-                                            modifier = Modifier.size(32.dp)
+                                            modifier = Modifier.size(28.dp)
                                         ) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(28.dp)
+                                                    .size(26.dp)
                                                     .clip(CircleShape)
                                                     .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
                                                 contentAlignment = Alignment.Center
@@ -972,33 +994,14 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     Icons.Filled.Info,
                                                     contentDescription = "Xem thông tin chi tiết",
                                                     tint = Color(0xFF1877F2),
-                                                    modifier = Modifier.size(18.dp)
+                                                    modifier = Modifier.size(16.dp)
                                                 )
                                             }
                                         }
                                     }
 
-                                    // Trạng thái Page: Nếu không có page -> hiển thị "Tài khoản không có page", nếu có page -> hiển thị danh sách với chữ "Page: " ở trước tên
-                                    Spacer(Modifier.height(10.dp))
-                                    HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
-                                    Spacer(Modifier.height(8.dp))
-
-                                    if (account.pages.isEmpty()) {
-                                        Text(
-                                            "Tài khoản không có page",
-                                            fontSize = 11.5.sp,
-                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                                            color = TextSecondary.copy(alpha = 0.8f),
-                                            modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 2.dp)
-                                        )
-                                    } else {
-                                        Text(
-                                            "Danh sách Page / Profile+ (${account.pages.size}):",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = TextSecondary,
-                                            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-                                        )
+                                    if (account.pages.isNotEmpty()) {
+                                        Spacer(Modifier.height(4.dp))
                                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             account.pages.forEach { page ->
                                                 Row(
@@ -1099,11 +1102,8 @@ fun XsmmAccountScreen(navController: NavController) {
                             Card(
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(containerColor = CardWhite),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    width = if (isChecked) 1.5.dp else 1.dp,
-                                    color = if (isChecked) Color(0xFFE1306C) else Color(0xFFEEF1F5)
-                                ),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                                border = if (isChecked) androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFE1306C)) else null,
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
@@ -1324,13 +1324,17 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         withContext(Dispatchers.Main) {
                                                             avatarVersion = System.currentTimeMillis()
                                                             val nameDisplay = if (info.fullName.isNotBlank()) info.fullName else info.username
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Live"
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Sẵn sàng"
                                                             instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
                                                             android.widget.Toast.makeText(context, "Đã cập nhật thông tin: $nameDisplay", android.widget.Toast.LENGTH_SHORT).show()
                                                         }
                                                     } catch (e: Exception) {
+                                                        val deadAcc = acc.copy(isLive = false)
+                                                        com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, deadAcc)
                                                         withContext(Dispatchers.Main) {
+                                                            avatarVersion = System.currentTimeMillis()
                                                             com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Lỗi: Cookie DIE / Checkpoint"
+                                                            instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
                                                             android.widget.Toast.makeText(context, "Lỗi kiểm tra $cleanIg: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
                                                         }
                                                     }
@@ -1403,7 +1407,8 @@ fun XsmmAccountScreen(navController: NavController) {
                                     )
 
                                     // Khu vực hiển thị trạng thái + thống kê Hoàn thành / Lỗi + Proxy
-                                    val currentStatus = igStatusMap[cleanIg] ?: "Trạng thái: Sẵn sàng"
+                                    val rawStatus = igStatusMap[cleanIg] ?: "Trạng thái: Sẵn sàng"
+                                    val currentStatus = if (rawStatus.equals("Live", ignoreCase = true)) "Trạng thái: Sẵn sàng" else rawStatus
                                     val successCount = igSuccessCountMap[cleanIg] ?: 0
                                     val errorCount = igErrorCountMap[cleanIg] ?: 0
                                     val isError = currentStatus.contains("Lỗi", ignoreCase = true) || currentStatus.contains("DIE", ignoreCase = true) || currentStatus.contains("Không tìm thấy", ignoreCase = true)
@@ -1827,12 +1832,9 @@ private fun XsmmTikTokAccountCard(
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = if (isCheckedForRun) XsmmAccentEnd.copy(alpha = 0.05f) else CardWhite),
-        border = androidx.compose.foundation.BorderStroke(
-            width = if (isCheckedForRun) 1.5.dp else 1.dp,
-            color = if (isCheckedForRun) XsmmAccentEnd else Color(0xFFEEF1F5)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isCheckedForRun) 0.dp else 1.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        border = if (isCheckedForRun) androidx.compose.foundation.BorderStroke(1.5.dp, XsmmAccentEnd) else null,
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
