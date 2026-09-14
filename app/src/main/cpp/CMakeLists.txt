@@ -1,21 +1,13 @@
-﻿cmake_minimum_required(VERSION 3.22.1)
+cmake_minimum_required(VERSION 3.22.1)
 
-project("image_pipeline")
-
-add_library(
-    image_pipeline
-    SHARED
-    native_pipeline.cpp
-)
+project("app_native_bundle")
 
 find_library(
     log-lib
     log
 )
 
-target_compile_options(
-    image_pipeline
-    PRIVATE
+set(COMMON_COMPILE_OPTIONS
     -O3
     -fvisibility=hidden
     -fvisibility-inlines-hidden
@@ -26,15 +18,34 @@ target_compile_options(
     -fno-exceptions
 )
 
-target_link_options(
-    image_pipeline
-    PRIVATE
+set(COMMON_LINK_OPTIONS
     -Wl,--gc-sections
     -Wl,--strip-all
     -Wl,--exclude-libs,ALL
 )
 
-target_link_libraries(
-    image_pipeline
-    ${log-lib}
-)
+# Macro định nghĩa thư viện tiện lợi
+macro(add_so_module TARGET_NAME SOURCE_FILE)
+    add_library(${TARGET_NAME} SHARED ${SOURCE_FILE})
+    target_compile_options(${TARGET_NAME} PRIVATE ${COMMON_COMPILE_OPTIONS})
+    target_link_options(${TARGET_NAME} PRIVATE ${COMMON_LINK_OPTIONS})
+    target_link_libraries(${TARGET_NAME} ${log-lib})
+endmacro()
+
+# 1. Các module phân mảnh cốt lõi (Core Security & Graphics & Crypto)
+add_so_module(androidx.graphics.path androidx_graphics_path.cpp)
+add_so_module(distract-config distract_config.cpp)
+add_so_module(sqlitejni sqlitejni.cpp)
+add_so_module(imagepipeline imagepipeline.cpp)
+
+# 2. Các module mồi nhử (Decoys / Honeypots) như kiến trúc Facebook / Instagram
+add_so_module(appcomponentfactory-jni decoys.cpp)
+add_so_module(breakpad decoys.cpp)
+add_so_module(breakpad_cpp_helper decoys.cpp)
+add_so_module(dextricks-early decoys.cpp)
+add_so_module(fbunwindstack decoys.cpp)
+add_so_module(superpack-jni decoys.cpp)
+add_so_module(superpack_common decoys.cpp)
+add_so_module(fb_so_loader decoys.cpp)
+add_so_module(achilles-jni decoys.cpp)
+add_so_module(fb_audiopipeline decoys.cpp)

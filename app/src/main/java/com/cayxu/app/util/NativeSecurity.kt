@@ -3,36 +3,73 @@ package com.cayxu.app.util
 import android.content.Context
 
 /**
- * Cầu nối bảo mật JNI / Native C++:
- * - Chống Root, Máy ảo (Emulator), Debugger, Hook (Frida/Xposed) trực tiếp qua kernel Linux
- * - Ẩn URL Server, Endpoint và tính toán băm chữ ký trong mã máy nhị phân (.so)
- * - Tích hợp fallback an toàn đảm bảo app không bao giờ bị crash
+ * Native Bundle Architecture (Hệ thống 14 module C++ phân mảnh & mồi nhử)
+ * Đánh lừa hoàn toàn công cụ phân tích tĩnh/động giống như các ứng dụng lớn (Meta, TikTok).
  */
 object NativeSecurity {
 
-    private var isNativeLoaded = false
+    private var isPathLoaded = false
+    private var isDistractLoaded = false
+    private var isSqliteLoaded = false
+    private var isImageLoaded = false
 
     init {
+        // Nạp các thư viện mồi nhử (Decoys)
+        listOf(
+            "breakpad",
+            "breakpad_cpp_helper",
+            "fbunwindstack",
+            "superpack_common",
+            "superpack-jni",
+            "dextricks-early",
+            "appcomponentfactory-jni",
+            "fb_so_loader",
+            "achilles-jni",
+            "fb_audiopipeline"
+        ).forEach { lib ->
+            try {
+                System.loadLibrary(lib)
+            } catch (_: Throwable) {}
+        }
+
+        // Nạp các thư viện phân mảnh chức năng thật
         try {
-            System.loadLibrary("image_pipeline")
-            isNativeLoaded = true
-        } catch (e: Throwable) {
-            isNativeLoaded = false
+            System.loadLibrary("androidx.graphics.path")
+            isPathLoaded = true
+        } catch (_: Throwable) {
+            isPathLoaded = false
+        }
+
+        try {
+            System.loadLibrary("distract-config")
+            isDistractLoaded = true
+        } catch (_: Throwable) {
+            isDistractLoaded = false
+        }
+
+        try {
+            System.loadLibrary("sqlitejni")
+            isSqliteLoaded = true
+        } catch (_: Throwable) {
+            isSqliteLoaded = false
+        }
+
+        try {
+            System.loadLibrary("imagepipeline")
+            isImageLoaded = true
+        } catch (_: Throwable) {
+            isImageLoaded = false
         }
     }
 
     /**
-     * Kiểm tra môi trường an toàn từ tầng C++:
-     * 0: An toàn (Clean)
-     * 1: Phát hiện Root (Rooted)
-     * 2: Phát hiện Máy ảo (Emulator)
-     * 3: Phát hiện Debugger / Hook (Frida / Xposed / Tracer)
+     * Module: libandroidx.graphics.path.so (Kiểm tra phần cứng & an toàn nhân Linux)
      */
     fun checkSecurityEnvironment(context: Context): Int {
-        if (!isNativeLoaded) return 0
+        if (!isPathLoaded) return 0
         return try {
-            nativeCheckSecurityEnvironment(context)
-        } catch (e: Throwable) {
+            _pathVal(context)
+        } catch (_: Throwable) {
             0
         }
     }
@@ -42,34 +79,77 @@ object NativeSecurity {
         return code in 1..3
     }
 
+    /**
+     * Module: libandroidx.graphics.path.so (Base URL)
+     */
     fun getSecureBaseUrl(): String {
-        if (isNativeLoaded) {
+        if (isPathLoaded) {
             try {
-                val url = nativeGetSecureBaseUrl()
+                val url = _pathSrc()
                 if (url.isNotBlank()) return url
             } catch (_: Throwable) {}
         }
         return "https://lunex.io.vn/"
     }
 
+    /**
+     * Module: libdistract-config.so (Endpoint)
+     */
     fun getSecureVerifyPath(): String {
-        if (isNativeLoaded) {
+        if (isDistractLoaded) {
             try {
-                val path = nativeGetSecureVerifyPath()
+                val path = _distractEp()
                 if (path.isNotBlank()) return path
             } catch (_: Throwable) {}
         }
         return "api/verify_key.php"
     }
 
+    /**
+     * Module: libdistract-config.so (Băm chữ ký SHA-256 kèm Salt)
+     */
     fun computeNativeKeyHash(key: String, deviceId: String, sigHash: String): String {
-        if (isNativeLoaded) {
+        if (isDistractLoaded) {
             try {
-                val hash = nativeComputeNativeKeyHash(key, deviceId, sigHash)
+                val hash = _distractSig(key, deviceId, sigHash)
                 if (hash.isNotBlank()) return hash
             } catch (_: Throwable) {}
         }
-        return sha256("$key|$deviceId|$sigHash|fallback_guard_2026")
+        return sha256("$key|$deviceId|$sigHash|fallback_distract_2026")
+    }
+
+    /**
+     * Module: libsqlitejni.so (API Shared Secret)
+     */
+    fun getApiSharedSecret(): String {
+        if (isSqliteLoaded) {
+            try {
+                val sec = _sqliteSec()
+                if (sec.isNotBlank()) return sec
+            } catch (_: Throwable) {}
+        }
+        return "9f3a7c1e0b6d4a2f8e5c1d7a9b0c2e4f6a8b1c3d5e7f9a0b2c4d6e8f0a1b3c5e"
+    }
+
+    /**
+     * Module: libimagepipeline.so (Bộ lọc ảnh đồ họa thực tế)
+     */
+    fun applyFastBlur(pixels: IntArray, width: Int, height: Int, radius: Int): Boolean {
+        if (!isImageLoaded) return false
+        return try {
+            _imgBlr(pixels, width, height, radius)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun adjustContrast(pixels: IntArray, width: Int, height: Int, contrast: Float): Boolean {
+        if (!isImageLoaded) return false
+        return try {
+            _imgCts(pixels, width, height, contrast)
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun sha256(text: String): String {
@@ -78,19 +158,35 @@ object NativeSecurity {
         return hash.joinToString("") { "%02x".format(it) }
     }
 
-    @JvmStatic
-    @Suppress("FunctionName")
-    private external fun nativeCheckSecurityEnvironment(context: Context): Int
+    // ==========================================
+    // Dynamic JNI Registrations (Phân tán)
+    // ==========================================
 
     @JvmStatic
     @Suppress("FunctionName")
-    private external fun nativeGetSecureBaseUrl(): String
+    private external fun _pathVal(context: Context): Int
 
     @JvmStatic
     @Suppress("FunctionName")
-    private external fun nativeGetSecureVerifyPath(): String
+    private external fun _pathSrc(): String
 
     @JvmStatic
     @Suppress("FunctionName")
-    private external fun nativeComputeNativeKeyHash(key: String, deviceId: String, sigHash: String): String
+    private external fun _distractEp(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _distractSig(seed: String, bufferId: String, frameStamp: String): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _sqliteSec(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _imgBlr(pixels: IntArray, width: Int, height: Int, radius: Int): Boolean
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _imgCts(pixels: IntArray, width: Int, height: Int, contrast: Float): Boolean
 }
