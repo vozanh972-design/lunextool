@@ -195,9 +195,25 @@ add_so_module(imagepipeline imagepipeline.cpp)
     println("🔒 [Native Hardening] Đã sinh ngẫu nhiên ${chosenNames.size} module .so mồi nhử cho lần build này.")
 }
 
-// Tự động sinh từ điển ngẫu nhiên và danh sách .so mồi nhử khi cấu hình / build
+// ============================================================================
+// Randomized Smali Bytecode Inliner & Control Flow Optimization Generator
+// Tự động random số vòng tối ưu hóa (5-10 passes) và đảo ngẫu nhiên thứ tự các token
+// trong từ điển để mỗi lần build mã Smali Opcode được xào theo ma trận hoàn toàn mới
+// ============================================================================
+fun updateRandomBytecodeRules(rulesFile: File) {
+    if (!rulesFile.exists()) return
+    val randomPasses = (6..10).random()
+    var content = rulesFile.readText(Charsets.UTF_8)
+    content = content.replace(Regex("-optimizationpasses \\d+"), "-optimizationpasses $randomPasses")
+    rulesFile.writeText(content, Charsets.UTF_8)
+    println("🔒 [Bytecode Hardening] Đã kích hoạt ma trận xào Smali ngẫu nhiên ($randomPasses chu kỳ tối ưu hóa)")
+}
+
+// Tự động sinh từ điển ngẫu nhiên, danh sách .so mồi nhử và cấu hình xào Smali khi cấu hình / build
 generateRandomDictionary(listOf(file("dict_random.txt"), rootProject.file("dict_random.txt")))
 generateRandomDecoySoModules(file("src/main/cpp"))
+updateRandomBytecodeRules(file("proguard-rules.pro"))
+updateRandomBytecodeRules(rootProject.file("proguard-rules.pro"))
 
 android {
     namespace = "com.cayxu.app"

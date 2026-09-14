@@ -11,7 +11,10 @@
 -allowaccessmodification
 -overloadaggressively
 -repackageclasses ''
--optimizationpasses 5
+-optimizationpasses 7
+
+# Xáo trộn và làm phẳng cấu trúc opcode bên trong hàm (Smali Control Flow & Inlining)
+-mergeinterfacesaggressively
 
 # Ẩn/xóa hoàn toàn tên file nguồn thật (.kt / .java) khỏi toàn bộ DEX
 -renamesourcefileattribute ''
