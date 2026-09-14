@@ -1,10 +1,13 @@
 # ============================================================================
-# ProGuard / R8 Full Arabic Script Obfuscation Dictionaries
-# Tên File, Class, Package VÀ Nội dung Method, Field đều đổi thành ký tự Ả Rập
+# ProGuard / R8 Full Arabic Script Obfuscation Dictionaries (7000+ Unique Tokens)
+# Ép 100% Class, Package, Method, Field dùng toàn bộ từ điển tiếng Ả Rập
 # ============================================================================
 -obfuscationdictionary dict_arabic.txt
 -classobfuscationdictionary dict_arabic.txt
 -packageobfuscationdictionary dict_arabic.txt
+
+-dontusemixedcaseclassnames
+-useuniqueclassmembernames
 
 # Retrofit / OkHttp / Gson
 -keepattributes Signature
