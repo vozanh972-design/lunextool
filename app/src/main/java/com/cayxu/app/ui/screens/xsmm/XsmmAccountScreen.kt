@@ -1798,63 +1798,6 @@ fun XsmmAccountScreen(navController: NavController) {
         }
     }
 
-    if (showFacebookLoginSheet) {
-        FacebookLoginBottomSheet(
-            onDismiss = {
-                showFacebookLoginSheet = false
-                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
-            },
-            onAccountSaved = {
-                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
-            }
-        )
-    }
-
-    if (showInstagramCookieSheet) {
-        InstagramCookieBottomSheet(
-            onDismiss = { showInstagramCookieSheet = false },
-            onCookieSaved = {
-                instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
-                    .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
-            }
-        )
-    }
-
-    selectedFbDetailAccount?.let { acc ->
-        FacebookAccountDetailSheet(
-            account = acc,
-            onDismiss = { selectedFbDetailAccount = null }
-        )
-    }
-
-    if (showDeleteConfirmSheet) {
-        val uidsToDelete = selectedForRunUids.toList()
-        DeleteConfirmBottomSheet(
-            platformName = if (selectedPlatform == "instagram") "Instagram" else "Facebook",
-            accountList = uidsToDelete,
-            onDismiss = { showDeleteConfirmSheet = false },
-            onConfirmDelete = {
-                if (selectedPlatform == "instagram") {
-                    com.cayxu.app.data.local.InstagramAccountsStore.removeAccounts(context, uidsToDelete)
-                    instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
-                } else if (selectedPlatform == "facebook") {
-                    com.cayxu.app.data.local.FacebookAccountsStore.removeAccounts(context, uidsToDelete)
-                    facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
-                }
-                selectedForRunUids = emptySet()
-                showDeleteConfirmSheet = false
-            }
-        )
-    }
-
-    selectedErrorDetailAccount?.let { cleanIg ->
-        val errorDetail = igErrorDetailMap[cleanIg] ?: (igStatusMap[cleanIg] ?: "Không có thông tin lỗi chi tiết")
-        ErrorDetailBottomSheet(
-            accountName = cleanIg,
-            errorMessage = errorDetail,
-            onDismiss = { selectedErrorDetailAccount = null }
-        )
-    }
 }
 
 @Composable
