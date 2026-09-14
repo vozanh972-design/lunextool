@@ -224,7 +224,7 @@ class FacebookAuthenticator {
                     if (cookieJar.isNotEmpty()) {
                         retryReqBuilder.header("Cookie", cookieJar.joinToString("; "))
                     }
-                    val retryReq = retryReqBuilder.post(retryForm.build()).build()
+                    val retryReq = retryReqBuilder.post(retryForm).build()
 
                     val retryRes = client.newCall(retryReq).execute()
                     val retryBody = retryRes.body?.string() ?: ""

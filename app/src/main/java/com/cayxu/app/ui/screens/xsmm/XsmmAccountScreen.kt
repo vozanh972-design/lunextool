@@ -1166,7 +1166,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     val successCount = igSuccessCountMap[cleanIg] ?: 0
                                     val errorCount = igErrorCountMap[cleanIg] ?: 0
                                     val isError = currentStatus.contains("Lỗi", ignoreCase = true) || currentStatus.contains("DIE", ignoreCase = true) || currentStatus.contains("Không tìm thấy", ignoreCase = true)
-                                    val isRunningNow = runningIgAccount == cleanIg
+                                    val isRunningNow = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanIg)
 
                                     Column(
                                         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
