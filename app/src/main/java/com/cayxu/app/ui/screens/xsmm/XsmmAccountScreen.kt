@@ -642,10 +642,17 @@ fun XsmmAccountScreen(navController: NavController) {
                                         )
                                         Spacer(Modifier.width(6.dp))
 
-                                        // Avatar Instagram kèm nút sửa nhỏ ở góc
+                                        // Avatar Instagram có nút camera đổi ảnh nằm gọn BÊN TRONG avatar
                                         val isThisUploading = isUploadingAvatar && targetAvatarChangeUsername == cleanIg
                                         Box(
-                                            modifier = Modifier.size(46.dp),
+                                            modifier = Modifier
+                                                .size(46.dp)
+                                                .clip(CircleShape)
+                                                .border(1.5.dp, Color(0xFFE1306C).copy(alpha = 0.6f), CircleShape)
+                                                .clickable(enabled = !isUploadingAvatar) {
+                                                    targetAvatarChangeUsername = cleanIg
+                                                    pickAvatarLauncher.launch("image/*")
+                                                },
                                             contentAlignment = Alignment.Center
                                         ) {
                                             if (!igAcc?.avatar.isNullOrBlank()) {
@@ -653,16 +660,12 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     model = igAcc?.avatar,
                                                     contentDescription = "Avatar",
                                                     contentScale = ContentScale.Crop,
-                                                    modifier = Modifier
-                                                        .size(42.dp)
-                                                        .clip(CircleShape)
-                                                        .border(1.dp, Color(0xFFE1306C).copy(alpha = 0.4f), CircleShape)
+                                                    modifier = Modifier.fillMaxSize()
                                                 )
                                             } else {
                                                 Box(
                                                     modifier = Modifier
-                                                        .size(42.dp)
-                                                        .clip(CircleShape)
+                                                        .fillMaxSize()
                                                         .background(
                                                             Brush.linearGradient(
                                                                 colors = listOf(
@@ -678,47 +681,41 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         imageVector = Icons.Filled.Person,
                                                         contentDescription = null,
                                                         tint = Color.White,
-                                                        modifier = Modifier.size(22.dp)
+                                                        modifier = Modifier.size(24.dp)
                                                     )
                                                 }
+                                            }
+
+                                            // Lớp phủ và icon camera nằm bên trong đáy avatar
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(16.dp)
+                                                    .align(Alignment.BottomCenter)
+                                                    .background(Color.Black.copy(alpha = 0.45f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.CameraAlt,
+                                                    contentDescription = "Đổi avatar",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(11.dp)
+                                                )
                                             }
 
                                             if (isThisUploading) {
                                                 Box(
                                                     modifier = Modifier
-                                                        .size(42.dp)
-                                                        .clip(CircleShape)
-                                                        .background(Color.Black.copy(alpha = 0.4f)),
+                                                        .fillMaxSize()
+                                                        .background(Color.Black.copy(alpha = 0.6f)),
                                                     contentAlignment = Alignment.Center
                                                 ) {
                                                     CircularProgressIndicator(
                                                         color = Color.White,
                                                         strokeWidth = 2.dp,
-                                                        modifier = Modifier.size(18.dp)
+                                                        modifier = Modifier.size(20.dp)
                                                     )
                                                 }
-                                            }
-
-                                            // Nút sửa nhỏ ở góc avatar để người dùng đổi ảnh đại diện
-                                            Box(
-                                                modifier = Modifier
-                                                    .align(Alignment.BottomEnd)
-                                                    .size(17.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(0xFFE1306C))
-                                                    .border(1.5.dp, Color.White, CircleShape)
-                                                    .clickable(enabled = !isUploadingAvatar) {
-                                                        targetAvatarChangeUsername = cleanIg
-                                                        pickAvatarLauncher.launch("image/*")
-                                                    },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Edit,
-                                                    contentDescription = "Đổi avatar",
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(9.dp)
-                                                )
                                             }
                                         }
 
