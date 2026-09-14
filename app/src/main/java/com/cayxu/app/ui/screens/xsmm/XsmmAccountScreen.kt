@@ -111,7 +111,7 @@ fun XsmmAccountScreen(navController: NavController) {
         )
     }
 
-    LaunchedEffect(selectedPlatform) {
+    LaunchedEffect(selectedPlatform, showFacebookLoginSheet, showInstagramCookieSheet) {
         if (selectedPlatform == "facebook") {
             facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
         } else if (selectedPlatform == "instagram") {
@@ -1800,7 +1800,10 @@ fun XsmmAccountScreen(navController: NavController) {
 
     if (showFacebookLoginSheet) {
         FacebookLoginBottomSheet(
-            onDismiss = { showFacebookLoginSheet = false },
+            onDismiss = {
+                showFacebookLoginSheet = false
+                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+            },
             onAccountSaved = {
                 facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
             }

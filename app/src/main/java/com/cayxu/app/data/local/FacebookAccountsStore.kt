@@ -44,11 +44,16 @@ object FacebookAccountsStore {
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    @Synchronized
     fun getAccounts(context: Context, forceReload: Boolean = false): List<FacebookAccount> {
         if (!forceReload) {
             memoryCache?.let { return it.toList() }
         }
-        val raw = prefs(context).getString(KEY_ACCOUNTS, null) ?: return emptyList()
+        val raw = prefs(context).getString(KEY_ACCOUNTS, null)
+        if (raw.isNullOrBlank()) {
+            memoryCache = mutableListOf()
+            return emptyList()
+        }
         // Kiểm tra định dạng JSON mới
         if (raw.trimStart().startsWith("[")) {
             val list = try {
@@ -62,7 +67,7 @@ object FacebookAccountsStore {
         }
 
         // Fallback định dạng phân tách cũ
-        return raw.split(ENTRY_SEPARATOR)
+        val list = raw.split(ENTRY_SEPARATOR)
             .filter { it.isNotBlank() }
             .mapNotNull { entry ->
                 val parts = entry.split(FIELD_SEPARATOR)
@@ -83,12 +88,16 @@ object FacebookAccountsStore {
                 }
             }
             .filter { it.uid.isNotBlank() }
+        memoryCache = list.toMutableList()
+        return list
     }
 
+    @Synchronized
     fun addAccount(context: Context, account: FacebookAccount) {
         addAccounts(context, listOf(account))
     }
 
+    @Synchronized
     fun addAccount(
         context: Context,
         uid: String,
@@ -117,6 +126,7 @@ object FacebookAccountsStore {
         addAccounts(context, listOf(account))
     }
 
+    @Synchronized
     fun addAccounts(context: Context, entries: List<FacebookAccount>) {
         val trimmedNew = entries
             .map {
@@ -133,22 +143,21 @@ object FacebookAccountsStore {
             .filter { it.uid.isNotEmpty() }
         if (trimmedNew.isEmpty()) return
 
-        val current = getAccounts(context).toMutableList()
-        val existingUids = current.map { it.uid }.toMutableSet()
+        val current = getAccounts(context, forceReload = true).toMutableList()
         trimmedNew.forEach { entry ->
             val existingIdx = current.indexOfFirst { it.uid == entry.uid }
             if (existingIdx >= 0) {
                 current[existingIdx] = entry
             } else {
                 current.add(entry)
-                existingUids.add(entry.uid)
             }
         }
         save(context, current)
     }
 
+    @Synchronized
     fun updateAccount(context: Context, account: FacebookAccount) {
-        val current = getAccounts(context).toMutableList()
+        val current = getAccounts(context, forceReload = true).toMutableList()
         val index = current.indexOfFirst { it.uid == account.uid }
         if (index >= 0) {
             current[index] = account
@@ -158,37 +167,43 @@ object FacebookAccountsStore {
         save(context, current)
     }
 
+    @Synchronized
     fun removeAccount(context: Context, uid: String) {
         removeAccounts(context, listOf(uid))
     }
 
+    @Synchronized
     fun removeAccounts(context: Context, uids: List<String>) {
-        val current = getAccounts(context).toMutableList()
+        val current = getAccounts(context, forceReload = true).toMutableList()
         current.removeAll { it.uid in uids }
         save(context, current)
     }
 
+    @Synchronized
     fun markLive(context: Context, uids: List<String>) {
-        val current = getAccounts(context).map { acc ->
+        val current = getAccounts(context, forceReload = true).map { acc ->
             if (acc.uid in uids) acc.copy(isLive = true) else acc
         }
         save(context, current)
     }
 
+    @Synchronized
     fun markDie(context: Context, uids: List<String>) {
-        val current = getAccounts(context).map { acc ->
+        val current = getAccounts(context, forceReload = true).map { acc ->
             if (acc.uid in uids) acc.copy(isLive = false) else acc
         }
         save(context, current)
     }
 
+    @Synchronized
     fun markLiveWithAvatar(context: Context, uids: List<String>, avatar: String) {
-        val current = getAccounts(context).map { acc ->
+        val current = getAccounts(context, forceReload = true).map { acc ->
             if (acc.uid in uids) acc.copy(isLive = true, avatar = avatar) else acc
         }
         save(context, current)
     }
 
+    @Synchronized
     fun updateLiveStatus(
         context: Context,
         uid: String,
@@ -198,7 +213,7 @@ object FacebookAccountsStore {
         email: String? = null,
         pages: List<FacebookPageItem>? = null
     ) {
-        val current = getAccounts(context).map { acc ->
+        val current = getAccounts(context, forceReload = true).map { acc ->
             if (acc.uid == uid) {
                 acc.copy(
                     isLive = isLive,
@@ -212,6 +227,7 @@ object FacebookAccountsStore {
         save(context, current)
     }
 
+    @Synchronized
     private fun save(context: Context, accounts: List<FacebookAccount>) {
         memoryCache = accounts.toMutableList()
         try {
