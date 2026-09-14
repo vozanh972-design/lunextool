@@ -470,12 +470,76 @@ fun XsmmAccountScreen(navController: NavController) {
             } else if (selectedPlatform == "facebook") {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("Tài khoản Facebook", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                    Text("(${facebookAccounts.size})", color = TextSecondary, fontSize = 13.sp)
+                    
+                    if (selectedForRunUids.isNotEmpty()) {
+                        IconButton(
+                            onClick = { showDeleteConfirmSheet = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(DangerRed.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Xóa tài khoản đã chọn", tint = DangerRed, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        Spacer(Modifier.width(6.dp))
+                    }
+
+                    IconButton(
+                        onClick = { showFacebookLoginSheet = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = "Thêm tài khoản Facebook", tint = Color(0xFF1877F2), modifier = Modifier.size(18.dp))
+                        }
+                    }
                 }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("Tài khoản Instagram", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                    Text("(${instagramAccounts.size})", color = TextSecondary, fontSize = 13.sp)
+                    
+                    if (selectedForRunUids.isNotEmpty()) {
+                        IconButton(
+                            onClick = { showDeleteConfirmSheet = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(DangerRed.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Xóa tài khoản đã chọn", tint = DangerRed, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        Spacer(Modifier.width(6.dp))
+                    }
+
+                    IconButton(
+                        onClick = { showInstagramCookieSheet = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFE1306C).copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = "Thêm tài khoản Instagram", tint = Color(0xFFE1306C), modifier = Modifier.size(18.dp))
+                        }
+                    }
                 }
             }
 
@@ -548,7 +612,10 @@ fun XsmmAccountScreen(navController: NavController) {
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = CardWhite),
                         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { showFacebookLoginSheet = true }
                     ) {
                         Column(
                             Modifier.padding(24.dp),
@@ -556,7 +623,7 @@ fun XsmmAccountScreen(navController: NavController) {
                         ) {
                             Text("Chưa có tài khoản Facebook nào.", color = TextSecondary, fontSize = 13.sp)
                             Spacer(Modifier.height(4.dp))
-                            Text("Bấm dấu + để đăng nhập tài khoản Facebook.", color = TextSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
+                            Text("Bấm vào đây hoặc nút dấu + để đăng nhập tài khoản Facebook.", color = Color(0xFF1877F2), fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 } else {

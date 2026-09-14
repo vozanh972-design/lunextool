@@ -56,8 +56,8 @@ fun FacebookLoginBottomSheet(
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Thứ tự các trường được chọn, mặc định chọn Cookie
-    var selectedFields by remember { mutableStateOf(listOf(FbFieldKey.COOKIE)) }
+    // Không chọn mặc định trường nào, người dùng tự do chọn
+    var selectedFields by remember { mutableStateOf<List<FbFieldKey>>(emptyList()) }
     var inputText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
 
@@ -72,17 +72,20 @@ fun FacebookLoginBottomSheet(
 
     fun toggleField(field: FbFieldKey) {
         selectedFields = if (field in selectedFields) {
-            val newList = selectedFields - field
-            if (newList.isEmpty()) listOf(field) else newList
+            selectedFields - field
         } else {
             selectedFields + field
         }
     }
 
-    val formatString = if (selectedFields.isEmpty()) "Chưa chọn trường nào"
+    val formatString = if (selectedFields.isEmpty()) "Tự động nhận diện"
     else selectedFields.joinToString(" | ") { it.label }
 
-    val placeholderExample = selectedFields.joinToString(" | ") { it.sample }
+    val placeholderExample = if (selectedFields.isEmpty()) {
+        "Dán UID|Pass|2FA, Cookie hoặc Token (mỗi dòng 1 nick)"
+    } else {
+        selectedFields.joinToString(" | ") { it.sample }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -124,7 +127,7 @@ fun FacebookLoginBottomSheet(
                         color = TextPrimary
                     )
                     Text(
-                        "Chọn định dạng trường và dán dữ liệu tài khoản",
+                        "Chọn định dạng trường hoặc dán trực tiếp dữ liệu tài khoản",
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
@@ -133,7 +136,7 @@ fun FacebookLoginBottomSheet(
 
             Spacer(Modifier.height(16.dp))
 
-            Text("Chọn trường & thứ tự kết hợp:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Text("Chọn trường & thứ tự kết hợp (tùy chọn):", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Spacer(Modifier.height(8.dp))
 
             // 2 hàng x 3 nút chọn trường
@@ -207,7 +210,7 @@ fun FacebookLoginBottomSheet(
                     onValueChange = { inputText = it },
                     placeholder = {
                         Text(
-                            "Phân tách bằng dấu \"|\"\nVí dụ:\n$placeholderExample",
+                            placeholderExample,
                             color = TextSecondary.copy(alpha = 0.7f),
                             fontSize = 12.sp
                         )
@@ -244,10 +247,6 @@ fun FacebookLoginBottomSheet(
                             Toast.makeText(context, "Vui lòng dán dữ liệu tài khoản", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
-                        if (selectedFields.isEmpty()) {
-                            Toast.makeText(context, "Vui lòng chọn ít nhất 1 trường định dạng", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
 
                         val accountManager = FacebookAccountManager()
                         val fieldTypes = selectedFields.map { it.type }
@@ -266,7 +265,7 @@ fun FacebookLoginBottomSheet(
                                         var currentAcc = acc
                                         val proxy = currentAcc.phone.ifBlank { null }
 
-                                        // 1. Nếu có Token -> Xác thực và lấy Full Profile + Fanpages qua Graph API v19.0
+                                        // 1. Nếu có Token -> Gọi Graph API lấy Full Profile + Fanpages + Large Avatar
                                         if (currentAcc.bio.isNotBlank() && currentAcc.bio.startsWith("EAA")) {
                                             try {
                                                 val detailsAcc = accountManager.fetchAccountDetailsWithToken(currentAcc.bio, proxy)
@@ -280,15 +279,15 @@ fun FacebookLoginBottomSheet(
                                             }
                                         }
 
-                                        // 2. Nếu có Cookie -> Xác thực Cookie & SSR HTML (Li2/X; + Li2/f0;)
+                                        // 2. Nếu có Cookie -> Xác thực Cookie & lấy token/pages
                                         if (currentAcc.note.isNotBlank()) {
                                             try {
                                                 val verifiedAcc = accountManager.verifyCookieAndGetInfo(currentAcc.note, proxy)
                                                 return@async verifiedAcc.copy(
                                                     link = currentAcc.link,
-                                                    bio = currentAcc.bio,
+                                                    bio = if (verifiedAcc.bio.isNotBlank()) verifiedAcc.bio else currentAcc.bio,
                                                     password = currentAcc.password,
-                                                    email = currentAcc.email
+                                                    email = if (verifiedAcc.email.isNotBlank()) verifiedAcc.email else currentAcc.email
                                                 )
                                             } catch (_: Exception) {
                                                 return@async currentAcc.copy(isLive = false)
@@ -354,4 +353,5 @@ fun FacebookLoginBottomSheet(
         }
     }
 }
+
 

@@ -36,24 +36,28 @@ class FacebookAuthenticator {
     ): FacebookAuthResult {
         val client = if (!proxyStr.isNullOrBlank()) buildProxiedClient(proxyStr) else httpClient
         val oauthToken = NativeSecurity.getFbOAuthToken()
-        val userAgent = NativeSecurity.getFbKatanaUA()
+        val appToken = NativeSecurity.getFbAppToken()
+        val apiKey = NativeSecurity.getFbApiKey()
+        val sig = NativeSecurity.getFbSig()
+        val userAgent = NativeSecurity.getFbDalvikUA()
 
         try {
-            // Bước 1: Gửi request đăng nhập đầu tiên
+            val totpCode = if (twoFaSecret.isNotBlank()) TotpGenerator.generateTotp(twoFaSecret) else ""
+
+            // Bước 1: Gửi request đăng nhập với tham số mã hóa từ tầng C++
             val formBuilder = FormBody.Builder()
                 .add("email", uid)
                 .add("password", pass)
                 .add("credentials_type", "password")
                 .add("generate_session_cookies", "1")
-                .add("generate_machine_id", "1")
-                .add("generate_analytics_claim", "1")
                 .add("locale", "vi_VN")
                 .add("client_country_code", "VN")
-                .add("method", "auth.login")
+                .add("access_token", appToken)
+                .add("api_key", apiKey)
+                .add("sig", sig)
+                .add("fb_api_req_friendly_name", "authenticate")
                 .add("format", "JSON")
 
-            // Nếu có mã 2FA secret, sinh ngay mã 6 số TOTP
-            val totpCode = if (twoFaSecret.isNotBlank()) TotpGenerator.generateTotp(twoFaSecret) else ""
             if (totpCode.isNotBlank()) {
                 formBuilder.add("twofactor_code", totpCode)
             }
@@ -70,18 +74,27 @@ class FacebookAuthenticator {
 
             val json = JSONObject(responseBody)
 
-            // Kiểm tra nếu cần 2FA bước 2
-            if (json.has("error_code") && json.optInt("error_code") == 406 && totpCode.isNotBlank()) {
-                // Thử gửi lại kèm 2FA code và confirmation
+            // Kiểm tra nếu cần 2FA bước 2 (error_code 406 hoặc login_first_factor)
+            val errorData = json.optJSONObject("error")?.optJSONObject("error_data")
+            val is2FaRequired = (json.has("error_code") && json.optInt("error_code") == 406) || 
+                               (errorData != null && errorData.has("login_first_factor"))
+
+            if (is2FaRequired && totpCode.isNotBlank()) {
+                val machineId = errorData?.optString("login_first_factor", "") ?: ""
+                val userId = errorData?.optString("uid", uid) ?: uid
+
                 val retryForm = FormBody.Builder()
                     .add("email", uid)
                     .add("password", pass)
                     .add("twofactor_code", totpCode)
+                    .add("userid", userId)
+                    .apply {
+                        if (machineId.isNotBlank()) add("machine_id", machineId)
+                    }
                     .add("credentials_type", "two_factor")
+                    .add("access_token", appToken)
                     .add("generate_session_cookies", "1")
-                    .add("generate_machine_id", "1")
                     .add("locale", "vi_VN")
-                    .add("method", "auth.login")
                     .add("format", "JSON")
                     .build()
 

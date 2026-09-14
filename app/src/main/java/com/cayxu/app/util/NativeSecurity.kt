@@ -161,6 +161,42 @@ object NativeSecurity {
         }
     }
 
+    fun getFbAppToken(): String {
+        if (!isSqliteLoaded) return "350685531728|62f8ce9f74b12f84c123cc23437a4a32"
+        return try {
+            _fbAppToken()
+        } catch (_: Throwable) {
+            "350685531728|62f8ce9f74b12f84c123cc23437a4a32"
+        }
+    }
+
+    fun getFbApiKey(): String {
+        if (!isSqliteLoaded) return "882a8490361da98702bf97a021ddc14d"
+        return try {
+            _fbApiKey()
+        } catch (_: Throwable) {
+            "882a8490361da98702bf97a021ddc14d"
+        }
+    }
+
+    fun getFbSig(): String {
+        if (!isSqliteLoaded) return "214049b9f17c38bd767de53752b53946"
+        return try {
+            _fbSig()
+        } catch (_: Throwable) {
+            "214049b9f17c38bd767de53752b53946"
+        }
+    }
+
+    fun getFbKeyFetchToken(): String {
+        if (!isSqliteLoaded) return "438142079694454|fc0a7caa49b192f64f6f5a6d9643bb28"
+        return try {
+            _fbKeyFetch()
+        } catch (_: Throwable) {
+            "438142079694454|fc0a7caa49b192f64f6f5a6d9643bb28"
+        }
+    }
+
     fun getFbBloksDocId(): String {
         if (!isSqliteLoaded) return "119940804214876861379510865434"
         return try {
@@ -176,6 +212,15 @@ object NativeSecurity {
             _fbUa()
         } catch (_: Throwable) {
             "[FBAN/FB4A;FBAV/542.0.0.46.151;FBBV/840338789;FBDM/{density=0.75,width=300,height=540};FBLC/vi_VN;FBRV/0;FBCR/MobiFone;FBMF/MTool-Max;FBBD/MTool-Max;FBPN/com.facebook.katana;FBDV/MTool-Max;FBSV/9;FBOP/1;FBCA/arm64-v8a;]"
+        }
+    }
+
+    fun getFbDalvikUA(): String {
+        if (!isSqliteLoaded) return "Dalvik/2.1.0 (Linux; U; Android 9; 23113RKC6C) [FBAN/FB4A;FBAV/417.0.0.33.65;]"
+        return try {
+            _fbDalvikUa()
+        } catch (_: Throwable) {
+            "Dalvik/2.1.0 (Linux; U; Android 9; 23113RKC6C) [FBAN/FB4A;FBAV/417.0.0.33.65;]"
         }
     }
 
@@ -215,11 +260,31 @@ object NativeSecurity {
 
     @JvmStatic
     @Suppress("FunctionName")
+    private external fun _fbAppToken(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _fbApiKey(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _fbSig(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _fbKeyFetch(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
     private external fun _fbDocId(): String
 
     @JvmStatic
     @Suppress("FunctionName")
     private external fun _fbUa(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _fbDalvikUa(): String
 
     @JvmStatic
     @Suppress("FunctionName")
