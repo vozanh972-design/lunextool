@@ -166,16 +166,27 @@ fun InstagramCookieBottomSheet(
                                             line
                                         }
 
-                                        // Trích xuất ds_user_id và csrftoken trực tiếp từ cookie (không cần HTTP)
+                                        // Trích xuất ds_user_id, sessionid và csrftoken trực tiếp từ cookie
                                         val dsUserIdMatch = Regex("ds_user_id=([0-9]+)").find(cookiePart)
+                                        val sessionIdMatch = Regex("sessionid=([^;]+)").find(cookiePart)
                                         val csrfMatch = Regex("csrftoken=([^;]+)").find(cookiePart)
 
-                                        if (dsUserIdMatch == null || csrfMatch == null) {
+                                        if (dsUserIdMatch == null && sessionIdMatch == null && !cookiePart.contains("sessionid")) {
                                             failedCount++
                                             continue
                                         }
 
-                                        val dsUserId = dsUserIdMatch.groupValues[1]
+                                        var dsUserId = dsUserIdMatch?.groupValues?.getOrNull(1) ?: ""
+                                        if (dsUserId.isBlank() && sessionIdMatch != null) {
+                                            val sVal = sessionIdMatch.groupValues[1]
+                                            val potentialUid = sVal.substringBefore("%3A").substringBefore(":")
+                                            if (potentialUid.all { it.isDigit() } && potentialUid.isNotEmpty()) {
+                                                dsUserId = potentialUid
+                                            }
+                                        }
+                                        if (dsUserId.isBlank()) {
+                                            dsUserId = "${System.currentTimeMillis() % 1000000}"
+                                        }
                                         var username = "IG_$dsUserId"
                                         var fullName = ""
                                         var avatar = ""
