@@ -150,8 +150,16 @@ fun XsmmAccountScreen(navController: NavController) {
                     }
                     val client = com.cayxu.app.instagram.InstagramApiClient(cookie = acc.cookie)
                     val newPicUrl = client.changeProfilePicture(bytes)
+                    val freshDetails = try {
+                        client.fetchAccountDetails(acc.username)
+                    } catch (_: Exception) { null }
+                    val finalAvatar = newPicUrl ?: freshDetails?.profilePicUrl ?: acc.avatar
                     val updatedAcc = acc.copy(
-                        avatar = newPicUrl ?: acc.avatar
+                        avatar = finalAvatar,
+                        fullName = freshDetails?.fullName ?: acc.fullName,
+                        followersCount = freshDetails?.followersCount ?: acc.followersCount,
+                        followingCount = freshDetails?.followingCount ?: acc.followingCount,
+                        postsCount = freshDetails?.postsCount ?: acc.postsCount
                     )
                     com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updatedAcc)
                     withContext(Dispatchers.Main) {
@@ -879,7 +887,12 @@ fun XsmmAccountScreen(navController: NavController) {
                             }
                             val avatarModel = remember(igAcc?.avatar, avatarVersion) {
                                 if (igAcc?.avatar.isNullOrBlank()) null
-                                else "${igAcc?.avatar}${if ((igAcc?.avatar ?: "").contains("?")) "&" else "?"}v=$avatarVersion"
+                                else coil.request.ImageRequest.Builder(context)
+                                    .data(igAcc?.avatar)
+                                    .crossfade(true)
+                                    .memoryCacheKey("${igAcc?.avatar}_$avatarVersion")
+                                    .diskCacheKey("${igAcc?.avatar}_$avatarVersion")
+                                    .build()
                             }
                             Card(
                                 shape = RoundedCornerShape(16.dp),

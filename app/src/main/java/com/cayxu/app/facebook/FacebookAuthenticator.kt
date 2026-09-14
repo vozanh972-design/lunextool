@@ -188,7 +188,8 @@ class FacebookAuthenticator {
                 val reqBuilder = Request.Builder()
                     .url("https://b-graph.facebook.com/auth/login")
                     .header("User-Agent", userAgent)
-                    .header("Authorization", oauthToken)
+                    .header("Accept", "*/*")
+                    .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
                 if (cookieJar.isNotEmpty()) {
                     reqBuilder.header("Cookie", cookieJar.joinToString("; "))
                 }
