@@ -260,6 +260,7 @@ class FacebookPageService {
     /**
      * Bóc tách thông điệp lỗi chi tiết từ Facebook
      */
+    private fun extractDetailedFacebookError(body: String): String {
         // 1. Kiểm tra các lỗi phổ biến đặc trưng của Meta
         val lowerBody = body.lowercase()
         if (lowerBody.contains("phone_verification") || lowerBody.contains("confirm_phone") || lowerBody.contains("sms_code") || lowerBody.contains("xác minh số điện thoại") || lowerBody.contains("xác thực sms")) {
