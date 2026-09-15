@@ -57,6 +57,8 @@ object XsmmRunConfigStore {
         "facebook_member" to "Facebook Tham gia nhóm",
         "facebook_likecmt" to "Facebook Like Comment",
         "facebook_review" to "Facebook Đánh giá"
+    )
+
     val instagramTaskTypes = listOf(
         "instagram_random" to "Ngẫu nhiên (Ưu tiên Follow, hết job chuyển Like)",
         "instagram_follow" to "Chỉ Follow (Theo dõi)",
