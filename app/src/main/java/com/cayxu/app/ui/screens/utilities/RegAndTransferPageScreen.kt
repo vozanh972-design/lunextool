@@ -286,14 +286,18 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 try {
                                                     val res = pageService.createFacebookPage(pageName, token)
                                                     withContext(Dispatchers.Main) {
-                                                        accountStatusMap[account.uid] = "Đã tạo ($idx/$count): $pageName"
-                                                        Toast.makeText(context, "Đã tạo Fanpage: $pageName", Toast.LENGTH_SHORT).show()
+                                                        try {
+                                                            accountStatusMap[account.uid] = "Đã tạo ($idx/$count): $pageName"
+                                                            Toast.makeText(context.applicationContext, "Đã tạo Fanpage: $pageName", Toast.LENGTH_SHORT).show()
+                                                        } catch (_: Throwable) {}
                                                     }
                                                 } catch (e: Throwable) {
                                                     val errText = e.message ?: "Thất bại"
                                                     withContext(Dispatchers.Main) {
-                                                        accountStatusMap[account.uid] = "Lỗi ($idx/$count): $errText"
-                                                        Toast.makeText(context, "Tạo thất bại: $errText", Toast.LENGTH_SHORT).show()
+                                                        try {
+                                                            accountStatusMap[account.uid] = "Lỗi ($idx/$count): $errText"
+                                                            Toast.makeText(context.applicationContext, "Tạo thất bại: $errText", Toast.LENGTH_SHORT).show()
+                                                        } catch (_: Throwable) {}
                                                     }
                                                 }
 
