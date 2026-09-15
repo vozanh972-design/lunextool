@@ -260,79 +260,103 @@ fun FacebookLoginBottomSheet(
                         isLoading = true
                         scope.launch {
                             val checkedAccounts = withContext(Dispatchers.IO) {
-                                accountsToProcess.map { acc ->
+                                raw.lines().mapNotNull { rawLine ->
+                                    val line = rawLine.trim()
+                                    if (line.isBlank()) return@mapNotNull null
+                                    
                                     async(Dispatchers.IO) {
-                                        var currentAcc = acc
-                                        val proxy = currentAcc.phone.ifBlank { null }
+                                        val authenticator = FacebookAuthenticator()
 
-                                        // 1. Ưu tiên 1: Nếu có UID + Mật khẩu -> Đăng nhập bằng Native Authenticator (b-graph + 2FA TOTP + C++ native signature)
-                                        if (currentAcc.uid.isNotBlank() && currentAcc.password.isNotBlank() && !currentAcc.uid.startsWith("FB_")) {
+                                        // TH 1: Token EAA... riêng
+                                        if (line.startsWith("EAA")) {
                                             try {
-                                                val datr = if (currentAcc.note.contains("datr=")) {
-                                                    currentAcc.note.substringAfter("datr=").substringBefore(";").trim()
-                                                } else currentAcc.note.ifBlank { null }
-
-                                                val authenticator = FacebookAuthenticator()
-                                                val authResult = authenticator.login(
-                                                    uid = currentAcc.uid,
-                                                    pass = currentAcc.password,
-                                                    twoFaSecret = currentAcc.link,
-                                                    proxyStr = proxy,
-                                                    datrCookie = datr
-                                                )
-                                                if (authResult.isSuccess && authResult.account.isLive) {
-                                                    return@async authResult.account.copy(
-                                                        password = currentAcc.password,
-                                                        link = currentAcc.link.ifBlank { authResult.account.link },
-                                                        isLive = true
-                                                    )
+                                                val details = accountManager.fetchAccountDetailsWithToken(line, null)
+                                                if (details.isLive) {
+                                                    return@async details.copy(bio = line, isLive = true)
                                                 }
                                             } catch (_: Exception) {}
+                                            return@async FacebookAccount(
+                                                uid = "N/A",
+                                                bio = line,
+                                                isLive = false
+                                            )
                                         }
 
-                                        // 2. Ưu tiên 2: Nếu có Cookie đầy đủ (có c_user hoặc xs) -> lấy Token EAAAA trực tiếp bằng getSessionForApp
-                                        if (currentAcc.note.isNotBlank() && (currentAcc.note.contains("c_user=") || currentAcc.note.contains("xs="))) {
-                                            try {
-                                                val directAcc = accountManager.getTokenFromCookie(currentAcc.note, proxy)
-                                                if (directAcc != null && directAcc.isLive) {
-                                                    return@async directAcc.copy(
-                                                        uid = currentAcc.uid.ifBlank { directAcc.uid },
-                                                        link = currentAcc.link.ifBlank { directAcc.link },
-                                                        password = currentAcc.password.ifBlank { directAcc.password },
-                                                        isLive = true
-                                                    )
+                                        // TH 2: Dạng có dấu gạch đứng | (UID|Pass|2FA|Cookie hoặc UID|Pass|2FA) -> 100% chuẩn Python facebook_login
+                                        if (line.contains("|")) {
+                                            val parts = line.split("|").map { it.trim() }
+                                            val uid = parts.getOrNull(0) ?: ""
+                                            val pwd = parts.getOrNull(1) ?: ""
+                                            var twofa = ""
+                                            var datr: String? = null
+                                            var rawCookie = ""
+
+                                            for (part in parts) {
+                                                if (part.contains("datr=")) {
+                                                    val m = "datr=([^;]+)".toRegex().find(part)
+                                                    if (m != null) datr = m.groupValues[1].trim()
                                                 }
-                                            } catch (_: Exception) {}
-                                        }
+                                                if (part.contains("c_user=") || part.contains("xs=")) {
+                                                    rawCookie = part
+                                                }
+                                            }
 
-                                        // 3. Ưu tiên 3: Nếu là Token EAA... thuần
-                                        if (currentAcc.bio.isNotBlank() && currentAcc.bio.startsWith("EAA")) {
-                                            try {
-                                                val detailsAcc = accountManager.fetchAccountDetailsWithToken(currentAcc.bio, proxy)
-                                                return@async detailsAcc.copy(
-                                                    link = currentAcc.link,
-                                                    note = currentAcc.note,
-                                                    password = currentAcc.password,
+                                            if (parts.size >= 3 && !parts[2].contains("datr=") && !parts[2].contains("c_user=") && !parts[2].contains("xs=")) {
+                                                twofa = parts[2]
+                                            }
+
+                                            // Gọi login như Python
+                                            val authResult = authenticator.login(
+                                                uid = uid,
+                                                pass = pwd,
+                                                twoFaSecret = twofa,
+                                                proxyStr = null,
+                                                datrCookie = datr
+                                            )
+
+                                            if (authResult.isSuccess && authResult.account.isLive) {
+                                                return@async authResult.account.copy(
+                                                    password = pwd,
+                                                    link = twofa,
                                                     isLive = true
                                                 )
-                                            } catch (_: Exception) {}
-                                        }
+                                            }
 
-                                        // 4. Fallback cookie qua SSR HTML
-                                        if (currentAcc.note.isNotBlank()) {
-                                            try {
-                                                val verifiedAcc = accountManager.verifyCookieAndGetInfo(currentAcc.note, proxy)
-                                                if (verifiedAcc.isLive) {
-                                                    return@async verifiedAcc.copy(
-                                                        link = currentAcc.link,
-                                                        password = currentAcc.password,
+                                            // Fallback nếu có cookie c_user & xs
+                                            if (rawCookie.isNotBlank()) {
+                                                val cookieAcc = accountManager.getTokenFromCookie(rawCookie, null)
+                                                if (cookieAcc != null && cookieAcc.isLive) {
+                                                    return@async cookieAcc.copy(
+                                                        uid = uid.ifBlank { cookieAcc.uid },
+                                                        password = pwd,
+                                                        link = twofa,
                                                         isLive = true
                                                     )
                                                 }
-                                            } catch (_: Exception) {}
+                                            }
+
+                                            return@async FacebookAccount(
+                                                uid = uid,
+                                                name = uid,
+                                                password = pwd,
+                                                link = twofa,
+                                                note = rawCookie,
+                                                isLive = false
+                                            )
                                         }
 
-                                        currentAcc.copy(isLive = false)
+                                        // TH 3: Cookie thuần (không có |) -> 100% chuẩn Python get_token_from_cookie
+                                        val cookieAcc = accountManager.getTokenFromCookie(line, null)
+                                        if (cookieAcc != null && cookieAcc.isLive) {
+                                            return@async cookieAcc.copy(isLive = true)
+                                        }
+
+                                        return@async FacebookAccount(
+                                            uid = "N/A",
+                                            name = "",
+                                            note = line,
+                                            isLive = false
+                                        )
                                     }
                                 }.awaitAll()
                             }

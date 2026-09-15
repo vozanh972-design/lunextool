@@ -41,7 +41,8 @@ object FacebookPasswordEncryptor {
     fun encryptPassword(password: String): String? {
         return try {
             val keyFetchToken = NativeSecurity.getFbKeyFetchToken()
-            val url = "https://b-graph.facebook.com/pwd_key_fetch?version=2&flow=CONTROLLER_INITIALIZATION&method=GET&fb_api_req_friendly_name=pwdKeyFetch&fb_api_caller_class=com.facebook.auth.login.AuthOperations&access_token=$keyFetchToken"
+            val encodedToken = java.net.URLEncoder.encode(keyFetchToken, "UTF-8")
+            val url = "https://b-graph.facebook.com/pwd_key_fetch?version=2&flow=CONTROLLER_INITIALIZATION&method=GET&fb_api_req_friendly_name=pwdKeyFetch&fb_api_caller_class=com.facebook.auth.login.AuthOperations&access_token=$encodedToken"
             val request = Request.Builder()
                 .url(url)
                 .get()

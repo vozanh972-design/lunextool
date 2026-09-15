@@ -230,80 +230,194 @@ fun FacebookAddAccountScreen(navController: NavController) {
             Button(
                 onClick = {
                     if (isLoading) return@Button
-                    if (tabIndex == 0) {
-                        // THÊM 1 TÀI KHOẢN
-                        val uid = if (singleUid.isNotBlank()) singleUid else extractUidFromCookie(singleCookie) ?: "unknown"
-                        val account = FacebookAccount(
-                            uid = uid,
-                            name = singlePassword,
-                            link = singleTwoFa,
-                            note = singleCookie,   // LƯU COOKIE VÀO NOTE
-                            phone = singleProxy,
-                            bio = singleToken,
-                            isLive = false
-                        )
-                        // Lưu ngay
-                        FacebookAccountsStore.addAccount(context, account)
+                    val accountManager = com.cayxu.app.facebook.FacebookAccountManager()
+                    val authenticator = com.cayxu.app.facebook.FacebookAuthenticator()
 
-                        // Nếu có cookie, kiểm tra Live để cập nhật tên/avatar
-                        if (singleCookie.isNotBlank()) {
-                            isLoading = true
-                            FacebookLiveChecker.checkCookieWithAvatarAndName(
-                                cookieString = singleCookie,
-                                onResult = { uid, isLive, avatarUrl, fullName ->
-                                    val updated = account.copy(
-                                        uid = uid ?: account.uid,
-                                        name = fullName ?: account.name,
-                                        avatar = avatarUrl ?: account.avatar,
-                                        isLive = isLive
-                                    )
-                                    FacebookAccountsStore.updateAccount(context, updated)
-                                    isLoading = false
-                                    Toast.makeText(context, "Đã thêm tài khoản", Toast.LENGTH_SHORT).show()
-                                    navController.popBackStack()
+                    if (tabIndex == 0) {
+                        // NHẬP ĐƠN
+                        if (singleUid.isBlank() && singleCookie.isBlank() && singleToken.isBlank()) {
+                            Toast.makeText(context, "Vui lòng nhập thông tin tài khoản", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+
+                        isLoading = true
+                        scope.launch {
+                            val finalAccount = withContext(Dispatchers.IO) {
+                                // 1. Token riêng
+                                if (singleToken.isNotBlank()) {
+                                    try {
+                                        val details = accountManager.fetchAccountDetailsWithToken(singleToken, singleProxy.ifBlank { null })
+                                        if (details.isLive) {
+                                            return@withContext details.copy(
+                                                uid = singleUid.ifBlank { details.uid },
+                                                name = details.name.ifBlank { singleUid },
+                                                password = singlePassword,
+                                                link = singleTwoFa,
+                                                note = singleCookie,
+                                                phone = singleProxy,
+                                                bio = singleToken,
+                                                isLive = true
+                                            )
+                                        }
+                                    } catch (_: Exception) {}
                                 }
-                            )
-                        } else {
-                            Toast.makeText(context, "Đã thêm tài khoản", Toast.LENGTH_SHORT).show()
-                            navController.popBackStack()
+
+                                // 2. UID + Password (chuẩn Python facebook_login)
+                                if (singleUid.isNotBlank() && singlePassword.isNotBlank()) {
+                                    val datr = if (singleCookie.contains("datr=")) singleCookie.substringAfter("datr=").substringBefore(";").trim() else null
+                                    val res = authenticator.login(
+                                        uid = singleUid,
+                                        pass = singlePassword,
+                                        twoFaSecret = singleTwoFa,
+                                        proxyStr = singleProxy.ifBlank { null },
+                                        datrCookie = datr
+                                    )
+                                    if (res.isSuccess && res.account.isLive) {
+                                        return@withContext res.account.copy(
+                                            password = singlePassword,
+                                            link = singleTwoFa,
+                                            phone = singleProxy,
+                                            isLive = true
+                                        )
+                                    }
+                                }
+
+                                // 3. Cookie thuần (chuẩn Python get_token_from_cookie)
+                                if (singleCookie.isNotBlank()) {
+                                    val cookieAcc = accountManager.getTokenFromCookie(singleCookie, singleProxy.ifBlank { null })
+                                    if (cookieAcc != null && cookieAcc.isLive) {
+                                        return@withContext cookieAcc.copy(
+                                            uid = singleUid.ifBlank { cookieAcc.uid },
+                                            password = singlePassword,
+                                            link = singleTwoFa,
+                                            phone = singleProxy,
+                                            isLive = true
+                                        )
+                                    }
+                                }
+
+                                FacebookAccount(
+                                    uid = singleUid.ifBlank { "N/A" },
+                                    name = singleUid,
+                                    password = singlePassword,
+                                    link = singleTwoFa,
+                                    note = singleCookie,
+                                    phone = singleProxy,
+                                    bio = singleToken,
+                                    isLive = false
+                                )
+                            }
+
+                            FacebookAccountsStore.addAccount(context, finalAccount)
+                            withContext(Dispatchers.Main) {
+                                isLoading = false
+                                if (finalAccount.isLive) {
+                                    Toast.makeText(context, "Đã thêm tài khoản thành công", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Thêm tài khoản (Trạng thái: DIE/Chưa xác thực)", Toast.LENGTH_SHORT).show()
+                                }
+                                navController.popBackStack()
+                            }
                         }
                     } else {
-                        // THÊM HÀNG LOẠT
-                        val entries = parseMultiUidInput(multiUid, multiSelectedFields)
-                        if (entries.isEmpty()) {
+                        // THÊM HÀNG LOẠT (Chuẩn 100% Python)
+                        val lines = multiUid.lines().map { it.trim() }.filter { it.isNotEmpty() }
+                        if (lines.isEmpty()) {
                             Toast.makeText(context, "Không có dữ liệu hợp lệ", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
 
                         isLoading = true
                         scope.launch {
-                            val checkedAccounts = entries.map { account ->
-                                async {
-                                    val cookie = account.note
-                                    if (cookie.isNotBlank()) {
-                                        suspendCancellableCoroutine { continuation ->
-                                            FacebookLiveChecker.checkCookieWithAvatarAndName(
-                                                cookieString = cookie,
-                                                onResult = { uid, isLive, avatarUrl, fullName ->
-                                                    val updated = account.copy(
-                                                        isLive = isLive,
-                                                        avatar = avatarUrl ?: account.avatar,
-                                                        name = fullName ?: account.name
-                                                    )
-                                                    continuation.resume(updated)
+                            val finalAccounts = withContext(Dispatchers.IO) {
+                                lines.map { line ->
+                                    async {
+                                        // 1. Token riêng
+                                        if (line.startsWith("EAA")) {
+                                            try {
+                                                val details = accountManager.fetchAccountDetailsWithToken(line, null)
+                                                if (details.isLive) return@async details.copy(bio = line, isLive = true)
+                                            } catch (_: Exception) {}
+                                            return@async FacebookAccount(uid = "N/A", bio = line, isLive = false)
+                                        }
+
+                                        // 2. Dạng có dấu |
+                                        if (line.contains("|")) {
+                                            val parts = line.split("|").map { it.trim() }
+                                            val uid = parts.getOrNull(0) ?: ""
+                                            val pwd = parts.getOrNull(1) ?: ""
+                                            var twofa = ""
+                                            var datr: String? = null
+                                            var rawCookie = ""
+
+                                            for (part in parts) {
+                                                if (part.contains("datr=")) {
+                                                    val m = "datr=([^;]+)".toRegex().find(part)
+                                                    if (m != null) datr = m.groupValues[1].trim()
                                                 }
+                                                if (part.contains("c_user=") || part.contains("xs=")) {
+                                                    rawCookie = part
+                                                }
+                                            }
+
+                                            if (parts.size >= 3 && !parts[2].contains("datr=") && !parts[2].contains("c_user=") && !parts[2].contains("xs=")) {
+                                                twofa = parts[2]
+                                            }
+
+                                            val authRes = authenticator.login(
+                                                uid = uid,
+                                                pass = pwd,
+                                                twoFaSecret = twofa,
+                                                proxyStr = null,
+                                                datrCookie = datr
+                                            )
+
+                                            if (authRes.isSuccess && authRes.account.isLive) {
+                                                return@async authRes.account.copy(
+                                                    password = pwd,
+                                                    link = twofa,
+                                                    isLive = true
+                                                )
+                                            }
+
+                                            if (rawCookie.isNotBlank()) {
+                                                val cookieAcc = accountManager.getTokenFromCookie(rawCookie, null)
+                                                if (cookieAcc != null && cookieAcc.isLive) {
+                                                    return@async cookieAcc.copy(
+                                                        uid = uid.ifBlank { cookieAcc.uid },
+                                                        password = pwd,
+                                                        link = twofa,
+                                                        isLive = true
+                                                    )
+                                                }
+                                            }
+
+                                            return@async FacebookAccount(
+                                                uid = uid,
+                                                name = uid,
+                                                password = pwd,
+                                                link = twofa,
+                                                note = rawCookie,
+                                                isLive = false
                                             )
                                         }
-                                    } else {
-                                        account
+
+                                        // 3. Cookie thuần
+                                        val cookieAcc = accountManager.getTokenFromCookie(line, null)
+                                        if (cookieAcc != null && cookieAcc.isLive) {
+                                            return@async cookieAcc.copy(isLive = true)
+                                        }
+
+                                        FacebookAccount(uid = "N/A", note = line, isLive = false)
                                     }
-                                }
+                                }.awaitAll()
                             }
-                            val finalAccounts = checkedAccounts.awaitAll()
+
                             FacebookAccountsStore.addAccounts(context, finalAccounts)
                             withContext(Dispatchers.Main) {
                                 isLoading = false
-                                Toast.makeText(context, "Đã thêm ${finalAccounts.size} tài khoản", Toast.LENGTH_SHORT).show()
+                                val liveCount = finalAccounts.count { it.isLive }
+                                Toast.makeText(context, "Đã thêm ${finalAccounts.size} tài khoản ($liveCount Live)", Toast.LENGTH_SHORT).show()
                                 navController.popBackStack()
                             }
                         }
