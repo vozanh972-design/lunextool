@@ -150,14 +150,41 @@ class FacebookPageService {
                 return@use JSONObject().put("status", 200).put("msg", "success").put("page_name", pageName)
             }
 
-            // Trích xuất lỗi chi tiết, chính xác từ phản hồi của Facebook
-            val detailedError = extractDetailedFacebookError(body)
+            // 1. Trích xuất trực tiếp qua cây Bloks Action như chuẩn Python
+            var bloksError: String? = null
+            try {
+                val resultJson = JSONObject(body)
+                val dataObj = resultJson.optJSONObject("data")
+                val fbBloks = dataObj?.optJSONObject("fb_bloks_action")
+                val rootAct = fbBloks?.optJSONObject("root_action")
+                val actionObj = rootAct?.optJSONObject("action")
+                val bundleObj = actionObj?.optJSONObject("action_bundle")
+                val bloksStr = bundleObj?.optString("bloks_bundle_action", "")
+                if (!bloksStr.isNullOrBlank()) {
+                    val bloksJson = JSONObject(bloksStr)
+                    val layout = bloksJson.optJSONObject("layout")
+                    val payload = layout?.optJSONObject("bloks_payload")
+                    val actionStr = payload?.optString("action", "") ?: ""
+                    
+                    val toastRegex = Regex("""Toast,\s*["']([^"']+)["']""")
+                    val m = toastRegex.find(actionStr)
+                    if (m != null && m.groupValues[1].isNotBlank()) {
+                        bloksError = m.groupValues[1]
+                    } else if (actionStr.contains("create_error") || actionStr.contains("profile_creation_error")) {
+                        bloksError = "Facebook lỗi tạo page (create_error)"
+                    } else if (actionStr.isNotBlank()) {
+                        bloksError = actionStr.take(150)
+                    }
+                }
+            } catch (_: Throwable) {}
+
+            val detailedError = bloksError ?: extractDetailedFacebookError(body)
             throw Exception(detailedError)
         }
     }
 
     /**
-     * Bóc tách thông điệp lỗi chính xác từ Facebook (Toast, Dialog, errors, hoặc lý do cụ thể)
+     * Bóc tách thông điệp lỗi chính xác từ Facebook
      */
     private fun extractDetailedFacebookError(body: String): String {
         // 1. Tìm thông báo Toast trong Bloks Action: Toast, "..."
@@ -167,17 +194,7 @@ class FacebookPageService {
             return toastMatch.groupValues[1]
         }
 
-        // 2. Tìm thông báo Dialog / Alert trong Bloks
-        val alertRegex = Regex("""(?:Alert|Dialog|ShowDialog|text|title),\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
-        val alertMatch = alertRegex.find(body)
-        if (alertMatch != null && alertMatch.groupValues[1].isNotBlank()) {
-            val txt = alertMatch.groupValues[1]
-            if (txt.length > 3 && !txt.startsWith("http") && !txt.contains("bloks", ignoreCase = true)) {
-                return txt
-            }
-        }
-
-        // 3. Phân tích cấu trúc JSON errors / error
+        // 2. Phân tích cấu trúc JSON errors / error
         try {
             val json = JSONObject(body)
             if (json.has("errors")) {
@@ -209,7 +226,7 @@ class FacebookPageService {
             }
         } catch (_: Throwable) {}
 
-        // 4. Tìm các thuộc tính lỗi trong chuỗi JSON
+        // 3. Tìm các thuộc tính lỗi trong chuỗi JSON
         val messageRegexes = listOf(
             Regex("""["']error_user_msg["']\s*:\s*["']([^"']+)["']"""),
             Regex("""["']error_description["']\s*:\s*["']([^"']+)["']"""),
@@ -227,21 +244,9 @@ class FacebookPageService {
             }
         }
 
-        // 5. Kiểm tra các mã lỗi / từ khóa nghiệp vụ cụ thể
-        if (body.contains("sms", ignoreCase = true) || body.contains("phone", ignoreCase = true) || body.contains("số điện thoại", ignoreCase = true)) {
-            return "Cần xác thực số điện thoại / SMS trên Facebook"
-        }
-        if (body.contains("checkpoint", ignoreCase = true) || body.contains("challenge", ignoreCase = true)) {
-            return "Tài khoản bị Checkpoint / Xác minh danh tính"
-        }
-        if (body.contains("password", ignoreCase = true) || body.contains("mật khẩu", ignoreCase = true)) {
-            return "Cần xác thực lại mật khẩu"
-        }
-        if (body.contains("limit", ignoreCase = true) || body.contains("quá nhiều", ignoreCase = true)) {
-            return "Đã đạt giới hạn tạo Page trong ngày"
-        }
-
-        return "Facebook từ chối tạo Page (Vui lòng kiểm tra lại tài khoản)"
+        // 4. Nếu không khớp mẫu, trả về chuỗi phản hồi trực tiếp từ Facebook
+        val clean = body.replace("\n", " ").replace("\r", " ").replace("\\", "").trim()
+        return if (clean.length > 120) clean.take(120) + "..." else clean.ifBlank { "Lỗi không xác định từ Facebook" }
     }
 
     /**
