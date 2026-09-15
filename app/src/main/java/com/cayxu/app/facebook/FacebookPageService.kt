@@ -329,39 +329,13 @@ class FacebookPageService {
     }
 
     /**
-     * Tìm Page vừa tạo theo tên để lấy ID và Page Token
+     * Tìm Page vừa tạo theo tên để lấy UID và Page Token (Chuẩn Lz2/m)
      */
     fun findPageByName(token: String, pageName: String, maxRetries: Int = 5, delayMs: Long = 2000L): FacebookPageItem? {
-        val cleanToken = token.removePrefix("OAuth ").removePrefix("Bearer ").trim()
-        val url = "$GRAPH_BASE_URL/v19.0/me/accounts?access_token=$cleanToken&fields=id,name,access_token,additional_profile_id&limit=100"
         for (attempt in 0 until maxRetries) {
-            try {
-                val req = Request.Builder().url(url).get().build()
-                httpClient.newCall(req).execute().use { res ->
-                    val body = res.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    if (json.has("data")) {
-                        val arr = json.getJSONArray("data")
-                        for (i in 0 until arr.length()) {
-                            val p = arr.getJSONObject(i)
-                            val name = p.optString("name", "")
-                            if (name.equals(pageName, ignoreCase = true)) {
-                                val id = p.optString("id", "")
-                                val pageToken = p.optString("access_token", "")
-                                val additionalProfileId = p.optString("additional_profile_id", "")
-                                return FacebookPageItem(
-                                    pageId = id,
-                                    pageName = name,
-                                    pageToken = pageToken,
-                                    additionalProfileId = additionalProfileId,
-                                    avatar = "$GRAPH_BASE_URL/$id/picture?type=large",
-                                    isLive = true
-                                )
-                            }
-                        }
-                    }
-                }
-            } catch (_: Throwable) {}
+            val pages = getPages(token)
+            val found = pages.firstOrNull { it.pageName.equals(pageName, ignoreCase = true) }
+            if (found != null) return found
             if (attempt < maxRetries - 1) {
                 try { Thread.sleep(delayMs) } catch (_: Throwable) {}
             }
@@ -397,17 +371,18 @@ class FacebookPageService {
     }
 
     /**
-     * 3. Lấy danh sách Pages của tài khoản (Hỗ trợ Profile Plus additional_profile_id chuẩn Lz2/m)
+     * 3. Lấy danh sách Pages của tài khoản (Thống nhất 1 chuẩn duy nhất Lz2/m)
+     * Endpoint: GET /v24.0/me?fields=facebook_pages{access_token,additional_profile_id,id,name}
      */
     fun getPages(userToken: String): List<FacebookPageItem> {
         val list = mutableListOf<FacebookPageItem>()
         val cleanToken = userToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
         
-        // 1. Thử lấy qua /me?fields=facebook_pages{access_token,additional_profile_id,id,name}
+        // Cơ chế chuẩn Lz2/m
         try {
-            val url1 = "$GRAPH_BASE_URL/v24.0/me?fields=facebook_pages{access_token,additional_profile_id,id,name}&access_token=$cleanToken"
-            val request1 = Request.Builder().url(url1).get().build()
-            httpClient.newCall(request1).execute().use { res ->
+            val url = "$GRAPH_BASE_URL/v24.0/me?fields=facebook_pages{access_token,additional_profile_id,id,name}&access_token=$cleanToken"
+            val request = Request.Builder().url(url).get().build()
+            httpClient.newCall(request).execute().use { res ->
                 val body = res.body?.string() ?: ""
                 val json = JSONObject(body)
                 val pagesObj = json.optJSONObject("facebook_pages")
@@ -438,11 +413,11 @@ class FacebookPageService {
 
         if (list.isNotEmpty()) return list
 
-        // 2. Fallback qua /me/accounts?fields=id,name,access_token,additional_profile_id
+        // Fallback chuẩn khi token app katana không hỗ trợ v24.0 facebook_pages
         try {
-            val url2 = "$GRAPH_BASE_URL/v19.0/me/accounts?access_token=$cleanToken&fields=id,name,access_token,additional_profile_id&limit=100"
-            val request2 = Request.Builder().url(url2).get().build()
-            httpClient.newCall(request2).execute().use { res ->
+            val fallbackUrl = "$GRAPH_BASE_URL/v19.0/me/accounts?fields=id,name,access_token,additional_profile_id&limit=100&access_token=$cleanToken"
+            val request = Request.Builder().url(fallbackUrl).get().build()
+            httpClient.newCall(request).execute().use { res ->
                 val body = res.body?.string() ?: ""
                 val json = JSONObject(body)
                 if (json.has("data")) {
