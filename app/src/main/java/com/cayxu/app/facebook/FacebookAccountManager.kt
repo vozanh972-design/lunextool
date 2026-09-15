@@ -196,10 +196,14 @@ class FacebookAccountManager {
                         cookie = trimmed
                     }
                 } else {
-                    // Có dấu | -> tách theo định dạng uid|pass|2fa|cookie hoặc uid|pass|cookie
+                    // Có dấu | -> tách theo định dạng uid|pass|2fa|cookie hoặc uid|pass|2fa|datr=... hoặc uid|pass|cookie
                     val parts = trimmed.split("|").map { it.trim() }
                     if (parts.isNotEmpty()) username = parts[0]
                     if (parts.size >= 2) password = parts[1]
+
+                    // Tìm phần chứa datr= hoặc c_user= / xs= trong các parts
+                    val datrPart = parts.find { it.contains("datr=") }
+                    val fullCookiePart = parts.find { it.contains("c_user=") || it.contains("xs=") }
 
                     if (parts.size == 3) {
                         val p2 = parts[2]
@@ -218,6 +222,12 @@ class FacebookAccountManager {
                             twoFactor = p2
                             cookie = parts.subList(3, parts.size).joinToString("|")
                         }
+                    }
+
+                    if (cookie.isBlank() && datrPart != null) {
+                        cookie = datrPart
+                    } else if (cookie.isBlank() && fullCookiePart != null) {
+                        cookie = fullCookiePart
                     }
                 }
             } else {

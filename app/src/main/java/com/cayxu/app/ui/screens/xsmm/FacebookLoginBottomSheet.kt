@@ -265,7 +265,7 @@ fun FacebookLoginBottomSheet(
                                         var currentAcc = acc
                                         val proxy = currentAcc.phone.ifBlank { null }
 
-                                        // 1. Ưu tiên 1: Nếu có Cookie hợp lệ (có c_user & xs) -> lấy Token EAAAA trực tiếp bằng getSessionForApp
+                                        // 1. Ưu tiên 1: Nếu có Cookie đầy đủ (có c_user & xs) -> lấy Token EAAAA trực tiếp bằng getSessionForApp
                                         if (currentAcc.note.isNotBlank() && (currentAcc.note.contains("c_user=") || currentAcc.note.contains("xs="))) {
                                             try {
                                                 val directAcc = accountManager.getTokenFromCookie(currentAcc.note, proxy)
@@ -278,8 +278,8 @@ fun FacebookLoginBottomSheet(
                                             } catch (_: Exception) {}
                                         }
 
-                                        // 2. Ưu tiên 2: Nếu có UID + Mật khẩu -> Đăng nhập bằng Native Authenticator (b-graph + 2FA TOTP + C++ signature)
-                                        if (currentAcc.uid.isNotBlank() && currentAcc.password.isNotBlank()) {
+                                        // 2. Ưu tiên 2: Nếu có UID + Mật khẩu -> Đăng nhập bằng Native Authenticator (b-graph + 2FA TOTP + C++ native signature)
+                                        if (currentAcc.uid.isNotBlank() && currentAcc.password.isNotBlank() && !currentAcc.uid.startsWith("FB_")) {
                                             try {
                                                 val datr = if (currentAcc.note.contains("datr=")) {
                                                     currentAcc.note.substringAfter("datr=").substringBefore(";").trim()
@@ -293,7 +293,7 @@ fun FacebookLoginBottomSheet(
                                                     proxyStr = proxy,
                                                     datrCookie = datr
                                                 )
-                                                if (authResult.isSuccess) {
+                                                if (authResult.isSuccess && authResult.account.isLive) {
                                                     return@async authResult.account
                                                 }
                                             } catch (_: Exception) {}
