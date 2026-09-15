@@ -81,8 +81,8 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
     // Trạng thái đang chạy
     var isRunning by remember { mutableStateOf(false) }
-    var countdownRemaining by remember { mutableStateOf(0) }
-    var runningStatusText by remember { mutableStateOf("") }
+    var runningAccountUid by remember { mutableStateOf<String?>(null) }
+    val accountStatusMap = remember { mutableStateMapOf<String, String>() }
 
     val pageService = remember { FacebookPageService() }
 
@@ -202,162 +202,154 @@ fun RegAndTransferPageScreen(navController: NavController) {
                     .fillMaxWidth()
                     .border(1.dp, CardBorderColor, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             ) {
-                Column(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (isRunning && countdownRemaining > 0) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
+                    // Nút Cấu hình (chỉ hiện khi ở tab Reg Page)
+                    if (activeTab == 0) {
+                        OutlinedButton(
+                            onClick = { showConfigSheet = true },
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Cobalt600),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Cobalt600),
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 8.dp)
+                                .weight(1f)
+                                .height(48.dp)
                         ) {
-                            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(14.dp), color = Cobalt600)
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "Chờ tạo tiếp theo: ${countdownRemaining}s (${runningStatusText})",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Cobalt600
-                            )
+                            Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Cấu hình", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Nút Cấu hình (chỉ hiện khi ở tab Reg Page)
-                        if (activeTab == 0) {
-                            OutlinedButton(
-                                onClick = { showConfigSheet = true },
-                                shape = RoundedCornerShape(12.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Cobalt600),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Cobalt600),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
-                            ) {
-                                Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Cấu hình", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    // Nút Bắt đầu / Chạy
+                    Button(
+                        onClick = {
+                            val targetAccounts = facebookAccounts.filter { it.uid in selectedForRunUids }
+                            if (targetAccounts.isEmpty()) {
+                                Toast.makeText(context, "Vui lòng tick chọn ít nhất 1 tài khoản Facebook!", Toast.LENGTH_SHORT).show()
+                                return@Button
                             }
-                        }
 
-                        // Nút Bắt đầu / Chạy
-                        Button(
-                            onClick = {
-                                val targetAccounts = facebookAccounts.filter { it.uid in selectedForRunUids }
-                                if (targetAccounts.isEmpty()) {
-                                    Toast.makeText(context, "Vui lòng tick chọn ít nhất 1 tài khoản Facebook!", Toast.LENGTH_SHORT).show()
+                            if (activeTab == 0) {
+                                // Chạy Reg Page
+                                val count = regCountInput.toIntOrNull() ?: 15
+                                val delaySec = delaySecondsInput.toIntOrNull() ?: 2000
+
+                                isRunning = true
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        for (account in targetAccounts) {
+                                            runningAccountUid = account.uid
+                                            var token = account.bio.ifBlank { null }
+                                            
+                                            withContext(Dispatchers.Main) {
+                                                accountStatusMap[account.uid] = "Đang kiểm tra Token..."
+                                            }
+
+                                            // Tự động khôi phục Token từ Cookie nếu Token rỗng
+                                            if (token.isNullOrBlank() && account.note.contains("c_user=")) {
+                                                try {
+                                                    val mgr = FacebookAccountManager()
+                                                    val directAcc = mgr.getTokenFromCookie(account.note, account.phone.ifBlank { null })
+                                                    if (directAcc != null && directAcc.bio.isNotBlank()) {
+                                                        token = directAcc.bio
+                                                        val updated = account.copy(bio = directAcc.bio, isLive = true)
+                                                        FacebookAccountsStore.addAccount(context, updated)
+                                                    }
+                                                } catch (_: Exception) {}
+                                            }
+
+                                            if (token.isNullOrBlank()) {
+                                                withContext(Dispatchers.Main) {
+                                                    accountStatusMap[account.uid] = "Lỗi: Thiếu Token EAAA"
+                                                    Toast.makeText(context, "Tài khoản ${account.name} thiếu Token EAAA!", Toast.LENGTH_SHORT).show()
+                                                }
+                                                continue
+                                            }
+
+                                            for (idx in 1..count) {
+                                                val pageName = pageService.generateRandomName(nameTypeOption)
+                                                withContext(Dispatchers.Main) {
+                                                    accountStatusMap[account.uid] = "Đang tạo ($idx/$count): $pageName"
+                                                }
+
+                                                try {
+                                                    val res = pageService.createFacebookPage(pageName, token)
+                                                    withContext(Dispatchers.Main) {
+                                                        accountStatusMap[account.uid] = "Đã tạo thành công: $pageName"
+                                                        Toast.makeText(context, "Đã tạo Fanpage: $pageName", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                } catch (e: Exception) {
+                                                    withContext(Dispatchers.Main) {
+                                                        accountStatusMap[account.uid] = "Lỗi ($idx/$count): ${e.message}"
+                                                        Toast.makeText(context, "Tạo thất bại ($idx/$count): ${e.message}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+
+                                                // Đếm ngược thời gian nếu còn lần tạo tiếp
+                                                if (idx < count) {
+                                                    for (s in delaySec downTo 1) {
+                                                        withContext(Dispatchers.Main) {
+                                                            accountStatusMap[account.uid] = "Chờ tạo tiếp ($idx/$count): ${s}s"
+                                                        }
+                                                        delay(1000L)
+                                                    }
+                                                }
+                                            }
+
+                                            withContext(Dispatchers.Main) {
+                                                accountStatusMap[account.uid] = "Hoàn tất $count/$count Page"
+                                            }
+                                        }
+
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(context, "Hoàn tất quá trình Reg Page!", Toast.LENGTH_LONG).show()
+                                            facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                        }
+                                    } catch (e: Throwable) {
+                                        withContext(Dispatchers.Main) {
+                                            runningAccountUid?.let { uid ->
+                                                accountStatusMap[uid] = "Lỗi: ${e.localizedMessage}"
+                                            }
+                                            Toast.makeText(context, "Lỗi thực thi: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } finally {
+                                        withContext(Dispatchers.Main) {
+                                            isRunning = false
+                                            runningAccountUid = null
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Chuyển Page
+                                if (transferReceiverUid.trim().isBlank()) {
+                                    Toast.makeText(context, "Vui lòng nhập UID người nhận quyền admin!", Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
 
-                                if (activeTab == 0) {
-                                    // Chạy Reg Page
-                                    val count = regCountInput.toIntOrNull() ?: 15
-                                    val delaySec = delaySecondsInput.toIntOrNull() ?: 2000
-
-                                    isRunning = true
-                                    scope.launch(Dispatchers.IO) {
-                                        try {
-                                            for (account in targetAccounts) {
-                                                var token = account.bio.ifBlank { null }
-                                                
-                                                // Tự động khôi phục Token từ Cookie nếu Token rỗng
-                                                if (token.isNullOrBlank() && account.note.contains("c_user=")) {
-                                                    try {
-                                                        val mgr = FacebookAccountManager()
-                                                        val directAcc = mgr.getTokenFromCookie(account.note, account.phone.ifBlank { null })
-                                                        if (directAcc != null && directAcc.bio.isNotBlank()) {
-                                                            token = directAcc.bio
-                                                            val updated = account.copy(bio = directAcc.bio, isLive = true)
-                                                            FacebookAccountsStore.addAccount(context, updated)
-                                                        }
-                                                    } catch (_: Exception) {}
-                                                }
-
-                                                if (token.isNullOrBlank()) {
-                                                    withContext(Dispatchers.Main) {
-                                                        Toast.makeText(context, "Tài khoản ${account.name} thiếu Token EAAA! Hãy bấm Làm mới tài khoản trước.", Toast.LENGTH_SHORT).show()
-                                                    }
-                                                    continue
-                                                }
-
-                                                for (idx in 1..count) {
-                                                    val pageName = pageService.generateRandomName(nameTypeOption)
-                                                    withContext(Dispatchers.Main) {
-                                                        runningStatusText = "${account.name} ($idx/$count): $pageName"
-                                                    }
-
-                                                    try {
-                                                        val res = pageService.createFacebookPage(pageName, token)
-                                                        withContext(Dispatchers.Main) {
-                                                            Toast.makeText(context, "Đã tạo Fanpage: $pageName", Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    } catch (e: Exception) {
-                                                        withContext(Dispatchers.Main) {
-                                                            Toast.makeText(context, "Tạo thất bại ($idx/$count): ${e.message}", Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    }
-
-                                                    // Đếm ngược thời gian nếu còn lần tạo tiếp
-                                                    if (idx < count) {
-                                                        for (s in delaySec downTo 1) {
-                                                            withContext(Dispatchers.Main) {
-                                                                countdownRemaining = s
-                                                            }
-                                                            delay(1000L)
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            withContext(Dispatchers.Main) {
-                                                Toast.makeText(context, "Hoàn tất quá trình Reg Page!", Toast.LENGTH_LONG).show()
-                                                facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
-                                            }
-                                        } catch (e: Throwable) {
-                                            withContext(Dispatchers.Main) {
-                                                Toast.makeText(context, "Lỗi thực thi: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        } finally {
-                                            withContext(Dispatchers.Main) {
-                                                isRunning = false
-                                                countdownRemaining = 0
-                                                runningStatusText = ""
+                                isRunning = true
+                                scope.launch(Dispatchers.IO) {
+                                    var transferredCount = 0
+                                    for (account in targetAccounts) {
+                                        for (page in account.pages) {
+                                            if (page.pageToken.isNotBlank()) {
+                                                val ok = pageService.transferPageRole(page.pageId, page.pageToken, transferReceiverUid.trim())
+                                                if (ok) transferredCount++
                                             }
                                         }
                                     }
-                                } else {
-                                    // Chuyển Page
-                                    if (transferReceiverUid.trim().isBlank()) {
-                                        Toast.makeText(context, "Vui lòng nhập UID người nhận quyền admin!", Toast.LENGTH_SHORT).show()
-                                        return@Button
-                                    }
-
-                                    isRunning = true
-                                    scope.launch(Dispatchers.IO) {
-                                        var transferredCount = 0
-                                        for (account in targetAccounts) {
-                                            for (page in account.pages) {
-                                                if (page.pageToken.isNotBlank()) {
-                                                    val ok = pageService.transferPageRole(page.pageId, page.pageToken, transferReceiverUid.trim())
-                                                    if (ok) transferredCount++
-                                                }
-                                            }
-                                        }
-                                        withContext(Dispatchers.Main) {
-                                            isRunning = false
-                                            Toast.makeText(context, "Đã chuyển $transferredCount Page sang UID $transferReceiverUid!", Toast.LENGTH_LONG).show()
-                                        }
+                                    withContext(Dispatchers.Main) {
+                                        isRunning = false
+                                        Toast.makeText(context, "Đã chuyển $transferredCount Page sang UID $transferReceiverUid!", Toast.LENGTH_LONG).show()
                                     }
                                 }
-                            },
+                            }
+                        },
                             enabled = !isRunning && selectedForRunUids.isNotEmpty(),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Cobalt600),
@@ -858,6 +850,49 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
+                                }
+                            }
+
+                            // Khu vực hiển thị trạng thái chạy trực tiếp của tài khoản này
+                            val liveStatus = accountStatusMap[account.uid]
+                            val isRunningThis = isRunning && runningAccountUid == account.uid
+                            val isAccError = liveStatus != null && liveStatus.contains("Lỗi", ignoreCase = true)
+
+                            if (liveStatus != null || isRunningThis) {
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isAccError) DangerRed.copy(alpha = 0.08f) else Cobalt600.copy(alpha = 0.08f))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    if (isRunningThis) {
+                                        CircularProgressIndicator(
+                                            strokeWidth = 1.8.dp,
+                                            modifier = Modifier.size(12.dp),
+                                            color = Cobalt600
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(7.dp)
+                                                .clip(CircleShape)
+                                                .background(if (isAccError) DangerRed else Color(0xFF16A34A))
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+
+                                    Text(
+                                        text = liveStatus ?: "Đang xử lý...",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isAccError) DangerRed else Cobalt600,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
 

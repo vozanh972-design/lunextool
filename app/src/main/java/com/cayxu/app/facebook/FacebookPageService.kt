@@ -36,19 +36,27 @@ class FacebookPageService {
     fun createFacebookPage(
         pageName: String,
         userToken: String,
-        category: String = "180164648685982" // Shopping & Retail
+        category: String = "180164648685982" // Shopping & Retail ID
     ): JSONObject {
         val cleanToken = userToken.removePrefix("OAuth ").trim()
+        
+        // Category format chuẩn cho Facebook Graph API (category_list nhận JSON array các ID category)
+        val categoryListJson = JSONArray().apply {
+            put(category)
+        }
+
         val formBody = FormBody.Builder()
             .add("name", pageName)
-            .add("category", category)
+            .add("category", "COMMUNITY")
             .add("category_enum", "SHOPPING_RETAIL")
-            .add("about", "Trang $pageName")
+            .add("category_list", categoryListJson.toString())
+            .add("about", "Trang thông tin $pageName")
             .add("access_token", cleanToken)
             .build()
 
         val request = Request.Builder()
             .url("$GRAPH_BASE_URL/v19.0/me/accounts")
+            .header("User-Agent", NativeSecurity.getFbKatanaUA())
             .post(formBody)
             .build()
 
@@ -56,8 +64,10 @@ class FacebookPageService {
             val body = response.body?.string() ?: "{}"
             val json = JSONObject(body)
             if (json.has("error")) {
-                val errMsg = json.optJSONObject("error")?.optString("message") ?: "Lỗi tạo Page Facebook"
-                throw Exception(errMsg)
+                val errObj = json.getJSONObject("error")
+                val errMsg = errObj.optString("message", "Lỗi tạo Page Facebook")
+                val errCode = errObj.optInt("code", 0)
+                throw Exception("(#$errCode) $errMsg")
             }
             return json
         }
