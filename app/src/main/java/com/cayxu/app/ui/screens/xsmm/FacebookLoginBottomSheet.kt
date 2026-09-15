@@ -272,7 +272,8 @@ fun FacebookLoginBottomSheet(
                                                 if (directAcc != null && directAcc.isLive) {
                                                     return@async directAcc.copy(
                                                         link = currentAcc.link.ifBlank { directAcc.link },
-                                                        password = currentAcc.password.ifBlank { directAcc.password }
+                                                        password = currentAcc.password.ifBlank { directAcc.password },
+                                                        isLive = true
                                                     )
                                                 }
                                             } catch (_: Exception) {}
@@ -294,7 +295,7 @@ fun FacebookLoginBottomSheet(
                                                     datrCookie = datr
                                                 )
                                                 if (authResult.isSuccess && authResult.account.isLive) {
-                                                    return@async authResult.account
+                                                    return@async authResult.account.copy(isLive = true)
                                                 }
                                             } catch (_: Exception) {}
                                         }
@@ -306,7 +307,8 @@ fun FacebookLoginBottomSheet(
                                                 return@async detailsAcc.copy(
                                                     link = currentAcc.link,
                                                     note = currentAcc.note,
-                                                    password = currentAcc.password
+                                                    password = currentAcc.password,
+                                                    isLive = true
                                                 )
                                             } catch (_: Exception) {}
                                         }
@@ -318,7 +320,8 @@ fun FacebookLoginBottomSheet(
                                                 if (verifiedAcc.isLive) {
                                                     return@async verifiedAcc.copy(
                                                         link = currentAcc.link,
-                                                        password = currentAcc.password
+                                                        password = currentAcc.password,
+                                                        isLive = true
                                                     )
                                                 }
                                             } catch (_: Exception) {}
@@ -336,9 +339,9 @@ fun FacebookLoginBottomSheet(
                                 isLoading = false
                                 val liveCount = checkedAccounts.count { it.isLive }
                                 if (liveCount > 0) {
-                                    Toast.makeText(context, "Đăng nhập thành công", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Đăng nhập thành công ($liveCount tài khoản)", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Đã lưu tài khoản (${checkedAccounts.size})", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Đăng nhập thất bại: Tài khoản DIE hoặc sai pass/2FA", Toast.LENGTH_SHORT).show()
                                 }
                                 checkedAccounts.firstOrNull()?.let { onAccountSaved?.invoke(it) }
                                 onDismiss()

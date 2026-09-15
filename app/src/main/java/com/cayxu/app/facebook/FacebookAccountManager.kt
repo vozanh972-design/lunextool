@@ -196,56 +196,71 @@ class FacebookAccountManager {
                         cookie = trimmed
                     }
                 } else {
-                    // Có dấu | -> tách theo định dạng uid|pass|2fa|cookie hoặc uid|pass|2fa|datr=... hoặc uid|pass|cookie
+                    // Có dấu | -> tách theo chuẩn logic Python
                     val parts = trimmed.split("|").map { it.trim() }
-                    if (parts.isNotEmpty()) username = parts[0]
-                    if (parts.size >= 2) password = parts[1]
+                    username = parts.getOrNull(0) ?: ""
+                    password = parts.getOrNull(1) ?: ""
 
-                    // Tìm phần chứa datr= hoặc c_user= / xs= trong các parts
-                    val datrPart = parts.find { it.contains("datr=") }
-                    val fullCookiePart = parts.find { it.contains("c_user=") || it.contains("xs=") }
-
-                    if (parts.size == 3) {
-                        val p2 = parts[2]
-                        if (p2.contains("c_user=") || p2.contains("xs=") || p2.startsWith("datr=") || p2.length > 40) {
-                            cookie = p2
-                        } else if (p2.startsWith("EAA")) {
-                            token = p2
-                        } else {
-                            twoFactor = p2
-                        }
-                    } else if (parts.size >= 4) {
-                        val p2 = parts[2]
-                        if (p2.contains("c_user=") || p2.contains("xs=") || p2.startsWith("datr=")) {
-                            cookie = parts.subList(2, parts.size).joinToString("|")
-                        } else {
-                            twoFactor = p2
-                            cookie = parts.subList(3, parts.size).joinToString("|")
+                    // 1. Tìm datr trong tất cả các phần
+                    var foundDatr = ""
+                    for (p in parts) {
+                        if (p.contains("datr=")) {
+                            foundDatr = p
+                            break
                         }
                     }
 
-                    if (cookie.isBlank() && datrPart != null) {
-                        cookie = datrPart
-                    } else if (cookie.isBlank() && fullCookiePart != null) {
-                        cookie = fullCookiePart
+                    // 2. Tìm full cookie có c_user hoặc xs trong tất cả các phần
+                    var foundCookie = ""
+                    for (p in parts) {
+                        if (p.contains("c_user=") || p.contains("xs=")) {
+                            foundCookie = p
+                            break
+                        }
+                    }
+
+                    // 3. Xử lý 2FA (cột 3 nếu không phải cookie/datr)
+                    if (parts.size >= 3) {
+                        val p2 = parts[2]
+                        if (!p2.contains("datr=") && !p2.contains("c_user=") && !p2.contains("xs=") && !p2.startsWith("EAA") && p2.length <= 40) {
+                            twoFactor = p2
+                        }
+                    }
+
+                    // 4. Xử lý Cookie
+                    if (foundCookie.isNotBlank()) {
+                        cookie = foundCookie
+                    } else if (foundDatr.isNotBlank()) {
+                        cookie = foundDatr
+                    } else if (parts.size >= 4) {
+                        cookie = parts.subList(3, parts.size).joinToString("|")
+                    } else if (parts.size == 3 && (parts[2].contains("=") || parts[2].length > 40)) {
+                        cookie = parts[2]
                     }
                 }
             } else {
-                val parts = trimmed.split(delimiter).map { it.trim() }
+                val rawParts = trimmed.split(delimiter).map { it.trim() }
                 for (i in formatFields.indices) {
-                    val value = parts.getOrElse(i) { "" }
-                    when (formatFields[i]) {
+                    val fieldType = formatFields[i]
+                    // Nếu là trường cuối cùng hoặc là trường COOKIE -> lấy toàn bộ phần còn lại nối lại với nhau
+                    val value = if (i == formatFields.lastIndex || fieldType == AccountFieldType.COOKIE) {
+                        if (i < rawParts.size) rawParts.subList(i, rawParts.size).joinToString(delimiter) else ""
+                    } else {
+                        rawParts.getOrElse(i) { "" }
+                    }
+
+                    when (fieldType) {
                         AccountFieldType.USERNAME -> username = value
                         AccountFieldType.PASSWORD -> password = value
                         AccountFieldType.TWO_FACTOR -> twoFactor = value
-                        AccountFieldType.COOKIE -> cookie = value
+                        AccountFieldType.COOKIE -> if (cookie.isBlank()) cookie = value
                         AccountFieldType.PROXY -> proxy = value
                         AccountFieldType.TOKEN -> token = value
                     }
                 }
             }
 
-            // Tinh chỉnh thông minh: Nếu trường 2FA thực chất là Cookie hoặc Token
+            // Tinh chỉnh: Nếu trường 2FA vô tình chứa Cookie
             if (twoFactor.contains("c_user=") || twoFactor.contains("xs=") || twoFactor.startsWith("datr=")) {
                 cookie = if (cookie.isBlank()) twoFactor else "$twoFactor; $cookie"
                 twoFactor = ""
@@ -367,8 +382,8 @@ class FacebookAccountManager {
     fun fetchAccountDetailsWithToken(token: String, proxyStr: String? = null): FacebookAccount {
         val client = if (!proxyStr.isNullOrEmpty()) buildProxiedClient(proxyStr) else httpClient
 
-        // Lấy User Profile
-        val url = "$GRAPH_BASE_URL/me?fields=$GRAPH_ME_FIELDS&access_token=$token"
+        // Lấy User Profile (theo Python me = requests.get('https://graph.facebook.com/me?access_token=' + eaaaa))
+        val url = "$GRAPH_BASE_URL/me?access_token=$token"
         val request = Request.Builder()
             .url(url)
             .get()
@@ -387,36 +402,11 @@ class FacebookAccountManager {
                     id = json.optString("id", "")
                     name = json.optString("name", id)
                     email = json.optString("email", "")
-
-                    if (json.has("facebook_pages")) {
-                        val pagesObj = json.getJSONObject("facebook_pages")
-                        if (pagesObj.has("data")) {
-                            val dataArr = pagesObj.getJSONArray("data")
-                            for (i in 0 until dataArr.length()) {
-                                val p = dataArr.getJSONObject(i)
-                                val pageId = p.optString("id", "")
-                                val pageName = p.optString("name", "")
-                                val pageToken = p.optString("access_token", "")
-                                val additionalProfileId = p.optString("additional_profile_id", "")
-                                val pageAvatar = "$GRAPH_BASE_URL/$pageId/picture?type=large"
-                                pageList.add(
-                                    FacebookPageItem(
-                                        pageId = pageId,
-                                        pageName = pageName,
-                                        pageToken = pageToken,
-                                        additionalProfileId = additionalProfileId,
-                                        avatar = pageAvatar,
-                                        isLive = true
-                                    )
-                                )
-                            }
-                        }
-                    }
                 }
             }
         } catch (_: Exception) {}
 
-        // Lấy thêm/dự phòng danh sách Pages từ endpoint /me/accounts (như trong Python get_page_list)
+        // Lấy thêm danh sách Pages từ endpoint /me/accounts (như trong Python get_page_list)
         try {
             val accountsUrl = "$GRAPH_BASE_URL/me/accounts?access_token=$token"
             val accountsReq = Request.Builder().url(accountsUrl).get().build()
@@ -449,20 +439,17 @@ class FacebookAccountManager {
             }
         } catch (_: Exception) {}
 
-        if (id.isBlank()) {
-            throw IllegalStateException("Token DIE hoặc không hợp lệ")
-        }
-
-        val avatarUrl = "$GRAPH_BASE_URL/$id/picture?type=large&access_token=$token"
+        val avatarUrl = if (id.isNotBlank()) "$GRAPH_BASE_URL/$id/picture?type=large" else ""
 
         return FacebookAccount(
-            uid = id,
+            uid = id.ifBlank { "Token" },
             name = name.ifBlank { id },
-            email = email,
             avatar = avatarUrl,
+            note = "",
             bio = token,
-            phone = proxyStr.orEmpty(),
+            email = email,
             pages = pageList,
+            phone = proxyStr.orEmpty(),
             isLive = true
         )
     }
