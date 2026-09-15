@@ -260,15 +260,29 @@ class FacebookPageService {
     /**
      * Bóc tách thông điệp lỗi chi tiết từ Facebook
      */
-    private fun extractDetailedFacebookError(body: String): String {
-        // 1. Tìm thông báo Toast trong Bloks Action: \(bk\.action\.io\.Toast, "..."
+        // 1. Kiểm tra các lỗi phổ biến đặc trưng của Meta
+        val lowerBody = body.lowercase()
+        if (lowerBody.contains("phone_verification") || lowerBody.contains("confirm_phone") || lowerBody.contains("sms_code") || lowerBody.contains("xác minh số điện thoại") || lowerBody.contains("xác thực sms")) {
+            return "Tài khoản yêu cầu xác thực Số điện thoại / SMS (Checkpoint)"
+        }
+        if (lowerBody.contains("checkpoint_required") || lowerBody.contains("account_checkpoint") || lowerBody.contains("checkpoint")) {
+            return "Tài khoản bị Checkpoint yêu cầu xác minh bảo mật"
+        }
+        if (lowerBody.contains("profile_creation_error") || lowerBody.contains("quá nhiều") || lowerBody.contains("too many") || lowerBody.contains("limit_reached")) {
+            return "Tài khoản bị giới hạn tạo Trang (Đã tạo quá nhiều Trang gần đây, hãy thử lại sau)"
+        }
+        if (lowerBody.contains("invalid_name") || lowerBody.contains("tên không hợp lệ")) {
+            return "Tên Page không hợp lệ hoặc chứa ký tự/từ khóa bị Meta từ chối"
+        }
+
+        // 2. Tìm thông báo Toast trong Bloks Action: \(bk\.action\.io\.Toast, "..."
         val toastRegex = Regex("""\(bk\.action\.io\.Toast,\s*"([^"]+)"""")
         val toastMatch = toastRegex.find(body)
         if (toastMatch != null && toastMatch.groupValues[1].isNotBlank()) {
             return toastMatch.groupValues[1]
         }
 
-        // 2. Phân tích cấu trúc JSON errors / error
+        // 3. Phân tích cấu trúc JSON errors / error
         try {
             val json = JSONObject(body)
             if (json.has("errors")) {
@@ -300,7 +314,7 @@ class FacebookPageService {
             }
         } catch (_: Throwable) {}
 
-        // 3. Tìm các thuộc tính lỗi trong chuỗi JSON
+        // 4. Tìm các thuộc tính lỗi trong chuỗi JSON
         val messageRegexes = listOf(
             Regex("""["']error_user_msg["']\s*:\s*["']([^"']+)["']"""),
             Regex("""["']error_description["']\s*:\s*["']([^"']+)["']"""),
@@ -318,7 +332,7 @@ class FacebookPageService {
             }
         }
 
-        // 4. Nếu không khớp mẫu, trả về chuỗi phản hồi trực tiếp từ Facebook
+        // 5. Nếu không khớp mẫu, trả về chuỗi phản hồi trực tiếp từ Facebook
         val clean = body.replace("\n", " ").replace("\r", " ").replace("\\", "").trim()
         return if (clean.length > 120) clean.take(120) + "..." else clean.ifBlank { "Lỗi không xác định từ Facebook" }
     }

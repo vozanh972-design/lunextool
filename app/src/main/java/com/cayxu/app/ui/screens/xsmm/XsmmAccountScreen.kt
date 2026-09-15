@@ -62,6 +62,8 @@ import kotlinx.coroutines.withContext
 
 private val XsmmAccentStart = Color(0xFF34D399)
 private val XsmmAccentEnd = Color(0xFF16A34A)
+private val TikTokBrandBlack = Color(0xFF0F172A)
+private val TikTokDarkSurface = Color(0xFF1E293B)
 
 /**
  * Màn tài khoản XSMM - hiện username + số dư (points) dạng thẻ gradient ở trên, và NGAY BÊN
@@ -98,6 +100,7 @@ fun XsmmAccountScreen(navController: NavController) {
     var selectedForRunUids by remember(selectedPlatform, selectedVariant) { mutableStateOf<Set<String>>(emptySet()) }
     var showInstagramCookieSheet by remember { mutableStateOf(false) }
     var showFacebookLoginSheet by remember { mutableStateOf(false) }
+    var showTikTokCheckSheet by remember { mutableStateOf(false) }
     var selectedFbDetailAccount by remember { mutableStateOf<FacebookAccount?>(null) }
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
 
@@ -270,6 +273,16 @@ fun XsmmAccountScreen(navController: NavController) {
             },
             onAccountSaved = {
                 facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+            }
+        )
+    }
+
+    if (showTikTokCheckSheet) {
+        XsmmTikTokCheckSheet(
+            initialVariant = selectedVariant,
+            onDismiss = {
+                showTikTokCheckSheet = false
+                allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
             }
         )
     }
@@ -464,8 +477,8 @@ fun XsmmAccountScreen(navController: NavController) {
                     onClick = { selectedPlatform = "tiktok" },
                     label = { Text("TikTok (${allTikTokAccounts.size})", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = XsmmAccentEnd.copy(alpha = 0.15f),
-                        selectedLabelColor = XsmmAccentEnd
+                        selectedContainerColor = TikTokBrandBlack.copy(alpha = 0.12f),
+                        selectedLabelColor = TikTokBrandBlack
                     )
                 )
                 FilterChip(
@@ -527,11 +540,28 @@ fun XsmmAccountScreen(navController: NavController) {
                         Checkbox(
                             checked = allSelected,
                             onCheckedChange = null,
-                            colors = CheckboxDefaults.colors(checkedColor = XsmmAccentEnd),
+                            colors = CheckboxDefaults.colors(checkedColor = TikTokBrandBlack),
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(4.dp))
                         Text("Tất cả", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
+
+                    Spacer(Modifier.width(6.dp))
+
+                    IconButton(
+                        onClick = { showTikTokCheckSheet = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(TikTokBrandBlack),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = "Thêm/Kiểm tra tài khoản TikTok", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
                 Spacer(Modifier.height(10.dp))
@@ -1608,7 +1638,7 @@ fun XsmmAccountScreen(navController: NavController) {
 
         // ---- Thanh điều khiển cố định dưới cùng ----
         if (selectedPlatform == "tiktok") {
-            // ---- TikTok: 2 nút Cấu hình chạy + Chạy to màu xanh ----
+            // ---- TikTok: 2 nút Cấu hình chạy + Chạy to màu đen TikTok ----
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1622,12 +1652,14 @@ fun XsmmAccountScreen(navController: NavController) {
                         com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, "tiktok")
                         navController.navigate(Routes.XSMM_RUN_CONFIG)
                     },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = XsmmAccentEnd),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TikTokBrandBlack),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, TikTokBrandBlack.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f).height(48.dp)
                 ) {
-                    Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp), tint = TikTokBrandBlack)
                     Spacer(Modifier.width(6.dp))
-                    Text("Cấu hình chạy", maxLines = 1)
+                    Text("Cấu hình chạy", maxLines = 1, color = TikTokBrandBlack)
                 }
                 Button(
                     onClick = {
@@ -1645,13 +1677,14 @@ fun XsmmAccountScreen(navController: NavController) {
                         }
                         com.cayxu.app.ui.overlay.xsmm.startXsmmJobRunnerOverlay(context, handles)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = XsmmAccentEnd),
+                    colors = ButtonDefaults.buttonColors(containerColor = TikTokBrandBlack),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f).height(48.dp)
                 ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
                     Spacer(Modifier.width(6.dp))
                     val runCount = if (selectedForRunUids.isNotEmpty()) selectedForRunUids.size else accountsForVariant.size
-                    Text(if (runCount > 1) "Chạy ($runCount)" else "Chạy")
+                    Text(if (runCount > 1) "Chạy ($runCount)" else "Chạy", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         } else {
@@ -1837,10 +1870,10 @@ private fun VariantTabChip(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .background(if (isSelected) XsmmAccentEnd.copy(alpha = 0.12f) else CardWhite, RoundedCornerShape(12.dp))
+            .background(if (isSelected) TikTokBrandBlack else CardWhite, RoundedCornerShape(12.dp))
             .border(
                 width = if (isSelected) 1.5.dp else 1.dp,
-                color = if (isSelected) XsmmAccentEnd else Color(0xFFEEF1F5),
+                color = if (isSelected) TikTokBrandBlack else Color(0xFFEEF1F5),
                 shape = RoundedCornerShape(12.dp)
             )
             .clickable { onClick(variant) }
@@ -1848,7 +1881,7 @@ private fun VariantTabChip(
     ) {
         Text(
             "$label ($count)",
-            color = if (isSelected) XsmmAccentEnd else TextPrimary,
+            color = if (isSelected) Color.White else TextPrimary,
             fontSize = 12.5.sp,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
         )
@@ -1869,7 +1902,7 @@ private fun XsmmTikTokAccountCard(
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = CardWhite),
-        border = if (isCheckedForRun) androidx.compose.foundation.BorderStroke(1.5.dp, XsmmAccentEnd) else null,
+        border = if (isCheckedForRun) androidx.compose.foundation.BorderStroke(1.5.dp, TikTokBrandBlack) else null,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -1893,7 +1926,7 @@ private fun XsmmTikTokAccountCard(
                 Checkbox(
                     checked = isCheckedForRun,
                     onCheckedChange = onCheckedForRunChange,
-                    colors = CheckboxDefaults.colors(checkedColor = XsmmAccentEnd),
+                    colors = CheckboxDefaults.colors(checkedColor = TikTokBrandBlack),
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(Modifier.width(6.dp))
@@ -1907,23 +1940,23 @@ private fun XsmmTikTokAccountCard(
             }
             when {
                 isAdding -> {
-                    CircularProgressIndicator(color = XsmmAccentEnd, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                    CircularProgressIndicator(color = TikTokBrandBlack, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
                 }
                 isAdded -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Check, contentDescription = null, tint = XsmmAccentEnd, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Filled.Check, contentDescription = null, tint = TikTokBrandBlack, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Đã thêm", color = XsmmAccentEnd, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text("Đã thêm", color = TikTokBrandBlack, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
                 }
                 else -> {
                     Button(
                         onClick = onAddClick,
-                        colors = ButtonDefaults.buttonColors(containerColor = XsmmAccentEnd),
+                        colors = ButtonDefaults.buttonColors(containerColor = TikTokBrandBlack),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                         modifier = Modifier.height(32.dp)
                     ) {
-                        Text("Thêm", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Thêm", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }
@@ -2162,4 +2195,205 @@ private fun ErrorDetailBottomSheet(
         }
     }
 }
+
+private data class XsmmTikTokTypeOption(
+    val variant: TikTokAppVariant,
+    val title: String,
+    val subtitle: String
+)
+
+private val xsmmTikTokOptions = listOf(
+    XsmmTikTokTypeOption(TikTokAppVariant.STANDARD, "TikTok", "Phiên bản tiêu chuẩn"),
+    XsmmTikTokTypeOption(TikTokAppVariant.LITE, "TikTok Lite", "Phiên bản rút gọn, nhẹ hơn"),
+    XsmmTikTokTypeOption(TikTokAppVariant.STUDIO, "TikTok Studio", "Dành cho nhà sáng tạo nội dung")
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun XsmmTikTokCheckSheet(
+    initialVariant: TikTokAppVariant = TikTokAppVariant.STANDARD,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var selectedVariant by remember { mutableStateOf(initialVariant) }
+    var overlayGranted by remember { mutableStateOf(com.cayxu.app.automation.tiktok.TikTokAppLauncher.isOverlayPermissionGranted(context)) }
+    var accessibilityGranted by remember { mutableStateOf(com.cayxu.app.automation.tiktok.TikTokAppLauncher.isAccessibilityServiceEnabled(context)) }
+
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                overlayGranted = com.cayxu.app.automation.tiktok.TikTokAppLauncher.isOverlayPermissionGranted(context)
+                accessibilityGranted = com.cayxu.app.automation.tiktok.TikTokAppLauncher.isAccessibilityServiceEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = CardWhite,
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+        ) {
+            Text("Kiểm tra tài khoản TikTok", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Màn hình nổi & Trợ năng cần được cấp quyền để tự động mở TikTok và kiểm tra trạng thái nick.",
+                fontSize = 12.sp,
+                color = TextSecondary
+            )
+            Spacer(Modifier.height(16.dp))
+
+            // 1. Quyền hiển thị trên ứng dụng khác
+            XsmmTikTokPermissionCard(
+                title = "Hiển thị trên ứng dụng khác",
+                desc = "Để hiện màn nổi (overlay) kiểm tra và điều khiển trên TikTok",
+                granted = overlayGranted,
+                onClick = { com.cayxu.app.automation.tiktok.TikTokAppLauncher.openOverlayPermissionSettings(context) }
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            // 2. Quyền Trợ năng
+            XsmmTikTokPermissionCard(
+                title = "Dịch vụ Trợ năng (Accessibility)",
+                desc = "Để tự động bấm tab \"Tôi\" và kiểm tra @username TikTok",
+                granted = accessibilityGranted,
+                onClick = { com.cayxu.app.automation.tiktok.TikTokAppLauncher.openAccessibilitySettings(context) }
+            )
+
+            Spacer(Modifier.height(18.dp))
+            Text("Chọn ứng dụng cần kiểm tra:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Spacer(Modifier.height(8.dp))
+
+            // Variant selector chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                xsmmTikTokOptions.forEach { opt ->
+                    val isSel = selectedVariant == opt.variant
+                    val isInstalled = com.cayxu.app.automation.tiktok.TikTokAppLauncher.isInstalled(context, opt.variant)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isSel) Color(0xFF1E293B) else AppBackground)
+                            .clickable { selectedVariant = opt.variant }
+                            .padding(vertical = 10.dp, horizontal = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                opt.title,
+                                fontSize = 12.5.sp,
+                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSel) Color.White else TextPrimary
+                            )
+                            Text(
+                                if (isInstalled) "Đã cài" else "Chưa cài",
+                                fontSize = 10.sp,
+                                color = if (isSel) Color(0xFF94A3B8) else TextSecondary
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(22.dp))
+
+            // Nút "Kiểm tra tài khoản"
+            Button(
+                onClick = {
+                    if (!com.cayxu.app.automation.tiktok.TikTokAppLauncher.isInstalled(context, selectedVariant)) {
+                        val variantName = xsmmTikTokOptions.first { it.variant == selectedVariant }.title
+                        android.widget.Toast.makeText(context, "Chưa cài đặt $variantName trên máy này", android.widget.Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    if (!overlayGranted || !accessibilityGranted) {
+                        android.widget.Toast.makeText(context, "Vui lòng cấp đủ 2 quyền ở trên trước khi kiểm tra", android.widget.Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+
+                    com.cayxu.app.automation.tiktok.TikTokCaptureBridge.startWaiting(selectedVariant)
+                    context.startService(
+                        android.content.Intent(context, com.cayxu.app.automation.tiktok.TikTokCaptureOverlayService::class.java)
+                            .putExtra(com.cayxu.app.automation.tiktok.TikTokCaptureOverlayService.EXTRA_VARIANT, selectedVariant.name)
+                    )
+                    val launched = com.cayxu.app.automation.tiktok.TikTokAppLauncher.launch(context, selectedVariant)
+                    if (!launched) {
+                        val variantName = xsmmTikTokOptions.first { it.variant == selectedVariant }.title
+                        android.widget.Toast.makeText(context, "Không mở được $variantName", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF0F172A),
+                    disabledContainerColor = Color(0xFF94A3B8)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+            ) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Kiểm tra tài khoản", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
+
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun XsmmTikTokPermissionCard(
+    title: String,
+    desc: String,
+    granted: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(AppBackground)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Spacer(Modifier.height(2.dp))
+            Text(desc, fontSize = 11.sp, color = TextSecondary, lineHeight = 15.sp)
+        }
+        Spacer(Modifier.width(8.dp))
+        if (granted) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(SuccessGreen.copy(alpha = 0.15f))
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text("Đã cấp", color = SuccessGreen, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+        } else {
+            Button(
+                onClick = onClick,
+                shape = RoundedCornerShape(20.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                modifier = Modifier.height(34.dp)
+            ) {
+                Text("Cấp quyền", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
 
