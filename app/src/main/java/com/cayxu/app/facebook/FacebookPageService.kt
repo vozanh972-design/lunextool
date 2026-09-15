@@ -4,6 +4,8 @@ import androidx.annotation.Keep
 import com.cayxu.app.data.local.FacebookPageItem
 import com.cayxu.app.util.NativeSecurity
 import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
@@ -159,7 +161,7 @@ class FacebookPageService {
      */
     fun uploadPageAvatar(pageId: String, pageToken: String, imageBytes: ByteArray): Boolean {
         return try {
-            val mediaType = okhttp3.MediaType.Companion.toMediaTypeOrNull("image/jpeg")
+            val mediaType = "image/jpeg".toMediaTypeOrNull()
             val reqBody = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("access_token", pageToken)
@@ -167,7 +169,7 @@ class FacebookPageService {
                 .addFormDataPart(
                     "source",
                     "avatar_${System.currentTimeMillis()}.jpg",
-                    okhttp3.RequestBody.Companion.toRequestBody(imageBytes, mediaType)
+                    imageBytes.toRequestBody(mediaType)
                 )
                 .build()
 
