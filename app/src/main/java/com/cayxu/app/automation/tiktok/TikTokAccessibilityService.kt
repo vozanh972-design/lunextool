@@ -359,22 +359,8 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 2. KIỂM TRA MENU SIDEBAR / BOTTOM SHEET 3 GẠCH (Đang có mục "Cài đặt và quyền riêng tư")
-                    val settingsRowNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
-                    val isMenuDrawer = settingsRowNode != null && 
-                        findNodeByText(root, setOf("tiktok studio", "quảng bá", "mã qr của bạn", "nhạc của bạn", "tài nguyên"), exact = false) != null
-                    
-                    if (isMenuDrawer || settingsRowNode != null && findNodeByText(root, setOf("đăng xuất", "bộ nhớ đệm"), exact = false) == null) {
-                        TikTokCaptureBridge.updateProgress("Đã thấy \"Cài đặt và quyền riêng tư\", đang bấm...")
-                        if (settingsRowNode != null) {
-                            clickNode(settingsRowNode)
-                        }
-                        delay(6500)
-                        continue
-                    }
-
-                    // 3. KIỂM TRA MÀN HÌNH "CÀI ĐẶT VÀ QUYỀN RIÊNG TƯ" (Đã bấm vào trong màn cài đặt)
-                    val isSettingsScreen = findNodeByText(root, setOf("bộ nhớ đệm", "trung tâm trợ giúp", "điều khoản và chính sách", "đăng xuất", "tài khoản", "nội dung & hiển thị"), exact = false) != null
+                    // 2. KIỂM TRA MÀN HÌNH "CÀI ĐẶT VÀ QUYỀN RIÊNG TƯ" (Đã bấm vào trong màn cài đặt)
+                    val isSettingsScreen = findNodeByText(root, setOf("quản lý bài đăng", "tùy chọn nội dung", "live", "thời gian và sức khỏe", "gia đình thông minh", "bộ nhớ đệm", "trung tâm trợ giúp", "điều khoản và chính sách", "đăng xuất", "tài khoản", "nội dung & hiển thị", "chia sẻ hồ sơ"), exact = false) != null
                     if (isSettingsScreen) {
                         val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
                         if (switchRowNode != null) {
@@ -384,8 +370,22 @@ class TikTokAccessibilityService : AccessibilityService() {
                         } else {
                             TikTokCaptureBridge.updateProgress("Đang cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
                             scrollDown(root)
-                            delay(5000)
+                            delay(1200)
                         }
+                        continue
+                    }
+
+                    // 3. KIỂM TRA MENU SIDEBAR / BOTTOM SHEET 3 GẠCH (Đang có mục "Cài đặt và quyền riêng tư")
+                    val settingsRowNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
+                    val isMenuDrawer = settingsRowNode != null && 
+                        findNodeByText(root, setOf("tiktok studio", "quảng bá", "mã qr của bạn", "nhạc của bạn", "tài nguyên"), exact = false) != null
+                    
+                    if (isMenuDrawer || settingsRowNode != null) {
+                        TikTokCaptureBridge.updateProgress("Đã thấy \"Cài đặt và quyền riêng tư\", đang bấm...")
+                        if (settingsRowNode != null) {
+                            clickNode(settingsRowNode)
+                        }
+                        delay(4000)
                         continue
                     }
 
@@ -396,10 +396,10 @@ class TikTokAccessibilityService : AccessibilityService() {
                         if (menuNode != null) {
                             TikTokCaptureBridge.updateProgress("Đã vào Hồ sơ, đang mở menu (☰)...")
                             clickNode(menuNode)
-                            delay(6500)
+                            delay(4000)
                         } else {
                             TikTokCaptureBridge.updateProgress("Đang chờ trang Hồ sơ tải xong...")
-                            delay(3000)
+                            delay(2000)
                         }
                         continue
                     }
@@ -409,24 +409,24 @@ class TikTokAccessibilityService : AccessibilityService() {
                     if (tabNode != null) {
                         TikTokCaptureBridge.updateProgress("Đang mở trang Hồ sơ...")
                         clickNode(tabNode)
-                        delay(6500)
+                        delay(4000)
                         continue
                     }
 
-                    // 6. NẾU ĐANG Ở TRANG NGƯỜI DÙNG KHÁC (Đã mở hẳn vào profile người khác, không có thanh tab dưới)
+                    // 6. NẾU ĐANG Ở TRANG NGƯỜI DÙNG KHÁC (Đã mở hẳn vào profile người khác)
                     val isOtherUserProfile = findNodeByText(root, setOf("nhắn tin", "tin nhắn", "message", "đã follow", "following"), exact = false) != null &&
                                              findNodeByText(root, setOf("sửa hồ sơ", "chỉnh sửa hồ sơ", "edit profile"), exact = false) == null
                     if (isOtherUserProfile) {
                         TikTokCaptureBridge.updateProgress("Đang thoát trang người dùng khác về trang chính...")
                         performGlobalAction(GLOBAL_ACTION_BACK)
-                        delay(4000)
+                        delay(3000)
                         continue
                     }
 
-                    // 7. Fallback: Nếu không tìm thấy node text, chạm trực tiếp vào toạ độ góc dưới bên phải màn hình (tab Hồ sơ)
+                    // 7. Fallback: Nếu không tìm thấy node text, chạm trực tiếp vào toạ độ góc dưới bên phải màn hình (tab Hồ sơ: x ~ 90%, y ~ 97%)
                     TikTokCaptureBridge.updateProgress("Đang bấm tab Hồ sơ ở góc dưới bên phải...")
                     tapBottomRightProfileTab(root)
-                    delay(6500)
+                    delay(4000)
                 } catch (e: Exception) {
                     delay(POLL_INTERVAL_MS)
                 }
@@ -761,10 +761,10 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Dò riêng cho tab "Hồ sơ/Tôi" ở thanh điều hướng DƯỚI CÙNG của màn hình TikTok (nằm cạnh Hộp thư).
-     * Chỉ tìm ở vùng 15% phía dưới đáy màn hình (Bottom Navigation Bar, top >= 82% chiều cao)
-     * và nằm ở góc bên phải (right >= 65% chiều rộng màn hình).
-     * Tuyệt đối không bấm vào bất kỳ avatar người dùng / nút follow dấu + / story / live nào ở phía trên!
+     * Dò riêng cho tab "Hồ sơ/Tôi" ở thanh điều hướng DƯỚI CÙNG của màn hình TikTok.
+     * BẮT BUỘC chỉ tìm ở vùng 12% dưới đáy màn hình (Bottom Navigation Bar, top >= 88% chiều cao)
+     * và nằm ở góc bên phải (right >= 70% chiều rộng màn hình).
+     * Tuyệt đối không bấm vào bất kỳ avatar người dùng / nút follow dấu + / story nào ở giữa hay bên phải feed video!
      */
     private fun findProfileTabNode(
         node: AccessibilityNodeInfo,
@@ -781,11 +781,11 @@ class TikTokAccessibilityService : AccessibilityService() {
         val rootH = rootBounds.height()
         val rootW = rootBounds.width()
 
-        // Tab Hồ sơ luôn nằm ở thanh bar dưới đáy (top >= 82% chiều cao) và ở phía bên phải (right >= 65% chiều rộng)
+        // Tab Hồ sơ luôn nằm ở thanh bar dưới đáy (top >= 88% chiều cao) và ở phía bên phải (right >= 70% chiều rộng)
         val isAtBottomNavigation = if (rootH > 0 && rootW > 0) {
-            bounds.top >= (rootBounds.top + rootH * 0.82f) && bounds.right >= (rootBounds.left + rootW * 0.65f)
+            bounds.top >= (rootBounds.top + rootH * 0.88f) && bounds.right >= (rootBounds.left + rootW * 0.70f)
         } else {
-            true
+            false
         }
 
         if (isAtBottomNavigation) {
