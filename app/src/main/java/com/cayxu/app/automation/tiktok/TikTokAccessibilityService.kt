@@ -366,11 +366,11 @@ class TikTokAccessibilityService : AccessibilityService() {
                         if (switchRowNode != null) {
                             TikTokCaptureBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
                             clickNode(switchRowNode)
-                            delay(6500)
+                            delay(4000)
                         } else {
                             TikTokCaptureBridge.updateProgress("Đang cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
                             scrollDown(root)
-                            delay(1200)
+                            delay(800)
                         }
                         continue
                     }
@@ -385,7 +385,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                         if (settingsRowNode != null) {
                             clickNode(settingsRowNode)
                         }
-                        delay(4000)
+                        delay(2500)
                         continue
                     }
 
@@ -396,37 +396,39 @@ class TikTokAccessibilityService : AccessibilityService() {
                         if (menuNode != null) {
                             TikTokCaptureBridge.updateProgress("Đã vào Hồ sơ, đang mở menu (☰)...")
                             clickNode(menuNode)
-                            delay(4000)
+                            delay(2500)
                         } else {
                             TikTokCaptureBridge.updateProgress("Đang chờ trang Hồ sơ tải xong...")
-                            delay(2000)
+                            delay(1500)
                         }
                         continue
                     }
 
-                    // 5. ĐANG Ở TRANG CHỦ / BẠN BÈ / VIDEO / FEED -> Bấm tab "Hồ sơ" ở thanh điều hướng DƯỚI CÙNG (góc dưới bên phải)
-                    val tabNode = findProfileTabNode(root, root)
-                    if (tabNode != null) {
-                        TikTokCaptureBridge.updateProgress("Đang mở trang Hồ sơ...")
-                        clickNode(tabNode)
-                        delay(4000)
-                        continue
-                    }
-
-                    // 6. NẾU ĐANG Ở TRANG NGƯỜI DÙNG KHÁC (Đã mở hẳn vào profile người khác)
+                    // 5. NẾU ĐANG Ở TRANG NGƯỜI DÙNG KHÁC (Bị lạc vào profile người khác do bấm nhầm avatar)
                     val isOtherUserProfile = findNodeByText(root, setOf("nhắn tin", "tin nhắn", "message", "đã follow", "following"), exact = false) != null &&
                                              findNodeByText(root, setOf("sửa hồ sơ", "chỉnh sửa hồ sơ", "edit profile"), exact = false) == null
                     if (isOtherUserProfile) {
                         TikTokCaptureBridge.updateProgress("Đang thoát trang người dùng khác về trang chính...")
                         performGlobalAction(GLOBAL_ACTION_BACK)
-                        delay(3000)
+                        delay(2000)
                         continue
                     }
 
-                    // 7. Fallback: Nếu không tìm thấy node text, chạm trực tiếp vào toạ độ góc dưới bên phải màn hình (tab Hồ sơ: x ~ 90%, y ~ 97%)
-                    TikTokCaptureBridge.updateProgress("Đang bấm tab Hồ sơ ở góc dưới bên phải...")
-                    tapBottomRightProfileTab(root)
-                    delay(4000)
+                    // 6. ĐANG Ở TRANG CHỦ / BẠN BÈ / VIDEO / FEED -> Bấm CHÍNH XÁC tab "Hồ sơ" ở góc dưới cùng bên phải
+                    TikTokCaptureBridge.updateProgress("Đang mở trang Hồ sơ...")
+                    val tabNode = findProfileTabNode(root, root)
+                    if (tabNode != null) {
+                        val b = Rect()
+                        tabNode.getBoundsInScreen(b)
+                        tapAt(b.exactCenterX(), b.exactCenterY())
+                        var p: AccessibilityNodeInfo? = tabNode
+                        var d = 0
+                        while (p != null && !p.isClickable && d < 10) { p = p.parent; d++ }
+                        (p ?: tabNode).performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    } else {
+                        tapBottomRightProfileTab(root)
+                    }
+                    delay(3000)
                 } catch (e: Exception) {
                     delay(POLL_INTERVAL_MS)
                 }
@@ -479,13 +481,9 @@ class TikTokAccessibilityService : AccessibilityService() {
         if (node.isClickable) {
             val bounds = Rect()
             node.getBoundsInScreen(bounds)
-            if (bounds.top >= 0 && bounds.bottom <= topLimit && bounds.right >= rightLimit) {
-                val desc = node.contentDescription?.toString()?.lowercase().orEmpty()
-                // Bỏ qua các icon chia sẻ, bookmark, lịch nếu có
-                if (!desc.contains("share") && !desc.contains("chia sẻ") && !desc.contains("lịch")) {
-                    out.add(node)
-                    return
-                }
+            if (bounds.bottom in 1..topLimit && bounds.right >= rightLimit) {
+                out.add(node)
+                return
             }
         }
         for (i in 0 until node.childCount) {
