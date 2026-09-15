@@ -47,6 +47,7 @@ object Routes {
     const val SETTINGS = "settings"
     const val UTILITIES = "utilities"
     const val NURTURE_SETUP = "nurture_setup"
+    const val REG_AND_TRANSFER_PAGE = "reg_and_transfer_page"
 
     /** Màn nhiệm vụ đơn giản (Facebook + TikTok) dùng chung cho 2 dịch vụ: Trao đổi Sub,
      *  Tương tác chéo - nhận theo tên dịch vụ để hiển thị đúng tiêu đề/màu sắc. */
@@ -76,7 +77,7 @@ object Routes {
 
 // Các route hiện thanh điều hướng dưới (bottom bar cố định, không nằm trong vùng chuyển
 // cảnh mờ dần, nên không bị "nẩy" hay animate theo nội dung mỗi lần chuyển màn).
-private val routesWithBottomBar = setOf(Routes.HOME, Routes.TASKS, Routes.WALLET, Routes.ACCOUNT, Routes.FRIENDS)
+private val routesWithBottomBar = setOf(Routes.HOME, Routes.TASKS, Routes.UTILITIES, Routes.ACCOUNT, Routes.WALLET, Routes.FRIENDS)
 
 /**
  * Luôn đưa được về Trang chủ, dùng cho nút back thủ công ở các màn như Nhiệm vụ/Ví/Tiện ích
@@ -221,6 +222,9 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.UTILITIES) {
                 com.cayxu.app.ui.screens.utilities.UtilitiesScreen(navController)
+            }
+            composable(Routes.REG_AND_TRANSFER_PAGE) {
+                com.cayxu.app.ui.screens.utilities.RegAndTransferPageScreen(navController)
             }
             composable(Routes.NURTURE_SETUP) {
                 com.cayxu.app.ui.screens.nurture.NurtureSetupScreen(navController)

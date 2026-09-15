@@ -23,12 +23,15 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.cayxu.app.ui.navigation.Routes
 
+import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.Widgets
+
 data class NavItem(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
 
 private val bottomItems = listOf(
     NavItem(Routes.HOME, "Trang chủ", Icons.Outlined.Home),
     NavItem(Routes.TASKS, "Nhiệm vụ", Icons.Outlined.Assignment),
-    NavItem(Routes.WALLET, "Ví", Icons.Outlined.AccountBalanceWallet),
+    NavItem(Routes.UTILITIES, "Tiện ích", Icons.Outlined.Widgets),
     NavItem(Routes.ACCOUNT, "Tài khoản", Icons.Outlined.Person)
 )
 
