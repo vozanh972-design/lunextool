@@ -35,6 +35,7 @@ import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.facebook.FacebookAccountManager
 import com.cayxu.app.facebook.FacebookPageService
+import com.cayxu.app.ui.screens.xsmm.FacebookAccountDetailSheet
 import com.cayxu.app.ui.screens.xsmm.FacebookLoginBottomSheet
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +65,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
     }
     var selectedForRunUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showFacebookLoginSheet by remember { mutableStateOf(false) }
+    var selectedFbDetailAccount by remember { mutableStateOf<FacebookAccount?>(null) }
     var isUploadingAvatar by remember { mutableStateOf(false) }
     var targetFbAvatarChangeUid by remember { mutableStateOf<String?>(null) }
     var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -464,6 +466,9 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
             // Header: Tài khoản Facebook (được dời xuống một chút dưới 2 Tab)
             item {
+                val allFbUids = facebookAccounts.map { it.uid }
+                val isAllSelected = allFbUids.isNotEmpty() && allFbUids.all { it in selectedForRunUids }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -484,6 +489,29 @@ fun RegAndTransferPageScreen(navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // Nút Tất cả
+                        if (facebookAccounts.isNotEmpty()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        selectedForRunUids = if (isAllSelected) selectedForRunUids - allFbUids.toSet()
+                                        else selectedForRunUids + allFbUids.toSet()
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 4.dp)
+                            ) {
+                                Checkbox(
+                                    checked = isAllSelected,
+                                    onCheckedChange = null,
+                                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2)),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text("Tất cả", color = TextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+
                         if (selectedForRunUids.isNotEmpty()) {
                             IconButton(
                                 onClick = {
@@ -837,6 +865,27 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                         color = TextSecondary
                                     )
                                 }
+
+                                // Nút chấm than (i) xem chi tiết Info của account Facebook
+                                IconButton(
+                                    onClick = { selectedFbDetailAccount = account },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Info,
+                                            contentDescription = "Xem thông tin chi tiết",
+                                            tint = Color(0xFF1877F2),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
                             }
 
                             if (account.pages.isNotEmpty()) {
@@ -860,21 +909,24 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 tint = Color(0xFF1877F2),
                                                 modifier = Modifier.size(14.dp)
                                             )
-                                            Spacer(Modifier.width(6.dp))
-                                            Text(
-                                                "Page: ${page.pageName}",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = TextPrimary,
-                                                modifier = Modifier.weight(1f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                "ID: ${page.pageId}",
-                                                fontSize = 10.5.sp,
-                                                color = TextSecondary
-                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "Page: ${page.pageName.ifBlank { page.pageId }}",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = TextPrimary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "ID: ${page.pageId}",
+                                                    fontSize = 10.sp,
+                                                    color = TextSecondary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -897,7 +949,8 @@ fun RegAndTransferPageScreen(navController: NavController) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 10.dp)
-                    .padding(bottom = 30.dp)
+                    .navigationBarsPadding()
+                    .padding(bottom = 24.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -991,7 +1044,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                     )
                 )
 
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(24.dp))
 
                 Button(
                     onClick = { showConfigSheet = false },
@@ -1005,6 +1058,13 @@ fun RegAndTransferPageScreen(navController: NavController) {
                 }
             }
         }
+    }
+
+    if (selectedFbDetailAccount != null) {
+        FacebookAccountDetailSheet(
+            account = selectedFbDetailAccount!!,
+            onDismiss = { selectedFbDetailAccount = null }
+        )
     }
 
     if (showFacebookLoginSheet) {
