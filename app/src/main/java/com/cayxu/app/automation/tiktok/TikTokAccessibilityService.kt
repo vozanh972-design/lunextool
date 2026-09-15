@@ -357,10 +357,22 @@ class TikTokAccessibilityService : AccessibilityService() {
                         }
                         delay(2500)
                         continue
+                    // 2. KIỂM TRA MENU SIDEBAR / BOTTOM SHEET 3 GẠCH (Đang có mục "Cài đặt và quyền riêng tư")
+                    val settingsRowNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
+                    val isMenuDrawer = settingsRowNode != null && 
+                        findNodeByText(root, setOf("tiktok studio", "quảng bá", "mã qr của bạn", "nhạc của bạn", "tài nguyên"), exact = false) != null
+                    
+                    if (isMenuDrawer || settingsRowNode != null && findNodeByText(root, setOf("đăng xuất", "bộ nhớ đệm"), exact = false) == null) {
+                        TikTokCaptureBridge.updateProgress("Đã thấy \"Cài đặt và quyền riêng tư\", đang bấm...")
+                        if (settingsRowNode != null) {
+                            clickNode(settingsRowNode)
+                        }
+                        delay(6500)
+                        continue
                     }
 
-                    // 2. KIỂM TRA MÀN HÌNH "CÀI ĐẶT VÀ QUYỀN RIÊNG TƯ"
-                    val isSettingsScreen = findNodeByText(root, setOf("bộ nhớ đệm", "trung tâm trợ giúp", "điều khoản và chính sách", "đăng xuất", "cài đặt và quyền riêng tư"), exact = false) != null
+                    // 3. KIỂM TRA MÀN HÌNH "CÀI ĐẶT VÀ QUYỀN RIÊNG TƯ" (Đã bấm vào trong màn cài đặt)
+                    val isSettingsScreen = findNodeByText(root, setOf("bộ nhớ đệm", "trung tâm trợ giúp", "điều khoản và chính sách", "đăng xuất", "tài khoản", "nội dung & hiển thị"), exact = false) != null
                     if (isSettingsScreen) {
                         val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
                         if (switchRowNode != null) {
@@ -372,15 +384,6 @@ class TikTokAccessibilityService : AccessibilityService() {
                             scrollDown(root)
                             delay(5000)
                         }
-                        continue
-                    }
-
-                    // 3. KIỂM TRA BOTTOM SHEET MENU 3 GẠCH (Đang hiện "Cài đặt và quyền riêng tư")
-                    val settingsRowNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
-                    if (settingsRowNode != null) {
-                        TikTokCaptureBridge.updateProgress("Đã thấy \"Cài đặt và quyền riêng tư\", đang bấm...")
-                        clickNode(settingsRowNode)
-                        delay(6500)
                         continue
                     }
 
