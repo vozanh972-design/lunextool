@@ -109,7 +109,7 @@ fun TikTokAddAccountSheet(onDismiss: () -> Unit) {
                         Intent(context, TikTokCaptureOverlayService::class.java)
                             .putExtra(TikTokCaptureOverlayService.EXTRA_VARIANT, variant.name)
                     )
-                    val launched = TikTokAppLauncher.launch(context, variant)
+                    val launched = TikTokAppLauncher.launch(context, variant, forceStopFirst = true)
                     if (!launched) {
                         Toast.makeText(context, "Không mở được ${optionTitle(variant)}", Toast.LENGTH_SHORT).show()
                     }

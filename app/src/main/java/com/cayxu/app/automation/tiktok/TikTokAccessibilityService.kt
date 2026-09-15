@@ -404,9 +404,16 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 5. NẾU ĐANG Ở TRANG NGƯỜI DÙNG KHÁC (Có nút Follow đỏ, nút Nhắn tin hoặc nút mũi tên Quay lại ở góc trên)
-                    // Ở trang cá nhân người khác trên TikTok KHÔNG CÓ thanh điều hướng dưới cùng (Bottom Tab Bar bị ẩn)
-                    // BẮT BUỘC bấm Quay lại (BACK) để trở về feed/trang chính.
+                    // 5. ĐANG Ở TRANG CHỦ / BẠN BÈ / VIDEO / FEED -> Bấm tab "Hồ sơ" ở thanh điều hướng DƯỚI CÙNG (góc dưới bên phải)
+                    val tabNode = findProfileTabNode(root, root)
+                    if (tabNode != null) {
+                        TikTokCaptureBridge.updateProgress("Đang mở trang Hồ sơ...")
+                        clickNode(tabNode)
+                        delay(6500)
+                        continue
+                    }
+
+                    // 6. NẾU ĐANG Ở TRANG NGƯỜI DÙNG KHÁC (Đã mở hẳn vào profile người khác, không có thanh tab dưới)
                     val isOtherUserProfile = findNodeByText(root, setOf("nhắn tin", "tin nhắn", "message", "đã follow", "following"), exact = false) != null &&
                                              findNodeByText(root, setOf("sửa hồ sơ", "chỉnh sửa hồ sơ", "edit profile"), exact = false) == null
                     if (isOtherUserProfile) {
@@ -416,18 +423,10 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 6. ĐANG Ở TRANG CHỦ / BẠN BÈ / VIDEO / FEED -> Bấm tab "Hồ sơ" ở thanh dưới cùng
-                    val tabNode = findProfileTabNode(root, root)
-                    if (tabNode != null) {
-                        TikTokCaptureBridge.updateProgress("Đang mở trang Hồ sơ...")
-                        clickNode(tabNode)
-                        delay(6500)
-                    } else {
-                        // Nếu đang ở màn hình chính mà không tìm thấy node text "Hồ sơ", chạm trực tiếp vào toạ độ góc dưới bên phải (90% width, 96% height)
-                        TikTokCaptureBridge.updateProgress("Đang bấm tab Hồ sơ ở góc dưới bên phải...")
-                        tapBottomRightProfileTab(root)
-                        delay(6500)
-                    }
+                    // 7. Fallback: Nếu không tìm thấy node text, chạm trực tiếp vào toạ độ góc dưới bên phải màn hình (tab Hồ sơ)
+                    TikTokCaptureBridge.updateProgress("Đang bấm tab Hồ sơ ở góc dưới bên phải...")
+                    tapBottomRightProfileTab(root)
+                    delay(6500)
                 } catch (e: Exception) {
                     delay(POLL_INTERVAL_MS)
                 }

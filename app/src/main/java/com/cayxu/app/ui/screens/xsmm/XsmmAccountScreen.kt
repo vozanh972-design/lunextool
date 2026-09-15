@@ -2346,7 +2346,7 @@ fun XsmmTikTokCheckSheet(
                         android.content.Intent(context, com.cayxu.app.automation.tiktok.TikTokCaptureOverlayService::class.java)
                             .putExtra(com.cayxu.app.automation.tiktok.TikTokCaptureOverlayService.EXTRA_VARIANT, selectedVariant.name)
                     )
-                    val launched = com.cayxu.app.automation.tiktok.TikTokAppLauncher.launch(context, selectedVariant)
+                    val launched = com.cayxu.app.automation.tiktok.TikTokAppLauncher.launch(context, selectedVariant, forceStopFirst = true)
                     if (!launched) {
                         val variantName = xsmmTikTokOptions.first { it.variant == selectedVariant }.title
                         android.widget.Toast.makeText(context, "Không mở được $variantName", android.widget.Toast.LENGTH_SHORT).show()

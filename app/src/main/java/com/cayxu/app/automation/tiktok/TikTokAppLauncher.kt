@@ -44,13 +44,30 @@ object TikTokAppLauncher {
         return false
     }
 
-    /** Mở app TikTok tương ứng. Trả về false nếu chưa cài / không mở được. */
-    fun launch(context: Context, variant: TikTokAppVariant): Boolean {
+    /** Buộc dừng app TikTok (kill background processes) */
+    fun forceStop(context: Context, variant: TikTokAppVariant) {
+        val candidates = candidatePackages(variant)
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+        for (pkg in candidates) {
+            try {
+                am?.killBackgroundProcesses(pkg)
+            } catch (_: Exception) {}
+        }
+    }
+
+    /** Mở app TikTok tương ứng (buộc dừng trước nếu cần). Trả về false nếu chưa cài / không mở được. */
+    fun launch(context: Context, variant: TikTokAppVariant, forceStopFirst: Boolean = false): Boolean {
+        if (forceStopFirst) {
+            forceStop(context, variant)
+            try {
+                Thread.sleep(400)
+            } catch (_: Exception) {}
+        }
         val candidates = candidatePackages(variant)
         for (pkg in candidates) {
             val intent = context.packageManager.getLaunchIntentForPackage(pkg)
             if (intent != null) {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
                 try {
                     context.startActivity(intent)
                     return true
