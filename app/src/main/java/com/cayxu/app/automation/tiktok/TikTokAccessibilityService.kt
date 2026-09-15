@@ -383,8 +383,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 4. KIỂM TRA ĐANG Ở TRANG HỒ SƠ (Profile screen của chính mình)
-                    // Ở trang cá nhân sẽ có nút "Sửa hồ sơ" hoặc "Thêm bạn bè" hoặc "Chia sẻ hồ sơ" hoặc "Đơn hàng của bạn"
+                    // 4. KIỂM TRA ĐANG Ở TRANG HỒ SƠ CHÍNH CHỦ (Có Sửa hồ sơ, Chia sẻ hồ sơ, Menu ☰)
                     val isProfileScreen = isUserSelfProfileScreen(root)
                     if (isProfileScreen) {
                         val menuNode = findMenuIcon(root)
@@ -398,8 +397,28 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 5. ĐANG Ở TRANG CHỦ / BẠN BÈ / VIDEO / FEED -> Bấm tab "Hồ sơ" ở thanh dưới cùng
-                    val tabNode = findProfileTabNode(root)
+                    // 5. NẾU ĐANG BỊ MỞ TRANG NGƯỜI DÙNG KHÁC (Có nút Follow đỏ, nút Nhắn tin hoặc nút mũi tên Quay lại ở góc trên)
+                    val isOtherUserProfile = findNodeByText(root, setOf("nhắn tin", "tin nhắn", "message", "đã follow", "following"), exact = false) != null &&
+                                             findNodeByText(root, setOf("sửa hồ sơ", "chỉnh sửa hồ sơ", "edit profile"), exact = false) == null
+                    if (isOtherUserProfile) {
+                        // Nếu vẫn thấy tab Hồ sơ ở thanh dưới cùng thì bấm thẳng vào tab Hồ sơ
+                        val tabNode = findProfileTabNode(root, root)
+                        if (tabNode != null) {
+                            TikTokCaptureBridge.updateProgress("Đang bấm tab \"Hồ sơ\" ở dưới cùng...")
+                            clickNode(tabNode)
+                            delay(400)
+                            continue
+                        } else {
+                            // Không có tab bar (đang bị che), bấm nút Quay lại (Back)
+                            TikTokCaptureBridge.updateProgress("Đang thoát trang người dùng khác về trang chính...")
+                            performGlobalAction(GLOBAL_ACTION_BACK)
+                            delay(500)
+                            continue
+                        }
+                    }
+
+                    // 6. ĐANG Ở TRANG CHỦ / BẠN BÈ / VIDEO / FEED -> Bấm tab "Hồ sơ" ở thanh dưới cùng
+                    val tabNode = findProfileTabNode(root, root)
                     if (tabNode != null) {
                         TikTokCaptureBridge.updateProgress("Đang mở trang Hồ sơ...")
                         clickNode(tabNode)
@@ -727,13 +746,14 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Dò riêng cho tab "Hồ sơ/Tôi" ở thanh điều hướng DƯỚI CÙNG của màn hình TikTok.
-     * Chỉ tìm ở vùng 15% phía dưới đáy màn hình (Bottom Navigation Bar, top >= 85% chiều cao)
-     * và nằm ở góc bên phải (right >= 70% chiều rộng màn hình).
-     * Tuyệt đối không bấm vào bất kỳ avatar người dùng / story / live / bạn bè nào ở phía trên!
+     * Dò riêng cho tab "Hồ sơ/Tôi" ở thanh điều hướng DƯỚI CÙNG của màn hình TikTok (nằm cạnh Hộp thư).
+     * Chỉ tìm ở vùng 15% phía dưới đáy màn hình (Bottom Navigation Bar, top >= 82% chiều cao)
+     * và nằm ở góc bên phải (right >= 65% chiều rộng màn hình).
+     * Tuyệt đối không bấm vào bất kỳ avatar người dùng / nút follow dấu + / story / live nào ở phía trên!
      */
     private fun findProfileTabNode(
         node: AccessibilityNodeInfo,
+        root: AccessibilityNodeInfo = node,
         depth: Int = 0
     ): AccessibilityNodeInfo? {
         if (depth > 40) return null
@@ -741,14 +761,14 @@ class TikTokAccessibilityService : AccessibilityService() {
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
         val rootBounds = Rect()
-        rootInActiveWindow?.getBoundsInScreen(rootBounds)
+        root.getBoundsInScreen(rootBounds)
 
         val rootH = rootBounds.height()
         val rootW = rootBounds.width()
 
         // Tab Hồ sơ luôn nằm ở thanh bar dưới đáy (top >= 82% chiều cao) và ở phía bên phải (right >= 65% chiều rộng)
         val isAtBottomNavigation = if (rootH > 0 && rootW > 0) {
-            bounds.top >= (rootBounds.top + rootH * 0.80f) && bounds.right >= (rootBounds.left + rootW * 0.65f)
+            bounds.top >= (rootBounds.top + rootH * 0.82f) && bounds.right >= (rootBounds.left + rootW * 0.65f)
         } else {
             true
         }
@@ -763,7 +783,7 @@ class TikTokAccessibilityService : AccessibilityService() {
 
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            val found = findProfileTabNode(child, depth + 1)
+            val found = findProfileTabNode(child, root, depth + 1)
             if (found != null) return found
         }
         return null
