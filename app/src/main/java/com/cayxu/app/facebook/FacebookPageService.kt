@@ -36,51 +36,76 @@ class FacebookPageService {
     fun createFacebookPage(
         pageName: String,
         userToken: String,
-        category: String = "180164648685982" // Shopping & Retail ID
+        category: String = "180164648685982"
     ): JSONObject {
         val cleanToken = userToken.removePrefix("OAuth ").trim()
         
-        // category_list dạng JSON Array các ID phân loại
-        val categoryListJson = JSONArray().apply {
-            put(category)
-        }
+        // Danh sách các tổ hợp Category chuẩn Graph API để tự động fallback nếu dính #152
+        val categoryPayloads = listOf(
+            mapOf("category_list" to "[\"180164648685982\"]", "category_enum" to "SHOPPING_RETAIL"),
+            mapOf("category_list" to "[\"2200\"]", "category_enum" to "COMMUNITY"),
+            mapOf("category_list" to "[\"180164648685982\"]"),
+            mapOf("category_list" to "[\"2200\"]"),
+            mapOf("category_enum" to "COMMUNITY"),
+            mapOf("category_enum" to "SHOPPING_RETAIL")
+        )
 
-        val formBody = FormBody.Builder()
-            .add("name", pageName)
-            .add("category", "COMMUNITY")
-            .add("category_enum", "COMMUNITY")
-            .add("category_list", categoryListJson.toString())
-            .add("about", "Trang cá nhân $pageName")
-            .add("access_token", cleanToken)
-            .build()
+        var lastException: Exception? = null
 
-        val request = Request.Builder()
-            .url("$GRAPH_BASE_URL/v19.0/me/accounts")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .header("Accept", "*/*")
-            .post(formBody)
-            .build()
+        for (payload in categoryPayloads) {
+            try {
+                val builder = FormBody.Builder()
+                    .add("name", pageName)
+                    .add("about", "Trang $pageName")
+                    .add("access_token", cleanToken)
 
-        return try {
-            httpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: "{}"
-                val json = try {
-                    JSONObject(body)
-                } catch (_: Throwable) {
-                    JSONObject().put("error", JSONObject().put("message", "Phản hồi không hợp lệ từ máy chủ"))
+                payload.forEach { (k, v) ->
+                    builder.add(k, v)
                 }
 
-                if (json.has("error")) {
-                    val errObj = json.optJSONObject("error")
-                    val errMsg = errObj?.optString("message", "Lỗi tạo Page") ?: "Lỗi tạo Page"
-                    val errCode = errObj?.optInt("code", 0) ?: 0
-                    throw Exception("(#$errCode) $errMsg")
+                val request = Request.Builder()
+                    .url("$GRAPH_BASE_URL/v19.0/me/accounts")
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .header("Accept", "*/*")
+                    .post(builder.build())
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    val body = response.body?.string() ?: "{}"
+                    val json = try {
+                        JSONObject(body)
+                    } catch (_: Throwable) {
+                        JSONObject().put("error", JSONObject().put("message", "Phản hồi không hợp lệ từ máy chủ"))
+                    }
+
+                    if (json.has("error")) {
+                        val errObj = json.optJSONObject("error")
+                        val errMsg = errObj?.optString("message", "Lỗi tạo Page") ?: "Lỗi tạo Page"
+                        val errCode = errObj?.optInt("code", 0) ?: 0
+                        val ex = Exception("(#$errCode) $errMsg")
+                        lastException = ex
+
+                        // Nếu lỗi do category (#152), thử payload category tiếp theo
+                        if (errCode == 152 || errMsg.contains("Category", ignoreCase = true)) {
+                            return@use
+                        } else {
+                            throw ex
+                        }
+                    } else {
+                        return json
+                    }
                 }
-                json
+            } catch (e: Exception) {
+                if (e.message?.contains("152") == true || e.message?.contains("Category", ignoreCase = true) == true) {
+                    lastException = e
+                    continue
+                } else {
+                    throw e
+                }
             }
-        } catch (e: Exception) {
-            throw e
         }
+
+        throw (lastException ?: Exception("Không thể tạo Page: Lỗi phân loại danh mục"))
     }
 
     /**

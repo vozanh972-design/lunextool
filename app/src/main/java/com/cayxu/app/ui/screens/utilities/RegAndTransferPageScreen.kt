@@ -39,7 +39,9 @@ import com.cayxu.app.ui.screens.xsmm.FacebookAccountDetailSheet
 import com.cayxu.app.ui.screens.xsmm.FacebookLoginBottomSheet
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -79,8 +81,9 @@ fun RegAndTransferPageScreen(navController: NavController) {
     // State cho tab Chuyển Page
     var transferReceiverUid by remember { mutableStateOf("") }
 
-    // Trạng thái đang chạy
+    // Trạng thái đang chạy và Job điều khiển
     var isRunning by remember { mutableStateOf(false) }
+    var runJob by remember { mutableStateOf<Job?>(null) }
     var runningAccountUid by remember { mutableStateOf<String?>(null) }
     val accountStatusMap = remember { mutableStateMapOf<String, String>() }
 
@@ -226,9 +229,24 @@ fun RegAndTransferPageScreen(navController: NavController) {
                         }
                     }
 
-                    // Nút Bắt đầu / Chạy
+                    // Nút Bắt đầu / Dừng chạy
                     Button(
                         onClick = {
+                            if (isRunning) {
+                                // Người dùng bấm Dừng chạy
+                                try {
+                                    runJob?.cancel()
+                                    runJob = null
+                                    runningAccountUid?.let { uid ->
+                                        accountStatusMap[uid] = "Đã dừng"
+                                    }
+                                    isRunning = false
+                                    runningAccountUid = null
+                                    Toast.makeText(context.applicationContext, "Đã dừng tiến trình!", Toast.LENGTH_SHORT).show()
+                                } catch (_: Throwable) {}
+                                return@Button
+                            }
+
                             val targetAccounts = facebookAccounts.filter { it.uid in selectedForRunUids }
                             if (targetAccounts.isEmpty()) {
                                 Toast.makeText(context, "Vui lòng tick chọn ít nhất 1 tài khoản Facebook!", Toast.LENGTH_SHORT).show()
@@ -241,14 +259,17 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 val delaySec = delaySecondsInput.toIntOrNull() ?: 2000
 
                                 isRunning = true
-                                scope.launch(Dispatchers.IO) {
+                                runJob = scope.launch(Dispatchers.IO) {
                                     try {
                                         for (account in targetAccounts) {
+                                            if (!isActive) break
                                             runningAccountUid = account.uid
                                             var token = account.bio.ifBlank { null }
                                             
                                             withContext(Dispatchers.Main) {
-                                                accountStatusMap[account.uid] = "Đang kiểm tra Token..."
+                                                try {
+                                                    accountStatusMap[account.uid] = "Đang kiểm tra Token..."
+                                                } catch (_: Throwable) {}
                                             }
 
                                             // Tự động khôi phục Token từ Cookie nếu Token rỗng
@@ -266,13 +287,16 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
                                             if (token.isNullOrBlank()) {
                                                 withContext(Dispatchers.Main) {
-                                                    accountStatusMap[account.uid] = "Lỗi: Thiếu Token EAAA"
-                                                    Toast.makeText(context, "Tài khoản ${account.name} thiếu Token EAAA!", Toast.LENGTH_SHORT).show()
+                                                    try {
+                                                        accountStatusMap[account.uid] = "Lỗi: Thiếu Token EAAA"
+                                                        Toast.makeText(context.applicationContext, "Tài khoản ${account.name} thiếu Token EAAA!", Toast.LENGTH_SHORT).show()
+                                                    } catch (_: Throwable) {}
                                                 }
                                                 continue
                                             }
 
                                             for (idx in 1..count) {
+                                                if (!isActive) break
                                                 val pageName = try {
                                                     pageService.generateRandomName(nameTypeOption)
                                                 } catch (_: Throwable) {
@@ -280,7 +304,9 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 }
 
                                                 withContext(Dispatchers.Main) {
-                                                    accountStatusMap[account.uid] = "Đang tạo ($idx/$count): $pageName"
+                                                    try {
+                                                        accountStatusMap[account.uid] = "Đang tạo ($idx/$count): $pageName"
+                                                    } catch (_: Throwable) {}
                                                 }
 
                                                 try {
@@ -302,8 +328,9 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 }
 
                                                 // Đếm ngược thời gian nếu còn lần tạo tiếp
-                                                if (idx < count) {
+                                                if (idx < count && isActive) {
                                                     for (s in delaySec downTo 1) {
+                                                        if (!isActive) break
                                                         withContext(Dispatchers.Main) {
                                                             try {
                                                                 accountStatusMap[account.uid] = "Chờ tạo tiếp ($idx/$count): ${s}s"
@@ -314,35 +341,46 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 }
                                             }
 
-                                            withContext(Dispatchers.Main) {
-                                                try {
-                                                    accountStatusMap[account.uid] = "Hoàn tất $count/$count Page"
-                                                } catch (_: Throwable) {}
+                                            if (isActive) {
+                                                withContext(Dispatchers.Main) {
+                                                    try {
+                                                        accountStatusMap[account.uid] = "Hoàn tất $count/$count Page"
+                                                    } catch (_: Throwable) {}
+                                                }
                                             }
                                         }
 
+                                        if (isActive) {
+                                            withContext(Dispatchers.Main) {
+                                                try {
+                                                    Toast.makeText(context.applicationContext, "Hoàn tất quá trình Reg Page!", Toast.LENGTH_LONG).show()
+                                                    facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                                } catch (_: Throwable) {}
+                                            }
+                                        }
+                                    } catch (e: kotlinx.coroutines.CancellationException) {
                                         withContext(Dispatchers.Main) {
                                             try {
-                                                Toast.makeText(context.applicationContext, "Hoàn tất quá trình Reg Page!", Toast.LENGTH_LONG).show()
-                                                facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                                runningAccountUid?.let { uid ->
+                                                    accountStatusMap[uid] = "Đã dừng"
+                                                }
                                             } catch (_: Throwable) {}
                                         }
                                     } catch (e: Throwable) {
-                                        if (e !is kotlinx.coroutines.CancellationException) {
-                                            val errMsg = e.localizedMessage ?: "Lỗi xử lý"
-                                            withContext(Dispatchers.Main) {
-                                                try {
-                                                    runningAccountUid?.let { uid ->
-                                                        accountStatusMap[uid] = "Lỗi: $errMsg"
-                                                    }
-                                                    Toast.makeText(context.applicationContext, "Lỗi thực thi: $errMsg", Toast.LENGTH_SHORT).show()
-                                                } catch (_: Throwable) {}
-                                            }
+                                        val errMsg = e.localizedMessage ?: "Lỗi xử lý"
+                                        withContext(Dispatchers.Main) {
+                                            try {
+                                                runningAccountUid?.let { uid ->
+                                                    accountStatusMap[uid] = "Lỗi: $errMsg"
+                                                }
+                                                Toast.makeText(context.applicationContext, "Lỗi thực thi: $errMsg", Toast.LENGTH_SHORT).show()
+                                            } catch (_: Throwable) {}
                                         }
                                     } finally {
                                         withContext(Dispatchers.Main) {
                                             isRunning = false
                                             runningAccountUid = null
+                                            runJob = null
                                         }
                                     }
                                 }
@@ -354,44 +392,58 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 }
 
                                 isRunning = true
-                                scope.launch(Dispatchers.IO) {
-                                    var transferredCount = 0
-                                    for (account in targetAccounts) {
-                                        for (page in account.pages) {
-                                            if (page.pageToken.isNotBlank()) {
-                                                val ok = pageService.transferPageRole(page.pageId, page.pageToken, transferReceiverUid.trim())
-                                                if (ok) transferredCount++
+                                runJob = scope.launch(Dispatchers.IO) {
+                                    try {
+                                        var transferredCount = 0
+                                        for (account in targetAccounts) {
+                                            if (!isActive) break
+                                            for (page in account.pages) {
+                                                if (!isActive) break
+                                                if (page.pageToken.isNotBlank()) {
+                                                    val ok = pageService.transferPageRole(page.pageId, page.pageToken, transferReceiverUid.trim())
+                                                    if (ok) transferredCount++
+                                                }
                                             }
                                         }
-                                    }
-                                    withContext(Dispatchers.Main) {
-                                        isRunning = false
-                                        Toast.makeText(context, "Đã chuyển $transferredCount Page sang UID $transferReceiverUid!", Toast.LENGTH_LONG).show()
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(context, "Đã chuyển $transferredCount Page sang UID $transferReceiverUid!", Toast.LENGTH_LONG).show()
+                                        }
+                                    } catch (_: kotlinx.coroutines.CancellationException) {
+                                    } catch (e: Throwable) {
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } finally {
+                                        withContext(Dispatchers.Main) {
+                                            isRunning = false
+                                            runningAccountUid = null
+                                            runJob = null
+                                        }
                                     }
                                 }
                             }
                         },
-                        enabled = !isRunning && selectedForRunUids.isNotEmpty(),
+                        enabled = isRunning || selectedForRunUids.isNotEmpty(),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Cobalt600),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (isRunning) DangerRed else Cobalt600),
                         modifier = Modifier
                             .weight(if (activeTab == 0) 1.3f else 1f)
                             .height(48.dp)
                     ) {
                         if (isRunning) {
-                                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Đang chạy...")
-                            } else {
-                                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    if (activeTab == 0) "Bắt đầu Reg (${selectedForRunUids.size})" else "Chuyển Page (${selectedForRunUids.size})",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                            }
+                            Icon(Icons.Filled.Stop, contentDescription = "Dừng", modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Dừng chạy", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        } else {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                if (activeTab == 0) "Bắt đầu Reg (${selectedForRunUids.size})" else "Chuyển Page (${selectedForRunUids.size})",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
                         }
+                    }
                     }
                 }
         },
@@ -877,42 +929,100 @@ fun RegAndTransferPageScreen(navController: NavController) {
                             val liveStatus = accountStatusMap[account.uid]
                             val isRunningThis = isRunning && runningAccountUid == account.uid
                             val isAccError = liveStatus != null && liveStatus.contains("Lỗi", ignoreCase = true)
+                            val isAccStopped = liveStatus != null && liveStatus.contains("Đã dừng", ignoreCase = true)
 
                             if (liveStatus != null || isRunningThis) {
                                 Spacer(Modifier.height(8.dp))
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isAccError) DangerRed.copy(alpha = 0.08f) else Cobalt600.copy(alpha = 0.08f))
+                                        .background(
+                                            when {
+                                                isAccError -> DangerRed.copy(alpha = 0.08f)
+                                                isAccStopped -> Color(0xFFF59E0B).copy(alpha = 0.08f)
+                                                else -> Cobalt600.copy(alpha = 0.08f)
+                                            }
+                                        )
                                         .padding(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
-                                    if (isRunningThis) {
-                                        CircularProgressIndicator(
-                                            strokeWidth = 1.8.dp,
-                                            modifier = Modifier.size(12.dp),
-                                            color = Cobalt600
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        if (isRunningThis) {
+                                            CircularProgressIndicator(
+                                                strokeWidth = 1.8.dp,
+                                                modifier = Modifier.size(12.dp),
+                                                color = Cobalt600
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(7.dp)
+                                                    .clip(CircleShape)
+                                                    .background(
+                                                        when {
+                                                            isAccError -> DangerRed
+                                                            isAccStopped -> Color(0xFFF59E0B)
+                                                            else -> Color(0xFF16A34A)
+                                                        }
+                                                    )
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                        }
+
+                                        Text(
+                                            text = liveStatus ?: "Đang xử lý...",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = when {
+                                                isAccError -> DangerRed
+                                                isAccStopped -> Color(0xFFD97706)
+                                                else -> Cobalt600
+                                            },
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
-                                        Spacer(Modifier.width(8.dp))
-                                    } else {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(7.dp)
-                                                .clip(CircleShape)
-                                                .background(if (isAccError) DangerRed else Color(0xFF16A34A))
-                                        )
-                                        Spacer(Modifier.width(8.dp))
                                     }
 
-                                    Text(
-                                        text = liveStatus ?: "Đang xử lý...",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (isAccError) DangerRed else Cobalt600,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    if (isRunningThis) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(DangerRed.copy(alpha = 0.15f))
+                                                .clickable {
+                                                    try {
+                                                        runJob?.cancel()
+                                                        runJob = null
+                                                        accountStatusMap[account.uid] = "Đã dừng"
+                                                        isRunning = false
+                                                        runningAccountUid = null
+                                                        Toast.makeText(context.applicationContext, "Đã dừng tài khoản ${account.name}!", Toast.LENGTH_SHORT).show()
+                                                    } catch (_: Throwable) {}
+                                                }
+                                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Stop,
+                                                    contentDescription = "Dừng",
+                                                    tint = DangerRed,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Spacer(Modifier.width(3.dp))
+                                                Text(
+                                                    "Dừng",
+                                                    color = DangerRed,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
