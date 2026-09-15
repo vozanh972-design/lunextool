@@ -3,6 +3,7 @@ package com.cayxu.app.ui.screens.utilities
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,9 +34,11 @@ import coil.compose.AsyncImage
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.facebook.FacebookAccountManager
+import com.cayxu.app.facebook.FacebookPageService
 import com.cayxu.app.ui.screens.xsmm.FacebookLoginBottomSheet
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -43,12 +47,17 @@ private val DangerRed = Color(0xFFEF4444)
 private val TextPrimary = Color(0xFF0F172A)
 private val TextSecondary = Color(0xFF64748B)
 private val CardBorderColor = Color(0xFFE2E8F0)
+private val Cobalt600 = Color(0xFF1D4ED8)
+private val Cobalt500 = Color(0xFF2E6BF2)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RegAndTransferPageScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // Tab chức năng: 0: Reg Page, 1: Chuyển Page
+    var activeTab by remember { mutableStateOf(0) }
 
     var facebookAccounts by remember {
         mutableStateOf(FacebookAccountsStore.getAccounts(context, forceReload = true))
@@ -58,6 +67,22 @@ fun RegAndTransferPageScreen(navController: NavController) {
     var isUploadingAvatar by remember { mutableStateOf(false) }
     var targetFbAvatarChangeUid by remember { mutableStateOf<String?>(null) }
     var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    // State cấu hình Reg Page
+    var showConfigSheet by remember { mutableStateOf(false) }
+    var nameTypeOption by remember { mutableStateOf("Tên Việt") } // "Tên Việt" hoặc "Tên Tây"
+    var regCountInput by remember { mutableStateOf("15") }
+    var delaySecondsInput by remember { mutableStateOf("2000") }
+
+    // State cho tab Chuyển Page
+    var transferReceiverUid by remember { mutableStateOf("") }
+
+    // Trạng thái đang chạy
+    var isRunning by remember { mutableStateOf(false) }
+    var countdownRemaining by remember { mutableStateOf(0) }
+    var runningStatusText by remember { mutableStateOf("") }
+
+    val pageService = remember { FacebookPageService() }
 
     val pickFbAvatarLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -152,16 +177,183 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Reg page & Chuyển page",
+                            text = if (activeTab == 0) "Reg Page Tự Động" else "Chuyển Quyền Page",
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp,
                             color = TextPrimary
                         )
                         Text(
-                            text = "Danh sách tài khoản Facebook quản lý Page",
+                            text = if (activeTab == 0) "Tạo Fanpage Profile+ theo cấu hình" else "Gán quyền quản trị viên Fanpage sang UID mới",
                             fontSize = 12.sp,
                             color = TextSecondary
                         )
+                    }
+                }
+            }
+        },
+        bottomBar = {
+            Surface(
+                color = Color.White,
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                shadowElevation = 10.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, CardBorderColor, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    if (isRunning && countdownRemaining > 0) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                        ) {
+                            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(14.dp), color = Cobalt600)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Chờ tạo tiếp theo: ${countdownRemaining}s (${runningStatusText})",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Cobalt600
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Nút Cấu hình (chỉ hiện khi ở tab Reg Page)
+                        if (activeTab == 0) {
+                            OutlinedButton(
+                                onClick = { showConfigSheet = true },
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Cobalt600),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Cobalt600),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                            ) {
+                                Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Cấu hình", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                        }
+
+                        // Nút Bắt đầu / Chạy
+                        Button(
+                            onClick = {
+                                val targetAccounts = facebookAccounts.filter { it.uid in selectedForRunUids }
+                                if (targetAccounts.isEmpty()) {
+                                    Toast.makeText(context, "Vui lòng tick chọn ít nhất 1 tài khoản Facebook!", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+
+                                if (activeTab == 0) {
+                                    // Chạy Reg Page
+                                    val count = regCountInput.toIntOrNull() ?: 15
+                                    val delaySec = delaySecondsInput.toIntOrNull() ?: 2000
+
+                                    isRunning = true
+                                    scope.launch(Dispatchers.IO) {
+                                        for (account in targetAccounts) {
+                                            val token = account.bio.ifBlank { null }
+                                            if (token.isNullOrBlank()) {
+                                                withContext(Dispatchers.Main) {
+                                                    Toast.makeText(context, "Tài khoản ${account.name} thiếu Token!", Toast.LENGTH_SHORT).show()
+                                                }
+                                                continue
+                                            }
+
+                                            for (idx in 1..count) {
+                                                val pageName = pageService.generateRandomName(nameTypeOption)
+                                                withContext(Dispatchers.Main) {
+                                                    runningStatusText = "${account.name} ($idx/$count): $pageName"
+                                                }
+
+                                                try {
+                                                    val res = pageService.createProfilePlusPage(pageName, token)
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(context, "Đã tạo Page: $pageName", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                } catch (e: Exception) {
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(context, "Lỗi tạo page: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+
+                                                // Đếm ngược thời gian nếu còn lần tạo tiếp
+                                                if (idx < count) {
+                                                    for (s in delaySec downTo 1) {
+                                                        withContext(Dispatchers.Main) {
+                                                            countdownRemaining = s
+                                                        }
+                                                        delay(1000L)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        withContext(Dispatchers.Main) {
+                                            isRunning = false
+                                            countdownRemaining = 0
+                                            runningStatusText = ""
+                                            Toast.makeText(context, "Hoàn tất quá trình Reg Page!", Toast.LENGTH_LONG).show()
+                                            facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                        }
+                                    }
+                                } else {
+                                    // Chuyển Page
+                                    if (transferReceiverUid.trim().isBlank()) {
+                                        Toast.makeText(context, "Vui lòng nhập UID người nhận quyền admin!", Toast.LENGTH_SHORT).show()
+                                        return@Button
+                                    }
+
+                                    isRunning = true
+                                    scope.launch(Dispatchers.IO) {
+                                        var transferredCount = 0
+                                        for (account in targetAccounts) {
+                                            for (page in account.pages) {
+                                                if (page.pageToken.isNotBlank()) {
+                                                    val ok = pageService.transferPageRole(page.pageId, page.pageToken, transferReceiverUid.trim())
+                                                    if (ok) transferredCount++
+                                                }
+                                            }
+                                        }
+                                        withContext(Dispatchers.Main) {
+                                            isRunning = false
+                                            Toast.makeText(context, "Đã chuyển $transferredCount Page sang UID $transferReceiverUid!", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !isRunning && selectedForRunUids.isNotEmpty(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Cobalt600),
+                            modifier = Modifier
+                                .weight(if (activeTab == 0) 1.3f else 1f)
+                                .height(48.dp)
+                        ) {
+                            if (isRunning) {
+                                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Đang chạy...")
+                            } else {
+                                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    if (activeTab == 0) "Bắt đầu Reg (${selectedForRunUids.size})" else "Chuyển Page (${selectedForRunUids.size})",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -172,13 +364,110 @@ fun RegAndTransferPageScreen(navController: NavController) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Header section: Tài khoản Facebook + nút Thêm & Xóa
+            // Hàng 2 Tabs: 1 là Reg Page, 2 là Chuyển Page
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFFE2E8F0).copy(alpha = 0.6f))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // Tab 1: Reg Page
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (activeTab == 0) Color.White else Color.Transparent)
+                            .clickable { activeTab = 0 }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.AddCircleOutline,
+                                contentDescription = null,
+                                tint = if (activeTab == 0) Cobalt600 else TextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "Reg Page",
+                                fontWeight = if (activeTab == 0) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 14.sp,
+                                color = if (activeTab == 0) Cobalt600 else TextSecondary
+                            )
+                        }
+                    }
+
+                    // Tab 2: Chuyển Page
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (activeTab == 1) Color.White else Color.Transparent)
+                            .clickable { activeTab = 1 }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.SwapHoriz,
+                                contentDescription = null,
+                                tint = if (activeTab == 1) Cobalt600 else TextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "Chuyển Page",
+                                fontWeight = if (activeTab == 1) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 14.sp,
+                                color = if (activeTab == 1) Cobalt600 else TextSecondary
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Nếu ở tab Chuyển Page -> hiện ô nhập UID người nhận
+            if (activeTab == 1) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardWhite),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CardBorderColor),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text("UID người nhận quyền quản trị Admin", fontWeight = FontWeight.Bold, fontSize = 13.5.sp, color = TextPrimary)
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = transferReceiverUid,
+                                onValueChange = { transferReceiverUid = it },
+                                placeholder = { Text("Nhập UID Facebook người nhận...", fontSize = 13.sp) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Cobalt600,
+                                    unfocusedBorderColor = CardBorderColor
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Header: Tài khoản Facebook (được dời xuống một chút dưới 2 Tab)
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -252,6 +541,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                 }
             }
 
+            // Danh sách tài khoản
             if (facebookAccounts.isEmpty()) {
                 item {
                     Card(
@@ -329,7 +619,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 )
                                 Spacer(Modifier.width(6.dp))
 
-                                // Avatar Facebook có nút đổi ảnh cây bút nhỏ nằm bên trong
+                                // Avatar Facebook
                                 val isThisFbUploading = isUploadingAvatar && targetFbAvatarChangeUid == account.uid
                                 Box(
                                     modifier = Modifier
@@ -596,6 +886,127 @@ fun RegAndTransferPageScreen(navController: NavController) {
         }
     }
 
+    // Modal Cấu hình Reg Page (trượt từ dưới lên)
+    if (showConfigSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showConfigSheet = false },
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            containerColor = Color.White
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 10.dp)
+                    .padding(bottom = 30.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Cấu hình Reg Page",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = TextPrimary
+                    )
+                    IconButton(
+                        onClick = { showConfigSheet = false },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Filled.Close, contentDescription = "Đóng", tint = TextSecondary)
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Hàng 1: Chọn Tên Việt / Tên Tây
+                Text("1. Loại tên Page ngẫu nhiên", fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = TextPrimary)
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    listOf("Tên Việt", "Tên Tây").forEach { type ->
+                        val isSelected = nameTypeOption == type
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    color = if (isSelected) Cobalt600 else CardBorderColor,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .background(if (isSelected) Cobalt600.copy(alpha = 0.08f) else Color(0xFFF8FAFC))
+                                .clickable { nameTypeOption = type }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                type,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 14.sp,
+                                color = if (isSelected) Cobalt600 else TextSecondary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Hàng 2: Số lượng Reg Page (Mặc định 15)
+                Text("2. Số lượng Reg Page", fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = TextPrimary)
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = regCountInput,
+                    onValueChange = { regCountInput = it.filter { char -> char.isDigit() } },
+                    placeholder = { Text("Mặc định: 15") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    trailingIcon = { Text("Page", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(end = 12.dp)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Cobalt600,
+                        unfocusedBorderColor = CardBorderColor
+                    )
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                // Hàng 3: Thời gian tạo giữa các page (Mặc định 2000 giây)
+                Text("3. Thời gian tạo giữa các Page (Giây)", fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = TextPrimary)
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = delaySecondsInput,
+                    onValueChange = { delaySecondsInput = it.filter { char -> char.isDigit() } },
+                    placeholder = { Text("Mặc định: 2000") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    trailingIcon = { Text("Giây", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(end = 12.dp)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Cobalt600,
+                        unfocusedBorderColor = CardBorderColor
+                    )
+                )
+
+                Spacer(Modifier.height(22.dp))
+
+                Button(
+                    onClick = { showConfigSheet = false },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Cobalt600),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Text("Lưu cấu hình", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+            }
+        }
+    }
+
     if (showFacebookLoginSheet) {
         FacebookLoginBottomSheet(
             onDismiss = { showFacebookLoginSheet = false },
@@ -606,3 +1017,4 @@ fun RegAndTransferPageScreen(navController: NavController) {
         )
     }
 }
+

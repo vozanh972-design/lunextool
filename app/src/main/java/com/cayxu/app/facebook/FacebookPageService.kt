@@ -153,4 +153,62 @@ class FacebookPageService {
         } catch (_: Exception) {}
         return list
     }
+
+    /**
+     * 4. Upload ảnh đại diện cho Page sau khi tạo
+     */
+    fun uploadPageAvatar(pageId: String, pageToken: String, imageBytes: ByteArray): Boolean {
+        return try {
+            val mediaType = okhttp3.MediaType.Companion.toMediaTypeOrNull("image/jpeg")
+            val reqBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("access_token", pageToken)
+                .addFormDataPart("published", "true")
+                .addFormDataPart(
+                    "source",
+                    "avatar_${System.currentTimeMillis()}.jpg",
+                    okhttp3.RequestBody.Companion.toRequestBody(imageBytes, mediaType)
+                )
+                .build()
+
+            val request = Request.Builder()
+                .url("$GRAPH_BASE_URL/$pageId/photos")
+                .post(reqBody)
+                .build()
+
+            httpClient.newCall(request).execute().use { res ->
+                res.isSuccessful
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Sinh tên ngẫu nhiên (Tên Việt hoặc Tên Tây)
+     */
+    fun generateRandomName(nameType: String): String {
+        val vietnameseFirst = listOf("Nguyễn", "Trần", "Lê", "Phạm", "Hoàng", "Huỳnh", "Phan", "Vũ", "Võ", "Đặng", "Bùi", "Đỗ", "Hồ", "Ngô", "Dương", "Lý")
+        val vietnameseMiddle = listOf("Văn", "Thị", "Đức", "Minh", "Quốc", "Thanh", "Hải", "Tuấn", "Hoàng", "Gia", "Bảo", "Xuân", "Thu", "Ngọc")
+        val vietnameseLast = listOf("Anh", "Bình", "Cường", "Dũng", "Em", "Giang", "Hương", "Huy", "Khánh", "Linh", "Long", "Mai", "Nam", "Nhi", "Phúc", "Quân", "Sơn", "Tâm", "Thảo", "Trang", "Tuấn", "Vy", "Yến")
+
+        val westernFirst = listOf("James", "John", "Robert", "Michael", "William", "David", "Richard", "Joseph", "Thomas", "Charles", "Emma", "Olivia", "Sophia", "Ava", "Isabella", "Mia", "Emily", "Abigail", "Harper", "Ella")
+        val westernLast = listOf("Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis", "Garcia", "Rodriguez", "Wilson", "Martinez", "Anderson", "Taylor", "Thomas", "Hernandez", "Moore", "Martin", "Jackson", "Thompson", "White")
+
+        val topics = listOf("Store", "Shop", "Official", "Studio", "Media", "Digital", "Vlog", "Channel", "Daily", "Blog")
+
+        return if (nameType.contains("tây", ignoreCase = true) || nameType.contains("western", ignoreCase = true)) {
+            val f = westernFirst.random()
+            val l = westernLast.random()
+            val t = topics.random()
+            "$f $l $t"
+        } else {
+            val f = vietnameseFirst.random()
+            val m = vietnameseMiddle.random()
+            val l = vietnameseLast.random()
+            val t = listOf("Shop", "Store", "Fashion", "Boutique", "Official", "Online", "Gia Dụng", "Review").random()
+            "$f $m $l $t"
+        }
+    }
 }
+
