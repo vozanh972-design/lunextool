@@ -420,11 +420,12 @@ class TikTokAccessibilityService : AccessibilityService() {
                     if (tabNode != null) {
                         val b = Rect()
                         tabNode.getBoundsInScreen(b)
-                        tapAt(b.exactCenterX(), b.exactCenterY())
-                        var p: AccessibilityNodeInfo? = tabNode
-                        var d = 0
-                        while (p != null && !p.isClickable && d < 10) { p = p.parent; d++ }
-                        (p ?: tabNode).performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        // Chỉ chạm vào toạ độ thực của tab nếu nó nằm sát đáy màn hình
+                        if (b.top >= (rootBounds.top + rootBounds.height() * 0.88f)) {
+                            tapAt(b.exactCenterX(), b.exactCenterY())
+                        } else {
+                            tapBottomRightProfileTab(root)
+                        }
                     } else {
                         tapBottomRightProfileTab(root)
                     }
