@@ -29,9 +29,9 @@ object TotpGenerator {
             val sign = hmacSha1(keyBytes, data)
 
             val offset = sign[sign.size - 1].toInt() and 0x0F
-            val truncatedHash = (sign[offset].toInt() and 0x7F shl 24) or
-                    (sign[offset + 1].toInt() and 0xFF shl 16) or
-                    (sign[offset + 2].toInt() and 0xFF shl 8) or
+            val truncatedHash = ((sign[offset].toInt() and 0x7F) shl 24) or
+                    ((sign[offset + 1].toInt() and 0xFF) shl 16) or
+                    ((sign[offset + 2].toInt() and 0xFF) shl 8) or
                     (sign[offset + 3].toInt() and 0xFF)
 
             val otp = truncatedHash % 1_000_000

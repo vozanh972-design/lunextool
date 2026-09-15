@@ -148,8 +148,17 @@ class FacebookAuthenticator {
         val adid = UUID.randomUUID().toString()
         val jazoest = (10000..99999).random().toString()
         val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        val machineId = if (!datrCookie.isNullOrBlank() && datrCookie.length >= 24) {
-            datrCookie.substring(0, 24)
+        
+        val cleanDatr = if (!datrCookie.isNullOrBlank()) {
+            if (datrCookie.contains("datr=")) {
+                datrCookie.substringAfter("datr=").substringBefore(";").trim()
+            } else {
+                datrCookie.trim()
+            }
+        } else null
+
+        val machineId = if (!cleanDatr.isNullOrBlank() && cleanDatr.length >= 24) {
+            cleanDatr.substring(0, 24)
         } else {
             (1..24).map { chars.random() }.joinToString("")
         }
@@ -159,11 +168,8 @@ class FacebookAuthenticator {
         if (!encPass.isNullOrBlank()) {
             passwords.add(encPass)
         }
-        passwords.add(pass)
-
-        val cookieJar = mutableListOf<String>()
-        if (!datrCookie.isNullOrBlank()) {
-            cookieJar.add("datr=$datrCookie")
+        if (encPass != pass) {
+            passwords.add(pass)
         }
 
         var lastResult: FacebookAuthResult? = null
@@ -192,8 +198,9 @@ class FacebookAuthenticator {
                     .header("User-Agent", userAgent)
                     .header("Accept", "*/*")
                     .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
-                if (cookieJar.isNotEmpty()) {
-                    reqBuilder.header("Cookie", cookieJar.joinToString("; "))
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                if (!cleanDatr.isNullOrBlank()) {
+                    reqBuilder.header("Cookie", "datr=$cleanDatr")
                 }
                 val request = reqBuilder.post(formBuilder.build()).build()
 
@@ -224,10 +231,11 @@ class FacebookAuthenticator {
                     val retryReqBuilder = Request.Builder()
                         .url("https://b-graph.facebook.com/auth/login")
                         .header("User-Agent", userAgent)
-                    if (cookieJar.isNotEmpty()) {
-                        retryReqBuilder.header("Cookie", cookieJar.joinToString("; "))
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                    if (!cleanDatr.isNullOrBlank()) {
+                        retryReqBuilder.header("Cookie", "datr=$cleanDatr")
                     }
-                    val retryReq = retryReqBuilder.post(retryForm).build()
+                    val retryReq = retryReqBuilder.post(retryForm.build()).build()
 
                     val retryRes = client.newCall(retryReq).execute()
                     val retryBody = retryRes.body?.string() ?: ""
