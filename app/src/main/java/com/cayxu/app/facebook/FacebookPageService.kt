@@ -40,7 +40,7 @@ class FacebookPageService {
     ): JSONObject {
         val cleanToken = userToken.removePrefix("OAuth ").trim()
         
-        // Category format chuẩn cho Facebook Graph API (category_list nhận JSON array các ID category)
+        // category_list dạng JSON Array các ID phân loại
         val categoryListJson = JSONArray().apply {
             put(category)
         }
@@ -48,34 +48,38 @@ class FacebookPageService {
         val formBody = FormBody.Builder()
             .add("name", pageName)
             .add("category", "COMMUNITY")
-            .add("category_enum", "SHOPPING_RETAIL")
+            .add("category_enum", "COMMUNITY")
             .add("category_list", categoryListJson.toString())
-            .add("about", "Trang thông tin $pageName")
+            .add("about", "Trang cá nhân $pageName")
             .add("access_token", cleanToken)
             .build()
 
-        val userAgent = try {
-            NativeSecurity.getFbKatanaUA().ifBlank { "[FBAN/FB4A;FBAV/542.0.0.46.151;FBBV/840338789;FBDM/{density=0.75,width=300,height=540};FBLC/vi_VN;FBRV/0;FBCR/MobiFone;FBMF/MTool-Max;FBBD/MTool-Max;FBPN/com.facebook.katana;FBDV/MTool-Max;FBSV/9;FBOP/1;FBCA/arm64-v8a;]" }
-        } catch (_: Throwable) {
-            "[FBAN/FB4A;FBAV/542.0.0.46.151;FBBV/840338789;FBDM/{density=0.75,width=300,height=540};FBLC/vi_VN;FBRV/0;FBCR/MobiFone;FBMF/MTool-Max;FBBD/MTool-Max;FBPN/com.facebook.katana;FBDV/MTool-Max;FBSV/9;FBOP/1;FBCA/arm64-v8a;]"
-        }
-
         val request = Request.Builder()
             .url("$GRAPH_BASE_URL/v19.0/me/accounts")
-            .header("User-Agent", userAgent)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("Accept", "*/*")
             .post(formBody)
             .build()
 
-        httpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string() ?: "{}"
-            val json = JSONObject(body)
-            if (json.has("error")) {
-                val errObj = json.getJSONObject("error")
-                val errMsg = errObj.optString("message", "Lỗi tạo Page Facebook")
-                val errCode = errObj.optInt("code", 0)
-                throw Exception("(#$errCode) $errMsg")
+        return try {
+            httpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: "{}"
+                val json = try {
+                    JSONObject(body)
+                } catch (_: Throwable) {
+                    JSONObject().put("error", JSONObject().put("message", "Phản hồi không hợp lệ từ máy chủ"))
+                }
+
+                if (json.has("error")) {
+                    val errObj = json.optJSONObject("error")
+                    val errMsg = errObj?.optString("message", "Lỗi tạo Page") ?: "Lỗi tạo Page"
+                    val errCode = errObj?.optInt("code", 0) ?: 0
+                    throw Exception("(#$errCode) $errMsg")
+                }
+                json
             }
-            return json
+        } catch (e: Exception) {
+            throw e
         }
     }
 
@@ -171,29 +175,52 @@ class FacebookPageService {
     }
 
     /**
-     * Sinh tên ngẫu nhiên (Tên Việt hoặc Tên Tây)
+     * Sinh tên ngẫu nhiên:
+     * - Tên Việt: 100% Họ + Đệm + Tên người Việt thuần túy (ví dụ: Thùy Dung, Nguyễn Thị Linh, Trần Đức Anh...) KHÔNG chèn hậu tố lạ.
+     * - Tên Tây: 100% First Name + Last Name người phương Tây chuẩn (ví dụ: James Smith, Emma Johnson, Michael Brown...) KHÔNG chèn hậu tố lạ.
      */
     fun generateRandomName(nameType: String): String {
-        val vietnameseFirst = listOf("Nguyễn", "Trần", "Lê", "Phạm", "Hoàng", "Huỳnh", "Phan", "Vũ", "Võ", "Đặng", "Bùi", "Đỗ", "Hồ", "Ngô", "Dương", "Lý")
-        val vietnameseMiddle = listOf("Văn", "Thị", "Đức", "Minh", "Quốc", "Thanh", "Hải", "Tuấn", "Hoàng", "Gia", "Bảo", "Xuân", "Thu", "Ngọc")
-        val vietnameseLast = listOf("Anh", "Bình", "Cường", "Dũng", "Em", "Giang", "Hương", "Huy", "Khánh", "Linh", "Long", "Mai", "Nam", "Nhi", "Phúc", "Quân", "Sơn", "Tâm", "Thảo", "Trang", "Tuấn", "Vy", "Yến")
+        val vietnameseFirst = listOf(
+            "Nguyễn", "Trần", "Lê", "Phạm", "Hoàng", "Huỳnh", "Phan", "Vũ", "Võ",
+            "Đặng", "Bùi", "Đỗ", "Hồ", "Ngô", "Dương", "Lý", "Đinh", "Đoàn", "Lâm", "Trịnh"
+        )
+        val vietnameseMiddle = listOf(
+            "Thị", "Văn", "Thùy", "Ngọc", "Thu", "Xuân", "Thanh", "Minh", "Đức",
+            "Hải", "Tuấn", "Hoàng", "Gia", "Bảo", "Khánh", "Phương", "Diệu", "Mỹ", "Quỳnh"
+        )
+        val vietnameseLast = listOf(
+            "Dung", "Anh", "Linh", "Trang", "Hương", "Hà", "Nhi", "Mai", "Thảo",
+            "Uyên", "Yến", "Vy", "Huyền", "Ngân", "Tâm", "Hằng", "Chi", "Quân", "Nam", "Phong", "Huy", "Sơn"
+        )
 
-        val westernFirst = listOf("James", "John", "Robert", "Michael", "William", "David", "Richard", "Joseph", "Thomas", "Charles", "Emma", "Olivia", "Sophia", "Ava", "Isabella", "Mia", "Emily", "Abigail", "Harper", "Ella")
-        val westernLast = listOf("Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis", "Garcia", "Rodriguez", "Wilson", "Martinez", "Anderson", "Taylor", "Thomas", "Hernandez", "Moore", "Martin", "Jackson", "Thompson", "White")
-
-        val topics = listOf("Store", "Shop", "Official", "Studio", "Media", "Digital", "Vlog", "Channel", "Daily", "Blog")
+        val westernFirst = listOf(
+            "James", "John", "Robert", "Michael", "William", "David", "Richard", "Joseph", "Thomas", "Charles",
+            "Emma", "Olivia", "Sophia", "Ava", "Isabella", "Mia", "Emily", "Abigail", "Harper", "Ella",
+            "Alexander", "Daniel", "Matthew", "Lucas", "Henry", "Sebastian", "Jack", "Chloe", "Grace", "Zoey"
+        )
+        val westernLast = listOf(
+            "Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis", "Garcia", "Rodriguez", "Wilson",
+            "Martinez", "Anderson", "Taylor", "Thomas", "Hernandez", "Moore", "Martin", "Jackson", "Thompson", "White",
+            "Harris", "Clark", "Lewis", "Robinson", "Walker", "Young", "Allen", "King", "Wright", "Scott"
+        )
 
         return if (nameType.contains("tây", ignoreCase = true) || nameType.contains("western", ignoreCase = true)) {
             val f = westernFirst.random()
             val l = westernLast.random()
-            val t = topics.random()
-            "$f $l $t"
+            "$f $l"
         } else {
-            val f = vietnameseFirst.random()
-            val m = vietnameseMiddle.random()
-            val l = vietnameseLast.random()
-            val t = listOf("Shop", "Store", "Fashion", "Boutique", "Official", "Online", "Gia Dụng", "Review").random()
-            "$f $m $l $t"
+            // Tên Việt chuẩn: 50% 3 từ (Họ + Đệm + Tên) và 50% 2 từ (Đệm/Họ + Tên) như Thùy Dung, Ngọc Anh, Nguyễn Linh
+            val isThreeWords = (1..100).random() > 40
+            if (isThreeWords) {
+                val f = vietnameseFirst.random()
+                val m = vietnameseMiddle.random()
+                val l = vietnameseLast.random()
+                "$f $m $l"
+            } else {
+                val m = vietnameseMiddle.random()
+                val l = vietnameseLast.random()
+                "$m $l"
+            }
         }
     }
 }

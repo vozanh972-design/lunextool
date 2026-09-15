@@ -305,7 +305,9 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 if (idx < count) {
                                                     for (s in delaySec downTo 1) {
                                                         withContext(Dispatchers.Main) {
-                                                            accountStatusMap[account.uid] = "Chờ tạo tiếp ($idx/$count): ${s}s"
+                                                            try {
+                                                                accountStatusMap[account.uid] = "Chờ tạo tiếp ($idx/$count): ${s}s"
+                                                            } catch (_: Throwable) {}
                                                         }
                                                         delay(1000L)
                                                     }
@@ -313,22 +315,28 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                             }
 
                                             withContext(Dispatchers.Main) {
-                                                accountStatusMap[account.uid] = "Hoàn tất $count/$count Page"
+                                                try {
+                                                    accountStatusMap[account.uid] = "Hoàn tất $count/$count Page"
+                                                } catch (_: Throwable) {}
                                             }
                                         }
 
                                         withContext(Dispatchers.Main) {
-                                            Toast.makeText(context, "Hoàn tất quá trình Reg Page!", Toast.LENGTH_LONG).show()
-                                            facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                            try {
+                                                Toast.makeText(context.applicationContext, "Hoàn tất quá trình Reg Page!", Toast.LENGTH_LONG).show()
+                                                facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                            } catch (_: Throwable) {}
                                         }
                                     } catch (e: Throwable) {
                                         if (e !is kotlinx.coroutines.CancellationException) {
                                             val errMsg = e.localizedMessage ?: "Lỗi xử lý"
                                             withContext(Dispatchers.Main) {
-                                                runningAccountUid?.let { uid ->
-                                                    accountStatusMap[uid] = "Lỗi: $errMsg"
-                                                }
-                                                Toast.makeText(context, "Lỗi thực thi: $errMsg", Toast.LENGTH_SHORT).show()
+                                                try {
+                                                    runningAccountUid?.let { uid ->
+                                                        accountStatusMap[uid] = "Lỗi: $errMsg"
+                                                    }
+                                                    Toast.makeText(context.applicationContext, "Lỗi thực thi: $errMsg", Toast.LENGTH_SHORT).show()
+                                                } catch (_: Throwable) {}
                                             }
                                         }
                                     } finally {
