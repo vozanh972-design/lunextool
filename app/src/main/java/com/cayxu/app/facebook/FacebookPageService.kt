@@ -152,6 +152,12 @@ class FacebookPageService {
             .header("User-Agent", "[FBAN/FB4A;FBAV/537.0.0.47.77;FBPN/com.facebook.katana;]")
             .header("Authorization", "OAuth $cleanToken")
             .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("X-Fb-Connection-Type", "WIFI")
+            .header("X-Fb-Http-Engine", "Tigon/Liger")
+            .header("X-Fb-Client-Ip", "True")
+            .header("X-Fb-Server-Cluster", "True")
+            .header("X-Graphql-Request-Purpose", "fetch")
+            .header("X-Graphql-Client-Library", "graphservice")
             .post(formBody)
             .build()
 
