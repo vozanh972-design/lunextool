@@ -137,7 +137,7 @@ class FacebookAuthenticator {
         pass: String,
         twoFaSecret: String,
         proxyStr: String? = null,
-        datrCookie: String? = null
+        rawCookie: String? = null
     ): FacebookAuthResult {
         val client = if (!proxyStr.isNullOrBlank()) buildProxiedClient(proxyStr) else httpClient
         val oauthToken = NativeSecurity.getFbOAuthToken()
@@ -150,12 +150,8 @@ class FacebookAuthenticator {
         val jazoest = (10000..99999).random().toString()
         val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         
-        val cleanDatr = if (!datrCookie.isNullOrBlank()) {
-            if (datrCookie.contains("datr=")) {
-                datrCookie.substringAfter("datr=").substringBefore(";").trim()
-            } else {
-                datrCookie.trim()
-            }
+        val cleanDatr = if (!rawCookie.isNullOrBlank() && rawCookie.contains("datr=")) {
+            rawCookie.substringAfter("datr=").substringBefore(";").trim()
         } else null
 
         val machineId = if (!cleanDatr.isNullOrBlank() && cleanDatr.length >= 24) {
@@ -174,6 +170,8 @@ class FacebookAuthenticator {
         }
 
         var lastResult: FacebookAuthResult? = null
+
+        val cleanFullCookie = rawCookie?.replace("\r", "")?.replace("\n", "")?.filter { it.code in 32..126 }?.trim()
 
         for (pwd in passwords) {
             try {
@@ -200,8 +198,8 @@ class FacebookAuthenticator {
                     .header("Accept", "*/*")
                     .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
                     .header("Content-Type", "application/x-www-form-urlencoded")
-                if (!cleanDatr.isNullOrBlank()) {
-                    reqBuilder.header("Cookie", "datr=$cleanDatr")
+                if (!cleanFullCookie.isNullOrBlank()) {
+                    reqBuilder.header("Cookie", cleanFullCookie)
                 }
                 val request = reqBuilder.post(formBuilder.build()).build()
 
@@ -233,21 +231,21 @@ class FacebookAuthenticator {
                         .url("https://b-graph.facebook.com/auth/login")
                         .header("User-Agent", userAgent)
                         .header("Content-Type", "application/x-www-form-urlencoded")
-                    if (!cleanDatr.isNullOrBlank()) {
-                        retryReqBuilder.header("Cookie", "datr=$cleanDatr")
+                    if (!cleanFullCookie.isNullOrBlank()) {
+                        retryReqBuilder.header("Cookie", cleanFullCookie)
                     }
                     val retryReq = retryReqBuilder.post(retryForm).build()
 
                     val retryRes = client.newCall(retryReq).execute()
                     val retryBody = retryRes.body?.string() ?: ""
                     val retryJson = JSONObject(retryBody)
-                    val res = handleAuthJsonResponse(uid, pass, twoFaSecret, proxyStr, retryJson, retryBody)
+                    val res = handleAuthJsonResponse(uid, pass, twoFaSecret, proxyStr, cleanFullCookie, retryJson, retryBody)
                     if (res.isSuccess) return res
                     lastResult = res
                     continue
                 }
 
-                val res = handleAuthJsonResponse(uid, pass, twoFaSecret, proxyStr, json, responseBody)
+                val res = handleAuthJsonResponse(uid, pass, twoFaSecret, proxyStr, cleanFullCookie, json, responseBody)
                 if (res.isSuccess) return res
                 lastResult = res
 
@@ -290,6 +288,7 @@ class FacebookAuthenticator {
         pass: String,
         twoFaSecret: String,
         proxyStr: String?,
+        rawCookie: String?,
         json: JSONObject,
         rawBody: String
     ): FacebookAuthResult {
@@ -315,6 +314,7 @@ class FacebookAuthenticator {
                 }
             }
             val cookieStr = cookieBuilder.toString().trimEnd(' ', ';')
+            val finalSavedCookie = if (!rawCookie.isNullOrBlank()) rawCookie else cookieStr
 
             // Lấy thêm thông tin Name, Avatar, Fanpage từ Graph API
             var fullName = realUid
@@ -334,7 +334,7 @@ class FacebookAuthenticator {
                 uid = realUid,
                 name = fullName,
                 link = twoFaSecret,
-                note = cookieStr,
+                note = finalSavedCookie,
                 phone = proxyStr.orEmpty(),
                 bio = eaaaaToken,
                 isLive = true,

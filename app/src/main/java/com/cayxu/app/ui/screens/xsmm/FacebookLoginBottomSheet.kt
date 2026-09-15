@@ -282,65 +282,72 @@ fun FacebookLoginBottomSheet(
                                             )
                                         }
 
-                                        // TH 2: Dạng có dấu gạch đứng | (UID|Pass|2FA|Cookie hoặc UID|Pass|2FA) -> 100% chuẩn Python facebook_login
+                                        // TH 2: Dạng có dấu gạch đứng | (UID|Pass|2FA|Cookie hoặc UID|Pass|2FA) -> 100% chuẩn Python
                                         if (line.contains("|")) {
                                             val parts = line.split("|").map { it.trim() }
                                             val uid = parts.getOrNull(0) ?: ""
                                             val pwd = parts.getOrNull(1) ?: ""
                                             var twofa = ""
                                             var datr: String? = null
-                                            var rawCookie = ""
 
-                                            for (part in parts) {
-                                                if (part.contains("datr=")) {
-                                                    val m = "datr=([^;]+)".toRegex().find(part)
-                                                    if (m != null) datr = m.groupValues[1].trim()
-                                                }
-                                                if (part.contains("c_user=") || part.contains("xs=")) {
-                                                    rawCookie = part
-                                                }
+                                            val fullCookie = if (parts.size >= 4) {
+                                                parts.subList(3, parts.size).joinToString("|")
+                                            } else {
+                                                parts.find { it.contains("c_user=") || it.contains("xs=") || it.contains("datr=") } ?: ""
                                             }
 
-                                            if (parts.size >= 3 && !parts[2].contains("datr=") && !parts[2].contains("c_user=") && !parts[2].contains("xs=")) {
+                                            if (fullCookie.contains("datr=")) {
+                                                val m = "datr=([^;]+)".toRegex().find(fullCookie)
+                                                if (m != null) datr = m.groupValues[1].trim()
+                                            }
+
+                                            if (parts.size >= 3 && !parts[2].contains("datr=") && !parts[2].contains("c_user=") && !parts[2].contains("xs=") && !parts[2].startsWith("EAA")) {
                                                 twofa = parts[2]
                                             }
 
-                                            // Gọi login như Python
-                                            val authResult = authenticator.login(
-                                                uid = uid,
-                                                pass = pwd,
-                                                twoFaSecret = twofa,
-                                                proxyStr = null,
-                                                datrCookie = datr
-                                            )
+                                            // 1. Thử login bằng Authenticator
+                                            if (uid.isNotBlank() && pwd.isNotBlank()) {
+                                                try {
+                                                    val authResult = authenticator.login(
+                                                        uid = uid,
+                                                        pass = pwd,
+                                                        twoFaSecret = twofa,
+                                                        proxyStr = null,
+                                                        rawCookie = fullCookie
+                                                    )
 
-                                            if (authResult.isSuccess && authResult.account.isLive) {
-                                                return@async authResult.account.copy(
-                                                    password = pwd,
-                                                    link = twofa,
-                                                    isLive = true
-                                                )
+                                                    if (authResult.isSuccess && authResult.account.isLive) {
+                                                        return@async authResult.account.copy(
+                                                            password = pwd,
+                                                            link = twofa,
+                                                            note = if (authResult.account.note.isNotBlank()) authResult.account.note else fullCookie,
+                                                            isLive = true
+                                                        )
+                                                    }
+                                                } catch (_: Exception) {}
                                             }
 
-                                            // Fallback nếu có cookie c_user & xs
-                                            if (rawCookie.isNotBlank()) {
-                                                val cookieAcc = accountManager.getTokenFromCookie(rawCookie, null)
-                                                if (cookieAcc != null && cookieAcc.isLive) {
-                                                    return@async cookieAcc.copy(
-                                                        uid = uid.ifBlank { cookieAcc.uid },
-                                                        password = pwd,
-                                                        link = twofa,
-                                                        isLive = true
-                                                    )
-                                                }
+                                            // 2. Thử lấy token từ Cookie nếu có c_user hoặc xs
+                                            if (fullCookie.isNotBlank() && (fullCookie.contains("c_user=") || fullCookie.contains("xs="))) {
+                                                try {
+                                                    val cookieAcc = accountManager.getTokenFromCookie(fullCookie, null)
+                                                    if (cookieAcc != null && cookieAcc.isLive) {
+                                                        return@async cookieAcc.copy(
+                                                            uid = uid.ifBlank { cookieAcc.uid },
+                                                            password = pwd,
+                                                            link = twofa,
+                                                            isLive = true
+                                                        )
+                                                    }
+                                                } catch (_: Exception) {}
                                             }
 
                                             return@async FacebookAccount(
-                                                uid = uid,
+                                                uid = uid.ifBlank { "N/A" },
                                                 name = uid,
                                                 password = pwd,
                                                 link = twofa,
-                                                note = rawCookie,
+                                                note = fullCookie,
                                                 isLive = false
                                             )
                                         }

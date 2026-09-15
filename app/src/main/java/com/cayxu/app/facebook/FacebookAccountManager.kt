@@ -92,8 +92,9 @@ class FacebookAccountManager {
      */
     fun getTokenFromCookie(cookieStr: String, proxyStr: String? = null): FacebookAccount? {
         val client = if (!proxyStr.isNullOrEmpty()) buildProxiedClient(proxyStr) else httpClient
+        val cleanCookie = cookieStr.replace("\r", "").replace("\n", "").filter { it.code in 32..126 }.trim()
 
-        val cUserMatcher = C_USER_REGEX.matcher(cookieStr)
+        val cUserMatcher = C_USER_REGEX.matcher(cleanCookie)
         var uid = if (cUserMatcher.find()) cUserMatcher.group(1) ?: "" else ""
 
         val form = FormBody.Builder()
@@ -101,14 +102,15 @@ class FacebookAccountManager {
             .add("generate_session_cookies", "1")
             .build()
 
-        val request = Request.Builder()
+        val reqBuilder = Request.Builder()
             .url("https://api.facebook.com/method/auth.getSessionForApp")
-            .header("Cookie", cookieStr)
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .header("Content-Type", "application/x-www-form-urlencoded")
             .header("Accept", "*/*")
-            .post(form)
-            .build()
+        if (cleanCookie.isNotBlank()) {
+            reqBuilder.header("Cookie", cleanCookie)
+        }
+        val request = reqBuilder.post(form).build()
 
         return try {
             client.newCall(request).execute().use { response ->

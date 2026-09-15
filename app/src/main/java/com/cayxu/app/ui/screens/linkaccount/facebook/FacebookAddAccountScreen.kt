@@ -348,56 +348,63 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                             val pwd = parts.getOrNull(1) ?: ""
                                             var twofa = ""
                                             var datr: String? = null
-                                            var rawCookie = ""
 
-                                            for (part in parts) {
-                                                if (part.contains("datr=")) {
-                                                    val m = "datr=([^;]+)".toRegex().find(part)
-                                                    if (m != null) datr = m.groupValues[1].trim()
-                                                }
-                                                if (part.contains("c_user=") || part.contains("xs=")) {
-                                                    rawCookie = part
-                                                }
+                                            val fullCookie = if (parts.size >= 4) {
+                                                parts.subList(3, parts.size).joinToString("|")
+                                            } else {
+                                                parts.find { it.contains("c_user=") || it.contains("xs=") || it.contains("datr=") } ?: ""
                                             }
 
-                                            if (parts.size >= 3 && !parts[2].contains("datr=") && !parts[2].contains("c_user=") && !parts[2].contains("xs=")) {
+                                            if (fullCookie.contains("datr=")) {
+                                                val m = "datr=([^;]+)".toRegex().find(fullCookie)
+                                                if (m != null) datr = m.groupValues[1].trim()
+                                            }
+
+                                            if (parts.size >= 3 && !parts[2].contains("datr=") && !parts[2].contains("c_user=") && !parts[2].contains("xs=") && !parts[2].startsWith("EAA")) {
                                                 twofa = parts[2]
                                             }
 
-                                            val authRes = authenticator.login(
-                                                uid = uid,
-                                                pass = pwd,
-                                                twoFaSecret = twofa,
-                                                proxyStr = null,
-                                                datrCookie = datr
-                                            )
+                                            if (uid.isNotBlank() && pwd.isNotBlank()) {
+                                                try {
+                                                    val authRes = authenticator.login(
+                                                        uid = uid,
+                                                        pass = pwd,
+                                                        twoFaSecret = twofa,
+                                                        proxyStr = null,
+                                                        rawCookie = fullCookie
+                                                    )
 
-                                            if (authRes.isSuccess && authRes.account.isLive) {
-                                                return@async authRes.account.copy(
-                                                    password = pwd,
-                                                    link = twofa,
-                                                    isLive = true
-                                                )
+                                                    if (authRes.isSuccess && authRes.account.isLive) {
+                                                        return@async authRes.account.copy(
+                                                            password = pwd,
+                                                            link = twofa,
+                                                            note = if (authRes.account.note.isNotBlank()) authRes.account.note else fullCookie,
+                                                            isLive = true
+                                                        )
+                                                    }
+                                                } catch (_: Exception) {}
                                             }
 
-                                            if (rawCookie.isNotBlank()) {
-                                                val cookieAcc = accountManager.getTokenFromCookie(rawCookie, null)
-                                                if (cookieAcc != null && cookieAcc.isLive) {
-                                                    return@async cookieAcc.copy(
-                                                        uid = uid.ifBlank { cookieAcc.uid },
-                                                        password = pwd,
-                                                        link = twofa,
-                                                        isLive = true
-                                                    )
-                                                }
+                                            if (fullCookie.isNotBlank() && (fullCookie.contains("c_user=") || fullCookie.contains("xs="))) {
+                                                try {
+                                                    val cookieAcc = accountManager.getTokenFromCookie(fullCookie, null)
+                                                    if (cookieAcc != null && cookieAcc.isLive) {
+                                                        return@async cookieAcc.copy(
+                                                            uid = uid.ifBlank { cookieAcc.uid },
+                                                            password = pwd,
+                                                            link = twofa,
+                                                            isLive = true
+                                                        )
+                                                    }
+                                                } catch (_: Exception) {}
                                             }
 
                                             return@async FacebookAccount(
-                                                uid = uid,
+                                                uid = uid.ifBlank { "N/A" },
                                                 name = uid,
                                                 password = pwd,
                                                 link = twofa,
-                                                note = rawCookie,
+                                                note = fullCookie,
                                                 isLive = false
                                             )
                                         }
