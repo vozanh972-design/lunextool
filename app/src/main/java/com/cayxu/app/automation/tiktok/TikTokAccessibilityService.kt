@@ -416,12 +416,14 @@ class TikTokAccessibilityService : AccessibilityService() {
 
                     // 6. ĐANG Ở TRANG CHỦ / BẠN BÈ / VIDEO / FEED -> Bấm CHÍNH XÁC tab "Hồ sơ" ở góc dưới cùng bên phải
                     TikTokCaptureBridge.updateProgress("Đang mở trang Hồ sơ...")
+                    val rootBounds = Rect()
+                    root.getBoundsInScreen(rootBounds)
                     val tabNode = findProfileTabNode(root, root)
                     if (tabNode != null) {
                         val b = Rect()
                         tabNode.getBoundsInScreen(b)
                         // Chỉ chạm vào toạ độ thực của tab nếu nó nằm sát đáy màn hình
-                        if (b.top >= (rootBounds.top + rootBounds.height() * 0.88f)) {
+                        if (rootBounds.height() > 0 && b.top >= (rootBounds.top + rootBounds.height() * 0.88f)) {
                             tapAt(b.exactCenterX(), b.exactCenterY())
                         } else {
                             tapBottomRightProfileTab(root)
