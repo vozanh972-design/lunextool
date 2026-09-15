@@ -102,7 +102,7 @@ object FacebookPasswordEncryptor {
             // byte(1) + byte(keyId) + iv(12) + short_le(lenEncAesKey) + encAesKey + tag(16) + encPass
             val out = ByteArrayOutputStream()
             out.write(1) // version
-            out.write(keyId) // keyId
+            out.write(keyId and 0xFF) // keyId
             out.write(ivBytes) // iv 12 bytes
 
             val lenBuf = ByteBuffer.allocate(2).order(ByteOrder.LITTLE_ENDIAN)

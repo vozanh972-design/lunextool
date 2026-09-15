@@ -49,7 +49,7 @@ object TotpGenerator {
 
     private fun decodeBase32(base32: String): ByteArray {
         val base32Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-        val clean = base32.trimEnd('=')
+        val clean = base32.trimEnd('=').uppercase()
         var buffer = 0
         var bitsLeft = 0
         val out = mutableListOf<Byte>()
@@ -57,11 +57,12 @@ object TotpGenerator {
         for (c in clean) {
             val valIndex = base32Chars.indexOf(c)
             if (valIndex < 0) continue
-            buffer = (buffer shl 5) or valIndex
+            buffer = ((buffer and ((1 shl bitsLeft) - 1)) shl 5) or valIndex
             bitsLeft += 5
             if (bitsLeft >= 8) {
                 out.add(((buffer shr (bitsLeft - 8)) and 0xFF).toByte())
                 bitsLeft -= 8
+                buffer = buffer and ((1 shl bitsLeft) - 1)
             }
         }
         return out.toByteArray()
