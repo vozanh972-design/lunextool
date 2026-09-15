@@ -610,7 +610,12 @@ class InstagramApiClient(
     @Throws(Exception::class)
     fun likeMediaGraphQL(mediaId: String, shortcode: String = "", fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
         val csrf = activeCsrfToken.ifBlank { extractCsrfToken() ?: throw IllegalStateException("Không có CSRF token") }
-        val av = if (!actorId.isNullOrBlank()) actorId else activeActorId.ifBlank { activeUserId.ifBlank { extractDsUserId() ?: "0" } }
+        val effectiveActorId = if (!actorId.isNullOrBlank() && actorId != "0") {
+            actorId
+        } else {
+            activeActorId.ifBlank { activeUserId.ifBlank { extractDsUserId() ?: "0" } }
+        }
+        val av = effectiveActorId.ifBlank { "0" }
         val currentFbDtsg = fbDtsg?.takeIf { it.isNotBlank() } ?: activeFbDtsg
         val currentLsd = lsd?.takeIf { it.isNotBlank() } ?: activeLsd
         val currentJazoest = calculateJazoest(currentFbDtsg)
@@ -620,6 +625,8 @@ class InstagramApiClient(
         val currentSpinT = (System.currentTimeMillis() / 1000L).toString()
         val currentS = activeS.ifBlank { generateSessionS() }
         val currentHsi = activeHsi.ifBlank { generateHsi() }
+
+        var lastErrorDetail = ""
 
         // 1. Thử qua PolarisAPILikePostMutation (Doc ID: 27358573637160660)
         try {
@@ -639,7 +646,7 @@ class InstagramApiClient(
                 .add("__d", "www")
                 .add("__user", "0")
                 .add("__a", "1")
-                .add("__req", "4")
+                .add("__req", "1")
                 .add("__hs", currentHs)
                 .add("dpr", "3")
                 .add("__ccg", "GOOD")
@@ -703,9 +710,21 @@ class InstagramApiClient(
                 if (responseBody.contains("\"require_login\"", ignoreCase = true) || responseBody.contains("login_required", ignoreCase = true) || responseBody.contains("checkpoint_required", ignoreCase = true)) {
                     throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
                 }
+                if (responseBody.isNotBlank()) {
+                    try {
+                        val json = JSONObject(responseBody)
+                        val errArr = json.optJSONArray("errors")
+                        if (errArr != null && errArr.length() > 0) {
+                            lastErrorDetail = errArr.getJSONObject(0).optString("message", "")
+                        } else if (json.has("message")) {
+                            lastErrorDetail = json.optString("message", "")
+                        }
+                    } catch (_: Exception) {}
+                }
             }
         } catch (e: Exception) {
             if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
+            lastErrorDetail = e.message ?: ""
         }
 
         // 2. Fallback: Thử qua usePolarisLikeMediaLikeMutation (Doc ID: 9595477160535898)
@@ -719,7 +738,7 @@ class InstagramApiClient(
             .add("__d", "www")
             .add("__user", "0")
             .add("__a", "1")
-            .add("__req", "5")
+            .add("__req", "1")
             .add("__hs", currentHs)
             .add("dpr", "3")
             .add("__ccg", "GOOD")
@@ -784,6 +803,20 @@ class InstagramApiClient(
             }
             if (responseBody.trimStart().startsWith("<")) {
                 throw IllegalStateException("Instagram trả về trang HTML - Cookie hết hạn hoặc checkpoint")
+            }
+            if (responseBody.isNotBlank()) {
+                try {
+                    val json = JSONObject(responseBody)
+                    val errArr = json.optJSONArray("errors")
+                    if (errArr != null && errArr.length() > 0) {
+                        lastErrorDetail = errArr.getJSONObject(0).optString("message", "")
+                    } else if (json.has("message")) {
+                        lastErrorDetail = json.optString("message", "")
+                    }
+                } catch (_: Exception) {}
+            }
+            if (lastErrorDetail.isNotBlank()) {
+                throw IllegalStateException("Instagram từ chối Like: $lastErrorDetail")
             }
             return false
         }
