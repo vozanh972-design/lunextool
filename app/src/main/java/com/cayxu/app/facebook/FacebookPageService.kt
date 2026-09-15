@@ -150,32 +150,98 @@ class FacebookPageService {
                 return@use JSONObject().put("status", 200).put("msg", "success").put("page_name", pageName)
             }
 
-            if (body.contains("error", ignoreCase = true)) {
-                val toastRegex = Regex("""Toast,\s*"([^"]+)"""")
-                val match = toastRegex.find(body)
-                if (match != null) {
-                    val toastMsg = match.groupValues[1]
-                    throw Exception(toastMsg)
-                }
-                if (body.contains("create_error") || body.contains("profile_creation_error")) {
-                    throw Exception("Facebook lỗi tạo page (Giới hạn tài khoản)")
-                }
-            }
+            // Trích xuất lỗi chi tiết, chính xác từ phản hồi của Facebook
+            val detailedError = extractDetailedFacebookError(body)
+            throw Exception(detailedError)
+        }
+    }
 
-            val json = try { JSONObject(body) } catch (_: Throwable) { JSONObject() }
-            if (json.has("error")) {
-                val errObj = json.optJSONObject("error")
-                val msg = errObj?.optString("message", "Lỗi tạo Page") ?: "Lỗi tạo Page"
-                val code = errObj?.optInt("code", 0) ?: 0
-                throw Exception("(#$code) $msg")
-            }
+    /**
+     * Bóc tách thông điệp lỗi chính xác từ Facebook (Toast, Dialog, errors, hoặc lý do cụ thể)
+     */
+    private fun extractDetailedFacebookError(body: String): String {
+        // 1. Tìm thông báo Toast trong Bloks Action: Toast, "..."
+        val toastRegex = Regex("""Toast,\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        val toastMatch = toastRegex.find(body)
+        if (toastMatch != null && toastMatch.groupValues[1].isNotBlank()) {
+            return toastMatch.groupValues[1]
+        }
 
-            if (resp.isSuccessful) {
-                json
-            } else {
-                throw Exception("HTTP ${resp.code}: $body")
+        // 2. Tìm thông báo Dialog / Alert trong Bloks
+        val alertRegex = Regex("""(?:Alert|Dialog|ShowDialog|text|title),\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        val alertMatch = alertRegex.find(body)
+        if (alertMatch != null && alertMatch.groupValues[1].isNotBlank()) {
+            val txt = alertMatch.groupValues[1]
+            if (txt.length > 3 && !txt.startsWith("http") && !txt.contains("bloks", ignoreCase = true)) {
+                return txt
             }
         }
+
+        // 3. Phân tích cấu trúc JSON errors / error
+        try {
+            val json = JSONObject(body)
+            if (json.has("errors")) {
+                val errArr = json.getJSONArray("errors")
+                if (errArr.length() > 0) {
+                    val err = errArr.getJSONObject(0)
+                    val desc = err.optString("description", "")
+                    val summary = err.optString("summary", "")
+                    val msg = err.optString("message", "")
+                    val code = err.optInt("code", 0)
+                    val text = desc.ifBlank { summary.ifBlank { msg } }
+                    if (text.isNotBlank()) {
+                        return if (code != 0) "(#$code) $text" else text
+                    }
+                }
+            }
+            if (json.has("error")) {
+                val err = json.optJSONObject("error")
+                if (err != null) {
+                    val userMsg = err.optString("error_user_msg", "")
+                    val userTitle = err.optString("error_user_title", "")
+                    val msg = err.optString("message", "")
+                    val code = err.optInt("code", 0)
+                    val text = userMsg.ifBlank { userTitle.ifBlank { msg } }
+                    if (text.isNotBlank()) {
+                        return if (code != 0) "(#$code) $text" else text
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+
+        // 4. Tìm các thuộc tính lỗi trong chuỗi JSON
+        val messageRegexes = listOf(
+            Regex("""["']error_user_msg["']\s*:\s*["']([^"']+)["']"""),
+            Regex("""["']error_description["']\s*:\s*["']([^"']+)["']"""),
+            Regex("""["']error_message["']\s*:\s*["']([^"']+)["']"""),
+            Regex("""["']description["']\s*:\s*["']([^"']+)["']"""),
+            Regex("""["']message["']\s*:\s*["']([^"']+)["']""")
+        )
+        for (regex in messageRegexes) {
+            val m = regex.find(body)
+            if (m != null && m.groupValues[1].isNotBlank()) {
+                val foundMsg = m.groupValues[1]
+                if (!foundMsg.equals("null", ignoreCase = true) && !foundMsg.startsWith("http") && !foundMsg.contains("graphql", ignoreCase = true)) {
+                    return foundMsg
+                }
+            }
+        }
+
+        // 5. Kiểm tra các mã lỗi / từ khóa nghiệp vụ cụ thể
+        if (body.contains("sms", ignoreCase = true) || body.contains("phone", ignoreCase = true) || body.contains("số điện thoại", ignoreCase = true)) {
+            return "Cần xác thực số điện thoại / SMS trên Facebook"
+        }
+        if (body.contains("checkpoint", ignoreCase = true) || body.contains("challenge", ignoreCase = true)) {
+            return "Tài khoản bị Checkpoint / Xác minh danh tính"
+        }
+        if (body.contains("password", ignoreCase = true) || body.contains("mật khẩu", ignoreCase = true)) {
+            return "Cần xác thực lại mật khẩu"
+        }
+        if (body.contains("limit", ignoreCase = true) || body.contains("quá nhiều", ignoreCase = true)) {
+            return "Đã đạt giới hạn tạo Page trong ngày"
+        }
+
+        return "Facebook từ chối tạo Page (Vui lòng kiểm tra lại tài khoản)"
     }
 
     /**

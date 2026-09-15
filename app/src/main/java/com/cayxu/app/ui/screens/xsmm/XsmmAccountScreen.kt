@@ -888,7 +888,11 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                 android.widget.Toast.makeText(context, "Đã làm mới thông tin: ${updated.name}", android.widget.Toast.LENGTH_SHORT).show()
                                                             }
                                                         } catch (e: Exception) {
+                                                            val updated = account.copy(isLive = false)
+                                                            com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
                                                             withContext(Dispatchers.Main) {
+                                                                avatarVersion = System.currentTimeMillis()
+                                                                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
                                                                 android.widget.Toast.makeText(context, "Lỗi kiểm tra Facebook: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
                                                             }
                                                         }
@@ -908,11 +912,31 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                     facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
                                                                     android.widget.Toast.makeText(context, "Đã làm mới thông tin: ${updated.name}", android.widget.Toast.LENGTH_SHORT).show()
                                                                 }
+                                                            } else {
+                                                                val updated = account.copy(isLive = false)
+                                                                com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
+                                                                withContext(Dispatchers.Main) {
+                                                                    avatarVersion = System.currentTimeMillis()
+                                                                    facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
+                                                                    android.widget.Toast.makeText(context, "Lỗi kiểm tra Facebook: Cookie/Token DIE", android.widget.Toast.LENGTH_SHORT).show()
+                                                                }
                                                             }
                                                         } catch (e: Exception) {
+                                                            val updated = account.copy(isLive = false)
+                                                            com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
                                                             withContext(Dispatchers.Main) {
+                                                                avatarVersion = System.currentTimeMillis()
+                                                                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
                                                                 android.widget.Toast.makeText(context, "Lỗi kiểm tra Facebook: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
                                                             }
+                                                        }
+                                                    } else {
+                                                        val updated = account.copy(isLive = false)
+                                                        com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
+                                                        withContext(Dispatchers.Main) {
+                                                            avatarVersion = System.currentTimeMillis()
+                                                            facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
+                                                            android.widget.Toast.makeText(context, "Lỗi: Tài khoản thiếu Token và Cookie", android.widget.Toast.LENGTH_SHORT).show()
                                                         }
                                                     }
                                                 }

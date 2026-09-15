@@ -923,7 +923,11 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                         Toast.makeText(context, "Đã làm mới thông tin: ${updated.name}", Toast.LENGTH_SHORT).show()
                                                     }
                                                 } catch (e: Exception) {
+                                                    val updated = account.copy(isLive = false)
+                                                    FacebookAccountsStore.addAccount(context, updated)
                                                     withContext(Dispatchers.Main) {
+                                                        avatarVersion = System.currentTimeMillis()
+                                                        facebookAccounts = FacebookAccountsStore.getAccounts(context)
                                                         Toast.makeText(context, "Lỗi kiểm tra Facebook: ${e.message}", Toast.LENGTH_SHORT).show()
                                                     }
                                                 }
@@ -943,11 +947,31 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                             facebookAccounts = FacebookAccountsStore.getAccounts(context)
                                                             Toast.makeText(context, "Đã làm mới thông tin: ${updated.name}", Toast.LENGTH_SHORT).show()
                                                         }
+                                                    } else {
+                                                        val updated = account.copy(isLive = false)
+                                                        FacebookAccountsStore.addAccount(context, updated)
+                                                        withContext(Dispatchers.Main) {
+                                                            avatarVersion = System.currentTimeMillis()
+                                                            facebookAccounts = FacebookAccountsStore.getAccounts(context)
+                                                            Toast.makeText(context, "Lỗi kiểm tra Facebook: Cookie/Token DIE", Toast.LENGTH_SHORT).show()
+                                                        }
                                                     }
                                                 } catch (e: Exception) {
+                                                    val updated = account.copy(isLive = false)
+                                                    FacebookAccountsStore.addAccount(context, updated)
                                                     withContext(Dispatchers.Main) {
+                                                        avatarVersion = System.currentTimeMillis()
+                                                        facebookAccounts = FacebookAccountsStore.getAccounts(context)
                                                         Toast.makeText(context, "Lỗi kiểm tra Facebook: ${e.message}", Toast.LENGTH_SHORT).show()
                                                     }
+                                                }
+                                            } else {
+                                                val updated = account.copy(isLive = false)
+                                                FacebookAccountsStore.addAccount(context, updated)
+                                                withContext(Dispatchers.Main) {
+                                                    avatarVersion = System.currentTimeMillis()
+                                                    facebookAccounts = FacebookAccountsStore.getAccounts(context)
+                                                    Toast.makeText(context, "Lỗi: Tài khoản thiếu Token và Cookie", Toast.LENGTH_SHORT).show()
                                                 }
                                             }
                                         }
