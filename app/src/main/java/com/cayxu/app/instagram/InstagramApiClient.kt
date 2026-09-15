@@ -552,7 +552,7 @@ class InstagramApiClient(
 
         httpClient.newCall(gqlRequest).execute().use { gqlResponse ->
             if (gqlResponse.code == 429) {
-                throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429) - Vui lòng tăng thời gian chờ an toàn")
+                throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429)")
             }
             if (gqlResponse.code in listOf(301, 302, 303, 307, 308)) {
                 throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (Redirect ${gqlResponse.code})")
@@ -583,7 +583,21 @@ class InstagramApiClient(
                 throw IllegalStateException("Instagram trả về trang HTML - Cookie hết hạn hoặc checkpoint")
             }
 
-            throw IllegalStateException("Instagram từ chối follow đối tượng $cleanTargetId: HTTP ${gqlResponse.code}")
+            var errDetail = ""
+            try {
+                val json = JSONObject(gqlResponseBody)
+                val errArr = json.optJSONArray("errors")
+                if (errArr != null && errArr.length() > 0) {
+                    errDetail = errArr.getJSONObject(0).optString("message", "")
+                } else if (json.has("message")) {
+                    errDetail = json.optString("message", "")
+                }
+            } catch (_: Exception) {}
+
+            if (errDetail.isNotBlank()) {
+                throw IllegalStateException("Instagram từ chối follow: $errDetail")
+            }
+            throw IllegalStateException("Instagram từ chối follow đối tượng $cleanTargetId (HTTP ${gqlResponse.code})")
         }
     }
 
@@ -607,9 +621,13 @@ class InstagramApiClient(
     /**
      * Like bài viết qua Instagram GraphQL PolarisAPILikePostMutation (Doc ID: 27358573637160660)
      */
+    /**
+     * Like bài viết qua Instagram GraphQL chuẩn Web
+     * Đầy đủ Header chuẩn trình duyệt Web Instagram (X-Instagram-AJAX, X-IG-App-ID, X-ASBD-ID, X-FB-Friendly-Name, X-FB-LSD)
+     */
     @Throws(Exception::class)
     fun likeMediaGraphQL(mediaId: String, shortcode: String = "", fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
-        val csrf = activeCsrfToken.ifBlank { extractCsrfToken() ?: throw IllegalStateException("Không có CSRF token") }
+        val csrf = activeCsrfToken.ifBlank { extractCsrfToken() ?: throw IllegalStateException("Không có CSRF token trong cookie") }
         val effectiveActorId = if (!actorId.isNullOrBlank() && actorId != "0") {
             actorId
         } else {
@@ -627,6 +645,7 @@ class InstagramApiClient(
         val currentHsi = activeHsi.ifBlank { generateHsi() }
 
         var lastErrorDetail = ""
+        val ref = if (shortcode.isNotBlank()) "$BASE_URL/p/$shortcode/" else "$BASE_URL/"
 
         // 1. Thử qua PolarisAPILikePostMutation (Doc ID: 27358573637160660)
         try {
@@ -674,14 +693,25 @@ class InstagramApiClient(
                 .add("doc_id", DOC_ID_LIKE_MUTATION_POLARIS)
                 .build()
 
-            val ref = if (shortcode.isNotBlank()) "$BASE_URL/p/$shortcode/" else "$BASE_URL/"
-            val headers1 = buildStandardHeaders(
-                csrfToken = csrf,
-                friendlyName = "PolarisAPILikePostMutation",
-                lsdToken = currentLsd,
-                referer = ref,
-                appId = APP_ID
-            )
+            val headers1 = Headers.Builder()
+                .add("User-Agent", userAgent)
+                .add("Cookie", cookie)
+                .add("Accept", "*/*")
+                .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+                .add("Origin", BASE_URL)
+                .add("Referer", ref)
+                .add("X-CSRFToken", csrf)
+                .add("X-IG-App-ID", APP_ID)
+                .add("X-ASBD-ID", ASBD_ID)
+                .add("X-Instagram-AJAX", currentRev)
+                .add("X-FB-Friendly-Name", "PolarisAPILikePostMutation")
+                .apply {
+                    if (currentLsd.isNotBlank()) add("X-FB-LSD", currentLsd)
+                }
+                .add("Sec-Fetch-Dest", "empty")
+                .add("Sec-Fetch-Mode", "cors")
+                .add("Sec-Fetch-Site", "same-origin")
+                .build()
 
             val request1 = Request.Builder()
                 .url("$BASE_URL/api/graphql")
@@ -694,6 +724,9 @@ class InstagramApiClient(
                     throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (redirect ${response.code})")
                 }
                 val responseBody = response.body?.string() ?: ""
+                if (response.code == 429) {
+                    throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429)")
+                }
                 if (response.isSuccessful || response.code == 200) {
                     if (responseBody.contains("\"viewer_has_liked\":true") ||
                         responseBody.contains("\"status\":\"ok\"") ||
@@ -723,7 +756,7 @@ class InstagramApiClient(
                 }
             }
         } catch (e: Exception) {
-            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
+            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true || e.message?.contains("429") == true) throw e
             lastErrorDetail = e.message ?: ""
         }
 
@@ -766,14 +799,25 @@ class InstagramApiClient(
             .add("doc_id", DOC_ID_LIKE_MUTATION)
             .build()
 
-        val ref = if (shortcode.isNotBlank()) "$BASE_URL/p/$shortcode/" else "$BASE_URL/"
-        val headers2 = buildStandardHeaders(
-            csrfToken = csrf,
-            friendlyName = "usePolarisLikeMediaLikeMutation",
-            lsdToken = currentLsd,
-            referer = ref,
-            appId = APP_ID
-        )
+        val headers2 = Headers.Builder()
+            .add("User-Agent", userAgent)
+            .add("Cookie", cookie)
+            .add("Accept", "*/*")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+            .add("Origin", BASE_URL)
+            .add("Referer", ref)
+            .add("X-CSRFToken", csrf)
+            .add("X-IG-App-ID", APP_ID)
+            .add("X-ASBD-ID", ASBD_ID)
+            .add("X-Instagram-AJAX", currentRev)
+            .add("X-FB-Friendly-Name", "usePolarisLikeMediaLikeMutation")
+            .apply {
+                if (currentLsd.isNotBlank()) add("X-FB-LSD", currentLsd)
+            }
+            .add("Sec-Fetch-Dest", "empty")
+            .add("Sec-Fetch-Mode", "cors")
+            .add("Sec-Fetch-Site", "same-origin")
+            .build()
 
         val request2 = Request.Builder()
             .url("$BASE_URL/api/graphql")
@@ -784,6 +828,9 @@ class InstagramApiClient(
         httpClient.newCall(request2).execute().use { response ->
             if (response.code in listOf(301, 302, 303, 307, 308)) {
                 throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (redirect ${response.code})")
+            }
+            if (response.code == 429) {
+                throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429)")
             }
             val responseBody = response.body?.string() ?: ""
             if (response.isSuccessful || response.code == 200) {
@@ -802,7 +849,7 @@ class InstagramApiClient(
                 throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
             }
             if (responseBody.trimStart().startsWith("<")) {
-                throw IllegalStateException("Instagram trả về trang HTML - Cookie hết hạn hoặc checkpoint")
+                throw IllegalStateException("Instagram trả về HTML - Cookie hết hạn hoặc checkpoint")
             }
             if (responseBody.isNotBlank()) {
                 try {
@@ -847,7 +894,7 @@ class InstagramApiClient(
 
         val finalMediaId = if (mediaId.isNotBlank()) mediaId else clean
 
-        // Thực hiện Like qua GraphQL PolarisAPILikePostMutation duy nhất của Instagram Web
+        // Thực hiện Like qua GraphQL của Instagram Web
         val okGraphQL = likeMediaGraphQL(finalMediaId, shortcode, fbDtsg, lsd, actorId)
         if (okGraphQL) return true
 
