@@ -357,6 +357,8 @@ class TikTokAccessibilityService : AccessibilityService() {
                         }
                         delay(2500)
                         continue
+                    }
+
                     // 2. KIỂM TRA MENU SIDEBAR / BOTTOM SHEET 3 GẠCH (Đang có mục "Cài đặt và quyền riêng tư")
                     val settingsRowNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
                     val isMenuDrawer = settingsRowNode != null && 
