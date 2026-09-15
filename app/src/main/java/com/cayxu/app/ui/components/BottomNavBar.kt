@@ -45,16 +45,21 @@ fun CayXuBottomBar(navController: NavController) {
     val indicatorBg = Color(0xFFEFF6FF)
     val borderColor = Color(0xFFE2E8F0)
 
+    val shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+
     Surface(
         color = Color.White,
+        shape = shape,
+        shadowElevation = 8.dp,
         modifier = Modifier
             .fillMaxWidth()
-            .border(width = 1.dp, color = borderColor)
+            .border(width = 1.dp, color = borderColor, shape = shape)
     ) {
         NavigationBar(
             containerColor = Color.White,
             tonalElevation = 0.dp,
-            modifier = Modifier.height(68.dp)
+            modifier = Modifier
+                .height(68.dp)
         ) {
             bottomItems.forEach { item ->
                 val isSelected = currentRoute == item.route

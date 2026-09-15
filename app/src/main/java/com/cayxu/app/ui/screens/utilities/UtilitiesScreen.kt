@@ -54,47 +54,23 @@ fun UtilitiesScreen(navController: NavController) {
                 .fillMaxWidth()
                 .border(width = 1.dp, color = CardBorder)
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 20.dp, vertical = 14.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .border(1.dp, CardBorder, CircleShape)
-                        .background(Color.White)
-                        .clickable { navController.goHome() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.ArrowBack,
-                        contentDescription = "Quay lại",
-                        tint = TextPrimaryColor,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                Spacer(Modifier.width(14.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Tiện ích",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimaryColor,
-                        letterSpacing = (-0.2).sp
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = "Mọi công cụ hữu ích, gói gọn trong một nơi",
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = TextTertiaryColor
-                    )
-                }
+                Text(
+                    text = "Tiện ích",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimaryColor
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "Mọi công cụ hữu ích, gói gọn trong một nơi",
+                    fontSize = 12.sp,
+                    color = TextSecondaryColor
+                )
             }
         }
 

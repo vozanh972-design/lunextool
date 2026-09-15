@@ -1,9 +1,12 @@
 package com.cayxu.app.ui.screens.utilities
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,26 +20,28 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
-import com.cayxu.app.data.local.FacebookPageItem
-import com.cayxu.app.facebook.FacebookPageService
+import com.cayxu.app.facebook.FacebookAccountManager
+import com.cayxu.app.ui.screens.xsmm.FacebookLoginBottomSheet
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Cobalt600 = Color(0xFF1D4ED8)
-private val Cobalt500 = Color(0xFF2E6BF2)
-private val Cyan100 = Color(0xFFE3FBFD)
+private val CardWhite = Color.White
+private val DangerRed = Color(0xFFEF4444)
+private val TextPrimary = Color(0xFF0F172A)
+private val TextSecondary = Color(0xFF64748B)
 private val CardBorderColor = Color(0xFFE2E8F0)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,39 +50,64 @@ fun RegAndTransferPageScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val accounts = remember { FacebookAccountsStore.getAccounts(context, forceReload = true) }
-    var selectedAccount by remember { mutableStateOf(accounts.firstOrNull()) }
+    var facebookAccounts by remember {
+        mutableStateOf(FacebookAccountsStore.getAccounts(context, forceReload = true))
+    }
+    var selectedForRunUids by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showFacebookLoginSheet by remember { mutableStateOf(false) }
+    var isUploadingAvatar by remember { mutableStateOf(false) }
+    var targetFbAvatarChangeUid by remember { mutableStateOf<String?>(null) }
+    var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
 
-    var newPageName by remember { mutableStateOf("") }
-    var isCreatingPage by remember { mutableStateOf(false) }
-
-    var selectedPageToTransfer by remember { mutableStateOf<FacebookPageItem?>(null) }
-    var targetReceiverUid by remember { mutableStateOf("") }
-    var isTransferring by remember { mutableStateOf(false) }
-
-    var pageList by remember { mutableStateOf<List<FacebookPageItem>>(emptyList()) }
-    var isLoadingPages by remember { mutableStateOf(false) }
-
-    val pageService = remember { FacebookPageService() }
-
-    // Load pages when selected account changes
-    LaunchedEffect(selectedAccount) {
-        val acc = selectedAccount
-        if (acc != null && acc.bio.isNotBlank()) {
-            isLoadingPages = true
+    val pickFbAvatarLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        val uid = targetFbAvatarChangeUid
+        if (uri != null && !uid.isNullOrBlank()) {
+            isUploadingAvatar = true
             scope.launch(Dispatchers.IO) {
-                val pages = pageService.getPages(acc.bio)
-                withContext(Dispatchers.Main) {
-                    pageList = if (pages.isNotEmpty()) pages else acc.pages
-                    if (selectedPageToTransfer == null || pageList.none { it.pageId == selectedPageToTransfer?.pageId }) {
-                        selectedPageToTransfer = pageList.firstOrNull()
+                try {
+                    val inputBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    if (inputBytes != null) {
+                        val acc = facebookAccounts.find { it.uid == uid }
+                        val token = acc?.bio?.ifBlank { null }
+                        if (!token.isNullOrBlank()) {
+                            val mgr = FacebookAccountManager()
+                            val uploaded = mgr.uploadAvatar(token, inputBytes)
+                            if (uploaded) {
+                                val details = mgr.fetchAccountDetailsWithToken(token, acc.phone.ifBlank { null })
+                                val updated = acc.copy(
+                                    avatar = details.avatar.ifBlank { acc.avatar },
+                                    name = details.name.ifBlank { acc.name }
+                                )
+                                FacebookAccountsStore.addAccount(context, updated)
+                                withContext(Dispatchers.Main) {
+                                    avatarVersion = System.currentTimeMillis()
+                                    facebookAccounts = FacebookAccountsStore.getAccounts(context)
+                                    Toast.makeText(context, "Đổi avatar Facebook thành công!", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, "Không thể đổi avatar Facebook!", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "Tài khoản thiếu Token để đổi avatar", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
-                    isLoadingPages = false
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                } finally {
+                    withContext(Dispatchers.Main) {
+                        isUploadingAvatar = false
+                        targetFbAvatarChangeUid = null
+                    }
                 }
             }
-        } else {
-            pageList = selectedAccount?.pages ?: emptyList()
-            selectedPageToTransfer = pageList.firstOrNull()
         }
     }
 
@@ -122,7 +152,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                             color = TextPrimary
                         )
                         Text(
-                            text = "Tự động đăng ký và chuyển quyền quản trị trang",
+                            text = "Danh sách tài khoản Facebook quản lý Page",
                             fontSize = 12.sp,
                             color = TextSecondary
                         )
@@ -137,410 +167,436 @@ fun RegAndTransferPageScreen(navController: NavController) {
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Section 1: Chọn tài khoản Facebook thực hiện
-            item {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CardBorderColor),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Cyan100),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Outlined.Person, contentDescription = null, tint = Cobalt600, modifier = Modifier.size(20.dp))
-                            }
-                            Spacer(Modifier.width(10.dp))
-                            Column {
-                                Text("Tài khoản Facebook", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
-                                Text("Chọn nick thực hiện tạo hoặc chuyển page", fontSize = 11.5.sp, color = TextSecondary)
-                            }
-                        }
-
-                        Spacer(Modifier.height(12.dp))
-
-                        if (accounts.isEmpty()) {
-                            Text(
-                                "Chưa có tài khoản Facebook nào. Hãy đăng nhập tài khoản Facebook trước.",
-                                color = DangerRed,
-                                fontSize = 12.sp
-                            )
-                        } else {
-                            var expanded by remember { mutableStateOf(false) }
-                            ExposedDropdownMenuBox(
-                                expanded = expanded,
-                                onExpandedChange = { expanded = !expanded }
-                            ) {
-                                OutlinedTextField(
-                                    value = selectedAccount?.let { "${it.name.ifBlank { it.uid }} (${it.uid})" } ?: "Chọn tài khoản",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Cobalt500,
-                                        unfocusedBorderColor = CardBorderColor
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier
-                                        .menuAnchor()
-                                        .fillMaxWidth()
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = expanded,
-                                    onDismissRequest = { expanded = false }
-                                ) {
-                                    accounts.forEach { acc ->
-                                        DropdownMenuItem(
-                                            text = { Text("${acc.name.ifBlank { acc.uid }} (${acc.uid})", fontSize = 13.sp) },
-                                            onClick = {
-                                                selectedAccount = acc
-                                                expanded = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Section 2: Tạo Fanpage Profile Plus mới (+ Reg Page)
-            item {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CardBorderColor),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Brush.linearGradient(listOf(Color(0xFFDBEAFE), Color(0xFFBFDBFE)))),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Outlined.AddCircleOutline, contentDescription = null, tint = Cobalt600, modifier = Modifier.size(20.dp))
-                            }
-                            Spacer(Modifier.width(10.dp))
-                            Column {
-                                Text("Tạo Fanpage Profile Plus", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
-                                Text("Tự động tạo Page chuẩn Facebook Katana", fontSize = 11.5.sp, color = TextSecondary)
-                            }
-                        }
-
-                        Spacer(Modifier.height(14.dp))
-
-                        OutlinedTextField(
-                            value = newPageName,
-                            onValueChange = { newPageName = it },
-                            placeholder = { Text("Nhập tên Fanpage muốn tạo...", fontSize = 13.sp) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Cobalt500,
-                                unfocusedBorderColor = CardBorderColor
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(Modifier.height(12.dp))
-
-                        Button(
-                            onClick = {
-                                val acc = selectedAccount
-                                if (acc == null || acc.bio.isBlank()) {
-                                    Toast.makeText(context, "Vui lòng chọn nick có Token hợp lệ", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-                                if (newPageName.trim().isBlank()) {
-                                    Toast.makeText(context, "Vui lòng nhập tên Page", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-
-                                isCreatingPage = true
-                                scope.launch(Dispatchers.IO) {
-                                    try {
-                                        val res = pageService.createProfilePlusPage(
-                                            pageName = newPageName.trim(),
-                                            userToken = acc.bio
-                                        )
-                                        withContext(Dispatchers.Main) {
-                                            isCreatingPage = false
-                                            Toast.makeText(context, "Đã gửi lệnh tạo Page: $newPageName", Toast.LENGTH_SHORT).show()
-                                            newPageName = ""
-                                            // Refresh pages
-                                            scope.launch(Dispatchers.IO) {
-                                                val fresh = pageService.getPages(acc.bio)
-                                                withContext(Dispatchers.Main) { pageList = fresh }
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        withContext(Dispatchers.Main) {
-                                            isCreatingPage = false
-                                            Toast.makeText(context, "Lỗi tạo Page: ${e.message}", Toast.LENGTH_LONG).show()
-                                        }
-                                    }
-                                }
-                            },
-                            enabled = !isCreatingPage && selectedAccount != null,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Cobalt600),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp)
-                        ) {
-                            if (isCreatingPage) {
-                                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-                            } else {
-                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("+ Reg Page Mới", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Section 3: Chuyển quyền quản trị Fanpage (Chuyển Page)
-            item {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CardBorderColor),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Brush.linearGradient(listOf(Color(0xFFEDE9FE), Color(0xFFDDD6FE)))),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Outlined.SwapHoriz, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(20.dp))
-                            }
-                            Spacer(Modifier.width(10.dp))
-                            Column {
-                                Text("Chuyển quyền quản trị Page", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
-                                Text("Gán quyền Admin Fanpage sang UID mới", fontSize = 11.5.sp, color = TextSecondary)
-                            }
-                        }
-
-                        Spacer(Modifier.height(14.dp))
-
-                        Text("Chọn Page cần chuyển:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                        Spacer(Modifier.height(6.dp))
-
-                        if (pageList.isEmpty()) {
-                            Text("Tài khoản chưa có Fanpage nào được tải.", color = TextSecondary, fontSize = 12.sp)
-                        } else {
-                            var pageExpanded by remember { mutableStateOf(false) }
-                            ExposedDropdownMenuBox(
-                                expanded = pageExpanded,
-                                onExpandedChange = { pageExpanded = !pageExpanded }
-                            ) {
-                                OutlinedTextField(
-                                    value = selectedPageToTransfer?.let { "${it.pageName} (${it.pageId})" } ?: "Chọn Page",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = pageExpanded) },
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Cobalt500,
-                                        unfocusedBorderColor = CardBorderColor
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier
-                                        .menuAnchor()
-                                        .fillMaxWidth()
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = pageExpanded,
-                                    onDismissRequest = { pageExpanded = false }
-                                ) {
-                                    pageList.forEach { p ->
-                                        DropdownMenuItem(
-                                            text = { Text("${p.pageName} (${p.pageId})", fontSize = 13.sp) },
-                                            onClick = {
-                                                selectedPageToTransfer = p
-                                                pageExpanded = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(Modifier.height(10.dp))
-
-                        OutlinedTextField(
-                            value = targetReceiverUid,
-                            onValueChange = { targetReceiverUid = it },
-                            placeholder = { Text("Nhập UID nick Facebook nhận quyền...", fontSize = 13.sp) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Cobalt500,
-                                unfocusedBorderColor = CardBorderColor
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(Modifier.height(12.dp))
-
-                        Button(
-                            onClick = {
-                                val targetPage = selectedPageToTransfer
-                                val targetUid = targetReceiverUid.trim()
-                                if (targetPage == null) {
-                                    Toast.makeText(context, "Vui lòng chọn Fanpage cần chuyển", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-                                if (targetUid.isBlank()) {
-                                    Toast.makeText(context, "Vui lòng nhập UID nick nhận", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-                                val pToken = targetPage.pageToken.ifBlank { selectedAccount?.bio.orEmpty() }
-
-                                isTransferring = true
-                                scope.launch(Dispatchers.IO) {
-                                    try {
-                                        val success = pageService.transferPageRole(
-                                            pageId = targetPage.pageId,
-                                            pageToken = pToken,
-                                            targetUserId = targetUid
-                                        )
-                                        withContext(Dispatchers.Main) {
-                                            isTransferring = false
-                                            if (success) {
-                                                Toast.makeText(context, "Đã chuyển quyền Admin ${targetPage.pageName} sang UID $targetUid thành công!", Toast.LENGTH_LONG).show()
-                                                targetReceiverUid = ""
-                                            } else {
-                                                Toast.makeText(context, "Chuyển quyền Admin thành công!", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        withContext(Dispatchers.Main) {
-                                            isTransferring = false
-                                            Toast.makeText(context, "Lỗi chuyển page: ${e.message}", Toast.LENGTH_LONG).show()
-                                        }
-                                    }
-                                }
-                            },
-                            enabled = !isTransferring && selectedPageToTransfer != null,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp)
-                        ) {
-                            if (isTransferring) {
-                                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-                            } else {
-                                Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Chuyển Quyền Admin", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Section 4: Danh sách Fanpage của nick
+            // Header section: Tài khoản Facebook + nút Thêm & Xóa
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        text = "Danh sách Fanpage (${pageList.size})",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = TextPrimary
-                    )
-                    if (isLoadingPages) {
-                        CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(16.dp), color = Cobalt600)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Tài khoản Facebook (${facebookAccounts.size})",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = TextPrimary
+                        )
                     }
-                }
-            }
 
-            if (pageList.isEmpty()) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 12.dp),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("Chưa có Fanpage nào", color = TextSecondary, fontSize = 13.sp)
-                    }
-                }
-            } else {
-                items(pageList) { page ->
-                    Card(
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, CardBorderColor),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (page.avatar.isNotBlank()) {
-                                AsyncImage(
-                                    model = page.avatar,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFFE2E8F0))
-                                )
-                            } else {
+                        if (selectedForRunUids.isNotEmpty()) {
+                            IconButton(
+                                onClick = {
+                                    scope.launch(Dispatchers.IO) {
+                                        selectedForRunUids.forEach { uid ->
+                                            FacebookAccountsStore.removeAccount(context, uid)
+                                        }
+                                        withContext(Dispatchers.Main) {
+                                            selectedForRunUids = emptySet()
+                                            facebookAccounts = FacebookAccountsStore.getAccounts(context)
+                                            Toast.makeText(context, "Đã xóa tài khoản đã chọn", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(40.dp)
+                                        .size(34.dp)
                                         .clip(CircleShape)
-                                        .background(Cyan100),
+                                        .background(DangerRed.copy(alpha = 0.1f)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Outlined.Flag, contentDescription = null, tint = Cobalt600, modifier = Modifier.size(20.dp))
+                                    Icon(
+                                        imageVector = Icons.Filled.DeleteOutline,
+                                        contentDescription = "Xóa đã chọn",
+                                        tint = DangerRed,
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                 }
                             }
+                        }
 
-                            Spacer(Modifier.width(12.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(page.pageName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
-                                Spacer(Modifier.height(2.dp))
-                                Text("ID: ${page.pageId}", fontSize = 11.5.sp, color = TextSecondary)
+                        // Nút thêm tài khoản (+)
+                        IconButton(
+                            onClick = { showFacebookLoginSheet = true },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF1877F2)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Add,
+                                    contentDescription = "Thêm tài khoản",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
                     }
                 }
             }
 
-            item {
-                Spacer(Modifier.height(30.dp))
+            if (facebookAccounts.isEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardWhite),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { showFacebookLoginSheet = true }
+                    ) {
+                        Column(
+                            Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Person,
+                                contentDescription = null,
+                                tint = TextSecondary.copy(alpha = 0.5f),
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text("Chưa có tài khoản Facebook nào.", color = TextSecondary, fontSize = 13.sp)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Bấm vào đây hoặc nút dấu + để thêm tài khoản Facebook.",
+                                color = Color(0xFF1877F2),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(facebookAccounts, key = { it.uid }) { account ->
+                    val isChecked = account.uid in selectedForRunUids
+                    val fbAvatarModel = remember(account.avatar, avatarVersion) {
+                        if (account.avatar.isBlank()) null
+                        else coil.request.ImageRequest.Builder(context)
+                            .data(account.avatar)
+                            .crossfade(true)
+                            .memoryCacheKey("${account.avatar}_$avatarVersion")
+                            .diskCacheKey("${account.avatar}_$avatarVersion")
+                            .build()
+                    }
+
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardWhite),
+                        border = if (isChecked) androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF1877F2)) else androidx.compose.foundation.BorderStroke(1.dp, CardBorderColor),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                selectedForRunUids = if (isChecked) selectedForRunUids - account.uid
+                                else selectedForRunUids + account.uid
+                            }
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = isChecked,
+                                    onCheckedChange = { checked ->
+                                        selectedForRunUids = if (checked) selectedForRunUids + account.uid
+                                        else selectedForRunUids - account.uid
+                                    },
+                                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2))
+                                )
+                                Spacer(Modifier.width(6.dp))
+
+                                // Avatar Facebook có nút đổi ảnh cây bút nhỏ nằm bên trong
+                                val isThisFbUploading = isUploadingAvatar && targetFbAvatarChangeUid == account.uid
+                                Box(
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .clip(CircleShape)
+                                        .border(1.5.dp, Color(0xFF1877F2).copy(alpha = 0.6f), CircleShape)
+                                        .clickable(enabled = !isUploadingAvatar) {
+                                            targetFbAvatarChangeUid = account.uid
+                                            pickFbAvatarLauncher.launch("image/*")
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (account.avatar.isNotBlank()) {
+                                        AsyncImage(
+                                            model = fbAvatarModel,
+                                            contentDescription = "Avatar Facebook",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color(0xFF1877F2)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = (account.name.firstOrNull() ?: 'F').uppercase(),
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 16.sp
+                                            )
+                                        }
+                                    }
+
+                                    // Lớp phủ và icon bút sửa ảnh
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(16.dp)
+                                            .align(Alignment.BottomCenter)
+                                            .background(Color.Black.copy(alpha = 0.45f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Edit,
+                                            contentDescription = "Đổi avatar",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                    }
+
+                                    if (isThisFbUploading) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color.Black.copy(alpha = 0.6f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            CircularProgressIndicator(
+                                                color = Color.White,
+                                                strokeWidth = 2.dp,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(Modifier.width(10.dp))
+
+                                Column(Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            account.name.ifBlank { account.uid },
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.5.sp,
+                                            color = TextPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+
+                                        // Badge Live/Die
+                                        val isLive = account.isLive
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (isLive) Color(0xFF22C55E).copy(alpha = 0.12f) else DangerRed.copy(alpha = 0.12f))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (isLive) Color(0xFF16A34A) else DangerRed)
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                if (isLive) "Live" else "Die",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isLive) Color(0xFF16A34A) else DangerRed
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        "UID: ${account.uid}",
+                                        color = TextSecondary,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                // Nút Reload (Làm mới)
+                                IconButton(
+                                    onClick = {
+                                        scope.launch(Dispatchers.IO) {
+                                            val mgr = FacebookAccountManager()
+                                            val token = account.bio.ifBlank { null }
+                                            if (!token.isNullOrBlank()) {
+                                                try {
+                                                    val details = mgr.fetchAccountDetailsWithToken(token, account.phone.ifBlank { null })
+                                                    val updated = account.copy(
+                                                        name = details.name.ifBlank { account.name },
+                                                        avatar = details.avatar.ifBlank { account.avatar },
+                                                        email = details.email,
+                                                        pages = details.pages,
+                                                        isLive = true
+                                                    )
+                                                    FacebookAccountsStore.addAccount(context, updated)
+                                                    withContext(Dispatchers.Main) {
+                                                        avatarVersion = System.currentTimeMillis()
+                                                        facebookAccounts = FacebookAccountsStore.getAccounts(context)
+                                                        Toast.makeText(context, "Đã làm mới thông tin: ${updated.name}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                } catch (e: Exception) {
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(context, "Lỗi kiểm tra Facebook: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            } else if (account.note.contains("c_user=")) {
+                                                try {
+                                                    val directAcc = mgr.getTokenFromCookie(account.note, account.phone.ifBlank { null })
+                                                    if (directAcc != null && directAcc.isLive) {
+                                                        val updated = account.copy(
+                                                            name = directAcc.name.ifBlank { account.name },
+                                                            avatar = directAcc.avatar.ifBlank { account.avatar },
+                                                            bio = directAcc.bio,
+                                                            isLive = true
+                                                        )
+                                                        FacebookAccountsStore.addAccount(context, updated)
+                                                        withContext(Dispatchers.Main) {
+                                                            avatarVersion = System.currentTimeMillis()
+                                                            facebookAccounts = FacebookAccountsStore.getAccounts(context)
+                                                            Toast.makeText(context, "Đã làm mới thông tin: ${updated.name}", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                } catch (e: Exception) {
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(context, "Lỗi kiểm tra Facebook: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF1877F2).copy(alpha = 0.1f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Refresh,
+                                            contentDescription = "Làm mới",
+                                            tint = Color(0xFF1877F2),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Trạng thái Page
+                            Spacer(Modifier.height(10.dp))
+                            HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
+                            Spacer(Modifier.height(8.dp))
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 4.dp, end = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                if (account.pages.isEmpty()) {
+                                    Text(
+                                        "Tài khoản không có page",
+                                        fontSize = 11.5.sp,
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                        color = TextSecondary.copy(alpha = 0.8f)
+                                    )
+                                } else {
+                                    Text(
+                                        "Danh sách Page / Profile+ (${account.pages.size}):",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TextSecondary
+                                    )
+                                }
+                            }
+
+                            if (account.pages.isNotEmpty()) {
+                                Spacer(Modifier.height(6.dp))
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.padding(start = 4.dp)
+                                ) {
+                                    account.pages.forEach { page ->
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(Color(0xFFF8FAFC))
+                                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Flag,
+                                                contentDescription = null,
+                                                tint = Color(0xFF1877F2),
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(
+                                                "Page: ${page.name}",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = TextPrimary,
+                                                modifier = Modifier.weight(1f),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                "ID: ${page.pageId}",
+                                                fontSize = 10.5.sp,
+                                                color = TextSecondary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+
+    if (showFacebookLoginSheet) {
+        FacebookLoginBottomSheet(
+            onDismiss = { showFacebookLoginSheet = false },
+            onAccountSaved = {
+                facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                showFacebookLoginSheet = false
+            }
+        )
     }
 }
