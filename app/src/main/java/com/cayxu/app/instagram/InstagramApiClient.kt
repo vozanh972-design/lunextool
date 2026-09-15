@@ -621,24 +621,105 @@ class InstagramApiClient(
         val currentS = activeS.ifBlank { generateSessionS() }
         val currentHsi = activeHsi.ifBlank { generateHsi() }
 
-        val variables = JSONObject().apply {
-            val inputObj = JSONObject().apply {
-                put("media_id", mediaId)
-                if (av.isNotBlank() && av != "0") {
-                    put("actor_id", av)
+        // 1. Thử qua PolarisAPILikePostMutation (Doc ID: 27358573637160660)
+        try {
+            val variables1 = JSONObject().apply {
+                val inputObj = JSONObject().apply {
+                    put("media_id", mediaId)
+                    if (av.isNotBlank() && av != "0") {
+                        put("actor_id", av)
+                    }
+                    put("client_mutation_id", "1")
                 }
-                put("client_mutation_id", "1")
+                put("input", inputObj)
+            }.toString()
+
+            val formBuilder1 = FormBody.Builder()
+                .add("av", av)
+                .add("__d", "www")
+                .add("__user", "0")
+                .add("__a", "1")
+                .add("__req", "4")
+                .add("__hs", currentHs)
+                .add("dpr", "3")
+                .add("__ccg", "GOOD")
+                .add("__rev", currentRev)
+                .add("__s", currentS)
+                .add("__hsi", currentHsi)
+
+            if (currentFbDtsg.isNotBlank()) {
+                formBuilder1.add("fb_dtsg", currentFbDtsg)
+                formBuilder1.add("jazoest", currentJazoest)
             }
-            put("input", inputObj)
+            if (currentLsd.isNotBlank()) {
+                formBuilder1.add("lsd", currentLsd)
+            }
+
+            val body1 = formBuilder1
+                .add("__spin_r", currentSpinR)
+                .add("__spin_b", "trunk")
+                .add("__spin_t", currentSpinT)
+                .add("__crn", "comet.igweb.PolarisExploreRoute")
+                .add("fb_api_caller_class", "RelayModern")
+                .add("fb_api_req_friendly_name", "PolarisAPILikePostMutation")
+                .add("server_timestamps", "true")
+                .add("variables", variables1)
+                .add("doc_id", DOC_ID_LIKE_MUTATION_POLARIS)
+                .build()
+
+            val ref = if (shortcode.isNotBlank()) "$BASE_URL/p/$shortcode/" else "$BASE_URL/"
+            val headers1 = buildStandardHeaders(
+                csrfToken = csrf,
+                friendlyName = "PolarisAPILikePostMutation",
+                lsdToken = currentLsd,
+                referer = ref,
+                appId = APP_ID
+            )
+
+            val request1 = Request.Builder()
+                .url("$BASE_URL/api/graphql")
+                .headers(headers1)
+                .post(body1)
+                .build()
+
+            httpClient.newCall(request1).execute().use { response ->
+                if (response.code in listOf(301, 302, 303, 307, 308)) {
+                    throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (redirect ${response.code})")
+                }
+                val responseBody = response.body?.string() ?: ""
+                if (response.isSuccessful || response.code == 200) {
+                    if (responseBody.contains("\"viewer_has_liked\":true") ||
+                        responseBody.contains("\"status\":\"ok\"") ||
+                        responseBody.contains("\"xdt_like_media\"") ||
+                        responseBody.contains("\"is_final\":true") ||
+                        (responseBody.contains("\"data\"") && !responseBody.contains("\"errors\"") && !responseBody.contains("\"error\""))
+                    ) {
+                        return true
+                    }
+                }
+                if (responseBody.contains("\"spam\"", ignoreCase = true) || responseBody.contains("feedback_required", ignoreCase = true)) {
+                    throw IllegalStateException("Instagram chặn Like (Spam/Action blocked)")
+                }
+                if (responseBody.contains("\"require_login\"", ignoreCase = true) || responseBody.contains("login_required", ignoreCase = true) || responseBody.contains("checkpoint_required", ignoreCase = true)) {
+                    throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
+                }
+            }
+        } catch (e: Exception) {
+            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
+        }
+
+        // 2. Fallback: Thử qua usePolarisLikeMediaLikeMutation (Doc ID: 9595477160535898)
+        val variables2 = JSONObject().apply {
+            put("media_id", mediaId)
             put("container_module", "feed_timeline")
         }.toString()
 
-        val formBuilder = FormBody.Builder()
+        val formBuilder2 = FormBody.Builder()
             .add("av", av)
             .add("__d", "www")
             .add("__user", "0")
             .add("__a", "1")
-            .add("__req", "4")
+            .add("__req", "5")
             .add("__hs", currentHs)
             .add("dpr", "3")
             .add("__ccg", "GOOD")
@@ -647,55 +728,48 @@ class InstagramApiClient(
             .add("__hsi", currentHsi)
 
         if (currentFbDtsg.isNotBlank()) {
-            formBuilder.add("fb_dtsg", currentFbDtsg)
-            formBuilder.add("jazoest", currentJazoest)
+            formBuilder2.add("fb_dtsg", currentFbDtsg)
+            formBuilder2.add("jazoest", currentJazoest)
         }
         if (currentLsd.isNotBlank()) {
-            formBuilder.add("lsd", currentLsd)
+            formBuilder2.add("lsd", currentLsd)
         }
 
-        val body = formBuilder
+        val body2 = formBuilder2
             .add("__spin_r", currentSpinR)
             .add("__spin_b", "trunk")
             .add("__spin_t", currentSpinT)
             .add("__crn", "comet.igweb.PolarisExploreRoute")
             .add("fb_api_caller_class", "RelayModern")
-            .add("fb_api_req_friendly_name", "PolarisAPILikePostMutation")
+            .add("fb_api_req_friendly_name", "usePolarisLikeMediaLikeMutation")
             .add("server_timestamps", "true")
-            .add("variables", variables)
-            .add("doc_id", DOC_ID_LIKE_MUTATION_POLARIS)
+            .add("variables", variables2)
+            .add("doc_id", DOC_ID_LIKE_MUTATION)
             .build()
 
         val ref = if (shortcode.isNotBlank()) "$BASE_URL/p/$shortcode/" else "$BASE_URL/"
-        val headers = buildStandardHeaders(
+        val headers2 = buildStandardHeaders(
             csrfToken = csrf,
-            friendlyName = "PolarisAPILikePostMutation",
+            friendlyName = "usePolarisLikeMediaLikeMutation",
             lsdToken = currentLsd,
             referer = ref,
             appId = APP_ID
         )
 
-        val request = Request.Builder()
+        val request2 = Request.Builder()
             .url("$BASE_URL/api/graphql")
-            .headers(headers)
-            .post(body)
+            .headers(headers2)
+            .post(body2)
             .build()
 
-        httpClient.newCall(request).execute().use { response ->
-            if (response.code == 429) {
-                throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429) - Vui lòng tăng thời gian chờ an toàn")
-            }
+        httpClient.newCall(request2).execute().use { response ->
             if (response.code in listOf(301, 302, 303, 307, 308)) {
                 throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (redirect ${response.code})")
             }
             val responseBody = response.body?.string() ?: ""
-            if (responseBody.isBlank()) {
-                throw IllegalStateException("Instagram không phản hồi (HTTP ${response.code}) - Cookie có thể hết hạn")
-            }
             if (response.isSuccessful || response.code == 200) {
                 if (responseBody.contains("\"viewer_has_liked\":true") ||
                     responseBody.contains("\"status\":\"ok\"") ||
-                    responseBody.contains("\"xdt_like_media\"") ||
                     responseBody.contains("\"is_final\":true") ||
                     (responseBody.contains("\"data\"") && !responseBody.contains("\"errors\"") && !responseBody.contains("\"error\""))
                 ) {
@@ -744,7 +818,7 @@ class InstagramApiClient(
         val okGraphQL = likeMediaGraphQL(finalMediaId, shortcode, fbDtsg, lsd, actorId)
         if (okGraphQL) return true
 
-        throw IllegalStateException("Instagram không phản hồi thành công khi Like bài viết (ID: $finalMediaId)")
+        throw IllegalStateException("Instagram từ chối Like bài viết (ID: $finalMediaId)")
     }
 
     /**

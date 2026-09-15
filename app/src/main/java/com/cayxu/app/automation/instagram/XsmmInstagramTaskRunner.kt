@@ -360,6 +360,9 @@ object XsmmInstagramTaskRunner {
                                         }
                                     } else {
                                         totalErrors++
+                                        val detailStr = lastActionError ?: "Lỗi Like: Instagram từ chối / không thể Like bài viết $target"
+                                        reportError(cleanUsername, detailStr)
+                                        notify("Lỗi Like: $detailStr")
                                     }
                                 }
 
