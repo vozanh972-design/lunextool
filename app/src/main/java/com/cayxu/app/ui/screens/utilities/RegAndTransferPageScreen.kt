@@ -321,17 +321,19 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     withContext(Dispatchers.Main) {
                                                         try {
                                                             facebookAccounts = FacebookAccountsStore.getAccounts(context)
-                                                            accountStatusMap[account.uid] = "Đã tạo ($createdSuccessCount/$count): $pageName"
+                                                            accountStatusMap[account.uid] = "Đã tạo: $pageName | [Thành công: $createdSuccessCount] / [$count]"
                                                             Toast.makeText(context.applicationContext, "Đã tạo Fanpage: $pageName", Toast.LENGTH_SHORT).show()
                                                         } catch (_: Throwable) {}
                                                     }
                                                 } catch (e: Throwable) {
-                                                    val errText = e.message ?: "Thất bại"
-                                                    lastErrorMsg = errText
+                                                    val errRaw = e.message ?: "Thất bại"
+                                                    val shortErr = errRaw.substringBefore("\n\n[Raw Facebook Response]")
+                                                    lastErrorMsg = shortErr
+                                                    val failCount = (idx - createdSuccessCount)
                                                     withContext(Dispatchers.Main) {
                                                         try {
-                                                            accountStatusMap[account.uid] = "Lỗi ($idx/$count): $errText"
-                                                            Toast.makeText(context.applicationContext, "Tạo thất bại: $errText", Toast.LENGTH_SHORT).show()
+                                                            accountStatusMap[account.uid] = "Trạng thái: $shortErr\n[Lỗi: $failCount | Thành công: $createdSuccessCount] / [$count]"
+                                                            Toast.makeText(context.applicationContext, "Tạo thất bại: $shortErr", Toast.LENGTH_SHORT).show()
                                                         } catch (_: Throwable) {}
                                                     }
                                                 }
@@ -342,13 +344,13 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                         if (!isActive) break
                                                         withContext(Dispatchers.Main) {
                                                             try {
-                                                                accountStatusMap[account.uid] = "Chờ tạo tiếp ($createdSuccessCount/$count): ${s}s"
+                                                                accountStatusMap[account.uid] = "Chờ ${s}s để tiếp tục...\n[Lỗi: ${idx - createdSuccessCount} | Thành công: $createdSuccessCount] / [$count]"
                                                             } catch (_: Throwable) {}
                                                         }
                                                         delay(1000L)
                                                     }
                                                 } else if (!isCreated) {
-                                                    // Nếu tạo lỗi, dừng vòng lặp tài khoản này để không giam người dùng
+                                                    // Nếu tạo lỗi do Facebook chặn, dừng vòng lặp tài khoản này
                                                     break
                                                 }
                                             }
@@ -356,12 +358,13 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                             if (isActive) {
                                                 withContext(Dispatchers.Main) {
                                                     try {
+                                                        val failCount = (count - createdSuccessCount)
                                                         if (createdSuccessCount == count) {
-                                                            accountStatusMap[account.uid] = "Hoàn tất $count/$count Page"
+                                                            accountStatusMap[account.uid] = "Hoàn tất: [Thành công: $count/$count Page]"
                                                         } else if (createdSuccessCount > 0) {
-                                                            accountStatusMap[account.uid] = "Đã tạo $createdSuccessCount/$count Page (${lastErrorMsg ?: "Dừng"})"
+                                                            accountStatusMap[account.uid] = "Dừng: ${lastErrorMsg ?: "Đã dừng"} | [Lỗi: $failCount | Thành công: $createdSuccessCount] / [$count]"
                                                         } else {
-                                                            accountStatusMap[account.uid] = "Thất bại: ${lastErrorMsg ?: "Lỗi tạo page"}"
+                                                            accountStatusMap[account.uid] = "Trạng thái: ${lastErrorMsg ?: "Không thể tạo Trang"} | [Lỗi: $failCount | Thành công: 0] / [$count]"
                                                         }
                                                     } catch (_: Throwable) {}
                                                 }

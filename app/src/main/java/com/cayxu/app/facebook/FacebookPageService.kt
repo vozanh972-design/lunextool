@@ -238,16 +238,15 @@ class FacebookPageService {
                 }
             }
 
-            // Kiểm tra Error Marker: create_error hoặc profile_creation_error và trích xuất text xung quanh
+            // Kiểm tra Error Marker: create_error hoặc profile_creation_error
             if (bloksError.isNullOrBlank()) {
                 if (body.contains("profile_creation_error") || body.contains("create_error")) {
-                    // Trích xuất các chuỗi text tiếng Việt hoặc message báo lỗi bên trong JSON/Bloks
-                    val msgPattern = Regex("""["'](Bạn đã tạo quá nhiều|Tài khoản của bạn|Không thể tạo trang|Vui lòng thử lại|You've created too many|You cannot create)[^"']*["']""", RegexOption.IGNORE_CASE)
+                    val msgPattern = Regex("""["'](Bạn đã tạo quá nhiều|Tài khoản của bạn|Không thể tạo [tT]rang|Vui lòng thử lại|You've created too many|You cannot create)[^"']*["']""", RegexOption.IGNORE_CASE)
                     val m = msgPattern.find(body)
                     if (m != null) {
                         bloksError = m.value.trim('"', '\'')
                     } else {
-                        bloksError = "Facebook từ chối tạo Page (profile_creation_error)"
+                        bloksError = "Không thể tạo Trang: Gần đây bạn đã thử tạo Trang quá nhiều lần. Hãy thử lại vào lúc khác."
                     }
                 }
             }
