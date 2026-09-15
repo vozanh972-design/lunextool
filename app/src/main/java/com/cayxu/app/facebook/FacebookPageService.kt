@@ -55,7 +55,8 @@ class FacebookPageService {
     }
 
     /**
-     * 1. Tạo Fanpage Facebook mới chuẩn Graph API (/me/accounts)
+     * 1. Tạo Profile Plus / Fanpage Facebook bằng Bloks GraphQL chuẩn App Katana (Android FB4A)
+     * Trích xuất trực tiếp từ logic Python client_doc_id: 119940804239956818821550724
      */
     @Throws(Exception::class)
     fun createFacebookPage(
@@ -63,104 +64,157 @@ class FacebookPageService {
         userToken: String,
         category: String = "180164648685982"
     ): JSONObject {
-        val cleanToken = userToken.removePrefix("OAuth ").trim()
-        
-        // Thử lấy category IDs động trực tiếp từ Facebook nếu có thể
-        val dynamicCategoryIds = fetchValidCategoryIds(cleanToken)
+        val cleanToken = userToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        val url = "https://b-graph.facebook.com/graphql"
 
-        val candidatePayloads = mutableListOf<Map<String, String>>()
-
-        // Thêm category ID động nếu có
-        for (dynId in dynamicCategoryIds.take(2)) {
-            candidatePayloads.add(mapOf("category_list" to "[\"$dynId\"]"))
+        val innerParams = JSONObject().apply {
+            put("client_input_params", JSONObject().apply {
+                put("page_id", "0")
+                put("profile_plus_id", "0")
+                put("cp_upsell_declined", 0)
+                put("off_platform_creator_reachout_id", "")
+                put("category_ids", JSONArray().apply { put(category) })
+                put("nav_chain", "...")
+            })
+            put("server_params", JSONObject().apply {
+                put("referrer", "pages_tab_launch_point")
+                put("INTERNAL__latency_qpl_marker_id", 36707139)
+                put("creation_source", "android")
+                put("name", pageName)
+                put("variant", 5)
+                put("screen", "category")
+                put("INTERNAL__latency_qpl_instance_id", 55098533200051L)
+            })
         }
 
-        // Danh sách các tổ hợp Category chuẩn Graph API (ưu tiên category_enum trước để không dính lỗi topic ID)
-        candidatePayloads.addAll(
-            listOf(
-                mapOf("category_enum" to "COMMUNITY"),
-                mapOf("category_enum" to "PERSONAL_BLOG"),
-                mapOf("category_enum" to "JUST_FOR_FUN"),
-                mapOf("category_enum" to "SHOPPING_RETAIL"),
-                mapOf("category" to "Community"),
-                mapOf("category" to "Personal Blog"),
-                mapOf("category" to "Just For Fun"),
-                mapOf("category" to "Shopping & Retail"),
-                mapOf("category_list" to "[\"2612\"]"), // Community ID
-                mapOf("category_list" to "[\"2200\"]"), // Interest ID
-                mapOf("category_list" to "[\"1818\"]")  // Shopping & Retail ID
-            )
-        )
+        val level1 = JSONObject().apply {
+            put("params", JSONObject().apply { put("params", innerParams.toString()) }.toString())
+            put("bloks_versioning_id", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
+            put("app_id", "com.bloks.www.additional.profile.plus.creation.action.category.submit")
+        }
 
-        var lastException: Exception? = null
+        val ntContext = JSONObject().apply {
+            put("using_white_navbar", true)
+            put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+            put("pixel_ratio", 2)
+            put("is_push_on", true)
+            put("debug_tooling_metadata_token", JSONObject.NULL)
+            put("is_flipper_enabled", false)
+            put("theme_params", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("value", JSONArray())
+                    put("design_system_name", "FDS")
+                })
+            })
+            put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
+        }
 
-        for (payload in candidatePayloads) {
-            try {
-                val builder = FormBody.Builder()
-                    .add("name", pageName)
-                    .add("about", "Trang $pageName")
-                    .add("access_token", cleanToken)
+        val variables = JSONObject().apply {
+            put("params", level1)
+            put("scale", "2")
+            put("nt_context", ntContext)
+        }
 
-                payload.forEach { (k, v) ->
-                    builder.add(k, v)
+        val formBody = FormBody.Builder()
+            .add("method", "post")
+            .add("pretty", "false")
+            .add("format", "json")
+            .add("server_timestamps", "true")
+            .add("locale", "vi_VN")
+            .add("client_doc_id", "119940804239956818821550724")
+            .add("variables", variables.toString())
+            .build()
+
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "[FBAN/FB4A;FBAV/537.0.0.47.77;FBPN/com.facebook.katana;]")
+            .header("Authorization", "OAuth $cleanToken")
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("X-Fb-Connection-Type", "WIFI")
+            .header("X-Fb-Http-Engine", "Tigon/Liger")
+            .header("X-Fb-Client-Ip", "True")
+            .header("X-Fb-Server-Cluster", "True")
+            .header("X-Tigon-Is-Retry", "False")
+            .header("X-Graphql-Request-Purpose", "fetch")
+            .header("X-Fb-Device-Group", "5427")
+            .header("X-Graphql-Client-Library", "graphservice")
+            .header("X-Fb-Net-Hni", "45201")
+            .header("X-Fb-Sim-Hni", "45201")
+            .header("X-Fb-Request-Analytics-Tags", "{\"network_tags\":{\"product\":\"350685531728\",\"purpose\":\"fetch\",\"request_category\":\"graphql\",\"retry_attempt\":\"0\"},\"application_tags\":\"graphservice\"}")
+            .post(formBody)
+            .build()
+
+        return httpClient.newCall(request).execute().use { resp ->
+            val body = resp.body?.string() ?: "{}"
+            if (body.contains("create_success")) {
+                return@use JSONObject().put("status", 200).put("msg", "success").put("page_name", pageName)
+            }
+
+            if (body.contains("error", ignoreCase = true)) {
+                val toastRegex = Regex("""Toast,\s*"([^"]+)"""")
+                val match = toastRegex.find(body)
+                if (match != null) {
+                    val toastMsg = match.groupValues[1]
+                    throw Exception(toastMsg)
                 }
-
-                val request = Request.Builder()
-                    .url("$GRAPH_BASE_URL/v19.0/me/accounts")
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                    .header("Accept", "*/*")
-                    .post(builder.build())
-                    .build()
-
-                httpClient.newCall(request).execute().use { response ->
-                    val body = response.body?.string() ?: "{}"
-                    val json = try {
-                        JSONObject(body)
-                    } catch (_: Throwable) {
-                        JSONObject().put("error", JSONObject().put("message", "Phản hồi không hợp lệ từ máy chủ"))
-                    }
-
-                    if (json.has("error")) {
-                        val errObj = json.optJSONObject("error")
-                        val errMsg = errObj?.optString("message", "Lỗi tạo Page") ?: "Lỗi tạo Page"
-                        val errCode = errObj?.optInt("code", 0) ?: 0
-                        val ex = Exception("(#$errCode) $errMsg")
-                        lastException = ex
-
-                        // Nếu lỗi do category/topic (#152, #100, topic ID, Category), tự động thử payload tiếp theo
-                        val isCategoryOrTopicError = errCode == 152 || 
-                            errCode == 100 || 
-                            errMsg.contains("topic", ignoreCase = true) || 
-                            errMsg.contains("category", ignoreCase = true) ||
-                            errMsg.contains("parameter", ignoreCase = true)
-
-                        if (isCategoryOrTopicError) {
-                            return@use
-                        } else {
-                            throw ex
-                        }
-                    } else {
-                        return json
-                    }
-                }
-            } catch (e: Exception) {
-                val msg = e.message ?: ""
-                val isCatErr = msg.contains("152") || 
-                    msg.contains("100") || 
-                    msg.contains("topic", ignoreCase = true) || 
-                    msg.contains("category", ignoreCase = true) ||
-                    msg.contains("parameter", ignoreCase = true)
-
-                if (isCatErr) {
-                    lastException = e
-                    continue
-                } else {
-                    throw e
+                if (body.contains("create_error") || body.contains("profile_creation_error")) {
+                    throw Exception("Facebook lỗi tạo page (Giới hạn tài khoản)")
                 }
             }
-        }
 
-        throw (lastException ?: Exception("Không thể tạo Page: Vui lòng kiểm tra quyền Token"))
+            val json = try { JSONObject(body) } catch (_: Throwable) { JSONObject() }
+            if (json.has("error")) {
+                val errObj = json.optJSONObject("error")
+                val msg = errObj?.optString("message", "Lỗi tạo Page") ?: "Lỗi tạo Page"
+                val code = errObj?.optInt("code", 0) ?: 0
+                throw Exception("(#$code) $msg")
+            }
+
+            if (resp.isSuccessful) {
+                json
+            } else {
+                throw Exception("HTTP ${resp.code}: $body")
+            }
+        }
+    }
+
+    /**
+     * Tìm Page vừa tạo theo tên để lấy ID và Page Token
+     */
+    fun findPageByName(token: String, pageName: String, maxRetries: Int = 5, delayMs: Long = 2000L): FacebookPageItem? {
+        val cleanToken = token.removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        val url = "$GRAPH_BASE_URL/v19.0/me/accounts?access_token=$cleanToken&fields=id,name,access_token&limit=100"
+        for (attempt in 0 until maxRetries) {
+            try {
+                val req = Request.Builder().url(url).get().build()
+                httpClient.newCall(req).execute().use { res ->
+                    val body = res.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    if (json.has("data")) {
+                        val arr = json.getJSONArray("data")
+                        for (i in 0 until arr.length()) {
+                            val p = arr.getJSONObject(i)
+                            val name = p.optString("name", "")
+                            if (name.equals(pageName, ignoreCase = true)) {
+                                val id = p.optString("id", "")
+                                val pageToken = p.optString("access_token", "")
+                                return FacebookPageItem(
+                                    pageId = id,
+                                    pageName = name,
+                                    pageToken = pageToken,
+                                    avatar = "$GRAPH_BASE_URL/$id/picture?type=large",
+                                    isLive = true
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (_: Throwable) {}
+            if (attempt < maxRetries - 1) {
+                try { Thread.sleep(delayMs) } catch (_: Throwable) {}
+            }
+        }
+        return null
     }
 
     /**

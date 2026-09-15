@@ -313,8 +313,16 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 try {
                                                     val res = pageService.createFacebookPage(pageName, token)
                                                     isCreated = true
+                                                    try {
+                                                        val updatedPages = pageService.getPages(token)
+                                                        if (updatedPages.isNotEmpty()) {
+                                                            val updatedAcc = account.copy(pages = updatedPages)
+                                                            FacebookAccountsStore.addAccount(context, updatedAcc)
+                                                        }
+                                                    } catch (_: Throwable) {}
                                                     withContext(Dispatchers.Main) {
                                                         try {
+                                                            facebookAccounts = FacebookAccountsStore.getAccounts(context)
                                                             accountStatusMap[account.uid] = "Đã tạo ($idx/$count): $pageName"
                                                             Toast.makeText(context.applicationContext, "Đã tạo Fanpage: $pageName", Toast.LENGTH_SHORT).show()
                                                         } catch (_: Throwable) {}
