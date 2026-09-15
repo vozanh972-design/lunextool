@@ -270,7 +270,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                         pass = singlePassword,
                                         twoFaSecret = singleTwoFa,
                                         proxyStr = singleProxy.ifBlank { null },
-                                        datrCookie = datr
+                                        rawCookie = singleCookie.ifBlank { null }
                                     )
                                     if (res.isSuccess && res.account.isLive) {
                                         return@withContext res.account.copy(
