@@ -355,7 +355,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                             TikTokAppLauncher.bringToolToFront(applicationContext)
                             return@launch
                         }
-                        delay(250)
+                        delay(2500)
                         continue
                     }
 
@@ -366,11 +366,12 @@ class TikTokAccessibilityService : AccessibilityService() {
                         if (switchRowNode != null) {
                             TikTokCaptureBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
                             clickNode(switchRowNode)
+                            delay(6500)
                         } else {
                             TikTokCaptureBridge.updateProgress("Đang cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
                             scrollDown(root)
+                            delay(5000)
                         }
-                        delay(350)
                         continue
                     }
 
@@ -379,7 +380,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                     if (settingsRowNode != null) {
                         TikTokCaptureBridge.updateProgress("Đã thấy \"Cài đặt và quyền riêng tư\", đang bấm...")
                         clickNode(settingsRowNode)
-                        delay(350)
+                        delay(6500)
                         continue
                     }
 
@@ -390,10 +391,11 @@ class TikTokAccessibilityService : AccessibilityService() {
                         if (menuNode != null) {
                             TikTokCaptureBridge.updateProgress("Đã vào Hồ sơ, đang mở menu (☰)...")
                             clickNode(menuNode)
+                            delay(6500)
                         } else {
                             TikTokCaptureBridge.updateProgress("Đang chờ trang Hồ sơ tải xong...")
+                            delay(3000)
                         }
-                        delay(300)
                         continue
                     }
 
@@ -401,18 +403,16 @@ class TikTokAccessibilityService : AccessibilityService() {
                     val isOtherUserProfile = findNodeByText(root, setOf("nhắn tin", "tin nhắn", "message", "đã follow", "following"), exact = false) != null &&
                                              findNodeByText(root, setOf("sửa hồ sơ", "chỉnh sửa hồ sơ", "edit profile"), exact = false) == null
                     if (isOtherUserProfile) {
-                        // Nếu vẫn thấy tab Hồ sơ ở thanh dưới cùng thì bấm thẳng vào tab Hồ sơ
                         val tabNode = findProfileTabNode(root, root)
                         if (tabNode != null) {
                             TikTokCaptureBridge.updateProgress("Đang bấm tab \"Hồ sơ\" ở dưới cùng...")
                             clickNode(tabNode)
-                            delay(400)
+                            delay(6500)
                             continue
                         } else {
-                            // Không có tab bar (đang bị che), bấm nút Quay lại (Back)
                             TikTokCaptureBridge.updateProgress("Đang thoát trang người dùng khác về trang chính...")
                             performGlobalAction(GLOBAL_ACTION_BACK)
-                            delay(500)
+                            delay(5000)
                             continue
                         }
                     }
@@ -422,10 +422,10 @@ class TikTokAccessibilityService : AccessibilityService() {
                     if (tabNode != null) {
                         TikTokCaptureBridge.updateProgress("Đang mở trang Hồ sơ...")
                         clickNode(tabNode)
-                        delay(400)
+                        delay(6500)
                     } else {
                         TikTokCaptureBridge.updateProgress("Đang đợi TikTok sẵn sàng...")
-                        delay(200)
+                        delay(2500)
                     }
                 } catch (e: Exception) {
                     delay(POLL_INTERVAL_MS)
