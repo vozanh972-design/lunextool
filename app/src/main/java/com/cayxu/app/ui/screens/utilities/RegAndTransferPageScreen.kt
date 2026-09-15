@@ -350,14 +350,14 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 }
                             }
                         },
-                            enabled = !isRunning && selectedForRunUids.isNotEmpty(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Cobalt600),
-                            modifier = Modifier
-                                .weight(if (activeTab == 0) 1.3f else 1f)
-                                .height(48.dp)
-                        ) {
-                            if (isRunning) {
+                        enabled = !isRunning && selectedForRunUids.isNotEmpty(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Cobalt600),
+                        modifier = Modifier
+                            .weight(if (activeTab == 0) 1.3f else 1f)
+                            .height(48.dp)
+                    ) {
+                        if (isRunning) {
                                 CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text("Đang chạy...")
