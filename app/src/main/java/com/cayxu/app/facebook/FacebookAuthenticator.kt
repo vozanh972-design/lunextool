@@ -235,7 +235,7 @@ class FacebookAuthenticator {
                     if (!cleanDatr.isNullOrBlank()) {
                         retryReqBuilder.header("Cookie", "datr=$cleanDatr")
                     }
-                    val retryReq = retryReqBuilder.post(retryForm.build()).build()
+                    val retryReq = retryReqBuilder.post(retryForm).build()
 
                     val retryRes = client.newCall(retryReq).execute()
                     val retryBody = retryRes.body?.string() ?: ""
