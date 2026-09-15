@@ -65,7 +65,7 @@ class FacebookPageService {
         category: String = "180164648685982"
     ): JSONObject {
         val cleanToken = userToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
-        val url = "https://b-graph.facebook.com/graphql"
+        val url = "https://graph.facebook.com/graphql"
 
         val innerParams = JSONObject().apply {
             put("client_input_params", JSONObject().apply {
