@@ -309,8 +309,10 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     } catch (_: Throwable) {}
                                                 }
 
+                                                var isCreated = false
                                                 try {
                                                     val res = pageService.createFacebookPage(pageName, token)
+                                                    isCreated = true
                                                     withContext(Dispatchers.Main) {
                                                         try {
                                                             accountStatusMap[account.uid] = "Đã tạo ($idx/$count): $pageName"
@@ -327,8 +329,8 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     }
                                                 }
 
-                                                // Đếm ngược thời gian nếu còn lần tạo tiếp
-                                                if (idx < count && isActive) {
+                                                // Đếm ngược thời gian nếu tạo THÀNH CÔNG và còn lần tạo tiếp
+                                                if (isCreated && idx < count && isActive) {
                                                     for (s in delaySec downTo 1) {
                                                         if (!isActive) break
                                                         withContext(Dispatchers.Main) {
@@ -338,6 +340,9 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                         }
                                                         delay(1000L)
                                                     }
+                                                } else if (!isCreated) {
+                                                    // Nếu tạo lỗi, không đếm ngược 1999s mà dừng vòng lặp cho acc này để không giam người dùng
+                                                    break
                                                 }
                                             }
 

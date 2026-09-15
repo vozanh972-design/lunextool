@@ -30,6 +30,31 @@ class FacebookPageService {
         .build()
 
     /**
+     * Lấy danh sách ID danh mục hợp lệ từ Graph API
+     */
+    fun fetchValidCategoryIds(token: String): List<String> {
+        val list = mutableListOf<String>()
+        try {
+            val clean = token.removePrefix("OAuth ").trim()
+            val url = "$GRAPH_BASE_URL/v19.0/fb_page_categories?access_token=$clean"
+            val request = Request.Builder().url(url).get().build()
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val json = JSONObject(body)
+                if (json.has("data")) {
+                    val arr = json.getJSONArray("data")
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.getJSONObject(i)
+                        val id = obj.optString("id", "")
+                        if (id.isNotBlank()) list.add(id)
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+        return list
+    }
+
+    /**
      * 1. Tạo Fanpage Facebook mới chuẩn Graph API (/me/accounts)
      */
     @Throws(Exception::class)
@@ -40,19 +65,36 @@ class FacebookPageService {
     ): JSONObject {
         val cleanToken = userToken.removePrefix("OAuth ").trim()
         
-        // Danh sách các tổ hợp Category chuẩn Graph API để tự động fallback nếu dính #152
-        val categoryPayloads = listOf(
-            mapOf("category_list" to "[\"180164648685982\"]", "category_enum" to "SHOPPING_RETAIL"),
-            mapOf("category_list" to "[\"2200\"]", "category_enum" to "COMMUNITY"),
-            mapOf("category_list" to "[\"180164648685982\"]"),
-            mapOf("category_list" to "[\"2200\"]"),
-            mapOf("category_enum" to "COMMUNITY"),
-            mapOf("category_enum" to "SHOPPING_RETAIL")
+        // Thử lấy category IDs động trực tiếp từ Facebook nếu có thể
+        val dynamicCategoryIds = fetchValidCategoryIds(cleanToken)
+
+        val candidatePayloads = mutableListOf<Map<String, String>>()
+
+        // Thêm category ID động nếu có
+        for (dynId in dynamicCategoryIds.take(2)) {
+            candidatePayloads.add(mapOf("category_list" to "[\"$dynId\"]"))
+        }
+
+        // Danh sách các tổ hợp Category chuẩn Graph API (ưu tiên category_enum trước để không dính lỗi topic ID)
+        candidatePayloads.addAll(
+            listOf(
+                mapOf("category_enum" to "COMMUNITY"),
+                mapOf("category_enum" to "PERSONAL_BLOG"),
+                mapOf("category_enum" to "JUST_FOR_FUN"),
+                mapOf("category_enum" to "SHOPPING_RETAIL"),
+                mapOf("category" to "Community"),
+                mapOf("category" to "Personal Blog"),
+                mapOf("category" to "Just For Fun"),
+                mapOf("category" to "Shopping & Retail"),
+                mapOf("category_list" to "[\"2612\"]"), // Community ID
+                mapOf("category_list" to "[\"2200\"]"), // Interest ID
+                mapOf("category_list" to "[\"1818\"]")  // Shopping & Retail ID
+            )
         )
 
         var lastException: Exception? = null
 
-        for (payload in categoryPayloads) {
+        for (payload in candidatePayloads) {
             try {
                 val builder = FormBody.Builder()
                     .add("name", pageName)
@@ -85,8 +127,14 @@ class FacebookPageService {
                         val ex = Exception("(#$errCode) $errMsg")
                         lastException = ex
 
-                        // Nếu lỗi do category (#152), thử payload category tiếp theo
-                        if (errCode == 152 || errMsg.contains("Category", ignoreCase = true)) {
+                        // Nếu lỗi do category/topic (#152, #100, topic ID, Category), tự động thử payload tiếp theo
+                        val isCategoryOrTopicError = errCode == 152 || 
+                            errCode == 100 || 
+                            errMsg.contains("topic", ignoreCase = true) || 
+                            errMsg.contains("category", ignoreCase = true) ||
+                            errMsg.contains("parameter", ignoreCase = true)
+
+                        if (isCategoryOrTopicError) {
                             return@use
                         } else {
                             throw ex
@@ -96,7 +144,14 @@ class FacebookPageService {
                     }
                 }
             } catch (e: Exception) {
-                if (e.message?.contains("152") == true || e.message?.contains("Category", ignoreCase = true) == true) {
+                val msg = e.message ?: ""
+                val isCatErr = msg.contains("152") || 
+                    msg.contains("100") || 
+                    msg.contains("topic", ignoreCase = true) || 
+                    msg.contains("category", ignoreCase = true) ||
+                    msg.contains("parameter", ignoreCase = true)
+
+                if (isCatErr) {
                     lastException = e
                     continue
                 } else {
@@ -105,7 +160,7 @@ class FacebookPageService {
             }
         }
 
-        throw (lastException ?: Exception("Không thể tạo Page: Lỗi phân loại danh mục"))
+        throw (lastException ?: Exception("Không thể tạo Page: Vui lòng kiểm tra quyền Token"))
     }
 
     /**
