@@ -55,15 +55,37 @@ class FacebookPageService {
     }
 
     /**
-     * 1. Tạo Profile Plus / Fanpage Facebook bằng Bloks GraphQL chuẩn App Katana (Android FB4A)
-     * Trích xuất trực tiếp từ logic Python client_doc_id: 119940804239956818821550724
+     * Kết quả tạo Facebook Profile Plus Page
+     */
+    @Keep
+    data class RegPageResult(
+        val isSuccess: Boolean,
+        val pageId: String? = null,
+        val profilePlusId: String? = null,
+        val pageName: String = "",
+        val errorMessage: String? = null,
+        val rawResponse: String = ""
+    )
+
+    /**
+     * 1. Tạo Profile Plus / Fanpage Facebook bằng Bloks GraphQL chuẩn App Katana (Android FB4A) (Li2/n;)
+     * Endpoint: POST https://graph.facebook.com/graphql
+     * App ID: com.bloks.www.additional.profile.plus.creation.action.category.submit
+     * Bloks Versioning ID: 338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d
+     * Styles ID: 588d028b36bed0e1889e09b60e0f9aea
+     * Client Doc ID: 119940804239956818821550724
+     * User-Agent Katana: [FBAN/FB4A;FBAV/537.0.0.47.77;FBPN/com.facebook.katana;]
+     * Cấu trúc tham số: category_ids: ["180164648685982"], referrer: "pages_tab_launch_point",
+     *                   creation_source: "android", variant: 5, screen: "category", name: <pageName>
+     *
+     * 2. Cơ chế bóc tách Page ID / Profile Plus ID chuẩn từ phản hồi Bloks (Li2/i0;)
      */
     @Throws(Exception::class)
     fun createFacebookPage(
         pageName: String,
         userToken: String,
         category: String = "180164648685982"
-    ): JSONObject {
+    ): RegPageResult {
         val cleanToken = userToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
         val url = "https://graph.facebook.com/graphql"
 
@@ -146,49 +168,99 @@ class FacebookPageService {
 
         return httpClient.newCall(request).execute().use { resp ->
             val body = resp.body?.string() ?: "{}"
-            if (body.contains("create_success")) {
-                return@use JSONObject().put("status", 200).put("msg", "success").put("page_name", pageName)
+
+            // 1. Bóc tách Page ID / Profile Plus ID theo 4 mẫu định dạng chuẩn (Li2/i0;)
+            var extractedPageId: String? = null
+            var extractedProfilePlusId: String? = null
+
+            // Mẫu 1: WriteGlobalConsistencyStore
+            val pattern1Page = Regex("""\(bk\.action\.bloks\.WriteGlobalConsistencyStore,\s*"ADDITIONAL_PROFILE_PLUS_CREATION:page_id"\s*,\s*"(\d+)"""")
+            val pattern1ProfilePlus = Regex("""\(bk\.action\.bloks\.WriteGlobalConsistencyStore,\s*"ADDITIONAL_PROFILE_PLUS_CREATION:profile_plus_id"\s*,\s*"(\d+)"""")
+            pattern1Page.find(body)?.let { extractedPageId = it.groupValues[1] }
+            pattern1ProfilePlus.find(body)?.let { extractedProfilePlusId = it.groupValues[1] }
+
+            // Mẫu 2: dq8 action
+            if (extractedPageId == null) {
+                val pattern2Page = Regex("""\(dq8\s+"ADDITIONAL_PROFILE_PLUS_CREATION:page_id"\s+"(\d+)"""")
+                pattern2Page.find(body)?.let { extractedPageId = it.groupValues[1] }
+            }
+            if (extractedProfilePlusId == null) {
+                val pattern2ProfilePlus = Regex("""\(dq8\s+"ADDITIONAL_PROFILE_PLUS_CREATION:profile_plus_id"\s+"(\d+)"""")
+                pattern2ProfilePlus.find(body)?.let { extractedProfilePlusId = it.groupValues[1] }
             }
 
-            // 1. Trích xuất trực tiếp qua cây Bloks Action như chuẩn Python
-            var bloksError: String? = null
-            try {
-                val resultJson = JSONObject(body)
-                val dataObj = resultJson.optJSONObject("data")
-                val fbBloks = dataObj?.optJSONObject("fb_bloks_action")
-                val rootAct = fbBloks?.optJSONObject("root_action")
-                val actionObj = rootAct?.optJSONObject("action")
-                val bundleObj = actionObj?.optJSONObject("action_bundle")
-                val bloksStr = bundleObj?.optString("bloks_bundle_action", "")
-                if (!bloksStr.isNullOrBlank()) {
-                    val bloksJson = JSONObject(bloksStr)
-                    val layout = bloksJson.optJSONObject("layout")
-                    val payload = layout?.optJSONObject("bloks_payload")
-                    val actionStr = payload?.optString("action", "") ?: ""
-                    
-                    val toastRegex = Regex("""Toast,\s*["']([^"']+)["']""")
-                    val m = toastRegex.find(actionStr)
-                    if (m != null && m.groupValues[1].isNotBlank()) {
-                        bloksError = m.groupValues[1]
-                    } else if (actionStr.contains("create_error") || actionStr.contains("profile_creation_error")) {
-                        bloksError = "Facebook lỗi tạo page (create_error)"
-                    } else if (actionStr.isNotBlank()) {
-                        bloksError = actionStr.take(150)
-                    }
+            // Mẫu 3: JSON key-value
+            if (extractedPageId == null) {
+                val pattern3Page = Regex(""""page_id"\s*[:=]\s*"?(\d{6,})"?""")
+                pattern3Page.find(body)?.let {
+                    val candidate = it.groupValues[1]
+                    if (candidate != "0") extractedPageId = candidate
                 }
-            } catch (_: Throwable) {}
+            }
+            if (extractedProfilePlusId == null) {
+                val pattern3ProfilePlus = Regex(""""profile_plus_id"\s*[:=]\s*"?(\d{6,})"?""")
+                pattern3ProfilePlus.find(body)?.let {
+                    val candidate = it.groupValues[1]
+                    if (candidate != "0") extractedProfilePlusId = candidate
+                }
+            }
 
-            val detailedError = bloksError ?: extractDetailedFacebookError(body)
-            throw Exception(detailedError)
+            // Mẫu 4: Word boundary
+            if (extractedPageId == null) {
+                val pattern4Page = Regex("""\bpage_id\b[^\d]*(\d{6,})""")
+                pattern4Page.find(body)?.let {
+                    val candidate = it.groupValues[1]
+                    if (candidate != "0") extractedPageId = candidate
+                }
+            }
+
+            // Kiểm tra cờ thành công create_success hoặc đã trích xuất được Page ID hợp lệ
+            val isSuccess = body.contains("create_success") || (extractedPageId != null && extractedPageId != "0")
+
+            if (isSuccess) {
+                return@use RegPageResult(
+                    isSuccess = true,
+                    pageId = extractedPageId,
+                    profilePlusId = extractedProfilePlusId,
+                    pageName = pageName,
+                    rawResponse = body
+                )
+            }
+
+            // 2. Bóc tách Toast lỗi và Error Marker
+            var bloksError: String? = null
+
+            // Bắt Toast: \(bk\.action\.io\.Toast,\s*"([^"]+)"
+            val toastRegex = Regex("""\(bk\.action\.io\.Toast,\s*"([^"]+)"""")
+            toastRegex.find(body)?.let {
+                bloksError = it.groupValues[1]
+            }
+
+            if (bloksError.isNullOrBlank()) {
+                val genericToast = Regex("""Toast,\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+                genericToast.find(body)?.let {
+                    bloksError = it.groupValues[1]
+                }
+            }
+
+            // Kiểm tra Error Marker: create_error hoặc profile_creation_error
+            if (bloksError.isNullOrBlank()) {
+                if (body.contains("profile_creation_error") || body.contains("create_error")) {
+                    bloksError = "Facebook từ chối tạo Page (profile_creation_error / create_error)"
+                }
+            }
+
+            val finalError = bloksError ?: extractDetailedFacebookError(body)
+            throw Exception(finalError)
         }
     }
 
     /**
-     * Bóc tách thông điệp lỗi chính xác từ Facebook
+     * Bóc tách thông điệp lỗi chi tiết từ Facebook
      */
     private fun extractDetailedFacebookError(body: String): String {
-        // 1. Tìm thông báo Toast trong Bloks Action: Toast, "..."
-        val toastRegex = Regex("""Toast,\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        // 1. Tìm thông báo Toast trong Bloks Action: \(bk\.action\.io\.Toast, "..."
+        val toastRegex = Regex("""\(bk\.action\.io\.Toast,\s*"([^"]+)"""")
         val toastMatch = toastRegex.find(body)
         if (toastMatch != null && toastMatch.groupValues[1].isNotBlank()) {
             return toastMatch.groupValues[1]
