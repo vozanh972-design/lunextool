@@ -227,25 +227,14 @@ fun RegAndTransferPageScreen(navController: NavController) {
                             Spacer(Modifier.width(6.dp))
                             Text("Cấu hình", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
+                    } else {
+                        Spacer(Modifier.weight(1f))
                     }
 
-                    // Nút Bắt đầu / Dừng chạy
+                    // Nút tam giác nhỏ Bắt đầu chạy (Icon Play, không có chữ)
                     Button(
                         onClick = {
-                            if (isRunning) {
-                                // Người dùng bấm Dừng chạy
-                                try {
-                                    runJob?.cancel()
-                                    runJob = null
-                                    runningAccountUid?.let { uid ->
-                                        accountStatusMap[uid] = "Đã dừng"
-                                    }
-                                    isRunning = false
-                                    runningAccountUid = null
-                                    Toast.makeText(context.applicationContext, "Đã dừng tiến trình!", Toast.LENGTH_SHORT).show()
-                                } catch (_: Throwable) {}
-                                return@Button
-                            }
+                            if (isRunning) return@Button
 
                             val targetAccounts = facebookAccounts.filter { it.uid in selectedForRunUids }
                             if (targetAccounts.isEmpty()) {
@@ -260,6 +249,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
                                 isRunning = true
                                 runJob = scope.launch(Dispatchers.IO) {
+                                    var totalCreatedAll = 0
                                     try {
                                         for (account in targetAccounts) {
                                             if (!isActive) break
@@ -295,6 +285,9 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 continue
                                             }
 
+                                            var createdSuccessCount = 0
+                                            var lastErrorMsg: String? = null
+
                                             for (idx in 1..count) {
                                                 if (!isActive) break
                                                 val pageName = try {
@@ -313,6 +306,8 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 try {
                                                     val res = pageService.createFacebookPage(pageName, token)
                                                     isCreated = true
+                                                    createdSuccessCount++
+                                                    totalCreatedAll++
                                                     try {
                                                         val updatedPages = pageService.getPages(token)
                                                         if (updatedPages.isNotEmpty()) {
@@ -323,12 +318,13 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     withContext(Dispatchers.Main) {
                                                         try {
                                                             facebookAccounts = FacebookAccountsStore.getAccounts(context)
-                                                            accountStatusMap[account.uid] = "Đã tạo ($idx/$count): $pageName"
+                                                            accountStatusMap[account.uid] = "Đã tạo ($createdSuccessCount/$count): $pageName"
                                                             Toast.makeText(context.applicationContext, "Đã tạo Fanpage: $pageName", Toast.LENGTH_SHORT).show()
                                                         } catch (_: Throwable) {}
                                                     }
                                                 } catch (e: Throwable) {
                                                     val errText = e.message ?: "Thất bại"
+                                                    lastErrorMsg = errText
                                                     withContext(Dispatchers.Main) {
                                                         try {
                                                             accountStatusMap[account.uid] = "Lỗi ($idx/$count): $errText"
@@ -343,13 +339,13 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                         if (!isActive) break
                                                         withContext(Dispatchers.Main) {
                                                             try {
-                                                                accountStatusMap[account.uid] = "Chờ tạo tiếp ($idx/$count): ${s}s"
+                                                                accountStatusMap[account.uid] = "Chờ tạo tiếp ($createdSuccessCount/$count): ${s}s"
                                                             } catch (_: Throwable) {}
                                                         }
                                                         delay(1000L)
                                                     }
                                                 } else if (!isCreated) {
-                                                    // Nếu tạo lỗi, không đếm ngược 1999s mà dừng vòng lặp cho acc này để không giam người dùng
+                                                    // Nếu tạo lỗi, dừng vòng lặp tài khoản này để không giam người dùng
                                                     break
                                                 }
                                             }
@@ -357,7 +353,13 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                             if (isActive) {
                                                 withContext(Dispatchers.Main) {
                                                     try {
-                                                        accountStatusMap[account.uid] = "Hoàn tất $count/$count Page"
+                                                        if (createdSuccessCount == count) {
+                                                            accountStatusMap[account.uid] = "Hoàn tất $count/$count Page"
+                                                        } else if (createdSuccessCount > 0) {
+                                                            accountStatusMap[account.uid] = "Đã tạo $createdSuccessCount/$count Page (${lastErrorMsg ?: "Dừng"})"
+                                                        } else {
+                                                            accountStatusMap[account.uid] = "Thất bại: ${lastErrorMsg ?: "Lỗi tạo page"}"
+                                                        }
                                                     } catch (_: Throwable) {}
                                                 }
                                             }
@@ -366,7 +368,11 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                         if (isActive) {
                                             withContext(Dispatchers.Main) {
                                                 try {
-                                                    Toast.makeText(context.applicationContext, "Hoàn tất quá trình Reg Page!", Toast.LENGTH_LONG).show()
+                                                    if (totalCreatedAll > 0) {
+                                                        Toast.makeText(context.applicationContext, "Đã tạo thành công $totalCreatedAll Page!", Toast.LENGTH_LONG).show()
+                                                    } else {
+                                                        Toast.makeText(context.applicationContext, "Tiến trình kết thúc (0 Page được tạo)", Toast.LENGTH_SHORT).show()
+                                                    }
                                                     facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
                                                 } catch (_: Throwable) {}
                                             }
@@ -436,29 +442,56 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 }
                             }
                         },
-                        enabled = isRunning || selectedForRunUids.isNotEmpty(),
+                        enabled = !isRunning && selectedForRunUids.isNotEmpty(),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = if (isRunning) DangerRed else Cobalt600),
-                        modifier = Modifier
-                            .weight(if (activeTab == 0) 1.3f else 1f)
-                            .height(48.dp)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Cobalt600,
+                            disabledContainerColor = Cobalt600.copy(alpha = 0.35f)
+                        ),
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        if (isRunning) {
-                            Icon(Icons.Filled.Stop, contentDescription = "Dừng", modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Dừng chạy", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        } else {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                if (activeTab == 0) "Bắt đầu Reg (${selectedForRunUids.size})" else "Chuyển Page (${selectedForRunUids.size})",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Filled.PlayArrow,
+                            contentDescription = "Bắt đầu",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
+
+                    // Nút ô vuông đỏ nhỏ Dừng chạy (Cạnh bên, không có chữ)
+                    Button(
+                        onClick = {
+                            if (!isRunning) return@Button
+                            try {
+                                runJob?.cancel()
+                                runJob = null
+                                runningAccountUid?.let { uid ->
+                                    accountStatusMap[uid] = "Đã dừng"
+                                }
+                                isRunning = false
+                                runningAccountUid = null
+                                Toast.makeText(context.applicationContext, "Đã dừng tiến trình!", Toast.LENGTH_SHORT).show()
+                            } catch (_: Throwable) {}
+                        },
+                        enabled = isRunning,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = DangerRed,
+                            disabledContainerColor = DangerRed.copy(alpha = 0.35f)
+                        ),
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Stop,
+                            contentDescription = "Dừng chạy",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                 }
+            }
         },
         containerColor = Color(0xFFF3F5F8)
     ) { innerPadding ->
