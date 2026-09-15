@@ -206,8 +206,16 @@ object XsmmInstagramTaskRunner {
                                     }
                                 } catch (e: Exception) {
                                     actionSuccess = false
-                                    lastActionError = e.message ?: "Lỗi ngoại lệ khi gửi request Instagram"
-                                    notify("Lỗi Instagram: ${e.message}")
+                                    val err = e.message ?: "Lỗi ngoại lệ khi gửi request Instagram"
+                                    if (err.contains("429")) {
+                                        lastActionError = "Kiểm tra lại acc (HTTP 429)"
+                                        notify("Kiểm tra lại acc (Instagram 429)")
+                                        val deadAccount = account.copy(isLive = false)
+                                        InstagramAccountsStore.updateAccount(context, deadAccount)
+                                    } else {
+                                        lastActionError = err
+                                        notify("Lỗi Instagram: $err")
+                                    }
                                 }
 
                                 // Đếm ngược từng giây an toàn sau khi tương tác
@@ -218,6 +226,14 @@ object XsmmInstagramTaskRunner {
                                     delay(1000L)
                                 }
                                 if (!coroutineContext.isActive) break
+
+                                // Nếu bị 429 dừng luồng acc này và chuyển sang DIE
+                                if (lastActionError?.contains("Kiểm tra lại acc") == true) {
+                                    totalErrors++
+                                    reportError(cleanUsername, lastActionError ?: "Kiểm tra lại acc")
+                                    notify("Dừng tài khoản: Kiểm tra lại acc")
+                                    return RunResult(totalCompleted, totalErrors, totalEarnedPoints, "Dừng tài khoản: Kiểm tra lại acc")
+                                }
 
                                 // 4. Xử lý nhận xu theo cơ chế 12 Follow / lần
                                 if (isFollow) {
@@ -348,8 +364,9 @@ object XsmmInstagramTaskRunner {
                                             notify(successMsg)
                                         } else {
                                             totalErrors++
-                                            val errMsg = if (compRes.message.isNotBlank()) compRes.message else "Không được duyệt"
-                                            notify("Thất bại: $errMsg")
+                                            val errMsg = if (compRes.message.isNotBlank()) compRes.message else "XSMM không duyệt (Không nhận được xu)"
+                                            reportError(cleanUsername, "XSMM trả về: $errMsg")
+                                            notify("Thất bại nhận xu: $errMsg")
                                         }
 
                                         val waitAfter = if (compRes.countdown > 0) compRes.countdown else config.fetchTaskIntervalSeconds.coerceAtLeast(2)
