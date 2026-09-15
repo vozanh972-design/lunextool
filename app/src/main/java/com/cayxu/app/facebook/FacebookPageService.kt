@@ -54,9 +54,15 @@ class FacebookPageService {
             .add("access_token", cleanToken)
             .build()
 
+        val userAgent = try {
+            NativeSecurity.getFbKatanaUA().ifBlank { "[FBAN/FB4A;FBAV/542.0.0.46.151;FBBV/840338789;FBDM/{density=0.75,width=300,height=540};FBLC/vi_VN;FBRV/0;FBCR/MobiFone;FBMF/MTool-Max;FBBD/MTool-Max;FBPN/com.facebook.katana;FBDV/MTool-Max;FBSV/9;FBOP/1;FBCA/arm64-v8a;]" }
+        } catch (_: Throwable) {
+            "[FBAN/FB4A;FBAV/542.0.0.46.151;FBBV/840338789;FBDM/{density=0.75,width=300,height=540};FBLC/vi_VN;FBRV/0;FBCR/MobiFone;FBMF/MTool-Max;FBBD/MTool-Max;FBPN/com.facebook.katana;FBDV/MTool-Max;FBSV/9;FBOP/1;FBCA/arm64-v8a;]"
+        }
+
         val request = Request.Builder()
             .url("$GRAPH_BASE_URL/v19.0/me/accounts")
-            .header("User-Agent", NativeSecurity.getFbKatanaUA())
+            .header("User-Agent", userAgent)
             .post(formBody)
             .build()
 

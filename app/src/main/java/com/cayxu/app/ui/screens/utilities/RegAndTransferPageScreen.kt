@@ -261,7 +261,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                         val updated = account.copy(bio = directAcc.bio, isLive = true)
                                                         FacebookAccountsStore.addAccount(context, updated)
                                                     }
-                                                } catch (_: Exception) {}
+                                                } catch (_: Throwable) {}
                                             }
 
                                             if (token.isNullOrBlank()) {
@@ -273,7 +273,12 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                             }
 
                                             for (idx in 1..count) {
-                                                val pageName = pageService.generateRandomName(nameTypeOption)
+                                                val pageName = try {
+                                                    pageService.generateRandomName(nameTypeOption)
+                                                } catch (_: Throwable) {
+                                                    "Shop Online ${System.currentTimeMillis() % 10000}"
+                                                }
+
                                                 withContext(Dispatchers.Main) {
                                                     accountStatusMap[account.uid] = "Đang tạo ($idx/$count): $pageName"
                                                 }
@@ -281,13 +286,14 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 try {
                                                     val res = pageService.createFacebookPage(pageName, token)
                                                     withContext(Dispatchers.Main) {
-                                                        accountStatusMap[account.uid] = "Đã tạo thành công: $pageName"
+                                                        accountStatusMap[account.uid] = "Đã tạo ($idx/$count): $pageName"
                                                         Toast.makeText(context, "Đã tạo Fanpage: $pageName", Toast.LENGTH_SHORT).show()
                                                     }
-                                                } catch (e: Exception) {
+                                                } catch (e: Throwable) {
+                                                    val errText = e.message ?: "Thất bại"
                                                     withContext(Dispatchers.Main) {
-                                                        accountStatusMap[account.uid] = "Lỗi ($idx/$count): ${e.message}"
-                                                        Toast.makeText(context, "Tạo thất bại ($idx/$count): ${e.message}", Toast.LENGTH_SHORT).show()
+                                                        accountStatusMap[account.uid] = "Lỗi ($idx/$count): $errText"
+                                                        Toast.makeText(context, "Tạo thất bại: $errText", Toast.LENGTH_SHORT).show()
                                                     }
                                                 }
 
@@ -312,11 +318,14 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                             facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
                                         }
                                     } catch (e: Throwable) {
-                                        withContext(Dispatchers.Main) {
-                                            runningAccountUid?.let { uid ->
-                                                accountStatusMap[uid] = "Lỗi: ${e.localizedMessage}"
+                                        if (e !is kotlinx.coroutines.CancellationException) {
+                                            val errMsg = e.localizedMessage ?: "Lỗi xử lý"
+                                            withContext(Dispatchers.Main) {
+                                                runningAccountUid?.let { uid ->
+                                                    accountStatusMap[uid] = "Lỗi: $errMsg"
+                                                }
+                                                Toast.makeText(context, "Lỗi thực thi: $errMsg", Toast.LENGTH_SHORT).show()
                                             }
-                                            Toast.makeText(context, "Lỗi thực thi: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                                         }
                                     } finally {
                                         withContext(Dispatchers.Main) {
