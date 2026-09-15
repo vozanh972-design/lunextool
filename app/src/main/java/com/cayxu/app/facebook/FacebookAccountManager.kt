@@ -104,8 +104,9 @@ class FacebookAccountManager {
         val request = Request.Builder()
             .url("https://api.facebook.com/method/auth.getSessionForApp")
             .header("Cookie", cookieStr)
-            .header("User-Agent", com.cayxu.app.util.NativeSecurity.getFbDalvikUA())
-            .header("Accept", "application/json")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("Accept", "*/*")
             .post(form)
             .build()
 
@@ -242,9 +243,8 @@ class FacebookAccountManager {
                 val rawParts = trimmed.split(delimiter).map { it.trim() }
                 for (i in formatFields.indices) {
                     val fieldType = formatFields[i]
-                    // Nếu là trường cuối cùng hoặc là trường COOKIE -> lấy toàn bộ phần còn lại nối lại với nhau
-                    val value = if (i == formatFields.lastIndex || fieldType == AccountFieldType.COOKIE) {
-                        if (i < rawParts.size) rawParts.subList(i, rawParts.size).joinToString(delimiter) else ""
+                    val value = if (i == formatFields.lastIndex && i < rawParts.size) {
+                        rawParts.subList(i, rawParts.size).joinToString(delimiter)
                     } else {
                         rawParts.getOrElse(i) { "" }
                     }
@@ -253,7 +253,7 @@ class FacebookAccountManager {
                         AccountFieldType.USERNAME -> username = value
                         AccountFieldType.PASSWORD -> password = value
                         AccountFieldType.TWO_FACTOR -> twoFactor = value
-                        AccountFieldType.COOKIE -> if (cookie.isBlank()) cookie = value
+                        AccountFieldType.COOKIE -> cookie = value
                         AccountFieldType.PROXY -> proxy = value
                         AccountFieldType.TOKEN -> token = value
                     }
