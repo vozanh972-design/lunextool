@@ -999,7 +999,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                             // Khu vực hiển thị trạng thái chạy trực tiếp của tài khoản này
                             val liveStatus = accountStatusMap[account.uid]
                             val isRunningThis = isRunning && runningAccountUid == account.uid
-                            val isAccError = liveStatus != null && liveStatus.contains("Lỗi", ignoreCase = true)
+                            val isAccError = liveStatus != null && (liveStatus.contains("Lỗi", ignoreCase = true) || liveStatus.contains("Thất bại", ignoreCase = true))
                             val isAccStopped = liveStatus != null && liveStatus.contains("Đã dừng", ignoreCase = true)
 
                             if (liveStatus != null || isRunningThis) {
@@ -1017,6 +1017,9 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 else -> Cobalt600.copy(alpha = 0.08f)
                                             }
                                         )
+                                        .clickable(enabled = isAccError) {
+                                            selectedErrorDetail = Pair(account.name.ifBlank { account.uid }, liveStatus ?: "Lỗi từ Facebook")
+                                        }
                                         .padding(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
                                     Row(
@@ -1065,7 +1068,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                             Spacer(Modifier.width(6.dp))
                                             Box(
                                                 modifier = Modifier
-                                                    .size(20.dp)
+                                                    .size(22.dp)
                                                     .clip(CircleShape)
                                                     .background(DangerRed.copy(alpha = 0.15f))
                                                     .clickable {
@@ -1077,7 +1080,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     Icons.Filled.Info,
                                                     contentDescription = "Xem chi tiết lỗi",
                                                     tint = DangerRed,
-                                                    modifier = Modifier.size(13.dp)
+                                                    modifier = Modifier.size(15.dp)
                                                 )
                                             }
                                         }
@@ -1374,7 +1377,10 @@ fun RegAndTransferPageScreen(navController: NavController) {
                 }
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                ) {
                     Text(
                         text = "Tài khoản: $accName",
                         fontSize = 13.sp,
@@ -1389,7 +1395,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                     ) {
                         Text(
                             text = errDetail,
-                            fontSize = 12.5.sp,
+                            fontSize = 12.sp,
                             color = DangerRed,
                             modifier = Modifier.padding(10.dp)
                         )
