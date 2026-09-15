@@ -369,6 +369,24 @@ fun XsmmAccountScreen(navController: NavController) {
         isCheckingLinked = false
     }
 
+    // Tự động cập nhật số dư XSMM định kỳ mỗi 15 giây mà không cần bấm reload tay
+    LaunchedEffect(Unit) {
+        while (kotlinx.coroutines.isActive) {
+            kotlinx.coroutines.delay(15_000L)
+            val token = XsmmAccountStore.getToken(context)
+            if (!token.isNullOrBlank()) {
+                try {
+                    when (val result = XsmmAuthRepository.fetchUser(token)) {
+                        is XsmmLoginResult.Success -> {
+                            XsmmSession.login(context, token, result.info.username, result.info.points)
+                        }
+                        is XsmmLoginResult.Error -> Unit
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),

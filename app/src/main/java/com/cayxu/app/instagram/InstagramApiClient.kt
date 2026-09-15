@@ -29,14 +29,15 @@ class InstagramApiClient(
         const val BASE_URL = "https://www.instagram.com"
         const val API_BASE_URL = "https://i.instagram.com"
 
-        // Dùng đúng giá trị từ Python script hoạt động được
-        const val APP_ID = "1217981644879628"
+        // Web App ID chuẩn của Instagram Web
+        const val APP_ID = "936619743392459"
         const val ASBD_ID = "359341"
         const val AJAX_ROLLOUT = "1047437269"
         const val HS = "20710.HYP:instagram_web_pkg.2.1...0"
 
         const val DOC_ID_FOLLOW_MUTATION = "26508036048874888"
         const val DOC_ID_LIKE_MUTATION = "9595477160535898"
+        const val DOC_ID_LIKE_MUTATION_POLARIS = "27358573637160660"
         const val DOC_ID_PROFILE_POSTS = "28322872020710458"
 
         val PATTERN_CSRF: Pattern = Pattern.compile("csrftoken=([^;]+)")
@@ -100,6 +101,30 @@ class InstagramApiClient(
                     matchResult.value
                 }
             }
+        }
+
+        fun shortcodeToMediaId(code: String): String {
+            val cleanCode = code.trim()
+            if (cleanCode.all { it.isDigit() }) return cleanCode
+            val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+            var id = java.math.BigInteger.ZERO
+            val base = java.math.BigInteger.valueOf(64)
+            for (c in cleanCode) {
+                val index = alphabet.indexOf(c)
+                if (index == -1) return ""
+                id = id.multiply(base).add(java.math.BigInteger.valueOf(index.toLong()))
+            }
+            return id.toString()
+        }
+
+        fun extractShortcode(input: String): String {
+            val clean = input.trim()
+            val match = Regex("""/(?:p|reel|reels|tv)/([a-zA-Z0-9_-]+)""").find(clean)
+            if (match != null) {
+                return match.groupValues[1]
+            }
+            val cleanNoQuery = clean.substringBefore("?").substringBefore("#").trim().trimEnd('/')
+            return cleanNoQuery.substringAfterLast("/")
         }
 
         fun parseProxy(proxyStr: String?): ProxyConfig? {
@@ -206,13 +231,30 @@ class InstagramApiClient(
         return null
     }
 
+    private fun buildDocumentHeaders(referer: String? = null): Headers {
+        val builder = Headers.Builder()
+            .add("User-Agent", userAgent)
+            .add("Cookie", cookie)
+            .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+            .add("Sec-Fetch-Dest", "document")
+            .add("Sec-Fetch-Mode", "navigate")
+            .add("Sec-Fetch-Site", if (referer != null) "same-origin" else "none")
+            .add("Sec-Fetch-User", "?1")
+            .add("Upgrade-Insecure-Requests", "1")
+
+        if (!referer.isNullOrBlank()) {
+            builder.add("Referer", referer)
+        }
+        return builder.build()
+    }
+
     private fun buildStandardHeaders(
         csrfToken: String? = null,
         referer: String? = null,
         appId: String = APP_ID,
         friendlyName: String? = null,
-        lsdToken: String? = null,
-        rolloutAjax: String = AJAX_ROLLOUT
+        lsdToken: String? = null
     ): Headers {
         val csrf = csrfToken ?: activeCsrfToken.ifBlank { extractCsrfToken() ?: "" }
         val ref = referer ?: "$BASE_URL/"
@@ -226,8 +268,6 @@ class InstagramApiClient(
             .add("X-CSRFToken", csrf)
             .add("X-IG-App-ID", appId)
             .add("X-ASBD-ID", ASBD_ID)
-            .add("X-Instagram-AJAX", rolloutAjax)
-            .add("X-Requested-With", "XMLHttpRequest")
             .add("Sec-Fetch-Dest", "empty")
             .add("Sec-Fetch-Mode", "cors")
             .add("Sec-Fetch-Site", "same-origin")
@@ -253,7 +293,7 @@ class InstagramApiClient(
 
         val request = Request.Builder()
             .url(BASE_URL)
-            .headers(buildStandardHeaders())
+            .headers(buildDocumentHeaders())
             .get()
             .build()
 
@@ -316,11 +356,10 @@ class InstagramApiClient(
     }
 
     /**
-     * Lấy đầy đủ thông tin chi tiết tài khoản (tên, tiểu sử, số follow, bài viết, avatar) qua Web Profile API
+     * Lấy đầy đủ thông tin chi tiết tài khoản qua trang Web cá nhân (không gọi REST API)
      */
     @Throws(Exception::class)
     fun fetchAccountDetails(targetUsername: String? = null): UserProfile {
-        // Nếu không truyền username, trước tiên lấy cơ bản từ fetchUserInfo
         val baseInfo = try {
             fetchUserInfo()
         } catch (e: Exception) {
@@ -334,45 +373,43 @@ class InstagramApiClient(
         val cleanUser = cleanInstagramUsername(targetUser)
         val csrf = activeCsrfToken.ifBlank { extractCsrfToken() ?: "" }
 
-        val request = Request.Builder()
-            .url("$BASE_URL/api/v1/users/web_profile_info/?username=$cleanUser")
-            .headers(buildStandardHeaders(csrfToken = csrf, referer = "$BASE_URL/$cleanUser/"))
-            .get()
-            .build()
-
         try {
+            val request = Request.Builder()
+                .url("$BASE_URL/$cleanUser/")
+                .headers(buildDocumentHeaders(referer = "$BASE_URL/"))
+                .get()
+                .build()
+
             httpClient.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val userData = json.optJSONObject("data")?.optJSONObject("user")
-                    if (userData != null) {
-                        val uid = userData.optString("id", baseInfo?.userId ?: "")
-                        val uname = unescapeUnicode(userData.optString("username", cleanUser))
-                        val fname = unescapeUnicode(userData.optString("full_name", ""))
-                        val bio = unescapeUnicode(userData.optString("biography", ""))
-                        val picUrl = userData.optString("profile_pic_url_hd", userData.optString("profile_pic_url", ""))
-                        val followers = userData.optJSONObject("edge_followed_by")?.optInt("count") ?: 0
-                        val following = userData.optJSONObject("edge_follow")?.optInt("count") ?: 0
-                        val posts = userData.optJSONObject("edge_owner_to_timeline_media")?.optInt("count") ?: 0
-
-                        return UserProfile(
-                            userId = uid,
-                            actorId = baseInfo?.actorId ?: uid,
-                            username = uname,
-                            fullName = fname,
-                            profilePicUrl = picUrl.takeIf { it.isNotBlank() } ?: baseInfo?.profilePicUrl,
-                            csrfToken = baseInfo?.csrfToken ?: csrf,
-                            fbDtsg = baseInfo?.fbDtsg ?: activeFbDtsg,
-                            lsd = baseInfo?.lsd ?: activeLsd,
-                            spinR = baseInfo?.spinR ?: activeSpinR,
-                            hs = baseInfo?.hs ?: activeHs,
-                            biography = bio,
-                            followersCount = followers,
-                            followingCount = following,
-                            postsCount = posts
-                        )
+                    
+                    val uid = PATTERN_USER_ID.matcher(body).let { if (it.find()) it.group(1).orEmpty() else baseInfo?.userId ?: "" }
+                    val fname = PATTERN_FULL_NAME.matcher(body).let { if (it.find()) unescapeUnicode(it.group(1).orEmpty()) else baseInfo?.fullName ?: "" }
+                    val pic = PATTERN_PROFILE_PIC.matcher(body).let {
+                        if (it.find()) (it.group(1) ?: "").replace("\\u0026", "&").replace("\\/", "/") else baseInfo?.profilePicUrl
                     }
+                    val bio = PATTERN_BIOGRAPHY.matcher(body).let { if (it.find()) unescapeUnicode(it.group(1).orEmpty()) else baseInfo?.biography ?: "" }
+                    val followers = PATTERN_FOLLOWERS.matcher(body).let { if (it.find()) it.group(1)?.toIntOrNull() ?: (baseInfo?.followersCount ?: 0) else (baseInfo?.followersCount ?: 0) }
+                    val following = PATTERN_FOLLOWING.matcher(body).let { if (it.find()) it.group(1)?.toIntOrNull() ?: (baseInfo?.followingCount ?: 0) else (baseInfo?.followingCount ?: 0) }
+                    val posts = PATTERN_POSTS.matcher(body).let { if (it.find()) it.group(1)?.toIntOrNull() ?: (baseInfo?.postsCount ?: 0) else (baseInfo?.postsCount ?: 0) }
+
+                    return UserProfile(
+                        userId = uid,
+                        actorId = baseInfo?.actorId ?: uid,
+                        username = cleanUser,
+                        fullName = fname,
+                        profilePicUrl = pic,
+                        csrfToken = baseInfo?.csrfToken ?: csrf,
+                        fbDtsg = baseInfo?.fbDtsg ?: activeFbDtsg,
+                        lsd = baseInfo?.lsd ?: activeLsd,
+                        spinR = baseInfo?.spinR ?: activeSpinR,
+                        hs = baseInfo?.hs ?: activeHs,
+                        biography = bio,
+                        followersCount = followers,
+                        followingCount = following,
+                        postsCount = posts
+                    )
                 }
             }
         } catch (_: Exception) {}
@@ -401,7 +438,7 @@ class InstagramApiClient(
     }
 
     /**
-     * Tra cứu user ID từ URL hoặc username bằng cách tra cứu web_profile_info, TopSearch hoặc trang cá nhân
+     * Tra cứu user ID từ URL hoặc username bằng cách mở trang cá nhân Instagram Web
      */
     fun getUserIdFromUsername(username: String): String? {
         val cleanName = cleanInstagramUsername(username)
@@ -410,58 +447,7 @@ class InstagramApiClient(
 
         val csrf = activeCsrfToken.ifBlank { extractCsrfToken() ?: "" }
 
-        // 1. Dùng web_profile_info API chính xác nhất của Instagram Web
-        try {
-            val req = Request.Builder()
-                .url("$BASE_URL/api/v1/users/web_profile_info/?username=$cleanName")
-                .headers(buildStandardHeaders(csrfToken = csrf, referer = "$BASE_URL/$cleanName/"))
-                .get()
-                .build()
-
-            httpClient.newCall(req).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val userId = json.optJSONObject("data")?.optJSONObject("user")?.optString("id")
-                    if (!userId.isNullOrBlank()) return userId
-                }
-            }
-        } catch (_: Exception) {}
-
-        // 2. Dùng TopSearch API
-        try {
-            val headers = buildStandardHeaders(
-                csrfToken = csrf,
-                referer = "$BASE_URL/"
-            )
-            val request = Request.Builder()
-                .url("$BASE_URL/api/v1/web/search/topsearch/?context=blended&query=$cleanName&rank_token=0.5")
-                .headers(headers)
-                .get()
-                .build()
-
-            httpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val users = json.optJSONArray("users")
-                    if (users != null) {
-                        for (i in 0 until users.length()) {
-                            val u = users.optJSONObject(i)?.optJSONObject("user")
-                            val uName = u?.optString("username", "") ?: ""
-                            if (uName.equals(cleanName, ignoreCase = true)) {
-                                val pk = u?.optString("pk", "")?.takeIf { it.isNotBlank() }
-                                    ?: u?.optString("pk_id", "")?.takeIf { it.isNotBlank() }
-                                    ?: u?.optString("id", "")?.takeIf { it.isNotBlank() }
-                                if (!pk.isNullOrBlank()) return pk
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-
-        // 3. Truy cập trực tiếp link trang cá nhân (như trình duyệt mở link)
+        // Truy cập trực tiếp link trang cá nhân Instagram Web (không gọi REST API)
         try {
             val targetUrl = if (username.startsWith("http://") || username.startsWith("https://")) {
                 username
@@ -470,7 +456,7 @@ class InstagramApiClient(
             }
             val request = Request.Builder()
                 .url(targetUrl)
-                .headers(buildStandardHeaders(csrfToken = csrf, referer = "$BASE_URL/"))
+                .headers(buildDocumentHeaders(referer = "$BASE_URL/"))
                 .get()
                 .build()
 
@@ -565,6 +551,9 @@ class InstagramApiClient(
             .build()
 
         httpClient.newCall(gqlRequest).execute().use { gqlResponse ->
+            if (gqlResponse.code == 429) {
+                throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429) - Vui lòng tăng thời gian chờ an toàn")
+            }
             if (gqlResponse.code in listOf(301, 302, 303, 307, 308)) {
                 throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (Redirect ${gqlResponse.code})")
             }
@@ -616,10 +605,10 @@ class InstagramApiClient(
     }
 
     /**
-     * Like bài viết qua Instagram GraphQL usePolarisLikeMediaLikeMutation (DOC_ID: 9595477160535898)
+     * Like bài viết qua Instagram GraphQL PolarisAPILikePostMutation (Doc ID: 27358573637160660)
      */
     @Throws(Exception::class)
-    fun likeMediaGraphQL(mediaId: String, fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
+    fun likeMediaGraphQL(mediaId: String, shortcode: String = "", fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
         val csrf = activeCsrfToken.ifBlank { extractCsrfToken() ?: throw IllegalStateException("Không có CSRF token") }
         val av = if (!actorId.isNullOrBlank()) actorId else activeActorId.ifBlank { activeUserId.ifBlank { extractDsUserId() ?: "0" } }
         val currentFbDtsg = fbDtsg?.takeIf { it.isNotBlank() } ?: activeFbDtsg
@@ -633,7 +622,14 @@ class InstagramApiClient(
         val currentHsi = activeHsi.ifBlank { generateHsi() }
 
         val variables = JSONObject().apply {
-            put("media_id", mediaId)
+            val inputObj = JSONObject().apply {
+                put("media_id", mediaId)
+                if (av.isNotBlank() && av != "0") {
+                    put("actor_id", av)
+                }
+                put("client_mutation_id", "1")
+            }
+            put("input", inputObj)
             put("container_module", "feed_timeline")
         }.toString()
 
@@ -664,17 +660,19 @@ class InstagramApiClient(
             .add("__spin_t", currentSpinT)
             .add("__crn", "comet.igweb.PolarisExploreRoute")
             .add("fb_api_caller_class", "RelayModern")
-            .add("fb_api_req_friendly_name", "usePolarisLikeMediaLikeMutation")
+            .add("fb_api_req_friendly_name", "PolarisAPILikePostMutation")
             .add("server_timestamps", "true")
             .add("variables", variables)
-            .add("doc_id", DOC_ID_LIKE_MUTATION)
+            .add("doc_id", DOC_ID_LIKE_MUTATION_POLARIS)
             .build()
 
+        val ref = if (shortcode.isNotBlank()) "$BASE_URL/p/$shortcode/" else "$BASE_URL/"
         val headers = buildStandardHeaders(
             csrfToken = csrf,
-            friendlyName = "usePolarisLikeMediaLikeMutation",
+            friendlyName = "PolarisAPILikePostMutation",
             lsdToken = currentLsd,
-            referer = "$BASE_URL/"
+            referer = ref,
+            appId = APP_ID
         )
 
         val request = Request.Builder()
@@ -684,6 +682,9 @@ class InstagramApiClient(
             .build()
 
         httpClient.newCall(request).execute().use { response ->
+            if (response.code == 429) {
+                throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429) - Vui lòng tăng thời gian chờ an toàn")
+            }
             if (response.code in listOf(301, 302, 303, 307, 308)) {
                 throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (redirect ${response.code})")
             }
@@ -694,8 +695,9 @@ class InstagramApiClient(
             if (response.isSuccessful || response.code == 200) {
                 if (responseBody.contains("\"viewer_has_liked\":true") ||
                     responseBody.contains("\"status\":\"ok\"") ||
+                    responseBody.contains("\"xdt_like_media\"") ||
                     responseBody.contains("\"is_final\":true") ||
-                    (!responseBody.trimStart().startsWith("<") && !responseBody.contains("\"error\"") && !responseBody.contains("\"errors\""))
+                    (responseBody.contains("\"data\"") && !responseBody.contains("\"errors\"") && !responseBody.contains("\"error\""))
                 ) {
                     return true
                 }
@@ -709,43 +711,40 @@ class InstagramApiClient(
             if (responseBody.trimStart().startsWith("<")) {
                 throw IllegalStateException("Instagram trả về trang HTML - Cookie hết hạn hoặc checkpoint")
             }
-            throw IllegalStateException("Instagram từ chối Like: HTTP ${response.code}")
+            return false
         }
     }
 
     /**
-     * Like bài viết dựa trên ID hoặc URL bài viết
+     * Like bài viết dựa trên ID hoặc URL bài viết hoàn toàn bằng GraphQL
      */
     @Throws(Exception::class)
     fun likeTarget(targetMediaIdOrUrl: String, fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
         val clean = targetMediaIdOrUrl.trim()
-        if (clean.all { it.isDigit() }) {
-            return likeMediaGraphQL(clean, fbDtsg, lsd, actorId)
+        if (clean.isBlank()) {
+            throw IllegalStateException("ID hoặc liên kết bài viết rỗng")
         }
 
-        val codeMatch = Regex("""/(?:p|reel|tv)/([a-zA-Z0-9_-]+)""").find(clean)
-        val shortcode = codeMatch?.groupValues?.getOrNull(1) ?: clean
+        var shortcode = ""
+        var mediaId = ""
 
-        try {
-            val req = Request.Builder()
-                .url("$BASE_URL/p/$shortcode/?__a=1&__d=dis")
-                .headers(buildStandardHeaders())
-                .get()
-                .build()
-
-            httpClient.newCall(req).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val mediaIdMatch = Pattern.compile("\"id\"\\s*:\\s*\"([0-9]+)\"").matcher(body)
-                if (mediaIdMatch.find()) {
-                    val mediaId = mediaIdMatch.group(1).orEmpty()
-                    if (mediaId.isNotBlank()) {
-                        return likeMediaGraphQL(mediaId, fbDtsg, lsd, actorId)
-                    }
-                }
+        if (clean.all { it.isDigit() }) {
+            mediaId = clean
+        } else {
+            shortcode = extractShortcode(clean)
+            val decodedId = shortcodeToMediaId(shortcode)
+            if (decodedId.isNotBlank()) {
+                mediaId = decodedId
             }
-        } catch (_: Exception) {}
+        }
 
-        return likeMediaGraphQL(clean, fbDtsg, lsd, actorId)
+        val finalMediaId = if (mediaId.isNotBlank()) mediaId else clean
+
+        // Thực hiện Like qua GraphQL PolarisAPILikePostMutation duy nhất của Instagram Web
+        val okGraphQL = likeMediaGraphQL(finalMediaId, shortcode, fbDtsg, lsd, actorId)
+        if (okGraphQL) return true
+
+        throw IllegalStateException("Instagram không phản hồi thành công khi Like bài viết (ID: $finalMediaId)")
     }
 
     /**
