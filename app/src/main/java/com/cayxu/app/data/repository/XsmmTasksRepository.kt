@@ -75,25 +75,34 @@ object XsmmTasksRepository {
             add("task_id", com.google.gson.JsonArray().apply { taskIds.forEach { add(it) } })
             addProperty("uid", uid)
         }
-        return try {
-            val response = XsmmRetrofitClient.api.completeTasks2(auth(rawToken), body)
-            if (!response.isSuccessful) {
-                val msg = errMsg(response.errorBody()?.string(), "Lỗi hoàn thành NV (mã HTTP: ${response.code()})")
-                return XsmmCompleteTask2Result(false, msg, 0, 0, 0, false)
+
+        var lastException: Exception? = null
+        for (attempt in 1..3) {
+            try {
+                val response = XsmmRetrofitClient.api.completeTasks2(auth(rawToken), body)
+                if (!response.isSuccessful) {
+                    val msg = errMsg(response.errorBody()?.string(), "Lỗi hoàn thành NV (mã HTTP: ${response.code()})")
+                    return XsmmCompleteTask2Result(false, msg, 0, 0, 0, false)
+                }
+                val json = response.body()
+                val err = json?.get("error")?.takeIf { it.isJsonPrimitive }?.asString
+                if (!err.isNullOrBlank()) return XsmmCompleteTask2Result(false, err, 0, 0, 0, false)
+                return XsmmCompleteTask2Result(
+                    success = true,
+                    message = json?.get("message")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                    points = json?.get("points")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
+                    successCount = json?.get("success_count")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
+                    countdown = json?.get("countdown")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
+                    retry = json?.get("retry")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
+                )
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt < 3) {
+                    kotlinx.coroutines.delay(2000L * attempt)
+                }
             }
-            val json = response.body()
-            val err = json?.get("error")?.takeIf { it.isJsonPrimitive }?.asString
-            if (!err.isNullOrBlank()) return XsmmCompleteTask2Result(false, err, 0, 0, 0, false)
-            XsmmCompleteTask2Result(
-                success = true,
-                message = json?.get("message")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                points = json?.get("points")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                successCount = json?.get("success_count")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                countdown = json?.get("countdown")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                retry = json?.get("retry")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
-            )
-        } catch (e: Exception) {
-            XsmmCompleteTask2Result(false, e.message ?: "Lỗi kết nối mạng", 0, 0, 0, false)
         }
+        val errText = lastException?.message ?: "Lỗi kết nối server XSMM (Timeout)"
+        return XsmmCompleteTask2Result(false, errText, 0, 0, 0, false)
     }
 }
