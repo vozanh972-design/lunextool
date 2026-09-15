@@ -383,9 +383,9 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 4. KIỂM TRA ĐANG Ở TRANG HỒ SƠ (Thấy @username hoặc các mục hồ sơ)
-                    val isProfileScreen = findHandleNode(root) != null || 
-                                          findNodeByText(root, setOf("sửa hồ sơ", "đơn hàng của bạn", "thêm bạn bè", "phần trưng bày"), exact = false) != null
+                    // 4. KIỂM TRA ĐANG Ở TRANG HỒ SƠ (Profile screen của chính mình)
+                    // Ở trang cá nhân sẽ có nút "Sửa hồ sơ" hoặc "Thêm bạn bè" hoặc "Chia sẻ hồ sơ" hoặc "Đơn hàng của bạn"
+                    val isProfileScreen = isUserSelfProfileScreen(root)
                     if (isProfileScreen) {
                         val menuNode = findMenuIcon(root)
                         if (menuNode != null) {
@@ -398,12 +398,12 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 5. ĐANG Ở TRANG CHỦ HOẶC TRANG KHÁC -> Bấm tab "Hồ sơ" ở thanh dưới cùng
+                    // 5. ĐANG Ở TRANG CHỦ / BẠN BÈ / VIDEO / FEED -> Bấm tab "Hồ sơ" ở thanh dưới cùng
                     val tabNode = findProfileTabNode(root)
                     if (tabNode != null) {
                         TikTokCaptureBridge.updateProgress("Đang mở trang Hồ sơ...")
                         clickNode(tabNode)
-                        delay(350)
+                        delay(400)
                     } else {
                         TikTokCaptureBridge.updateProgress("Đang đợi TikTok sẵn sàng...")
                         delay(200)
@@ -530,7 +530,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Tìm node có thể cuộn (scrollable) rồi cuộn xuống 1 nấc; kết hợp cả gesture vuốt từ dưới lên để cuộn mượt mà */
+    /** Tìm node có thể cuộn (scrollable) rồi cuộn xuống 1 nấc; kết hợp gesture vuốt từ dưới lên trên để cuộn trang Cài đặt */
     private fun scrollDown(root: AccessibilityNodeInfo) {
         val scrollable = findScrollableNode(root)
         @Suppress("DEPRECATION")
@@ -538,22 +538,22 @@ class TikTokAccessibilityService : AccessibilityService() {
         swipeUpSettings()
     }
 
-    /** Vuốt từ dưới lên từ từ ở giữa màn hình Cài đặt */
+    /** Vuốt từ dưới lên trên (y từ 80% lên 20%) để cuộn nội dung Cài đặt xuống cuối */
     private fun swipeUpSettings() {
         val root = rootInActiveWindow ?: return
         val bounds = Rect()
         root.getBoundsInScreen(bounds)
         if (bounds.width() <= 0 || bounds.height() <= 0) return
 
-        val startX = (bounds.left + bounds.right) / 2f
-        val startY = bounds.top + bounds.height() * 0.80f
-        val endY = bounds.top + bounds.height() * 0.25f
+        val centerX = (bounds.left + bounds.right) / 2f
+        val startY = bounds.top + bounds.height() * 0.82f // Điểm bắt đầu ở phía dưới màn hình
+        val endY = bounds.top + bounds.height() * 0.22f   // Vuốt kéo lên phía trên màn hình
         val path = Path().apply {
-            moveTo(startX, startY)
-            lineTo(startX, endY)
+            moveTo(centerX, startY)
+            lineTo(centerX, endY)
         }
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 350))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 320))
             .build()
         dispatchGesture(gesture, null, null)
     }
@@ -705,10 +705,32 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Dò riêng cho tab "Hồ sơ/Tôi" ở thanh dưới cùng của màn hình TikTok.
-     * Chỉ tìm ở vùng 20% phía dưới đáy màn hình (Bottom Navigation Bar) và ưu tiên
-     * node có chữ "Hồ sơ" / "Tôi" / "Profile" / "Me" để bấm chính xác vào tab bar,
-     * tuyệt đối không bấm vào avatar của user ở giữa màn hình.
+     * Nhận diện màn hình Hồ sơ chính chủ (Profile) của người dùng:
+     * Phải có các đặc trưng như nút "Sửa hồ sơ" (Edit profile), "Chia sẻ hồ sơ", "Đơn hàng của bạn", "Thêm bạn bè"
+     * VÀ KHÔNG PHẢI là video feed hoặc trang của người khác.
+     */
+    private fun isUserSelfProfileScreen(root: AccessibilityNodeInfo): Boolean {
+        // Nút chỉnh sửa hồ sơ / chia sẻ hồ sơ / đơn hàng của bạn chỉ có ở trang cá nhân của chính mình
+        val profileSelfMarkers = setOf(
+            "sửa hồ sơ", "chỉnh sửa hồ sơ", "edit profile",
+            "chia sẻ hồ sơ", "share profile",
+            "đơn hàng của bạn", "your orders",
+            "phần trưng bày", "showcase"
+        )
+        if (findNodeByText(root, profileSelfMarkers, exact = false) != null) {
+            return true
+        }
+        // Hoặc có icon Menu (☰) ở góc trên bên phải kết hợp với nút Thêm bạn bè
+        val hasMenu = findMenuIcon(root) != null
+        val hasAddFriends = findNodeByText(root, setOf("thêm bạn bè", "add friends"), exact = false) != null
+        return hasMenu && hasAddFriends
+    }
+
+    /**
+     * Dò riêng cho tab "Hồ sơ/Tôi" ở thanh điều hướng DƯỚI CÙNG của màn hình TikTok.
+     * Chỉ tìm ở vùng 15% phía dưới đáy màn hình (Bottom Navigation Bar, top >= 85% chiều cao)
+     * và nằm ở góc bên phải (right >= 70% chiều rộng màn hình).
+     * Tuyệt đối không bấm vào bất kỳ avatar người dùng / story / live / bạn bè nào ở phía trên!
      */
     private fun findProfileTabNode(
         node: AccessibilityNodeInfo,
@@ -721,14 +743,17 @@ class TikTokAccessibilityService : AccessibilityService() {
         val rootBounds = Rect()
         rootInActiveWindow?.getBoundsInScreen(rootBounds)
 
-        // Nếu xác định được chiều cao màn hình, chỉ nhận node nằm ở vùng đáy (bottom >= 80% chiều cao)
-        val isAtBottom = if (rootBounds.height() > 0) {
-            bounds.top >= (rootBounds.top + rootBounds.height() * 0.75f)
+        val rootH = rootBounds.height()
+        val rootW = rootBounds.width()
+
+        // Tab Hồ sơ luôn nằm ở thanh bar dưới đáy (top >= 82% chiều cao) và ở phía bên phải (right >= 65% chiều rộng)
+        val isAtBottomNavigation = if (rootH > 0 && rootW > 0) {
+            bounds.top >= (rootBounds.top + rootH * 0.80f) && bounds.right >= (rootBounds.left + rootW * 0.65f)
         } else {
             true
         }
 
-        if (isAtBottom) {
+        if (isAtBottomNavigation) {
             val text = (node.text?.toString() ?: node.contentDescription?.toString())?.trim()?.lowercase()
             if (!text.isNullOrBlank()) {
                 val match = PROFILE_TAB_LABELS.any { text == it || (it.length >= 4 && text.contains(it)) }
