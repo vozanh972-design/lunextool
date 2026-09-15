@@ -4,13 +4,22 @@ plugins {
 }
 
 // ============================================================================
-// Massive Multi-Language Random Obfuscation Dictionary Generator (50,000+ Unique Tokens)
-// Tự động random 1 ngôn ngữ độc nhất (Ả Rập, Nga, Trung Quốc, Thái Lan, Thổ Nhĩ Kỳ, Hy Lạp, Nhật Bản)
-// với toàn bộ dải Unicode đầy đủ (hàng chục nghìn ký tự & tổ hợp biến thể) mỗi lần build
+// Massive Multi-Language Random Obfuscation Dictionary Generator (250,000+ Unique Tokens)
+// Tự động random 1 trong 15 ngôn ngữ chuẩn quốc gia:
+// 1. Trung Quốc, 2. Ả Rập Xê Út, 3. Nhật Bản, 4. Hàn Quốc, 5. Hungary,
+// 6. Phần Lan, 7. Nga, 8. Iceland, 9. Thái Lan, 10. Ba Lan,
+// 11. Thổ Nhĩ Kỳ, 12. Hy Lạp, 13. Đức, 14. Mông Cổ, 15. Đan Mạch
 // ============================================================================
 enum class ObfuscationLanguage(val displayName: String, val charRanges: List<IntRange>) {
-    ARABIC(
-        "Tiếng Ả Rập (Arabic Full Unicode & Presentation Forms)",
+    CHINESE(
+        "1. Trung Quốc (Chinese CJK Unified Ideographs 20,000+ Characters)",
+        listOf(
+            0x4E00..0x9FFF,
+            0x3400..0x4DBF
+        )
+    ),
+    SAUDI_ARABIA(
+        "2. Ả Rập Xê Út (Arabic Full Unicode & Presentation Forms)",
         listOf(
             0x0621..0x064A,
             0x066E..0x06D3,
@@ -20,8 +29,42 @@ enum class ObfuscationLanguage(val displayName: String, val charRanges: List<Int
             0xFE70..0xFEFC
         )
     ),
-    RUSSIAN(
-        "Tiếng Nga (Russian / Cyrillic Extended)",
+    JAPAN(
+        "3. Nhật Bản (Japanese Hiragana, Katakana & Kanji)",
+        listOf(
+            0x3041..0x3096,
+            0x30A1..0x30FA,
+            0x4E00..0x7FFF
+        )
+    ),
+    KOREA(
+        "4. Hàn Quốc (Korean Hangul Syllables & Jamo)",
+        listOf(
+            0xAC00..0xD7AF,
+            0x1100..0x11FF,
+            0x3130..0x318F
+        )
+    ),
+    HUNGARY(
+        "5. Hungary (Hungarian Latin Extended & Accented Letters)",
+        listOf(
+            0x00C0..0x00FF,
+            0x0100..0x017F,
+            0x0180..0x024F,
+            0x1E00..0x1EFF
+        )
+    ),
+    FINLAND(
+        "6. Phần Lan (Finnish Nordic Latin Extended)",
+        listOf(
+            0x00C0..0x00FF,
+            0x0100..0x017F,
+            0x0180..0x024F,
+            0x2C60..0x2C7F
+        )
+    ),
+    RUSSIA(
+        "7. Nga (Russian / Cyrillic Extended)",
         listOf(
             0x0400..0x04FF,
             0x0500..0x052F,
@@ -30,22 +73,24 @@ enum class ObfuscationLanguage(val displayName: String, val charRanges: List<Int
             0x1C80..0x1C88
         )
     ),
-    CHINESE(
-        "Tiếng Trung (Chinese CJK Unified Ideographs 20,000+ Characters)",
+    ICELAND(
+        "8. Iceland (Icelandic Eth, Thorn, Ash & Extended Runes/Latin)",
         listOf(
-            0x4E00..0x9FFF,
-            0x3400..0x4DBF
+            0x00C0..0x00FF,
+            0x0100..0x017F,
+            0x1E00..0x1EFF,
+            0x2C60..0x2C7F
         )
     ),
-    THAI(
-        "Tiếng Thái (Thai Script & Extended)",
+    THAILAND(
+        "9. Thái Lan (Thai Script & Extended)",
         listOf(
             0x0E01..0x0E3A,
             0x0E40..0x0E4E
         )
     ),
-    TURKISH(
-        "Tiếng Thổ Nhĩ Kỳ (Turkish / Latin Extended Additional)",
+    POLAND(
+        "10. Ba Lan (Polish Ogonek, Kreska, Kropka & Latin Extended)",
         listOf(
             0x00C0..0x00FF,
             0x0100..0x017F,
@@ -53,19 +98,46 @@ enum class ObfuscationLanguage(val displayName: String, val charRanges: List<Int
             0x1E00..0x1EFF
         )
     ),
-    GREEK(
-        "Tiếng Hy Lạp (Greek & Greek Extended)",
+    TURKEY(
+        "11. Thổ Nhĩ Kỳ (Turkish Cedilla, Breve, Dotless I & Latin Extended)",
+        listOf(
+            0x00C0..0x00FF,
+            0x0100..0x017F,
+            0x0180..0x024F,
+            0x1E00..0x1EFF
+        )
+    ),
+    GREECE(
+        "12. Hy Lạp (Greek & Greek Extended)",
         listOf(
             0x0370..0x03FF,
             0x1F00..0x1FFF
         )
     ),
-    JAPANESE(
-        "Tiếng Nhật (Japanese Hiragana, Katakana & Kanji)",
+    GERMANY(
+        "13. Đức (German Umlauts, Eszett & Latin Extended-B)",
         listOf(
-            0x3041..0x3096,
-            0x30A1..0x30FA,
-            0x4E00..0x7FFF
+            0x00C0..0x00FF,
+            0x0100..0x017F,
+            0x0180..0x024F,
+            0x1E00..0x1EFF
+        )
+    ),
+    MONGOLIA(
+        "14. Mông Cổ (Mongolian Traditional Script & Cyrillic Mongolia)",
+        listOf(
+            0x1800..0x18AF,
+            0x0400..0x04FF,
+            0x0500..0x052F
+        )
+    ),
+    DENMARK(
+        "15. Đan Mạch (Danish Nordic Latin Extended, AE, O-slash, A-ring)",
+        listOf(
+            0x00C0..0x00FF,
+            0x0100..0x017F,
+            0x0180..0x024F,
+            0x2C60..0x2C7F
         )
     )
 }
@@ -74,34 +146,62 @@ fun generateRandomDictionary(targetFiles: List<File>) {
     val selectedLang = ObfuscationLanguage.values().random()
     println("🔒 [ProGuard/R8 Hardening] Đang áp dụng từ điển ngẫu nhiên: ${selectedLang.displayName}")
 
-    val allChars = selectedLang.charRanges.flatMap { range ->
+    val startChars = selectedLang.charRanges.flatMap { range ->
         range.map { it.toChar() }
     }.filter { Character.isJavaIdentifierStart(it) }.distinct()
 
+    val partChars = selectedLang.charRanges.flatMap { range ->
+        range.map { it.toChar() }
+    }.filter { Character.isJavaIdentifierPart(it) }.distinct()
+
+    val safeStarts = if (startChars.isNotEmpty()) startChars else ('a'..'z').toList()
+    val safeParts = if (partChars.isNotEmpty()) partChars else safeStarts
+
     val tokens = LinkedHashSet<String>()
 
-    // 1. Thêm tất cả ký tự đơn (1 ký tự)
-    allChars.forEach { tokens.add(it.toString()) }
+    // 1. Thêm tất cả ký tự đơn hợp lệ
+    safeStarts.forEach { tokens.add(it.toString()) }
 
-    val TARGET_TOKENS = 50000
+    val TARGET_TOKENS = 250000
 
-    // 2. Tổ hợp 2 ký tự (c1 + c2)
-    val shuffledBase = allChars.shuffled()
-    for (c1 in shuffledBase) {
-        for (c2 in shuffledBase) {
+    // 2. Tổ hợp 2 ký tự (start + part)
+    val shuffledStarts = safeStarts.shuffled()
+    val shuffledParts = safeParts.shuffled()
+    for (c1 in shuffledStarts) {
+        for (c2 in shuffledParts) {
             tokens.add("$c1$c2")
             if (tokens.size >= TARGET_TOKENS) break
         }
         if (tokens.size >= TARGET_TOKENS) break
     }
 
-    // 3. Tổ hợp 3 ký tự (nếu cần đạt đủ 50.000 tokens)
+    // 3. Tổ hợp 3 ký tự (bao trùm toàn bộ classes.dex, classes2.dex, classes3.dex...)
     if (tokens.size < TARGET_TOKENS) {
-        val samplePool = if (shuffledBase.size > 200) shuffledBase.take(200) else shuffledBase
-        for (c1 in samplePool) {
-            for (c2 in samplePool) {
-                for (c3 in samplePool) {
+        val pool1 = if (shuffledStarts.size > 350) shuffledStarts.take(350) else shuffledStarts
+        val pool2 = if (shuffledParts.size > 350) shuffledParts.take(350) else shuffledParts
+        for (c1 in pool1) {
+            for (c2 in pool2) {
+                for (c3 in pool2) {
                     tokens.add("$c1$c2$c3")
+                    if (tokens.size >= TARGET_TOKENS) break
+                }
+                if (tokens.size >= TARGET_TOKENS) break
+            }
+            if (tokens.size >= TARGET_TOKENS) break
+        }
+    }
+
+    // 4. Tổ hợp 4 ký tự (dự phòng tối đa nếu cần đạt mốc khổng lồ)
+    if (tokens.size < TARGET_TOKENS) {
+        val pool1 = if (shuffledStarts.size > 80) shuffledStarts.take(80) else shuffledStarts
+        val pool2 = if (shuffledParts.size > 80) shuffledParts.take(80) else shuffledParts
+        for (c1 in pool1) {
+            for (c2 in pool2) {
+                for (c3 in pool2) {
+                    for (c4 in pool2) {
+                        tokens.add("$c1$c2$c3$c4")
+                        if (tokens.size >= TARGET_TOKENS) break
+                    }
                     if (tokens.size >= TARGET_TOKENS) break
                 }
                 if (tokens.size >= TARGET_TOKENS) break
