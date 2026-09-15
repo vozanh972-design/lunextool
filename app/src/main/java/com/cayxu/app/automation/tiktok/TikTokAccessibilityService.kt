@@ -567,11 +567,32 @@ class TikTokAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Tìm node có thể cuộn (scrollable) rồi cuộn xuống 1 nấc; best-effort, không báo lỗi nếu không tìm thấy. */
+    /** Tìm node có thể cuộn (scrollable) rồi cuộn xuống 1 nấc; kết hợp cả gesture vuốt từ dưới lên để cuộn mượt mà */
     private fun scrollDown(root: AccessibilityNodeInfo) {
-        val scrollable = findScrollableNode(root) ?: return
+        val scrollable = findScrollableNode(root)
         @Suppress("DEPRECATION")
-        scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+        scrollable?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+        swipeUpSettings()
+    }
+
+    /** Vuốt từ dưới lên từ từ ở giữa màn hình Cài đặt */
+    private fun swipeUpSettings() {
+        val root = rootInActiveWindow ?: return
+        val bounds = Rect()
+        root.getBoundsInScreen(bounds)
+        if (bounds.width() <= 0 || bounds.height() <= 0) return
+
+        val startX = (bounds.left + bounds.right) / 2f
+        val startY = bounds.top + bounds.height() * 0.80f
+        val endY = bounds.top + bounds.height() * 0.25f
+        val path = Path().apply {
+            moveTo(startX, startY)
+            lineTo(startX, endY)
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 350))
+            .build()
+        dispatchGesture(gesture, null, null)
     }
 
     private fun findScrollableNode(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
@@ -721,24 +742,37 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Dò riêng cho tab "Hồ sơ/Tôi" ở thanh dưới cùng - CHỈ khớp theo text HIỂN THỊ THẬT
-     * (node.text), KHÔNG dùng contentDescription như findNodeByText thông thường. Lý do:
-     * avatar (ảnh đại diện) làm icon cho tab này cũng thường có contentDescription trùng
-     * tên tab (vd "Hồ sơ") để hỗ trợ đọc màn hình, khiến findNodeByText có thể vô tình trả
-     * về node ẢNH thay vì node CHỮ - bấm vào node ảnh có thể không mở đúng tab (hoặc mở
-     * preview avatar) thay vì chuyển sang trang Hồ sơ. Text thật thì chỉ có ở TextView nhãn
-     * tab, không có ở ImageView avatar, nên tránh được nhầm lẫn này.
+     * Dò riêng cho tab "Hồ sơ/Tôi" ở thanh dưới cùng của màn hình TikTok.
+     * Chỉ tìm ở vùng 20% phía dưới đáy màn hình (Bottom Navigation Bar) và ưu tiên
+     * node có chữ "Hồ sơ" / "Tôi" / "Profile" / "Me" để bấm chính xác vào tab bar,
+     * tuyệt đối không bấm vào avatar của user ở giữa màn hình.
      */
     private fun findProfileTabNode(
         node: AccessibilityNodeInfo,
         depth: Int = 0
     ): AccessibilityNodeInfo? {
         if (depth > 40) return null
-        val text = (node.text?.toString() ?: node.contentDescription?.toString())?.trim()?.lowercase()
-        if (!text.isNullOrBlank()) {
-            val match = PROFILE_TAB_LABELS.any { text == it || (it.length >= 4 && text.contains(it)) }
-            if (match) return node
+        
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        val rootBounds = Rect()
+        rootInActiveWindow?.getBoundsInScreen(rootBounds)
+
+        // Nếu xác định được chiều cao màn hình, chỉ nhận node nằm ở vùng đáy (bottom >= 80% chiều cao)
+        val isAtBottom = if (rootBounds.height() > 0) {
+            bounds.top >= (rootBounds.top + rootBounds.height() * 0.75f)
+        } else {
+            true
         }
+
+        if (isAtBottom) {
+            val text = (node.text?.toString() ?: node.contentDescription?.toString())?.trim()?.lowercase()
+            if (!text.isNullOrBlank()) {
+                val match = PROFILE_TAB_LABELS.any { text == it || (it.length >= 4 && text.contains(it)) }
+                if (match) return node
+            }
+        }
+
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             val found = findProfileTabNode(child, depth + 1)

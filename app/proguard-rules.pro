@@ -51,7 +51,10 @@
 
 -keep class com.cayxu.app.data.model.** { *; }
 -keep class com.cayxu.app.data.local.** { *; }
+-keep class com.cayxu.app.data.repository.** { *; }
 -keep class com.cayxu.app.facebook.** { *; }
+-keep class com.cayxu.app.automation.** { *; }
+-keep class com.cayxu.app.instagram.** { *; }
 
 # Giữ nguyên cầu nối Native JNI cho C++ FindClass liên kết thành công
 -keepclassmembers class * {
@@ -62,12 +65,13 @@
     *;
 }
 
-# WorkManager & Android Components
+# WorkManager & Android Components (Activities, Services, Accessibility, Receivers)
 -keep class * extends androidx.work.ListenableWorker { *; }
 -keep class * extends androidx.work.Worker { *; }
 -keep class * extends android.app.Activity { *; }
 -keep class * extends android.app.Application { *; }
 -keep class * extends android.app.Service { *; }
+-keep class * extends android.accessibilityservice.AccessibilityService { *; }
 -keep class * extends android.content.BroadcastReceiver { *; }
 
 # Thư viện mạng & mã hóa
