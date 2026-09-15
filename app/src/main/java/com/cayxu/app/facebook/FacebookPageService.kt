@@ -89,47 +89,62 @@ class FacebookPageService {
         val cleanToken = userToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
         val url = "https://graph.facebook.com/graphql"
 
-        // Cấu trúc client_input_params & server_params chuẩn từ Li2/n; (facebook_reg_page_module)
-        val clientInputParams = JSONObject().apply {
-            put("page_id", "0")
-            put("profile_plus_id", "0")
-            put("cp_upsell_declined", 0)
-            put("off_platform_creator_reachout_id", "")
-            put("category_ids", JSONArray().put(category))
-            put("nav_chain", "...")
+        val innerParams = JSONObject().apply {
+            put("client_input_params", JSONObject().apply {
+                put("page_id", "0")
+                put("profile_plus_id", "0")
+                put("cp_upsell_declined", 0)
+                put("off_platform_creator_reachout_id", "")
+                put("category_ids", JSONArray().put(category))
+                put("nav_chain", "...")
+            })
+            put("server_params", JSONObject().apply {
+                put("referrer", "pages_tab_launch_point")
+                put("INTERNAL__latency_qpl_marker_id", 36707139)
+                put("creation_source", "android")
+                put("name", pageName)
+                put("variant", 5)
+                put("screen", "category")
+                put("INTERNAL__latency_qpl_instance_id", 55098533200051.0)
+            })
         }
 
-        val serverParams = JSONObject().apply {
-            put("referrer", "pages_tab_launch_point")
-            put("INTERNAL__latency_qpl_marker_id", 36707139)
-            put("creation_source", "android")
-            put("name", pageName)
-            put("variant", 5)
-            put("screen", "category")
-            put("INTERNAL__latency_qpl_instance_id", 55098533200051.0)
-        }
-
-        val rootParams = JSONObject().apply {
-            put("client_input_params", clientInputParams)
-            put("server_params", serverParams)
-        }
-
-        val outerParams = JSONObject().apply {
-            put("params", rootParams.toString())
+        val level1 = JSONObject().apply {
+            put("params", JSONObject().apply { put("params", innerParams.toString()) }.toString())
             put("bloks_versioning_id", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
             put("app_id", "com.bloks.www.additional.profile.plus.creation.action.category.submit")
         }
 
+        val ntContext = JSONObject().apply {
+            put("using_white_navbar", true)
+            put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+            put("pixel_ratio", 2)
+            put("is_push_on", true)
+            put("debug_tooling_metadata_token", JSONObject.NULL)
+            put("is_flipper_enabled", false)
+            put("theme_params", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("value", JSONArray())
+                    put("design_system_name", "FDS")
+                })
+            })
+            put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
+        }
+
+        val variables = JSONObject().apply {
+            put("params", level1)
+            put("scale", "2")
+            put("nt_context", ntContext)
+        }
+
         val formBody = FormBody.Builder()
-            .add("params", JSONObject().put("params", outerParams.toString()).toString())
-            .add("bloks_versioning_id", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
-            .add("app_id", "com.bloks.www.additional.profile.plus.creation.action.category.submit")
-            .add("client_doc_id", "119940804239956818821550724")
             .add("method", "post")
             .add("pretty", "false")
             .add("format", "json")
             .add("server_timestamps", "true")
             .add("locale", "vi_VN")
+            .add("client_doc_id", "119940804239956818821550724")
+            .add("variables", variables.toString())
             .build()
 
         val request = Request.Builder()

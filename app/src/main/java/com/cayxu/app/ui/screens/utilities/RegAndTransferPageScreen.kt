@@ -1349,15 +1349,24 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
     if (selectedErrorDetail != null) {
         val (accName, errDetail) = selectedErrorDetail!!
-        AlertDialog(
+        ModalBottomSheet(
             onDismissRequest = { selectedErrorDetail = null },
-            shape = RoundedCornerShape(16.dp),
-            containerColor = Color.White,
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            containerColor = Color.White
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+                    .navigationBarsPadding()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Box(
                         modifier = Modifier
-                            .size(28.dp)
+                            .size(32.dp)
                             .clip(CircleShape)
                             .background(DangerRed.copy(alpha = 0.15f)),
                         contentAlignment = Alignment.Center
@@ -1366,54 +1375,65 @@ fun RegAndTransferPageScreen(navController: NavController) {
                             imageVector = Icons.Filled.Info,
                             contentDescription = null,
                             tint = DangerRed,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Chi tiết lỗi Facebook",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Chi tiết lỗi Facebook",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "Tài khoản: $accName",
+                            fontSize = 12.5.sp,
+                            color = Cobalt600,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
-            },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.verticalScroll(rememberScrollState())
+
+                Spacer(Modifier.height(14.dp))
+
+                Surface(
+                    color = Color(0xFFFEF2F2),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 350.dp)
                 ) {
-                    Text(
-                        text = "Tài khoản: $accName",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Cobalt600
-                    )
-                    Surface(
-                        color = Color(0xFFFEF2F2),
-                        shape = RoundedCornerShape(8.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
-                        modifier = Modifier.fillMaxWidth()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                            .verticalScroll(rememberScrollState())
                     ) {
                         Text(
                             text = errDetail,
-                            fontSize = 12.sp,
+                            fontSize = 12.5.sp,
                             color = DangerRed,
-                            modifier = Modifier.padding(10.dp)
+                            lineHeight = 18.sp
                         )
                     }
                 }
-            },
-            confirmButton = {
+
+                Spacer(Modifier.height(16.dp))
+
                 Button(
                     onClick = { selectedErrorDetail = null },
                     colors = ButtonDefaults.buttonColors(containerColor = Cobalt600),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
                 ) {
-                    Text("Đóng", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Đóng", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 }
             }
-        )
+        }
     }
 
     if (selectedFbDetailAccount != null) {
