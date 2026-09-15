@@ -12,19 +12,16 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Xử lý:
- * 1. Tạo Page / Profile Plus mới (Nút "+ Reg").
- * 2. Chuyển quyền Page / Chuyển Profile (Nút "Chuyển").
- * 3. Lấy danh sách Page của tài khoản.
+ * 1. Tạo Fanpage Facebook (/me/accounts).
+ * 2. Chuyển quyền quản trị Fanpage sang UID mới (/roles).
+ * 3. Lấy danh sách Fanpage của tài khoản.
  */
 @Keep
 class FacebookPageService {
 
     companion object {
-        const val GRAPHQL_ENDPOINT = "https://graph.facebook.com/graphql"
         const val GRAPH_BASE_URL = "https://graph.facebook.com"
-        const val BLOKS_PAGE_CREATION_APP_ID = "com.bloks.www.additional.profile.plus.creation.action.category.submit"
-        const val BLOKS_PAGE_CREATION_VERSION = "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d"
-        const val PAGE_CREATION_CLIENT_DOC_ID = "119940804239956818821550724"
+        const val GRAPH_API_VERSION = "v19.0"
     }
 
     private val httpClient = OkHttpClient.Builder()
@@ -33,65 +30,36 @@ class FacebookPageService {
         .build()
 
     /**
-     * 1. Tạo Fanpage / Profile Plus mới (Nút "+ Reg Page")
+     * 1. Tạo Fanpage Facebook mới chuẩn Graph API (/me/accounts)
      */
     @Throws(Exception::class)
-    fun createProfilePlusPage(
+    fun createFacebookPage(
         pageName: String,
         userToken: String,
-        categoryId: String = "180164648685982" // Danh mục mặc định
+        category: String = "180164648685982" // Shopping & Retail
     ): JSONObject {
-        val clientInputParams = JSONObject().apply {
-            put("page_id", "0")
-            put("profile_plus_id", "0")
-            put("cp_upsell_declined", 0)
-            put("off_platform_creator_reachout_id", "")
-            put("category_ids", JSONArray().put(categoryId))
-            put("nav_chain", "...")
-        }
-
-        val serverParams = JSONObject().apply {
-            put("referrer", "pages_tab_launch_point")
-            put("INTERNAL__latency_qpl_marker_id", 36707139)
-            put("creation_source", "android")
-            put("name", pageName)
-            put("variant", 5)
-            put("screen", "category")
-            put("INTERNAL__latency_qpl_instance_id", 55098533200051.0)
-        }
-
-        val rootParams = JSONObject().apply {
-            put("client_input_params", clientInputParams)
-            put("server_params", serverParams)
-        }
-
-        val outerParams = JSONObject().apply {
-            put("params", rootParams.toString())
-            put("bloks_versioning_id", BLOKS_PAGE_CREATION_VERSION)
-            put("app_id", BLOKS_PAGE_CREATION_APP_ID)
-        }
-
+        val cleanToken = userToken.removePrefix("OAuth ").trim()
         val formBody = FormBody.Builder()
-            .add("params", JSONObject().put("params", outerParams.toString()).toString())
-            .add("bloks_versioning_id", BLOKS_PAGE_CREATION_VERSION)
-            .add("app_id", BLOKS_PAGE_CREATION_APP_ID)
-            .add("client_doc_id", PAGE_CREATION_CLIENT_DOC_ID)
-            .add("method", "post")
-            .add("format", "json")
-            .add("locale", "vi_VN")
+            .add("name", pageName)
+            .add("category", category)
+            .add("category_enum", "SHOPPING_RETAIL")
+            .add("about", "Trang $pageName")
+            .add("access_token", cleanToken)
             .build()
 
         val request = Request.Builder()
-            .url(GRAPHQL_ENDPOINT)
-            .header("User-Agent", NativeSecurity.getFbKatanaUA())
-            .header("Authorization", "OAuth $userToken")
-            .header("Content-Type", "application/x-www-form-urlencoded")
+            .url("$GRAPH_BASE_URL/v19.0/me/accounts")
             .post(formBody)
             .build()
 
         httpClient.newCall(request).execute().use { response ->
             val body = response.body?.string() ?: "{}"
-            return JSONObject(body)
+            val json = JSONObject(body)
+            if (json.has("error")) {
+                val errMsg = json.optJSONObject("error")?.optString("message") ?: "Lỗi tạo Page Facebook"
+                throw Exception(errMsg)
+            }
+            return json
         }
     }
 

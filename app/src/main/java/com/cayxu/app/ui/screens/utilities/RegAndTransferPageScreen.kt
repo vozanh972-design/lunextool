@@ -185,7 +185,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                             color = TextPrimary
                         )
                         Text(
-                            text = if (activeTab == 0) "Tạo Fanpage Profile+ theo cấu hình" else "Gán quyền quản trị viên Fanpage sang UID mới",
+                            text = if (activeTab == 0) "Tạo Fanpage Facebook tự động theo cấu hình" else "Gán quyền quản trị viên Fanpage sang UID mới",
                             fontSize = 12.sp,
                             color = TextSecondary
                         )
@@ -264,50 +264,73 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
                                     isRunning = true
                                     scope.launch(Dispatchers.IO) {
-                                        for (account in targetAccounts) {
-                                            val token = account.bio.ifBlank { null }
-                                            if (token.isNullOrBlank()) {
-                                                withContext(Dispatchers.Main) {
-                                                    Toast.makeText(context, "Tài khoản ${account.name} thiếu Token!", Toast.LENGTH_SHORT).show()
-                                                }
-                                                continue
-                                            }
-
-                                            for (idx in 1..count) {
-                                                val pageName = pageService.generateRandomName(nameTypeOption)
-                                                withContext(Dispatchers.Main) {
-                                                    runningStatusText = "${account.name} ($idx/$count): $pageName"
-                                                }
-
-                                                try {
-                                                    val res = pageService.createProfilePlusPage(pageName, token)
-                                                    withContext(Dispatchers.Main) {
-                                                        Toast.makeText(context, "Đã tạo Page: $pageName", Toast.LENGTH_SHORT).show()
-                                                    }
-                                                } catch (e: Exception) {
-                                                    withContext(Dispatchers.Main) {
-                                                        Toast.makeText(context, "Lỗi tạo page: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                    }
-                                                }
-
-                                                // Đếm ngược thời gian nếu còn lần tạo tiếp
-                                                if (idx < count) {
-                                                    for (s in delaySec downTo 1) {
-                                                        withContext(Dispatchers.Main) {
-                                                            countdownRemaining = s
+                                        try {
+                                            for (account in targetAccounts) {
+                                                var token = account.bio.ifBlank { null }
+                                                
+                                                // Tự động khôi phục Token từ Cookie nếu Token rỗng
+                                                if (token.isNullOrBlank() && account.note.contains("c_user=")) {
+                                                    try {
+                                                        val mgr = FacebookAccountManager()
+                                                        val directAcc = mgr.getTokenFromCookie(account.note, account.phone.ifBlank { null })
+                                                        if (directAcc != null && directAcc.bio.isNotBlank()) {
+                                                            token = directAcc.bio
+                                                            val updated = account.copy(bio = directAcc.bio, isLive = true)
+                                                            FacebookAccountsStore.addAccount(context, updated)
                                                         }
-                                                        delay(1000L)
+                                                    } catch (_: Exception) {}
+                                                }
+
+                                                if (token.isNullOrBlank()) {
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(context, "Tài khoản ${account.name} thiếu Token EAAA! Hãy bấm Làm mới tài khoản trước.", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                    continue
+                                                }
+
+                                                for (idx in 1..count) {
+                                                    val pageName = pageService.generateRandomName(nameTypeOption)
+                                                    withContext(Dispatchers.Main) {
+                                                        runningStatusText = "${account.name} ($idx/$count): $pageName"
+                                                    }
+
+                                                    try {
+                                                        val res = pageService.createFacebookPage(pageName, token)
+                                                        withContext(Dispatchers.Main) {
+                                                            Toast.makeText(context, "Đã tạo Fanpage: $pageName", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        withContext(Dispatchers.Main) {
+                                                            Toast.makeText(context, "Tạo thất bại ($idx/$count): ${e.message}", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+
+                                                    // Đếm ngược thời gian nếu còn lần tạo tiếp
+                                                    if (idx < count) {
+                                                        for (s in delaySec downTo 1) {
+                                                            withContext(Dispatchers.Main) {
+                                                                countdownRemaining = s
+                                                            }
+                                                            delay(1000L)
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
 
-                                        withContext(Dispatchers.Main) {
-                                            isRunning = false
-                                            countdownRemaining = 0
-                                            runningStatusText = ""
-                                            Toast.makeText(context, "Hoàn tất quá trình Reg Page!", Toast.LENGTH_LONG).show()
-                                            facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                            withContext(Dispatchers.Main) {
+                                                Toast.makeText(context, "Hoàn tất quá trình Reg Page!", Toast.LENGTH_LONG).show()
+                                                facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                            }
+                                        } catch (e: Throwable) {
+                                            withContext(Dispatchers.Main) {
+                                                Toast.makeText(context, "Lỗi thực thi: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } finally {
+                                            withContext(Dispatchers.Main) {
+                                                isRunning = false
+                                                countdownRemaining = 0
+                                                runningStatusText = ""
+                                            }
                                         }
                                     }
                                 } else {
@@ -859,7 +882,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                     )
                                 } else {
                                     Text(
-                                        "Danh sách Page / Profile+ (${account.pages.size}):",
+                                        "Danh sách Fanpage (${account.pages.size}):",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = TextSecondary

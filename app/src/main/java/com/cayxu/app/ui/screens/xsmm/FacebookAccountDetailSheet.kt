@@ -181,7 +181,7 @@ fun FacebookAccountDetailSheet(
                 )
             } else {
                 Text(
-                    text = "Danh sách Page / Profile Plus (${account.pages.size}):",
+                    text = "Danh sách Fanpage (${account.pages.size}):",
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.5.sp,
                     color = TextPrimary
