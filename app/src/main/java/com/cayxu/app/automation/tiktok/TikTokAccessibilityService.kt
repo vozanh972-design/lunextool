@@ -328,37 +328,24 @@ class TikTokAccessibilityService : AccessibilityService() {
      */
     private fun startPollingSwitchAccountList(variant: TikTokAppVariant) {
         pollingJob?.cancel()
-        var hasTappedProfileTab = false
-        var hasTappedMenuIcon = false
-        var menuTapAttempts = 0
-        var hasTappedSettingsRow = false
-        var hasTappedSwitchRow = false
         pollingJob = scope.launch {
             var attempt = 0
             while (attempt < MAX_POLL_ATTEMPTS) {
                 attempt++
-                // Bọc try-catch quanh CẢ vòng dò: lỗi lẻ tẻ (node lạ/màn hình đổi cấu trúc)
-                // chỉ bỏ qua vòng đó rồi thử lại, KHÔNG được phép làm chết cả coroutine.
                 try {
-                val expectedPkg = TikTokAppLauncher.packageNameOf(variant)
-                val root = findRootForPackage(expectedPkg)
+                    val expectedPkg = TikTokAppLauncher.packageNameOf(variant)
+                    val root = findRootForPackage(expectedPkg)
 
-                if (root == null) {
-                    TikTokCaptureBridge.updateProgress("Đang đợi TikTok tải xong...")
-                    delay(POLL_INTERVAL_MS)
-                    continue
-                }
+                    if (root == null) {
+                        TikTokCaptureBridge.updateProgress("Đang đợi TikTok tải xong...")
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
 
-                // Bước 5: đã bấm dòng "Chuyển đổi tài khoản" trong màn Cài đặt - chờ sheet
-                // THẬT mở ra rồi mới quét. Chỉ coi là sheet thật khi có CẢ tiêu đề "Chuyển đổi
-                // tài khoản" LẪN nút "Thêm tài khoản" (nút này CHỈ có trong sheet, không có ở
-                // dòng cùng tên trong màn Cài đặt) - tránh lặp lại lỗi quét nhầm màn Cài đặt.
-                // Không có giới hạn số lần thử ở đây - máy chậm/animation chậm thì cứ dò và
-                // bấm lại tới khi thấy, không bỏ cuộc theo 1 mốc thời gian cứng nào.
-                if (hasTappedSwitchRow) {
-                    val sheetTitleNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
+                    // 1. KIỂM TRA MÀN HÌNH DANH SÁCH TÀI KHOẢN (Sheet Chuyển đổi tài khoản)
                     val addAccountNode = findNodeByText(root, ADD_ACCOUNT_LABELS, exact = false)
-                    if (sheetTitleNode != null && addAccountNode != null) {
+                    val sheetTitleNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
+                    if (addAccountNode != null || (sheetTitleNode != null && isSheetVisible(root))) {
                         TikTokCaptureBridge.updateProgress("Đã mở danh sách tài khoản, đang quét...")
                         val entries = collectSwitchAccountEntries(root)
                         if (entries.isNotEmpty()) {
@@ -368,148 +355,124 @@ class TikTokAccessibilityService : AccessibilityService() {
                             TikTokAppLauncher.bringToolToFront(applicationContext)
                             return@launch
                         }
-                        TikTokCaptureBridge.updateProgress("Đang chờ danh sách tài khoản hiện ra...")
-                    } else if (sheetTitleNode != null && addAccountNode == null) {
-                        // Thấy chữ "Chuyển đổi tài khoản" nhưng KHÔNG có "Thêm tài khoản" đi
-                        // kèm - đây vẫn là dòng trong màn Cài đặt, chưa phải sheet thật, chưa
-                        // bấm gì cả, chỉ chờ tiếp (sheet có thể đang trong lúc hiện animation).
-                        TikTokCaptureBridge.updateProgress("Đang mở danh sách tài khoản...")
-                    } else {
-                        // Chưa thấy gì cả - có thể bấm bị trượt, thử tìm lại đúng dòng và bấm lại.
+                        delay(250)
+                        continue
+                    }
+
+                    // 2. KIỂM TRA MÀN HÌNH "CÀI ĐẶT VÀ QUYỀN RIÊNG TƯ"
+                    val isSettingsScreen = findNodeByText(root, setOf("bộ nhớ đệm", "trung tâm trợ giúp", "điều khoản và chính sách", "đăng xuất", "cài đặt và quyền riêng tư"), exact = false) != null
+                    if (isSettingsScreen) {
                         val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
                         if (switchRowNode != null) {
-                            TikTokCaptureBridge.updateProgress("Đang mở danh sách tài khoản...")
+                            TikTokCaptureBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
                             clickNode(switchRowNode)
+                        } else {
+                            TikTokCaptureBridge.updateProgress("Đang cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
+                            scrollDown(root)
                         }
+                        delay(350)
+                        continue
                     }
-                    delay(POLL_INTERVAL_MS)
-                    continue
-                }
 
-                // Bước 4: đã ở màn Cài đặt (đã bấm "Cài đặt và quyền riêng tư") - cuộn xuống
-                // tới khi thấy dòng "Chuyển đổi tài khoản" rồi bấm vào. Cứ cuộn tiếp mỗi vòng
-                // dò tới khi thấy, không giới hạn số lần cuộn - màn hình dài/máy chậm thì cuộn
-                // lâu hơn, không sao cả.
-                if (hasTappedSettingsRow) {
-                    val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
-                    if (switchRowNode != null) {
-                        TikTokCaptureBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
-                        clickNode(switchRowNode)
-                        hasTappedSwitchRow = true
-                        TikTokCaptureBridge.updateProgress("Đã bấm \"Chuyển đổi tài khoản\" xong, đang chờ danh sách hiện ra...")
-                    } else {
-                        TikTokCaptureBridge.updateProgress("Đang cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
-                        scrollDown(root)
-                    }
-                    delay(POLL_INTERVAL_MS)
-                    continue
-                }
-
-                // Bước 3: menu (☰) đã bấm thử - tìm và bấm "Cài đặt và quyền riêng tư". Nếu
-                // chưa thấy (có thể lần bấm ☰ trước bị trượt), tự quay lại bấm ☰ lần nữa với
-                // candidate khác - KHÔNG dừng lại sau vài lần thử như trước, cứ thử tới khi
-                // thấy được menu thật sự mở ra.
-                if (hasTappedMenuIcon) {
+                    // 3. KIỂM TRA BOTTOM SHEET MENU 3 GẠCH (Đang hiện "Cài đặt và quyền riêng tư")
                     val settingsRowNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
                     if (settingsRowNode != null) {
                         TikTokCaptureBridge.updateProgress("Đã thấy \"Cài đặt và quyền riêng tư\", đang bấm...")
                         clickNode(settingsRowNode)
-                        hasTappedSettingsRow = true
-                        TikTokCaptureBridge.updateProgress("Đã bấm \"Cài đặt và quyền riêng tư\" xong, đang chờ trang tải...")
-                    } else {
-                        TikTokCaptureBridge.updateProgress("Đang mở menu...")
-                        val menuNode = findMenuIcon(root, menuTapAttempts)
-                        if (menuNode != null) {
-                            clickNode(menuNode)
-                            menuTapAttempts++
-                        }
+                        delay(350)
+                        continue
                     }
-                    delay(POLL_INTERVAL_MS)
-                    continue
-                }
 
-                // Bước 2: đã ở trang Hồ sơ (thấy @handle) - bấm icon menu (☰) góc trên bên phải.
-                if (hasTappedProfileTab) {
-                    val handleNode = findHandleNode(root)
-                    if (handleNode != null) {
-                        val menuNode = findMenuIcon(root, menuTapAttempts)
+                    // 4. KIỂM TRA ĐANG Ở TRANG HỒ SƠ (Thấy @username hoặc các mục hồ sơ)
+                    val isProfileScreen = findHandleNode(root) != null || 
+                                          findNodeByText(root, setOf("sửa hồ sơ", "đơn hàng của bạn", "thêm bạn bè", "phần trưng bày"), exact = false) != null
+                    if (isProfileScreen) {
+                        val menuNode = findMenuIcon(root)
                         if (menuNode != null) {
-                            TikTokCaptureBridge.updateProgress("Đã thấy @, đang mở menu...")
+                            TikTokCaptureBridge.updateProgress("Đã vào Hồ sơ, đang mở menu (☰)...")
                             clickNode(menuNode)
-                            menuTapAttempts++
-                            // Bấm xong coi như đã thử mở menu - bước sau (Bước 3) tự kiểm tra
-                            // menu có thật sự mở hay chưa (tìm "Cài đặt và quyền riêng tư"); nếu
-                            // chưa thấy, Bước 3 tự quay lại thử candidate khác, không cần quay
-                            // lại đây nữa.
-                            hasTappedMenuIcon = true
-                            TikTokCaptureBridge.updateProgress("Đã bấm menu (☰) xong, đang chờ menu hiện ra...")
                         } else {
-                            TikTokCaptureBridge.updateProgress("Đang tìm icon menu (☰)...")
+                            TikTokCaptureBridge.updateProgress("Đang chờ trang Hồ sơ tải xong...")
                         }
-                    } else {
-                        TikTokCaptureBridge.updateProgress("Đang chờ trang Hồ sơ hiện @...")
+                        delay(300)
+                        continue
                     }
-                    delay(POLL_INTERVAL_MS)
-                    continue
-                }
 
-                // Bước 1: bấm tab "Hồ sơ" ở thanh dưới cùng.
-                val tabNode = findProfileTabNode(root)
-                if (tabNode != null) {
-                    TikTokCaptureBridge.updateProgress("Đã thấy tab \"Hồ sơ\", đang bấm...")
-                    clickNode(tabNode)
-                    hasTappedProfileTab = true
-                    // Báo NGAY là đã bấm xong (không chờ tới vòng dò kế tiếp mới đổi chữ),
-                    // để không bị hiểu lầm là còn đang treo/chưa rõ đã bấm hay chưa.
-                    TikTokCaptureBridge.updateProgress("Đã bấm tab \"Hồ sơ\" xong, đang chờ trang tải...")
-                } else {
-                    TikTokCaptureBridge.updateProgress("Đang tìm tab \"Hồ sơ\" ở thanh dưới cùng...")
-                }
-                delay(POLL_INTERVAL_MS)
+                    // 5. ĐANG Ở TRANG CHỦ HOẶC TRANG KHÁC -> Bấm tab "Hồ sơ" ở thanh dưới cùng
+                    val tabNode = findProfileTabNode(root)
+                    if (tabNode != null) {
+                        TikTokCaptureBridge.updateProgress("Đang mở trang Hồ sơ...")
+                        clickNode(tabNode)
+                        delay(350)
+                    } else {
+                        TikTokCaptureBridge.updateProgress("Đang đợi TikTok sẵn sàng...")
+                        delay(200)
+                    }
                 } catch (e: Exception) {
                     delay(POLL_INTERVAL_MS)
                 }
             }
             if (TikTokCaptureBridge.state.value is TikTokCaptureState.Waiting) {
-                TikTokCaptureBridge.onFailed("Không tự mở được danh sách tài khoản sau nhiều lần thử, hãy mở lại và thử lại")
+                TikTokCaptureBridge.onFailed("Không tự mở được danh sách tài khoản sau nhiều lần thử, hãy thử lại")
             }
         }
     }
 
+    private fun isSheetVisible(root: AccessibilityNodeInfo): Boolean {
+        val bounds = Rect()
+        root.getBoundsInScreen(bounds)
+        return findNodeByText(root, ADD_ACCOUNT_LABELS, exact = false) != null
+    }
+
     /**
-     * Icon menu (☰) ở góc trên bên phải trang Hồ sơ thường KHÔNG có contentDescription rõ
-     * ràng (khác các icon còn lại như share/bookmark). Thử theo thứ tự:
-     *   1) Node clickable có contentDescription gợi ý (menu/more/tùy chọn/cài đặt).
-     *   2) Nếu không có, gom tất cả icon clickable KHÔNG CÓ TEXT ở vùng đầu màn hình (top
-     *      ~10%), sắp theo thứ tự từ PHẢI qua TRÁI (☰ luôn là icon NGOÀI CÙNG bên phải trong
-     *      thanh trên của trang Hồ sơ) và chọn candidate thứ [attemptIndex] - để nếu lần bấm
-     *      trước trượt, lần sau tự thử candidate khác thay vì bấm lại đúng chỗ cũ.
+     * Tìm chính xác icon menu (☰) ở góc trên bên phải trang Hồ sơ
      */
-    private fun findMenuIcon(root: AccessibilityNodeInfo, attemptIndex: Int): AccessibilityNodeInfo? {
-        val rootBounds = android.graphics.Rect()
+    private fun findMenuIcon(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val rootBounds = Rect()
         root.getBoundsInScreen(rootBounds)
         if (rootBounds.height() <= 0 || rootBounds.width() <= 0) return null
-        // Nới vùng đầu màn hình rộng hơn (14% thay vì 10%) - một số máy status bar/header
-        // cao hơn dự tính khiến icon nằm ngoài vùng cũ.
-        val headerBottomLimit = rootBounds.top + (rootBounds.height() * 0.14f).toInt()
-        val maxIconWidth = (rootBounds.width() * 0.16f).toInt()
-        val maxIconHeight = (rootBounds.height() * 0.07f).toInt()
 
-        val byHint = findClickableIconInRegion(root, headerBottomLimit)
-        if (byHint != null) return byHint
+        // Icon 3 gạch nằm ở 15% phía trên cùng và 25% phía bên phải màn hình
+        val headerBottomLimit = rootBounds.top + (rootBounds.height() * 0.15f).toInt()
+        val rightSideLimit = rootBounds.left + (rootBounds.width() * 0.70f).toInt()
 
         val candidates = mutableListOf<AccessibilityNodeInfo>()
-        collectHeaderIconCandidates(root, headerBottomLimit, maxIconWidth, maxIconHeight, candidates)
+        collectTopRightClickableNodes(root, headerBottomLimit, rightSideLimit, candidates)
         if (candidates.isEmpty()) return null
+
+        // Sắp xếp ưu tiên icon nằm ngoài cùng bên phải nhất
         candidates.sortByDescending { node ->
-            val b = android.graphics.Rect()
+            val b = Rect()
             node.getBoundsInScreen(b)
             b.right
         }
-        // Dùng modulo thay vì coerceIn: số lần thử giờ KHÔNG giới hạn (xem startPollingSwitchAccountList),
-        // nên phải quay vòng lại candidate đầu thay vì kẹt mãi ở candidate cuối cùng.
-        val index = attemptIndex % candidates.size
-        return candidates[index]
+        return candidates.firstOrNull()
+    }
+
+    private fun collectTopRightClickableNodes(
+        node: AccessibilityNodeInfo,
+        topLimit: Int,
+        rightLimit: Int,
+        out: MutableList<AccessibilityNodeInfo>,
+        depth: Int = 0
+    ) {
+        if (depth > 40) return
+        if (node.isClickable) {
+            val bounds = Rect()
+            node.getBoundsInScreen(bounds)
+            if (bounds.top >= 0 && bounds.bottom <= topLimit && bounds.right >= rightLimit) {
+                val desc = node.contentDescription?.toString()?.lowercase().orEmpty()
+                // Bỏ qua các icon chia sẻ, bookmark, lịch nếu có
+                if (!desc.contains("share") && !desc.contains("chia sẻ") && !desc.contains("lịch")) {
+                    out.add(node)
+                    return
+                }
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectTopRightClickableNodes(child, topLimit, rightLimit, out, depth + 1)
+        }
     }
 
     /** Quét cây tìm 1 node clickable trong vùng đầu màn hình có contentDescription gợi ý menu. */
@@ -1045,7 +1008,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                             } else {
                                 // Đang ở tài khoản khác -> Mở menu (☰)
                                 XsmmTaskAutomationBridge.updateProgress("Đang ở @$currentHandle -> Mở menu chuyển sang @$target...")
-                                val menuNode = findMenuIcon(root, menuTapAttempts)
+                                val menuNode = findMenuIcon(root)
                                 if (menuNode != null) {
                                     clickNode(menuNode)
                                     menuTapAttempts++
