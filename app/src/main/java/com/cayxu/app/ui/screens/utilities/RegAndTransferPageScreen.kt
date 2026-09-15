@@ -373,7 +373,6 @@ fun RegAndTransferPageScreen(navController: NavController) {
                         }
                     }
                 }
-            }
         },
         containerColor = Color(0xFFF3F5F8)
     ) { innerPadding ->
