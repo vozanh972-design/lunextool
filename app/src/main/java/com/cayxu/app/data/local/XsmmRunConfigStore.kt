@@ -57,12 +57,10 @@ object XsmmRunConfigStore {
         "facebook_member" to "Facebook Tham gia nhóm",
         "facebook_likecmt" to "Facebook Like Comment",
         "facebook_review" to "Facebook Đánh giá"
-    )
-
     val instagramTaskTypes = listOf(
-        "instagram_follow" to "Instagram Follow (Theo dõi)",
-        "instagram_like" to "Instagram Like (Thích bài viết)",
-        "instagram_comment" to "Instagram Comment (Bình luận)"
+        "instagram_random" to "Ngẫu nhiên (Ưu tiên Follow, hết job chuyển Like)",
+        "instagram_follow" to "Chỉ Follow (Theo dõi)",
+        "instagram_like" to "Chỉ Like (Thích bài viết)"
     )
 
     fun taskTypesFor(platform: String): List<Pair<String, String>> = when (platform.lowercase()) {
@@ -87,7 +85,7 @@ object XsmmRunConfigStore {
         val prefix = if (selectedPlatform != "tiktok") "${selectedPlatform}_" else ""
         return XsmmRunConfig(
             platform = selectedPlatform,
-            taskType = p.getString("${prefix}${KEY_TASK_TYPE}", if (selectedPlatform == "instagram") "instagram_follow" else "tiktok_follow") ?: "tiktok_follow",
+            taskType = p.getString("${prefix}${KEY_TASK_TYPE}", if (selectedPlatform == "instagram") "instagram_random" else "tiktok_follow") ?: "tiktok_follow",
             fetchTaskIntervalSeconds = p.getInt("${prefix}${KEY_FETCH_INTERVAL}", p.getInt(KEY_FETCH_INTERVAL, 10)),
             doTaskDurationSeconds = p.getInt("${prefix}${KEY_DO_DURATION}", p.getInt(KEY_DO_DURATION, 10)),
             taskCountTarget = p.getInt("${prefix}${KEY_TASK_COUNT_TARGET}", p.getInt(KEY_TASK_COUNT_TARGET, 0)),

@@ -148,8 +148,15 @@ object XsmmInstagramTaskRunner {
             if (account.lsd.isNotBlank()) activeLsd = account.lsd
         }
 
-        // 3. Vòng lặp lấy nhiệm vụ: Tự động Follow -> hết thì chuyển Like
-        val taskTypesToTry = listOf("instagram_follow", "instagram_like")
+        // 3. Vòng lặp lấy nhiệm vụ: Tuỳ theo cấu hình người dùng chọn:
+        // - Random (Ngẫu nhiên): Ưu tiên Follow, hết job thì chuyển Like
+        // - Chỉ Follow: chỉ lấy Follow
+        // - Chỉ Like: chỉ lấy Like
+        val taskTypesToTry = when (config.taskType.lowercase()) {
+            "instagram_follow" -> listOf("instagram_follow")
+            "instagram_like" -> listOf("instagram_like")
+            else -> listOf("instagram_follow", "instagram_like")
+        }
         var consecutiveNoTasks = 0
         val maxNoTaskRetries = config.stopAfterNoTaskCount.coerceAtLeast(3)
         val pendingFollowTaskIds = mutableListOf<String>()

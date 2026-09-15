@@ -404,22 +404,16 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 5. NẾU ĐANG BỊ MỞ TRANG NGƯỜI DÙNG KHÁC (Có nút Follow đỏ, nút Nhắn tin hoặc nút mũi tên Quay lại ở góc trên)
+                    // 5. NẾU ĐANG Ở TRANG NGƯỜI DÙNG KHÁC (Có nút Follow đỏ, nút Nhắn tin hoặc nút mũi tên Quay lại ở góc trên)
+                    // Ở trang cá nhân người khác trên TikTok KHÔNG CÓ thanh điều hướng dưới cùng (Bottom Tab Bar bị ẩn)
+                    // BẮT BUỘC bấm Quay lại (BACK) để trở về feed/trang chính.
                     val isOtherUserProfile = findNodeByText(root, setOf("nhắn tin", "tin nhắn", "message", "đã follow", "following"), exact = false) != null &&
                                              findNodeByText(root, setOf("sửa hồ sơ", "chỉnh sửa hồ sơ", "edit profile"), exact = false) == null
                     if (isOtherUserProfile) {
-                        val tabNode = findProfileTabNode(root, root)
-                        if (tabNode != null) {
-                            TikTokCaptureBridge.updateProgress("Đang bấm tab \"Hồ sơ\" ở dưới cùng...")
-                            clickNode(tabNode)
-                            delay(6500)
-                            continue
-                        } else {
-                            TikTokCaptureBridge.updateProgress("Đang thoát trang người dùng khác về trang chính...")
-                            performGlobalAction(GLOBAL_ACTION_BACK)
-                            delay(5000)
-                            continue
-                        }
+                        TikTokCaptureBridge.updateProgress("Đang thoát trang người dùng khác về trang chính...")
+                        performGlobalAction(GLOBAL_ACTION_BACK)
+                        delay(4000)
+                        continue
                     }
 
                     // 6. ĐANG Ở TRANG CHỦ / BẠN BÈ / VIDEO / FEED -> Bấm tab "Hồ sơ" ở thanh dưới cùng
@@ -429,8 +423,10 @@ class TikTokAccessibilityService : AccessibilityService() {
                         clickNode(tabNode)
                         delay(6500)
                     } else {
-                        TikTokCaptureBridge.updateProgress("Đang đợi TikTok sẵn sàng...")
-                        delay(2500)
+                        // Nếu đang ở màn hình chính mà không tìm thấy node text "Hồ sơ", chạm trực tiếp vào toạ độ góc dưới bên phải (90% width, 96% height)
+                        TikTokCaptureBridge.updateProgress("Đang bấm tab Hồ sơ ở góc dưới bên phải...")
+                        tapBottomRightProfileTab(root)
+                        delay(6500)
                     }
                 } catch (e: Exception) {
                     delay(POLL_INTERVAL_MS)
@@ -748,6 +744,21 @@ class TikTokAccessibilityService : AccessibilityService() {
         val hasMenu = findMenuIcon(root) != null
         val hasAddFriends = findNodeByText(root, setOf("thêm bạn bè", "add friends"), exact = false) != null
         return hasMenu && hasAddFriends
+    }
+
+    /**
+     * Chạm trực tiếp vào toạ độ góc dưới bên phải màn hình (vị trí chuẩn của Tab Hồ sơ trên TikTok: x ~ 90%, y ~ 96%)
+     */
+    private fun tapBottomRightProfileTab(root: AccessibilityNodeInfo) {
+        val rootBounds = Rect()
+        root.getBoundsInScreen(rootBounds)
+        val w = rootBounds.width()
+        val h = rootBounds.height()
+        if (w > 0 && h > 0) {
+            val targetX = rootBounds.left + w * 0.90f
+            val targetY = rootBounds.top + h * 0.96f
+            tapAt(targetX, targetY)
+        }
     }
 
     /**
