@@ -57,6 +57,8 @@ import com.cayxu.app.data.repository.XsmmLoginResult
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -371,8 +373,8 @@ fun XsmmAccountScreen(navController: NavController) {
 
     // Tự động cập nhật số dư XSMM định kỳ mỗi 15 giây mà không cần bấm reload tay
     LaunchedEffect(Unit) {
-        while (kotlinx.coroutines.isActive) {
-            kotlinx.coroutines.delay(15_000L)
+        while (isActive) {
+            delay(15_000L)
             val token = XsmmAccountStore.getToken(context)
             if (!token.isNullOrBlank()) {
                 try {
