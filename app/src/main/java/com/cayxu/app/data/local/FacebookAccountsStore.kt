@@ -15,7 +15,10 @@ data class FacebookPageItem(
     @SerializedName("additionalProfileId") val additionalProfileId: String = "",
     @SerializedName("avatar") val avatar: String = "",
     @SerializedName("isLive") val isLive: Boolean = true
-)
+) {
+    val displayUid: String
+        get() = if (!additionalProfileId.isNullOrBlank()) additionalProfileId else pageId
+}
 
 @Keep
 data class FacebookAccount(

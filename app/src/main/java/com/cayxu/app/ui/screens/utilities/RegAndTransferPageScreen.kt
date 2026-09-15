@@ -86,6 +86,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
     var runJob by remember { mutableStateOf<Job?>(null) }
     var runningAccountUid by remember { mutableStateOf<String?>(null) }
     val accountStatusMap = remember { mutableStateMapOf<String, String>() }
+    var selectedErrorDetail by remember { mutableStateOf<Pair<String, String>?>(null) } // Pair(AccountName, ErrorMessage)
 
     val pageService = remember { FacebookPageService() }
 
@@ -1055,8 +1056,31 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 else -> Cobalt600
                                             },
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
                                         )
+
+                                        // Nút chấm than màu đỏ để xem chi tiết lỗi chính xác từ Facebook
+                                        if (isAccError) {
+                                            Spacer(Modifier.width(6.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .clip(CircleShape)
+                                                    .background(DangerRed.copy(alpha = 0.15f))
+                                                    .clickable {
+                                                        selectedErrorDetail = Pair(account.name.ifBlank { account.uid }, liveStatus ?: "Lỗi từ Facebook")
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.Info,
+                                                    contentDescription = "Xem chi tiết lỗi",
+                                                    tint = DangerRed,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                            }
+                                        }
                                     }
 
                                     if (isRunningThis) {
@@ -1170,7 +1194,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                             Spacer(Modifier.width(8.dp))
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = "Page: ${page.pageName.ifBlank { page.pageId }}",
+                                                    text = "Page: ${page.pageName.ifBlank { page.displayUid }}",
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Medium,
                                                     color = TextPrimary,
@@ -1178,7 +1202,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     overflow = TextOverflow.Ellipsis
                                                 )
                                                 Text(
-                                                    text = "ID: ${page.pageId}",
+                                                    text = "UID: ${page.displayUid}",
                                                     fontSize = 10.sp,
                                                     color = TextSecondary,
                                                     maxLines = 1,
@@ -1316,6 +1340,72 @@ fun RegAndTransferPageScreen(navController: NavController) {
                 }
             }
         }
+    }
+
+    if (selectedErrorDetail != null) {
+        val (accName, errDetail) = selectedErrorDetail!!
+        AlertDialog(
+            onDismissRequest = { selectedErrorDetail = null },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = Color.White,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(DangerRed.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Info,
+                            contentDescription = null,
+                            tint = DangerRed,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Chi tiết lỗi Facebook",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Tài khoản: $accName",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Cobalt600
+                    )
+                    Surface(
+                        color = Color(0xFFFEF2F2),
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = errDetail,
+                            fontSize = 12.5.sp,
+                            color = DangerRed,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { selectedErrorDetail = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Cobalt600),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Đóng", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 
     if (selectedFbDetailAccount != null) {

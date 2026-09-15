@@ -243,10 +243,17 @@ class FacebookPageService {
                 }
             }
 
-            // Kiểm tra Error Marker: create_error hoặc profile_creation_error
+            // Kiểm tra Error Marker: create_error hoặc profile_creation_error và trích xuất text xung quanh
             if (bloksError.isNullOrBlank()) {
                 if (body.contains("profile_creation_error") || body.contains("create_error")) {
-                    bloksError = "Facebook từ chối tạo Page (profile_creation_error / create_error)"
+                    // Trích xuất các chuỗi text tiếng Việt hoặc message báo lỗi bên trong JSON/Bloks
+                    val msgPattern = Regex("""["'](Bạn đã tạo quá nhiều|Tài khoản của bạn|Không thể tạo trang|Vui lòng thử lại|You've created too many|You cannot create)[^"']*["']""", RegexOption.IGNORE_CASE)
+                    val m = msgPattern.find(body)
+                    if (m != null) {
+                        bloksError = m.value.trim('"', '\'')
+                    } else {
+                        bloksError = "Facebook từ chối tạo Page (profile_creation_error)"
+                    }
                 }
             }
 
@@ -326,7 +333,7 @@ class FacebookPageService {
      */
     fun findPageByName(token: String, pageName: String, maxRetries: Int = 5, delayMs: Long = 2000L): FacebookPageItem? {
         val cleanToken = token.removePrefix("OAuth ").removePrefix("Bearer ").trim()
-        val url = "$GRAPH_BASE_URL/v19.0/me/accounts?access_token=$cleanToken&fields=id,name,access_token&limit=100"
+        val url = "$GRAPH_BASE_URL/v19.0/me/accounts?access_token=$cleanToken&fields=id,name,access_token,additional_profile_id&limit=100"
         for (attempt in 0 until maxRetries) {
             try {
                 val req = Request.Builder().url(url).get().build()
@@ -341,10 +348,12 @@ class FacebookPageService {
                             if (name.equals(pageName, ignoreCase = true)) {
                                 val id = p.optString("id", "")
                                 val pageToken = p.optString("access_token", "")
+                                val additionalProfileId = p.optString("additional_profile_id", "")
                                 return FacebookPageItem(
                                     pageId = id,
                                     pageName = name,
                                     pageToken = pageToken,
+                                    additionalProfileId = additionalProfileId,
                                     avatar = "$GRAPH_BASE_URL/$id/picture?type=large",
                                     isLive = true
                                 )
@@ -388,14 +397,52 @@ class FacebookPageService {
     }
 
     /**
-     * 3. Lấy danh sách Pages của tài khoản
+     * 3. Lấy danh sách Pages của tài khoản (Hỗ trợ Profile Plus additional_profile_id chuẩn Lz2/m)
      */
     fun getPages(userToken: String): List<FacebookPageItem> {
         val list = mutableListOf<FacebookPageItem>()
+        val cleanToken = userToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        
+        // 1. Thử lấy qua /me?fields=facebook_pages{access_token,additional_profile_id,id,name}
         try {
-            val url = "$GRAPH_BASE_URL/me/accounts?access_token=$userToken"
-            val request = Request.Builder().url(url).get().build()
-            httpClient.newCall(request).execute().use { res ->
+            val url1 = "$GRAPH_BASE_URL/v24.0/me?fields=facebook_pages{access_token,additional_profile_id,id,name}&access_token=$cleanToken"
+            val request1 = Request.Builder().url(url1).get().build()
+            httpClient.newCall(request1).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val json = JSONObject(body)
+                val pagesObj = json.optJSONObject("facebook_pages")
+                val arr = pagesObj?.optJSONArray("data")
+                if (arr != null && arr.length() > 0) {
+                    for (i in 0 until arr.length()) {
+                        val p = arr.getJSONObject(i)
+                        val id = p.optString("id", "")
+                        val name = p.optString("name", "")
+                        val token = p.optString("access_token", "")
+                        val addId = p.optString("additional_profile_id", "")
+                        if (id.isNotBlank()) {
+                            list.add(
+                                FacebookPageItem(
+                                    pageId = id,
+                                    pageName = name,
+                                    pageToken = token,
+                                    additionalProfileId = addId,
+                                    avatar = "$GRAPH_BASE_URL/$id/picture?type=large",
+                                    isLive = true
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+
+        if (list.isNotEmpty()) return list
+
+        // 2. Fallback qua /me/accounts?fields=id,name,access_token,additional_profile_id
+        try {
+            val url2 = "$GRAPH_BASE_URL/v19.0/me/accounts?access_token=$cleanToken&fields=id,name,access_token,additional_profile_id&limit=100"
+            val request2 = Request.Builder().url(url2).get().build()
+            httpClient.newCall(request2).execute().use { res ->
                 val body = res.body?.string() ?: ""
                 val json = JSONObject(body)
                 if (json.has("data")) {
@@ -405,19 +452,24 @@ class FacebookPageService {
                         val id = p.optString("id", "")
                         val name = p.optString("name", "")
                         val token = p.optString("access_token", "")
-                        list.add(
-                            FacebookPageItem(
-                                pageId = id,
-                                pageName = name,
-                                pageToken = token,
-                                avatar = "$GRAPH_BASE_URL/$id/picture?type=large",
-                                isLive = true
+                        val addId = p.optString("additional_profile_id", "")
+                        if (id.isNotBlank()) {
+                            list.add(
+                                FacebookPageItem(
+                                    pageId = id,
+                                    pageName = name,
+                                    pageToken = token,
+                                    additionalProfileId = addId,
+                                    avatar = "$GRAPH_BASE_URL/$id/picture?type=large",
+                                    isLive = true
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
-        } catch (_: Exception) {}
+        } catch (_: Throwable) {}
+
         return list
     }
 
