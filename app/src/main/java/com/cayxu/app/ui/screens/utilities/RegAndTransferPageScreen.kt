@@ -62,44 +62,50 @@ fun RegAndTransferPageScreen(navController: NavController) {
     val pickFbAvatarLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        val uid = targetFbAvatarChangeUid
-        if (uri != null && !uid.isNullOrBlank()) {
+        val uid = targetFbAvatarChangeUid ?: return@rememberLauncherForActivityResult
+        if (uri != null) {
             isUploadingAvatar = true
             scope.launch(Dispatchers.IO) {
                 try {
-                    val inputBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    if (inputBytes != null) {
-                        val acc = facebookAccounts.find { it.uid == uid }
-                        val token = acc?.bio?.ifBlank { null }
-                        if (!token.isNullOrBlank()) {
-                            val mgr = FacebookAccountManager()
-                            val uploaded = mgr.uploadAvatar(token, inputBytes)
-                            if (uploaded) {
-                                val details = mgr.fetchAccountDetailsWithToken(token, acc.phone.ifBlank { null })
-                                val updated = acc.copy(
-                                    avatar = details.avatar.ifBlank { acc.avatar },
-                                    name = details.name.ifBlank { acc.name }
-                                )
-                                FacebookAccountsStore.addAccount(context, updated)
-                                withContext(Dispatchers.Main) {
-                                    avatarVersion = System.currentTimeMillis()
-                                    facebookAccounts = FacebookAccountsStore.getAccounts(context)
-                                    Toast.makeText(context, "Đổi avatar Facebook thành công!", Toast.LENGTH_SHORT).show()
-                                }
-                            } else {
-                                withContext(Dispatchers.Main) {
-                                    Toast.makeText(context, "Không thể đổi avatar Facebook!", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        } else {
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(context, "Tài khoản thiếu Token để đổi avatar", Toast.LENGTH_SHORT).show()
-                            }
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    if (bytes == null || bytes.isEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Không thể đọc file ảnh", Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
                         }
+                        return@launch
+                    }
+                    val acc = facebookAccounts.find { it.uid == uid }
+                    if (acc == null) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Không tìm thấy tài khoản Facebook $uid", Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                        return@launch
+                    }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Đang đổi ảnh đại diện Facebook...", Toast.LENGTH_SHORT).show()
+                    }
+                    val fbManager = FacebookAccountManager()
+                    val token = acc.bio.ifBlank { null }
+                    var newPicUrl: String? = null
+                    if (!token.isNullOrBlank()) {
+                        newPicUrl = fbManager.changeProfilePicture(token, bytes, acc.phone.ifBlank { null })
+                    }
+                    val fallbackPic = "https://graph.facebook.com/v19.0/$uid/picture?type=large"
+                    val finalAvatar = newPicUrl ?: fallbackPic
+                    val updatedAcc = acc.copy(avatar = finalAvatar)
+                    FacebookAccountsStore.addAccount(context, updatedAcc)
+                    withContext(Dispatchers.Main) {
+                        avatarVersion = System.currentTimeMillis()
+                        facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                        Toast.makeText(context, "Đổi avatar Facebook thành công!", Toast.LENGTH_SHORT).show()
+                        isUploadingAvatar = false
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Lỗi đổi avatar: ${e.message}", Toast.LENGTH_LONG).show()
+                        isUploadingAvatar = false
                     }
                 } finally {
                     withContext(Dispatchers.Main) {
@@ -566,7 +572,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                             )
                                             Spacer(Modifier.width(6.dp))
                                             Text(
-                                                "Page: ${page.name}",
+                                                "Page: ${page.pageName}",
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Medium,
                                                 color = TextPrimary,
