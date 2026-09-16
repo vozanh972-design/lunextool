@@ -291,21 +291,8 @@ class TikTokAccessibilityService : AccessibilityService() {
                     return@launch
                 }
 
-                if (!hasTappedProfileTab) {
-                    val tabNode = findProfileTabNode(root, root)
-                    if (tabNode != null) {
-                        TikTokCaptureBridge.updateProgress("Đã thấy tab \"Hồ sơ\", đang bấm...")
-                        val b = Rect()
-                        tabNode.getBoundsInScreen(b)
-                        tapAt(b.exactCenterX(), b.exactCenterY())
-                        hasTappedProfileTab = true
-                    } else {
-                        TikTokCaptureBridge.updateProgress("Đang tìm tab \"Hồ sơ\" ở thanh dưới cùng...")
-                        tapBottomRightProfileTab(root)
-                    }
-                } else {
-                    TikTokCaptureBridge.updateProgress("Đang chờ trang \"Hồ sơ\" hiện @...")
-                }
+                TikTokCaptureBridge.updateProgress("Đang bấm tab \"Hồ sơ\" ở thanh dưới cùng...")
+                clickProfileTab(root)
 
                 delay(POLL_INTERVAL_MS)
             }
@@ -408,14 +395,7 @@ class TikTokAccessibilityService : AccessibilityService() {
 
                     // 5. NẾU Ở TRANG CHỦ / FEED VIDEO: BẤM TRỰC TIẾP VÀO TAB "HỒ SƠ" Ở DƯỚI CÙNG
                     TikTokCaptureBridge.updateProgress("Đang ở Trang chủ, bấm vào tab \"Hồ sơ\" ở dưới...")
-                    val tabNode = findProfileTabNode(root, root)
-                    if (tabNode != null) {
-                        val b = Rect()
-                        tabNode.getBoundsInScreen(b)
-                        tapAt(b.exactCenterX(), b.exactCenterY())
-                    } else {
-                        tapBottomRightProfileTab(root)
-                    }
+                    clickProfileTab(root)
                     delay(2500)
                 } catch (e: Exception) {
                     delay(POLL_INTERVAL_MS)
@@ -700,11 +680,11 @@ class TikTokAccessibilityService : AccessibilityService() {
         (target ?: node).performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
 
-    /** Chạm thật tại 1 toạ độ màn hình - dùng gesture, mô phỏng đúng 1 cú chạm ngón tay. */
+    /** Chạm thật tại 1 toạ độ màn hình - dùng gesture, mô phỏng đúng 1 cú chạm ngón tay (120ms). */
     private fun tapAt(x: Float, y: Float) {
         val path = Path().apply { moveTo(x, y) }
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 60))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 120))
             .build()
         dispatchGesture(gesture, null, null)
     }
@@ -747,6 +727,30 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Bấm chính xác vào tab "Hồ sơ" ở thanh điều hướng dưới đáy màn hình TikTok
+     * Kết hợp cả Accessibility Action Click và Physical Gesture Tap để đảm bảo 100% ăn click.
+     */
+    private fun clickProfileTab(root: AccessibilityNodeInfo): Boolean {
+        val rootBounds = Rect()
+        root.getBoundsInScreen(rootBounds)
+        val w = rootBounds.width().toFloat()
+        val h = rootBounds.height().toFloat()
+        if (w <= 0 || h <= 0) return false
+
+        val profileNode = findProfileTabNode(root, root)
+        if (profileNode != null) {
+            clickNode(profileNode)
+            return true
+        }
+
+        // Tọa độ chuẩn của Tab Hồ sơ (Góc dưới cùng bên phải: x ~ 90%, y ~ 94%):
+        val targetX = rootBounds.left + w * 0.90f
+        val targetY = rootBounds.top + h * 0.94f
+        tapAt(targetX, targetY)
+        return true
+    }
+
+    /**
      * BƯỚC 1, 2, 3 - QUÉT CÂY GIAO DIỆN (UI HIERARCHY) TÌM CHÍNH XÁC TAB HỒ SƠ:
      * - Tìm qua text == "Hồ sơ" / "Tôi" / "Profile", contentDescription, hoặc resource-id.
      * - BẮT BUỘC: Node phải nằm trong thanh tab dưới cùng (Bottom Navigation Bar container)
@@ -763,19 +767,20 @@ class TikTokAccessibilityService : AccessibilityService() {
         root.getBoundsInScreen(rootBounds)
         val rootH = rootBounds.height()
         val rootW = rootBounds.width()
+        if (rootH <= 0 || rootW <= 0) return null
 
         val candidates = mutableListOf<AccessibilityNodeInfo>()
         collectBottomNavigationTabCandidates(root, rootBounds, candidates)
 
         if (candidates.isNotEmpty()) {
-            // 1. Ưu tiên tìm node có text hoặc contentDescription rõ ràng: "hồ sơ", "tôi", "profile"
+            // 1. Ưu tiên tìm node có text hoặc contentDescription rõ ràng: "hồ sơ", "tôi", "profile", "me"
             val explicitMatch = candidates.firstOrNull { n ->
                 val txt = (n.text?.toString() ?: "").trim().lowercase()
                 val desc = (n.contentDescription?.toString() ?: "").trim().lowercase()
                 val resId = (n.viewIdResourceName ?: "").lowercase()
-                txt == "hồ sơ" || txt == "tôi" || txt == "profile" || txt == "me" ||
-                desc.contains("hồ sơ") || desc.contains("profile") || desc.contains("tôi") ||
-                resId.contains("profile") || resId.contains("tab_me") || resId.contains("bottom_tab_me")
+                txt in PROFILE_TAB_LABELS ||
+                PROFILE_TAB_LABELS.any { label -> desc.contains(label) } ||
+                resId.contains("profile") || resId.contains("tab_me") || resId.contains("bottom_tab_me") || resId.contains("bottom_tab_profile")
             }
             if (explicitMatch != null) return explicitMatch
 
@@ -806,20 +811,29 @@ class TikTokAccessibilityService : AccessibilityService() {
 
         val resId = (node.viewIdResourceName ?: "").lowercase()
         val desc = (node.contentDescription?.toString() ?: "").lowercase()
-        val text = (node.text?.toString() ?: "").lowercase()
+        val text = (node.text?.toString() ?: "").trim().lowercase()
 
         // Tuyệt đối loại trừ nút follow, avatar tác giả, nút dấu cộng đỏ trên video feed
         if (resId.contains("follow") || resId.contains("avatar") || resId.contains("author") ||
             resId.contains("plus") || resId.contains("feed") || resId.contains("side") ||
             desc.contains("follow") || desc.contains("theo dõi") || text.contains("follow") ||
-            desc.contains("avatar") || desc.contains("plus") || desc.contains("dấu cộng")
+            desc.contains("avatar") || desc.contains("plus") || desc.contains("dấu cộng") || desc.contains("tác giả")
         ) {
             return
         }
 
-        // Kiểm tra xem node có nằm đúng ở vùng thanh đáy (Bottom Navigation Bar: top >= 88% chiều cao màn hình)
+        // Trên video feed, icon avatar + dấu cộng nằm ở cột bên phải ngoài cùng (x >= 75%) và ở nửa trên/giữa màn hình (y < 78%)
+        if (rootH > 0 && bounds.centerY() < (rootBounds.top + rootH * 0.78f)) {
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i) ?: continue
+                collectBottomNavigationTabCandidates(child, rootBounds, out, depth + 1)
+            }
+            return
+        }
+
+        // Kiểm tra xem node có nằm đúng ở vùng thanh đáy (Bottom Navigation Bar: top >= 78% chiều cao màn hình)
         val isBottomBarRegion = if (rootH > 0) {
-            bounds.top >= (rootBounds.top + rootH * 0.88f) && bounds.bottom <= (rootBounds.bottom + 60)
+            bounds.top >= (rootBounds.top + rootH * 0.78f) && bounds.bottom <= (rootBounds.bottom + 100)
         } else false
 
         if (isBottomBarRegion) {
@@ -1140,18 +1154,9 @@ class TikTokAccessibilityService : AccessibilityService() {
                     }
 
                     // 5. Nếu chưa ở trang Hồ sơ (đang ở Home/Trang chủ/Feed/Khám phá...)
-                    val profileTab = findProfileTabNode(root, root)
-                    if (profileTab != null) {
-                        XsmmTaskAutomationBridge.updateProgress("Đã thấy tab \"Hồ sơ\", đang bấm...")
-                        val b = Rect()
-                        profileTab.getBoundsInScreen(b)
-                        tapAt(b.exactCenterX(), b.exactCenterY())
-                        delay(1000)
-                    } else {
-                        XsmmTaskAutomationBridge.updateProgress("Đang tìm tab \"Hồ sơ\" ở thanh dưới cùng...")
-                        tapBottomRightProfileTab(root)
-                        delay(POLL_INTERVAL_MS)
-                    }
+                    XsmmTaskAutomationBridge.updateProgress("Đang ở Trang chủ, bấm tab \"Hồ sơ\" ở dưới cùng...")
+                    clickProfileTab(root)
+                    delay(1500)
                 } catch (e: Exception) {
                     delay(POLL_INTERVAL_MS)
                 }
