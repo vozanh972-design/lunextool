@@ -733,6 +733,8 @@ class InstagramApiClient(
                 .add("X-CSRFToken", csrf)
                 .add("X-IG-App-ID", APP_ID)
                 .add("X-ASBD-ID", ASBD_ID)
+                .add("X-IG-WWW-Claim", "0")
+                .add("X-Requested-With", "XMLHttpRequest")
                 .add("X-Instagram-AJAX", currentRev)
                 .add("X-FB-Friendly-Name", "PolarisAPILikePostMutation")
                 .apply {
@@ -839,6 +841,8 @@ class InstagramApiClient(
             .add("X-CSRFToken", csrf)
             .add("X-IG-App-ID", APP_ID)
             .add("X-ASBD-ID", ASBD_ID)
+            .add("X-IG-WWW-Claim", "0")
+            .add("X-Requested-With", "XMLHttpRequest")
             .add("X-Instagram-AJAX", currentRev)
             .add("X-FB-Friendly-Name", "usePolarisLikeMediaLikeMutation")
             .apply {
