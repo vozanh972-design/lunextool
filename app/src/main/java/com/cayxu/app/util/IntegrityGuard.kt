@@ -23,9 +23,6 @@ object IntegrityGuard {
     //   keytool -printcert -jarfile app-release.apk
     // (hoặc dùng `apksigner verify --print-certs app-release.apk`)
     // rồi copy giá trị SHA-256 (bỏ dấu ":") vào EXPECTED_SIGNATURE_SHA256.
-    // Để trống "" = TẠM THỜI bỏ qua kiểm tra chữ ký (dùng khi test bản debug,
-    // vì bản debug ký bằng debug-key khác release-key nên sẽ luôn "invalid"
-    // nếu bật kiểm tra này quá sớm).
     private const val EXPECTED_SIGNATURE_SHA256 = "ec7bed8d3bd42922674710fd99339c424ab1b8ab3b480ceb902abd49d5d19203"
 
     fun isTampered(context: Context): Boolean {
@@ -107,7 +104,9 @@ object IntegrityGuard {
                 val info = context.packageManager.getPackageInfo(
                     context.packageName, PackageManager.GET_SIGNING_CERTIFICATES
                 )
-                info.signingInfo?.apkContentsSigners?.firstOrNull()?.let { sha256(it.toByteArray()) }
+                val signers = info.signingInfo?.apkContentsSigners?.takeIf { it.isNotEmpty() }
+                    ?: info.signingInfo?.signingCertificateHistory
+                signers?.firstOrNull()?.let { sha256(it.toByteArray()) }
             } else {
                 val info = context.packageManager.getPackageInfo(
                     context.packageName, PackageManager.GET_SIGNATURES
@@ -141,7 +140,9 @@ object IntegrityGuard {
                 val info = context.packageManager.getPackageInfo(
                     context.packageName, PackageManager.GET_SIGNING_CERTIFICATES
                 )
-                info.signingInfo?.apkContentsSigners?.firstOrNull()?.let { sha256(it.toByteArray()) } ?: "?"
+                val signers = info.signingInfo?.apkContentsSigners?.takeIf { it.isNotEmpty() }
+                    ?: info.signingInfo?.signingCertificateHistory
+                signers?.firstOrNull()?.let { sha256(it.toByteArray()) } ?: "?"
             } else {
                 val info = context.packageManager.getPackageInfo(
                     context.packageName, PackageManager.GET_SIGNATURES

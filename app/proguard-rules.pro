@@ -56,6 +56,8 @@
 -keep class com.cayxu.app.automation.** { *; }
 -keep class com.cayxu.app.instagram.** { *; }
 
+-keep class com.cayxu.app.util.** { *; }
+
 # Giữ nguyên cầu nối Native JNI cho C++ FindClass liên kết thành công
 -keepclassmembers class * {
     native <methods>;

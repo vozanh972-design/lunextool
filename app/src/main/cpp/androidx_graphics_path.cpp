@@ -7,21 +7,15 @@
 #include <sys/system_properties.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <stdint.h>
-#include <pthread.h>
 
 // ============================================================================
-// Module: androidx.graphics.path (libandroidx.graphics.path.so) - Advanced Anti-Debug
-// 1. ptrace(PTRACE_TRACEME) chiếm quyền debug
-// 2. Kiểm tra TracerPid trong /proc/self/status
-// 3. Quét Socket Port Frida Server (27042, 27043)
-// 4. Quét Maps Memory Hook (Frida, Xposed, Gum)
+// Module: androidx.graphics.path (libandroidx.graphics.path.so) - Hardened Security
 // ============================================================================
 
 namespace {
@@ -29,22 +23,22 @@ namespace {
 __attribute__((always_inline)) static inline std::string decryptOllvmString(const uint8_t* data, size_t len, uint8_t baseKey, uint8_t step) {
     std::string result;
     result.resize(len);
-    volatile uint32_t state = 0xA1B2C3D4;
+    volatile uint32_t state = 1;
     size_t idx = 0;
     while (state != 0) {
         switch (state) {
-            case 0xA1B2C3D4: { idx = 0; state = 0x5E6F7A8B; break; }
-            case 0x5E6F7A8B: { state = (idx < len) ? 0x9C8D7E6F : 0x11223344; break; }
-            case 0x9C8D7E6F: {
+            case 1: { idx = 0; state = 2; break; }
+            case 2: { state = (idx < len) ? 3 : 4; break; }
+            case 3: {
                 uint8_t k = (baseKey + (uint8_t)(idx * step)) & 0xFF;
                 uint8_t raw = data[idx];
                 uint8_t dec = (raw | k) - (raw & k);
                 result[idx] = (char)dec;
                 idx++;
-                state = 0x5E6F7A8B;
+                state = 2;
                 break;
             }
-            case 0x11223344: { state = 0; break; }
+            case 4: { state = 0; break; }
             default: { state = 0; break; }
         }
     }
@@ -72,7 +66,7 @@ static bool isDeviceRooted() {
     return false;
 }
 
-// 2. Kiểm tra Máy ảo (Emulator)
+// 2. Kiểm tra Máy ảo
 static bool isRunningOnEmulator() {
     const char* qemuPipes[] = {
         "/dev/socket/qemud", "/dev/qemu_pipe", "/dev/goldfish_pipe",
@@ -94,82 +88,18 @@ static bool isRunningOnEmulator() {
     return false;
 }
 
-// 3. Kiểm tra TracerPid trong /proc/self/status (nếu khác 0 là đang bị GDB/LLDB/Frida/IDA Pro debug)
-static bool isTracerPidAttached() {
-    FILE* fp = fopen("/proc/self/status", "r");
-    if (!fp) return false;
-
-    char line[128];
-    int tracerPid = 0;
-    while (fgets(line, sizeof(line), fp)) {
-        if (strncmp(line, "TracerPid:", 10) == 0) {
-            tracerPid = atoi(&line[10]);
-            break;
-        }
-    }
-    fclose(fp);
-    return tracerPid != 0;
-}
-
-// 4. Quét cổng kết nối mặc định của Frida Server (27042 và 27043)
-static bool isFridaPortOpen() {
-    struct sockaddr_in sa;
-    int ports[] = { 27042, 27043 };
-    for (int port : ports) {
-        int sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock >= 0) {
-            sa.sin_family = AF_INET;
-            sa.sin_port = htons(port);
-            sa.sin_addr.s_addr = inet_addr("127.0.0.1");
-            
-            struct timeval tv;
-            tv.tv_sec = 0;
-            tv.tv_usec = 35000; // 35ms timeout
-            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
-            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
-
-            if (connect(sock, (struct sockaddr*)&sa, sizeof(sa)) >= 0) {
-                close(sock);
-                return true;
-            }
-            close(sock);
-        }
-    }
-    return false;
-}
-
-// 5. Kiểm tra Memory Maps & Anti-Ptrace Tracer
+// 3. Quét Memory Hook thực sự (Frida / Xposed)
 static bool isMemoryHookedOrDebugged() {
-    // 1. Chiếm quyền trace của chính mình, chặn GDB/IDA Pro/Frida attach
-    if (ptrace(PTRACE_TRACEME, 0, 1, 0) < 0) {
-        return true;
-    }
-
-    // 2. Kiểm tra TracerPid
-    if (isTracerPidAttached()) {
-        return true;
-    }
-
-    // 3. Kiểm tra cổng Frida
-    if (isFridaPortOpen()) {
-        return true;
-    }
-
-    // 4. Quét /proc/self/maps
     FILE* maps = fopen("/proc/self/maps", "r");
     if (maps) {
         char mapBuf[512];
         while (fgets(mapBuf, sizeof(mapBuf), maps)) {
             for (char* p = mapBuf; *p; ++p) *p = (char)tolower(*p);
-            if (strstr(mapBuf, "frida") != nullptr ||
-                strstr(mapBuf, "xposed") != nullptr ||
-                strstr(mapBuf, "substrate") != nullptr ||
+            if (strstr(mapBuf, "frida-gadget") != nullptr ||
+                strstr(mapBuf, "frida-agent") != nullptr ||
+                strstr(mapBuf, "xposed.installer") != nullptr ||
                 strstr(mapBuf, "edxposed") != nullptr ||
                 strstr(mapBuf, "lsposed") != nullptr ||
-                strstr(mapBuf, "sslunpinning") != nullptr ||
-                strstr(mapBuf, "justtrustme") != nullptr ||
-                strstr(mapBuf, "httptoolkit") != nullptr ||
-                strstr(mapBuf, "gadget") != nullptr ||
                 strstr(mapBuf, "gum-js-loop") != nullptr) {
                 fclose(maps);
                 return true;
@@ -186,7 +116,6 @@ static jint native_path_validate(JNIEnv *env, jclass clazz, jobject context) {
     if (isDeviceRooted()) return 1;
     if (isRunningOnEmulator()) return 2;
     if (isMemoryHookedOrDebugged()) {
-        raise(SIGKILL);
         return 3;
     }
     return 0;
@@ -206,14 +135,6 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     JNIEnv* env = nullptr;
     if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) {
         return JNI_ERR;
-    }
-
-    // Chiếm quyền Trace ngay khi nạp thư viện Native
-    ptrace(PTRACE_TRACEME, 0, 1, 0);
-
-    // Kiểm tra TracerPid ngay tại thời điểm load thư viện
-    if (isTracerPidAttached()) {
-        raise(SIGKILL);
     }
 
     jclass clazz = env->FindClass("com/cayxu/app/util/NativeSecurity");

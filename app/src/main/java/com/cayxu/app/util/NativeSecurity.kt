@@ -75,7 +75,9 @@ object NativeSecurity {
 
     fun isDeviceCompromised(context: Context): Boolean {
         val code = checkSecurityEnvironment(context)
-        return code in 1..3
+        // Chỉ coi là compromised khi có can thiệp bộ nhớ (Frida/Xposed/Hooking - mã 3)
+        // Không chặn nhầm thiết bị thật của người dùng
+        return code == 3
     }
 
     /**

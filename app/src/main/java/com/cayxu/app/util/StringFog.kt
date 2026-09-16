@@ -1,4 +1,4 @@
-﻿package com.cayxu.app.util
+package com.cayxu.app.util
 
 import androidx.annotation.Keep
 
@@ -14,7 +14,7 @@ object StringFog {
 
     @JvmStatic
     fun decrypt(encrypted: ByteArray, key: Byte = DEFAULT_KEY): String {
-        val result = CharArray(encrypted.size)
+        val result = ByteArray(encrypted.size)
         var state = 1
         var idx = 0
 
@@ -37,7 +37,7 @@ object StringFog {
                     val raw = encrypted[idx].toInt() and 0xFF
                     // Mixed Boolean-Arithmetic (MBA) substitution: x ^ k == (x | k) - (x & k)
                     val dec = (raw or k) - (raw and k)
-                    result[idx] = dec.toChar()
+                    result[idx] = dec.toByte()
                     idx++
                     state = 2
                 }
@@ -49,7 +49,7 @@ object StringFog {
                 }
             }
         }
-        return String(result)
+        return String(result, Charsets.UTF_8)
     }
 
     @JvmStatic
