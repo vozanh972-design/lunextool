@@ -272,8 +272,8 @@ class TikTokAccessibilityService : AccessibilityService() {
                     continue
                 }
 
-                if (isOtherUserProfileScreen(root)) {
-                    TikTokCaptureBridge.updateProgress("Đang ở trang người khác, bấm Quay lại...")
+                if (isSubPageOrOtherScreen(root)) {
+                    TikTokCaptureBridge.updateProgress("Đang ở trang khác, bấm Quay lại...")
                     val backBtn = findTopLeftBackButton(root)
                     if (backBtn != null) {
                         clickNode(backBtn)
@@ -405,9 +405,9 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 5. KIỂM TRA NẾU ĐANG Ở TRANG CÁ NHÂN NGƯỜI KHÁC (Có Nhắn tin, Follow, nút Back ở góc trên)
-                    if (isOtherUserProfileScreen(root)) {
-                        TikTokCaptureBridge.updateProgress("Đang ở trang người khác, bấm Quay lại...")
+                    // 5. KIỂM TRA NẾU ĐANG Ở MÀN HÌNH PHỤ / TRANG KHÁC (Có nút Back ở góc trên)
+                    if (isSubPageOrOtherScreen(root)) {
+                        TikTokCaptureBridge.updateProgress("Đang ở trang khác, bấm Quay lại...")
                         val backBtn = findTopLeftBackButton(root)
                         if (backBtn != null) {
                             clickNode(backBtn)
@@ -1193,8 +1193,8 @@ class TikTokAccessibilityService : AccessibilityService() {
                     }
 
                     // 4. Kiểm tra: Đang ở trang Hồ sơ (Profile) - có @handle và là chính chủ
-                    if (isOtherUserProfileScreen(root)) {
-                        XsmmTaskAutomationBridge.updateProgress("Đang ở trang người khác, bấm Quay lại...")
+                    if (isSubPageOrOtherScreen(root)) {
+                        XsmmTaskAutomationBridge.updateProgress("Đang ở trang khác, bấm Quay lại...")
                         val backBtn = findTopLeftBackButton(root)
                         if (backBtn != null) {
                             clickNode(backBtn)
