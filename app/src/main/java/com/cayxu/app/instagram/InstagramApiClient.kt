@@ -340,8 +340,15 @@ class InstagramApiClient(
         } else {
             activeS = cookieMap["__s"]!!
         }
-        if (!cookieMap.containsKey("dpr")) cookieMap["dpr"] = "3"
-        if (!cookieMap.containsKey("wd")) cookieMap["wd"] = "360x740"
+        // Chuẩn hóa wd (viewport) và dpr cho đồng bộ với Mobile Web, tránh lộ cookie desktop (1920x1080)
+        val currentWd = cookieMap["wd"]
+        if (currentWd == null || (currentWd.substringBefore("x").toIntOrNull() ?: 0) > 600) {
+            cookieMap["wd"] = if (userAgent.contains("iPhone", ignoreCase = true)) "390x844" else "360x780"
+        }
+        val currentDpr = cookieMap["dpr"]
+        if (currentDpr == null || currentDpr == "1") {
+            cookieMap["dpr"] = "3"
+        }
         if (!cookieMap.containsKey("ps_l")) cookieMap["ps_l"] = "1"
         if (!cookieMap.containsKey("ps_n")) cookieMap["ps_n"] = "1"
         if (!cookieMap.containsKey("ig_nrcb")) cookieMap["ig_nrcb"] = "1"
