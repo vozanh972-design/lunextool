@@ -596,7 +596,7 @@ class InstagramApiClient(
             put("nav_chain", "PolarisFeedRoot:feedPage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:2:unexpected")
         }.toString()
 
-        val gqlFormBuilder = FormBody.Builder()
+        val gqlBody = FormBody.Builder()
             .add("av", av)
             .add("__d", "www")
             .add("__user", "0")
