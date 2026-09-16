@@ -160,29 +160,9 @@ object XsmmInstagramTaskRunner {
         var consecutiveNoTasks = 0
         val maxNoTaskRetries = config.stopAfterNoTaskCount.coerceAtLeast(3)
         val pendingFollowTaskIds = mutableListOf<String>()
-        var lastLiveCheckTime = System.currentTimeMillis()
 
         while (coroutineContext.isActive) {
             var foundAnyTasks = false
-
-            // Cơ chế kiểm tra Live định kỳ 20 giây / lần: Nếu die hay lỗi báo ngay và chuyển sang DIE
-            val now = System.currentTimeMillis()
-            if (now - lastLiveCheckTime >= 20_000L) {
-                lastLiveCheckTime = now
-                val isLiveNow = apiClient.checkAccountLive()
-                if (!isLiveNow) {
-                    totalErrors++
-                    val dieMsg = "Tài khoản đã DIE / Checkpoint / Hết phiên đăng nhập"
-                    reportError(cleanUsername, dieMsg)
-                    notify("Dừng tài khoản: $dieMsg")
-                    val deadAccount = account.copy(isLive = false)
-                    InstagramAccountsStore.updateAccount(context, deadAccount)
-                    return RunResult(totalCompleted, totalErrors, totalEarnedPoints, dieMsg)
-                } else {
-                    val liveAccount = account.copy(isLive = true)
-                    InstagramAccountsStore.updateAccount(context, liveAccount)
-                }
-            }
 
             for (taskType in taskTypesToTry) {
                 if (!coroutineContext.isActive) break
@@ -206,24 +186,6 @@ object XsmmInstagramTaskRunner {
 
                             for (task in tasks) {
                                 if (!coroutineContext.isActive) break
-
-                                // Kiểm tra Live mỗi 20 giây trong suốt quá trình chạy
-                                if (System.currentTimeMillis() - lastLiveCheckTime >= 20_000L) {
-                                    lastLiveCheckTime = System.currentTimeMillis()
-                                    val isLiveNow = apiClient.checkAccountLive()
-                                    if (!isLiveNow) {
-                                        totalErrors++
-                                        val dieMsg = "Tài khoản đã DIE / Checkpoint / Hết phiên đăng nhập"
-                                        reportError(cleanUsername, dieMsg)
-                                        notify("Dừng tài khoản: $dieMsg")
-                                        val deadAccount = account.copy(isLive = false)
-                                        InstagramAccountsStore.updateAccount(context, deadAccount)
-                                        return RunResult(totalCompleted, totalErrors, totalEarnedPoints, dieMsg)
-                                    } else {
-                                        val liveAccount = account.copy(isLive = true)
-                                        InstagramAccountsStore.updateAccount(context, liveAccount)
-                                    }
-                                }
 
                                 val target = task.idorlink.ifBlank { task.targetUrl }.ifBlank { task.id }
                                 notify("Đang làm $readableType: $target")

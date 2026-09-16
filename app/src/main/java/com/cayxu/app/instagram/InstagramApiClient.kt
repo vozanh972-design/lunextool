@@ -561,6 +561,14 @@ class InstagramApiClient(
         return null
     }
 
+    private var reqIndex = 1
+
+    fun nextReq(): String {
+        synchronized(this) {
+            return (reqIndex++).toString()
+        }
+    }
+
     /**
      * Follow tài khoản Instagram chuẩn xác 100% bằng GraphQL usePolarisFollowMutation (Doc ID: 26508036048874888)
      */
@@ -580,6 +588,7 @@ class InstagramApiClient(
         if (activeHsi.isBlank()) activeHsi = generateHsi()
         val currentS = activeS
         val currentHsi = activeHsi
+        val reqId = nextReq()
 
         val variables = JSONObject().apply {
             put("target_user_id", cleanTargetId)
@@ -592,29 +601,28 @@ class InstagramApiClient(
             .add("__d", "www")
             .add("__user", "0")
             .add("__a", "1")
-            .add("__req", "1")
+            .add("__req", reqId)
             .add("__hs", currentHs)
             .add("dpr", "3")
             .add("__ccg", "GOOD")
             .add("__rev", currentRev)
             .add("__s", currentS)
             .add("__hsi", currentHsi)
-            .add("__dyn", "0900j5w5ux60Vo1up84a0d21dwIxm16wUwtU6C02Vu05-U01tS04-o05-U02zU06QU2Cw8G01Z015o005Xw54w1s82Yw1zU2vw59w39o06do01wO05eE08Xw8y01s-02400-E03io007S00-w")
-            .add("__csr", "")
+            .add("__dyn", "7xeUjG1mxu1syaxG4Vp41twpUnwgU7SbzEdF8vyUco2qwJyEiw50x609vCwjE1EEc87m0yE462mcw5Mx62G5UswoEcE7O2l0Fwqo5W1yw9O1lwxwQzXwae4UaEW2G0AEco5G0zK5o4q0HU1IEGdwtUeo9UaQ0Lo6-bwHwKG6U3ewxyo6O1fxC1mgO2m3zhA6bwg8rAwHxW1oxe1OwgU5SbBK4o11olwXyEcFE4616wAwj83KwRzkbwhU")
+            .add("__csr", "gN4MlMVsp5umItszHc_4rikB6lGji8yeji8jGFtd4cBhuaAmlPrv8PmPR9ndOvqIx5ShkDBhXXJvKY_PbFFRIOmKx5kqyp4x1aKhaGXfAGRqZqYyLmpquAcVHLJBAJ4BGHykqArX8hnKdyHz8-mnK-6qCCDzXKifCx6HKEOF89FoOi22AmiiriAK2i9UKut2Ady8jy8kyqDGiEpK58GhlAz8gLVUiAgzx62eVF8Si2Cdx2uiq5E11Eao02O5w0cKa1kwwzEcU0umpEC2ggnw1iG1sy8B2VQVQ0738y9g2Bwh82bgaUR09iKazo1zoHA7w43w6Lw4GwXwfqm2N3UcqnQm0OpcEhVk05PUrwjA01PHw1Emt078xiE08do0Ju0n-")
             .add("__hsdp", "")
             .add("__hblp", "")
             .add("__sjsp", "")
             .add("__comet_req", "7")
-
-        if (currentFbDtsg.isNotBlank()) {
-            gqlFormBuilder.add("fb_dtsg", currentFbDtsg)
-            gqlFormBuilder.add("jazoest", currentJazoest)
-        }
-        if (currentLsd.isNotBlank()) {
-            gqlFormBuilder.add("lsd", currentLsd)
-        }
-
-        val gqlBody = gqlFormBuilder
+            .apply {
+                if (currentFbDtsg.isNotBlank()) {
+                    add("fb_dtsg", currentFbDtsg)
+                    add("jazoest", currentJazoest)
+                }
+                if (currentLsd.isNotBlank()) {
+                    add("lsd", currentLsd)
+                }
+            }
             .add("__spin_r", currentSpinR)
             .add("__spin_b", "trunk")
             .add("__spin_t", currentSpinT)
@@ -641,55 +649,83 @@ class InstagramApiClient(
             .post(gqlBody)
             .build()
 
-        httpClient.newCall(gqlRequest).execute().use { gqlResponse ->
-            if (gqlResponse.code == 429) {
-                throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429)")
+        var lastErrorMsg = ""
+        try {
+            httpClient.newCall(gqlRequest).execute().use { gqlResponse ->
+                val gqlResponseBody = gqlResponse.body?.string() ?: ""
+                if (gqlResponse.isSuccessful || gqlResponse.code == 200) {
+                    if (gqlResponseBody.contains("\"status\":\"ok\"") ||
+                        gqlResponseBody.contains("\"following\":true") ||
+                        gqlResponseBody.contains("\"outgoing_request\":true") ||
+                        gqlResponseBody.contains("\"xdt_create_friendship\"") ||
+                        (!gqlResponseBody.trimStart().startsWith("<") && !gqlResponseBody.contains("\"error\"") && !gqlResponseBody.contains("\"errors\""))
+                    ) {
+                        return true
+                    }
+                }
+                if (gqlResponseBody.contains("\"spam\"", ignoreCase = true) || gqlResponseBody.contains("feedback_required", ignoreCase = true)) {
+                    throw IllegalStateException("Instagram chặn follow (Spam/Action blocked)")
+                }
+                if (gqlResponseBody.contains("\"require_login\"", ignoreCase = true) || gqlResponseBody.contains("login_required", ignoreCase = true) || gqlResponseBody.contains("checkpoint_required", ignoreCase = true)) {
+                    throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
+                }
+                if (gqlResponse.code == 429) {
+                    lastErrorMsg = "HTTP 429"
+                }
             }
-            if (gqlResponse.code in listOf(301, 302, 303, 307, 308)) {
-                throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (Redirect ${gqlResponse.code})")
-            }
-            val gqlResponseBody = gqlResponse.body?.string() ?: ""
-            if (gqlResponseBody.isBlank()) {
-                throw IllegalStateException("Instagram không phản hồi (HTTP ${gqlResponse.code})")
-            }
+        } catch (e: Exception) {
+            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
+            lastErrorMsg = e.message ?: ""
+        }
 
-            if (gqlResponse.isSuccessful || gqlResponse.code == 200) {
-                if (gqlResponseBody.contains("\"status\":\"ok\"") ||
-                    gqlResponseBody.contains("\"following\":true") ||
-                    gqlResponseBody.contains("\"outgoing_request\":true") ||
-                    gqlResponseBody.contains("\"xdt_create_friendship\"") ||
-                    (!gqlResponseBody.trimStart().startsWith("<") && !gqlResponseBody.contains("\"error\"") && !gqlResponseBody.contains("\"errors\""))
-                ) {
+        // 2. Fallback 1: Web Friendship API (/api/v1/web/friendships/{id}/follow/)
+        try {
+            val restUrl = "$BASE_URL/api/v1/web/friendships/$cleanTargetId/follow/"
+            val restReq = Request.Builder()
+                .url(restUrl)
+                .headers(buildStandardHeaders(csrfToken = csrf, referer = refererUrl))
+                .post(FormBody.Builder().build())
+                .build()
+
+            httpClient.newCall(restReq).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                if (res.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"following\":true") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
                     return true
                 }
+                if (res.code == 429) lastErrorMsg = "HTTP 429"
             }
-
-            if (gqlResponseBody.contains("\"spam\"", ignoreCase = true) || gqlResponseBody.contains("feedback_required", ignoreCase = true)) {
-                throw IllegalStateException("Instagram chặn follow (Spam/Action blocked)")
-            }
-            if (gqlResponseBody.contains("\"require_login\"", ignoreCase = true) || gqlResponseBody.contains("login_required", ignoreCase = true) || gqlResponseBody.contains("checkpoint_required", ignoreCase = true)) {
-                throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
-            }
-            if (gqlResponseBody.trimStart().startsWith("<")) {
-                throw IllegalStateException("Instagram trả về trang HTML - Cookie hết hạn hoặc checkpoint")
-            }
-
-            var errDetail = ""
-            try {
-                val json = JSONObject(gqlResponseBody)
-                val errArr = json.optJSONArray("errors")
-                if (errArr != null && errArr.length() > 0) {
-                    errDetail = errArr.getJSONObject(0).optString("message", "")
-                } else if (json.has("message")) {
-                    errDetail = json.optString("message", "")
-                }
-            } catch (_: Exception) {}
-
-            if (errDetail.isNotBlank()) {
-                throw IllegalStateException("Instagram từ chối follow: $errDetail")
-            }
-            throw IllegalStateException("Instagram từ chối follow đối tượng $cleanTargetId (HTTP ${gqlResponse.code})")
+        } catch (e: Exception) {
+            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
         }
+
+        // 3. Fallback 2: Friendships Create API (/api/v1/friendships/create/{id}/)
+        try {
+            val createUrl = "$BASE_URL/api/v1/friendships/create/$cleanTargetId/"
+            val createBody = FormBody.Builder()
+                .add("user_id", cleanTargetId)
+                .add("container_module", "profile")
+                .build()
+            val createReq = Request.Builder()
+                .url(createUrl)
+                .headers(buildStandardHeaders(csrfToken = csrf, referer = refererUrl))
+                .post(createBody)
+                .build()
+
+            httpClient.newCall(createReq).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                if (res.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"following\":true") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
+                    return true
+                }
+                if (res.code == 429) lastErrorMsg = "HTTP 429"
+            }
+        } catch (e: Exception) {
+            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
+        }
+
+        if (lastErrorMsg.contains("429")) {
+            throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429)")
+        }
+        throw IllegalStateException("Instagram từ chối follow đối tượng $cleanTargetId")
     }
 
     /**
