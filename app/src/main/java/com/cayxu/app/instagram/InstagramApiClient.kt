@@ -232,16 +232,31 @@ class InstagramApiClient(
     }
 
     private fun buildDocumentHeaders(referer: String? = null): Headers {
+        val isMobile = userAgent.contains("Mobile", ignoreCase = true) || userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("Android", ignoreCase = true)
+        val isIos = userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("iPad", ignoreCase = true)
+        val platform = if (isIos) "\"iOS\"" else if (userAgent.contains("Android", ignoreCase = true)) "\"Android\"" else "\"Windows\""
+
         val builder = Headers.Builder()
             .add("User-Agent", userAgent)
             .add("Cookie", cookie)
-            .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+            .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,ja-JP;q=0.8,ja;q=0.7,en-JP;q=0.6,en;q=0.5,es-ES;q=0.4,es;q=0.3,fr-FR;q=0.2,fr;q=0.1,en-US;q=0.1")
             .add("Sec-Fetch-Dest", "document")
             .add("Sec-Fetch-Mode", "navigate")
             .add("Sec-Fetch-Site", if (referer != null) "same-origin" else "none")
             .add("Sec-Fetch-User", "?1")
             .add("Upgrade-Insecure-Requests", "1")
+            .add("Priority", "u=0, i")
+            .add("sec-ch-prefers-color-scheme", "dark")
+            .add("sec-ch-ua-mobile", if (isMobile) "?1" else "?0")
+            .add("sec-ch-ua-platform", platform)
+
+        if (isIos) {
+            builder.add("sec-ch-ua", "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"")
+            builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"152.0.7977.83\", \"Not?A_Brand\";v=\"24.0.0.0\", \"Google Chrome\";v=\"152.0.7977.83\"")
+            builder.add("sec-ch-ua-model", "\"iPhone\"")
+            builder.add("sec-ch-ua-platform-version", "\"18.5\"")
+        }
 
         if (!referer.isNullOrBlank()) {
             builder.add("Referer", referer)
@@ -261,12 +276,13 @@ class InstagramApiClient(
         val isMobile = userAgent.contains("Mobile", ignoreCase = true) || userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("Android", ignoreCase = true)
         val isIos = userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("iPad", ignoreCase = true)
         val platform = if (isIos) "\"iOS\"" else if (userAgent.contains("Android", ignoreCase = true)) "\"Android\"" else "\"Windows\""
+        val sessionS = activeS.ifBlank { generateSessionS() }
 
         val builder = Headers.Builder()
             .add("User-Agent", userAgent)
             .add("Cookie", cookie)
             .add("Accept", "*/*")
-            .add("Accept-Language", "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,ja-JP;q=0.8,ja;q=0.7,en-JP;q=0.6,en;q=0.5,es-ES;q=0.4,es;q=0.3,fr-FR;q=0.2,fr;q=0.1,en-US;q=0.1")
             .add("Origin", BASE_URL)
             .add("Referer", ref)
             .add("X-CSRFToken", csrf)
@@ -274,7 +290,8 @@ class InstagramApiClient(
             .add("X-ASBD-ID", ASBD_ID)
             .add("X-IG-WWW-Claim", "0")
             .add("X-IG-D", "www")
-            .add("X-IG-Max-Touch-Points", "0")
+            .add("X-IG-Max-Touch-Points", if (isMobile) "1" else "0")
+            .add("X-Web-Session-Id", sessionS)
             .add("X-Requested-With", "XMLHttpRequest")
             .add("Sec-Fetch-Dest", "empty")
             .add("Sec-Fetch-Mode", "cors")
@@ -494,7 +511,24 @@ class InstagramApiClient(
 
         val csrf = activeCsrfToken.ifBlank { extractCsrfToken() ?: "" }
 
-        // Truy cập trực tiếp link trang cá nhân Instagram Web (không gọi REST API)
+        // 1. Thử qua Web Profile Info API chuẩn Web
+        try {
+            val infoReq = Request.Builder()
+                .url("$BASE_URL/api/v1/users/web_profile_info/?username=$cleanName")
+                .headers(buildStandardHeaders(csrfToken = csrf, referer = "$BASE_URL/$cleanName/"))
+                .get()
+                .build()
+            httpClient.newCall(infoReq).execute().use { res ->
+                if (res.isSuccessful) {
+                    val body = res.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    val id = json.optJSONObject("data")?.optJSONObject("user")?.optString("id", "")
+                    if (!id.isNullOrBlank()) return id
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 2. Fallback: Truy cập trực tiếp link trang cá nhân Instagram Web
         try {
             val targetUrl = if (username.startsWith("http://") || username.startsWith("https://")) {
                 username
