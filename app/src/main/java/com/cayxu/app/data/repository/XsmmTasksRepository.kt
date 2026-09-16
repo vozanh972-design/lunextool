@@ -85,6 +85,10 @@ object XsmmTasksRepository {
                 addProperty("id", taskIds.first())
             }
             addProperty("uid", uid)
+            if (type.contains("instagram", ignoreCase = true) || type.startsWith("ig", ignoreCase = true)) {
+                addProperty("ig", uid)
+                addProperty("platform", "ig")
+            }
             if (!cookieCheck.isNullOrBlank()) {
                 addProperty("cookie_check", cookieCheck)
             }

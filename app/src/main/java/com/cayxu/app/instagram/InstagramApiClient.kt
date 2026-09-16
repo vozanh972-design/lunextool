@@ -45,7 +45,8 @@ class InstagramApiClient(
 
         const val DOC_ID_FOLLOW_MUTATION = "26508036048874888"
         const val DOC_ID_LIKE_MUTATION = "9595477160535898"
-        const val DOC_ID_LIKE_MUTATION_POLARIS = "27358573637160660"
+        const val DOC_ID_LIKE_MUTATION_POLARIS = "27182485238052618" // usePolarisLikeMediaXIGLikeMutation
+        const val DOC_ID_LIKE_MUTATION_POLARIS_OLD = "27358573637160660"
         const val DOC_ID_PROFILE_POSTS = "28322872020710458"
 
         val PATTERN_CSRF: Pattern = Pattern.compile("csrftoken=([^;]+)")
@@ -86,24 +87,52 @@ class InstagramApiClient(
         }
 
         fun resolveDeviceProfile(seed: String = ""): DeviceProfile {
+            if (seed.contains("iPhone", ignoreCase = true) || seed.contains("iPad", ignoreCase = true)) {
+                val osMatch = Regex("""OS\s+([0-9_.]+)""").find(seed)
+                val osVer = osMatch?.groupValues?.get(1)?.replace('_', '.') ?: "18.5"
+                val chromeMatch = Regex("""(?:CriOS|Chrome)/(\d+)""").find(seed)
+                val chromeMajor = chromeMatch?.groupValues?.get(1) ?: "152"
+                return DeviceProfile(
+                    model = "iPhone",
+                    platformVersion = osVer,
+                    chromeMajor = chromeMajor,
+                    userAgent = if (seed.startsWith("Mozilla")) seed else "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
+                )
+            }
+
+            if (seed.contains("Android", ignoreCase = true)) {
+                val osMatch = Regex("""Android\s+([0-9.]+)""").find(seed)
+                val osVer = osMatch?.groupValues?.get(1) ?: "14.0.0"
+                val chromeMatch = Regex("""Chrome/(\d+)""").find(seed)
+                val chromeMajor = chromeMatch?.groupValues?.get(1) ?: "130"
+                val modelMatch = Regex("""Android[^;]+;\s*([^)]+)\)""").find(seed)
+                val model = modelMatch?.groupValues?.get(1)?.trim() ?: "SM-S928B"
+                return DeviceProfile(
+                    model = model,
+                    platformVersion = osVer,
+                    chromeMajor = chromeMajor,
+                    userAgent = if (seed.startsWith("Mozilla")) seed else "Mozilla/5.0 (Linux; Android $osVer; $model) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chromeMajor.0.0.0 Mobile Safari/537.36"
+                )
+            }
+
             val profiles = listOf(
+                DeviceProfile(
+                    model = "iPhone",
+                    platformVersion = "18.5",
+                    chromeMajor = "152",
+                    userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
+                ),
+                DeviceProfile(
+                    model = "SM-G955U",
+                    platformVersion = "8.0.0",
+                    chromeMajor = "152",
+                    userAgent = "Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36"
+                ),
                 DeviceProfile(
                     model = "SM-S928B",
                     platformVersion = "14.0.0",
                     chromeMajor = "130",
                     userAgent = "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
-                ),
-                DeviceProfile(
-                    model = "SM-S918B",
-                    platformVersion = "14.0.0",
-                    chromeMajor = "131",
-                    userAgent = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Mobile Safari/537.36"
-                ),
-                DeviceProfile(
-                    model = "SM-A546B",
-                    platformVersion = "14.0.0",
-                    chromeMajor = "130",
-                    userAgent = "Mozilla/5.0 (Linux; Android 14; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
                 ),
                 DeviceProfile(
                     model = "Pixel 8 Pro",
@@ -146,12 +175,6 @@ class InstagramApiClient(
                     platformVersion = "14.0.0",
                     chromeMajor = "131",
                     userAgent = "Mozilla/5.0 (Linux; Android 14; SM-F946B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Mobile Safari/537.36"
-                ),
-                DeviceProfile(
-                    model = "XQ-EC54",
-                    platformVersion = "14.0.0",
-                    chromeMajor = "130",
-                    userAgent = "Mozilla/5.0 (Linux; Android 14; XQ-EC54) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
                 )
             )
             val index = if (seed.isNotBlank()) Math.abs(seed.hashCode()) % profiles.size else (0 until profiles.size).random()
@@ -284,7 +307,19 @@ class InstagramApiClient(
         cookie = cookieMap.map { "${it.key}=${it.value}" }.joinToString("; ")
         cookieMap["csrftoken"]?.let { if (it.isNotBlank()) activeCsrfToken = it }
         cookieMap["ds_user_id"]?.let { if (it.isNotBlank()) activeUserId = it }
-        activeActorId = activeUserId
+        // Parse raw_user_id từ rur cookie
+        val rurVal = cookieMap["rur"]
+        if (!rurVal.isNullOrBlank()) {
+            val rurDecoded = rurVal.replace("%2C", ",")
+            val parts = rurDecoded.split(",")
+            if (parts.size >= 2) {
+                val rawUid = parts[1].trim()
+                if (rawUid.isNotBlank() && rawUid.all { it.isDigit() }) {
+                    activeActorId = rawUid
+                }
+            }
+        }
+        if (activeActorId.isBlank()) activeActorId = activeUserId
     }
 
     fun updateFromSetCookie(setCookieHeaders: List<String>) {
@@ -394,12 +429,13 @@ class InstagramApiClient(
         val isMobile = userAgent.contains("Mobile", ignoreCase = true) || userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("Android", ignoreCase = true)
         val isIos = userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("iPad", ignoreCase = true)
         val platform = if (isIos) "\"iOS\"" else if (userAgent.contains("Android", ignoreCase = true)) "\"Android\"" else "\"Windows\""
+        val isChrome = userAgent.contains("Chrome", ignoreCase = true) || userAgent.contains("CriOS", ignoreCase = true) || userAgent.contains("Chromium", ignoreCase = true) || activeDeviceProfile.chromeMajor.isNotBlank()
 
         val builder = Headers.Builder()
             .add("User-Agent", userAgent)
             .add("Cookie", cookie)
             .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
-            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,ja-JP;q=0.8,ja;q=0.7,en-US;q=0.6,en;q=0.5")
             .add("Sec-Fetch-Dest", "document")
             .add("Sec-Fetch-Mode", "navigate")
             .add("Sec-Fetch-Site", if (referer != null) "same-origin" else "none")
@@ -408,13 +444,16 @@ class InstagramApiClient(
             .add("Priority", "u=0, i")
 
         if (isChrome) {
-            builder.add("sec-ch-ua", "\"Chromium\";v=\"${activeDeviceProfile.chromeMajor}\", \"Google Chrome\";v=\"${activeDeviceProfile.chromeMajor}\", \"Not?A_Brand\";v=\"99\"")
+            val chromeVer = activeDeviceProfile.chromeMajor.ifBlank { "152" }
+            builder.add("sec-ch-ua", "\"Chromium\";v=\"$chromeVer\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"$chromeVer\"")
             builder.add("sec-ch-ua-mobile", if (isMobile) "?1" else "?0")
             builder.add("sec-ch-ua-platform", platform)
             builder.add("sec-ch-ua-platform-version", "\"${activeDeviceProfile.platformVersion}\"")
             builder.add("sec-ch-ua-model", "\"${activeDeviceProfile.model}\"")
             builder.add("sec-ch-prefers-color-scheme", "dark")
-            builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"${activeDeviceProfile.chromeMajor}.0.6723.107\", \"Google Chrome\";v=\"${activeDeviceProfile.chromeMajor}.0.6723.107\", \"Not?A_Brand\";v=\"99.0.0.0\"")
+            if (!isIos) {
+                builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"$chromeVer.0.6723.107\", \"Google Chrome\";v=\"$chromeVer.0.6723.107\", \"Not?A_Brand\";v=\"24.0.0.0\"")
+            }
         }
 
         if (!referer.isNullOrBlank()) {
@@ -432,10 +471,10 @@ class InstagramApiClient(
     ): Headers {
         val csrf = csrfToken ?: activeCsrfToken.ifBlank { extractCsrfToken() ?: "" }
         val ref = referer ?: "$BASE_URL/"
-        val isChrome = userAgent.contains("Chrome", ignoreCase = true) || userAgent.contains("CriOS", ignoreCase = true) || userAgent.contains("Chromium", ignoreCase = true)
         val isMobile = userAgent.contains("Mobile", ignoreCase = true) || userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("Android", ignoreCase = true)
         val isIos = userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("iPad", ignoreCase = true)
         val platform = if (isIos) "\"iOS\"" else if (userAgent.contains("Android", ignoreCase = true)) "\"Android\"" else "\"Windows\""
+        val isChrome = userAgent.contains("Chrome", ignoreCase = true) || userAgent.contains("CriOS", ignoreCase = true) || userAgent.contains("Chromium", ignoreCase = true) || activeDeviceProfile.chromeMajor.isNotBlank()
         val currentRev = activeRev.ifBlank { activeSpinR.ifBlank { AJAX_ROLLOUT } }
         val currentS = activeS.ifBlank { generateSessionS().also { activeS = it } }
         val resolvedAppId = appId ?: if (isMobile) APP_ID else APP_ID_DESKTOP
@@ -444,7 +483,7 @@ class InstagramApiClient(
             .add("User-Agent", userAgent)
             .add("Cookie", cookie)
             .add("Accept", "*/*")
-            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,ja-JP;q=0.8,ja;q=0.7,en-US;q=0.6,en;q=0.5")
             .add("Origin", BASE_URL)
             .add("Referer", ref)
             .add("X-CSRFToken", csrf)
@@ -461,13 +500,16 @@ class InstagramApiClient(
             .add("Priority", "u=1, i")
 
         if (isChrome) {
-            builder.add("sec-ch-ua", "\"Chromium\";v=\"${activeDeviceProfile.chromeMajor}\", \"Google Chrome\";v=\"${activeDeviceProfile.chromeMajor}\", \"Not?A_Brand\";v=\"99\"")
+            val chromeVer = activeDeviceProfile.chromeMajor.ifBlank { "152" }
+            builder.add("sec-ch-ua", "\"Chromium\";v=\"$chromeVer\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"$chromeVer\"")
             builder.add("sec-ch-ua-mobile", if (isMobile) "?1" else "?0")
             builder.add("sec-ch-ua-platform", platform)
             builder.add("sec-ch-ua-platform-version", "\"${activeDeviceProfile.platformVersion}\"")
             builder.add("sec-ch-ua-model", "\"${activeDeviceProfile.model}\"")
             builder.add("sec-ch-prefers-color-scheme", "dark")
-            builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"${activeDeviceProfile.chromeMajor}.0.6723.107\", \"Google Chrome\";v=\"${activeDeviceProfile.chromeMajor}.0.6723.107\", \"Not?A_Brand\";v=\"99.0.0.0\"")
+            if (!isIos) {
+                builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"$chromeVer.0.6723.107\", \"Google Chrome\";v=\"$chromeVer.0.6723.107\", \"Not?A_Brand\";v=\"24.0.0.0\"")
+            }
         }
 
         if (!friendlyName.isNullOrBlank()) {
@@ -891,7 +933,7 @@ class InstagramApiClient(
         var lastErrorDetail = ""
         val ref = if (shortcode.isNotBlank()) "$BASE_URL/p/$shortcode/" else "$BASE_URL/"
 
-        // 1. GraphQL PolarisAPILikePostMutation (Doc ID: 27358573637160660)
+        // 1. GraphQL usePolarisLikeMediaXIGLikeMutation (Doc ID: 27182485238052618)
         try {
             val variables1 = JSONObject().apply {
                 val inputObj = JSONObject().apply {
@@ -899,7 +941,8 @@ class InstagramApiClient(
                     if (av.isNotBlank() && av != "0") {
                         put("actor_id", av)
                     }
-                    put("client_mutation_id", "1")
+                    put("client_mutation_id", nextReq())
+                    put("container_module", "feed_timeline")
                 }
                 put("input", inputObj)
             }.toString()
@@ -911,7 +954,7 @@ class InstagramApiClient(
                 .add("__a", "1")
                 .add("__req", nextReq())
                 .add("__hs", currentHs)
-                .add("dpr", "3")
+                .add("dpr", "4")
                 .add("__ccg", "GOOD")
                 .add("__rev", currentRev)
                 .add("__s", currentS)
@@ -929,9 +972,9 @@ class InstagramApiClient(
                 .add("__spin_r", currentSpinR)
                 .add("__spin_b", "trunk")
                 .add("__spin_t", currentSpinT)
-                .add("__crn", "comet.igweb.PolarisProfilePostsTabRoute")
+                .add("__crn", "comet.igweb.PolarisFeedRoute")
                 .add("fb_api_caller_class", "RelayModern")
-                .add("fb_api_req_friendly_name", "PolarisAPILikePostMutation")
+                .add("fb_api_req_friendly_name", "usePolarisLikeMediaXIGLikeMutation")
                 .add("server_timestamps", "true")
                 .add("variables", variables1)
                 .add("doc_id", DOC_ID_LIKE_MUTATION_POLARIS)
@@ -939,7 +982,7 @@ class InstagramApiClient(
 
             val headers1 = buildStandardHeaders(
                 csrfToken = csrf,
-                friendlyName = "PolarisAPILikePostMutation",
+                friendlyName = "usePolarisLikeMediaXIGLikeMutation",
                 lsdToken = currentLsd,
                 referer = ref
             )
@@ -954,6 +997,8 @@ class InstagramApiClient(
                 val responseBody = response.body?.string() ?: ""
                 if (response.isSuccessful || response.code == 200) {
                     if (responseBody.contains("\"viewer_has_liked\":true") ||
+                        responseBody.contains("\"has_liked\":true") ||
+                        responseBody.contains("\"xig_media_like\"") ||
                         responseBody.contains("\"status\":\"ok\"") ||
                         responseBody.contains("\"xdt_like_media\"") ||
                         responseBody.contains("\"is_final\":true") ||
@@ -1121,10 +1166,6 @@ class InstagramApiClient(
             if (decodedId.isNotBlank()) {
                 mediaId = decodedId
             }
-        }
-
-        if (shortcode.isNotBlank()) {
-            warmupPostPage(shortcode)
         }
 
         val finalMediaId = if (mediaId.isNotBlank()) mediaId else clean
