@@ -229,17 +229,19 @@ fun InstagramCookieBottomSheet(
                             var failedCount = 0
 
                             withContext(Dispatchers.IO) {
-                                val desktopUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                                for (line in lines) {
+                                for ((idx, line) in lines.withIndex()) {
                                     try {
                                         var cookiePart = ""
                                         var proxyPart = ""
+                                        var userAgentPart = ""
 
                                         if (line.contains("|")) {
                                             val parts = line.split("|").map { it.trim() }
                                             for (p in parts) {
                                                 if (p.contains("sessionid=") || p.contains("csrftoken=") || p.contains("ds_user_id=") || p.contains("c_user=") || p.contains("mid=")) {
                                                     cookiePart = if (cookiePart.isBlank()) p else "$cookiePart; $p"
+                                                } else if (p.startsWith("Mozilla/", ignoreCase = true) || p.contains("AppleWebKit/", ignoreCase = true) || p.contains("Chrome/", ignoreCase = true) || p.contains("Safari/", ignoreCase = true)) {
+                                                    userAgentPart = p
                                                 } else if (p.contains(":") && p.any { it.isDigit() } && !p.contains("=")) {
                                                     proxyPart = p
                                                 } else if (cookiePart.isBlank()) {
@@ -280,9 +282,16 @@ fun InstagramCookieBottomSheet(
                                         var postsCount = 0
 
                                         val proxyConfig = com.cayxu.app.instagram.InstagramApiClient.parseProxy(proxyPart)
+                                        val resolvedUA = if (userAgentPart.isNotBlank()) {
+                                            userAgentPart
+                                        } else {
+                                            val seed = if (dsUserId.isNotBlank()) "${dsUserId}_$idx" else "${cookiePart.hashCode()}_$idx"
+                                            com.cayxu.app.instagram.InstagramApiClient.resolveDeviceProfile(seed).userAgent
+                                        }
+
                                         val client = com.cayxu.app.instagram.InstagramApiClient(
                                             cookie = cookiePart,
-                                            userAgent = desktopUA,
+                                            userAgent = resolvedUA,
                                             proxyConfig = proxyConfig
                                         )
 
@@ -315,7 +324,7 @@ fun InstagramCookieBottomSheet(
                                                     username = username,
                                                     userId = dsUserId,
                                                     cookie = cookiePart,
-                                                    userAgent = desktopUA,
+                                                    userAgent = client.userAgent,
                                                     proxy = proxyPart,
                                                     fullName = fullName,
                                                     avatar = avatar,

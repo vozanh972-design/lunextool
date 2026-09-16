@@ -123,22 +123,46 @@ class InstagramApiClient(
                     userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
                 ),
                 DeviceProfile(
-                    model = "SM-G955U",
-                    platformVersion = "8.0.0",
+                    model = "iPhone",
+                    platformVersion = "18.2",
                     chromeMajor = "152",
-                    userAgent = "Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36"
+                    userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1"
+                ),
+                DeviceProfile(
+                    model = "iPhone",
+                    platformVersion = "17.6",
+                    chromeMajor = "130",
+                    userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1"
+                ),
+                DeviceProfile(
+                    model = "iPhone",
+                    platformVersion = "17.4",
+                    chromeMajor = "128",
+                    userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
                 ),
                 DeviceProfile(
                     model = "SM-S928B",
                     platformVersion = "14.0.0",
-                    chromeMajor = "130",
-                    userAgent = "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
+                    chromeMajor = "131",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Mobile Safari/537.36"
                 ),
                 DeviceProfile(
-                    model = "Pixel 8 Pro",
+                    model = "SM-S918B",
                     platformVersion = "14.0.0",
                     chromeMajor = "130",
-                    userAgent = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "SM-A546B",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "129",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.100 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "SM-F946B",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "131",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; SM-F946B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Mobile Safari/537.36"
                 ),
                 DeviceProfile(
                     model = "Pixel 9 Pro",
@@ -147,10 +171,28 @@ class InstagramApiClient(
                     userAgent = "Mozilla/5.0 (Linux; Android 15; Pixel 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Mobile Safari/537.36"
                 ),
                 DeviceProfile(
+                    model = "Pixel 8 Pro",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "130",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "Pixel 7a",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "128",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; Pixel 7a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.6613.127 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
                     model = "23116PN5BC",
                     platformVersion = "14.0.0",
                     chromeMajor = "130",
                     userAgent = "Mozilla/5.0 (Linux; Android 14; 23116PN5BC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "23088PND5G",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "129",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; 23088PND5G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.100 Mobile Safari/537.36"
                 ),
                 DeviceProfile(
                     model = "CPH2581",
@@ -171,10 +213,10 @@ class InstagramApiClient(
                     userAgent = "Mozilla/5.0 (Linux; Android 14; V2324A) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.100 Mobile Safari/537.36"
                 ),
                 DeviceProfile(
-                    model = "SM-F946B",
+                    model = "XQ-DQ54",
                     platformVersion = "14.0.0",
-                    chromeMajor = "131",
-                    userAgent = "Mozilla/5.0 (Linux; Android 14; SM-F946B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Mobile Safari/537.36"
+                    chromeMajor = "130",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; XQ-DQ54) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
                 )
             )
             val index = if (seed.isNotBlank()) Math.abs(seed.hashCode()) % profiles.size else (0 until profiles.size).random()
@@ -349,8 +391,9 @@ class InstagramApiClient(
 
     init {
         loadCookie(cookie)
-        if (userAgent.isBlank()) {
-            activeDeviceProfile = resolveDeviceProfile(cookie)
+        if (userAgent.isBlank() || userAgent.contains("Windows NT", ignoreCase = true)) {
+            val seed = activeUserId.ifBlank { cookie }
+            activeDeviceProfile = resolveDeviceProfile(seed)
             userAgent = activeDeviceProfile.userAgent
         } else {
             activeDeviceProfile = resolveDeviceProfile(userAgent)
