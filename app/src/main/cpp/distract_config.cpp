@@ -1,16 +1,54 @@
-#include <jni.h>
+﻿#include <jni.h>
 #include <string>
 #include <vector>
 #include <cstring>
 #include <cstdio>
+#include <stdint.h>
 
 // ============================================================================
-// Module: distract-config (libdistract-config.so)
+// Module: distract-config (libdistract-config.so) - OLLVM Hardened
+// Control Flow Flattening (CFF) + Instruction Substitution (MBA) + XOR String Encryption
 // ============================================================================
 
 namespace {
     typedef unsigned int uint32;
     typedef unsigned char uint8;
+
+    __attribute__((always_inline)) static inline std::string decryptOllvmString(const uint8_t* data, size_t len, uint8_t baseKey, uint8_t step) {
+        std::string result;
+        result.resize(len);
+        volatile uint32_t state = 0xA1B2C3D4;
+        size_t idx = 0;
+        while (state != 0) {
+            switch (state) {
+                case 0xA1B2C3D4: { idx = 0; state = 0x5E6F7A8B; break; }
+                case 0x5E6F7A8B: { state = (idx < len) ? 0x9C8D7E6F : 0x11223344; break; }
+                case 0x9C8D7E6F: {
+                    uint8_t k = (baseKey + (uint8_t)(idx * step)) & 0xFF;
+                    uint8_t raw = data[idx];
+                    uint8_t dec = (raw | k) - (raw & k);
+                    result[idx] = (char)dec;
+                    idx++;
+                    state = 0x5E6F7A8B;
+                    break;
+                }
+                case 0x11223344: { state = 0; break; }
+                default: { state = 0; break; }
+            }
+        }
+        return result;
+    }
+
+    const uint8_t enc_verifyEp[18] = { 0x3D, 0x13, 0x03, 0x5E, 0x0E, 0x1A, 0xF4, 0xE4, 0xF2, 0xE2, 0xFD, 0xC2, 0xD5, 0xCE, 0x90, 0xB5, 0xA4, 0xA3 };
+    const uint8_t enc_distractSalt[36] = { 0x38, 0x0A, 0x19, 0x05, 0x0A, 0x1E, 0xE5, 0xF9, 0xCB, 0xE8, 0xC3, 0xC5, 0xC4, 0xE8, 0xD8, 0xB7, 0xAD, 0xB4, 0x85, 0xD3, 0xD8, 0xDD, 0xC0, 0xA2, 0x6F, 0x6E, 0x6B, 0x46, 0x56, 0x1F, 0x0F, 0x75, 0x1F, 0x67, 0x6F, 0x0F };
+
+    static inline std::string getNativeEndpoint() {
+        return decryptOllvmString(enc_verifyEp, 18, 0x5C, 7);
+    }
+
+    static inline std::string getDistractSalt() {
+        return decryptOllvmString(enc_distractSalt, 36, 0x5C, 7);
+    }
 
     #define ROTLEFT(a,b) (((a) << (b)) | ((a) >> (32-(b))))
     #define ROTRIGHT(a,b) (((a) >> (b)) | ((a) << (32-(b))))
@@ -92,6 +130,7 @@ namespace {
             sha256_transform(ctx, ctx->data);
             memset(ctx->data, 0, 56);
         }
+
         ctx->bitlen += ctx->datalen * 8;
         ctx->data[63] = ctx->bitlen;
         ctx->data[62] = ctx->bitlen >> 8;
@@ -102,6 +141,7 @@ namespace {
         ctx->data[57] = ctx->bitlen >> 48;
         ctx->data[56] = ctx->bitlen >> 56;
         sha256_transform(ctx, ctx->data);
+
         for (i = 0; i < 4; ++i) {
             hash[i]      = (ctx->state[0] >> (24 - i * 8)) & 0x000000ff;
             hash[i + 4]  = (ctx->state[1] >> (24 - i * 8)) & 0x000000ff;
@@ -114,7 +154,7 @@ namespace {
         }
     }
 
-    static std::string calculateSha256Hex(const std::string &input) {
+    static std::string calculateSha256Hex(const std::string& input) {
         SHA256_CTX ctx;
         sha256_init(&ctx);
         sha256_update(&ctx, (const uint8*)input.c_str(), input.length());
@@ -127,26 +167,6 @@ namespace {
         }
         hexBuffer[64] = 0;
         return std::string(hexBuffer);
-    }
-
-    static inline std::string getNativeEndpoint() {
-        volatile char s[19];
-        s[0]='a'; s[1]='p'; s[2]='i'; s[3]='/'; s[4]='v'; s[5]='e';
-        s[6]='r'; s[7]='i'; s[8]='f'; s[9]='y'; s[10]='_'; s[11]='k';
-        s[12]='e'; s[13]='y'; s[14]='.'; s[15]='p'; s[16]='h'; s[17]='p';
-        s[18]='\0';
-        return std::string((char*)s);
-    }
-
-    static inline std::string getDistractSalt() {
-        volatile char s[37];
-        s[0]='d'; s[1]='i'; s[2]='s'; s[3]='t'; s[4]='r'; s[5]='a'; s[6]='c';
-        s[7]='t'; s[8]='_'; s[9]='s'; s[10]='a'; s[11]='l'; s[12]='t'; s[13]='_';
-        s[14]='f'; s[15]='r'; s[16]='a'; s[17]='g'; s[18]='_'; s[19]='2'; s[20]='0';
-        s[21]='2'; s[22]='6'; s[23]='_'; s[24]='k'; s[25]='e'; s[26]='y'; s[27]='_';
-        s[28]='v'; s[29]='8'; s[30]='!'; s[31]='@'; s[32]='#'; s[33]='$'; s[34]='%'; s[35]='^';
-        s[36]='\0';
-        return std::string((char*)s);
     }
 }
 

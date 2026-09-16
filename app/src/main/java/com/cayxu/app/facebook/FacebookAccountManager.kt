@@ -35,22 +35,36 @@ data class FacebookPage(
 class FacebookAccountManager {
 
     companion object {
-        const val BASE_URL = "https://www.facebook.com"
-        const val GRAPH_BASE_URL = "https://graph.facebook.com"
-        const val GRAPH_API_VERSION = "v19.0"
-        const val GRAPH_ME_FIELDS = "id,name,email"
+        private val ENC_BASE_URL = byteArrayOf(0x32.toByte(), 0x13.toByte(), 0x00.toByte(), 0xF1.toByte(), 0xFD.toByte(), 0xA1.toByte(), 0x87.toByte(), 0x9A.toByte(), 0xB5.toByte(), 0xB8.toByte(), 0xAB.toByte(), 0xC7.toByte(), 0x90.toByte(), 0x62.toByte(), 0x73.toByte(), 0x78.toByte(), 0x48.toByte(), 0x58.toByte(), 0x2B.toByte(), 0x3A.toByte(), 0x70.toByte(), 0x08.toByte(), 0x17.toByte(), 0xE8.toByte())
+        private val ENC_GRAPH_BASE_URL = byteArrayOf(0x32.toByte(), 0x13.toByte(), 0x00.toByte(), 0xF1.toByte(), 0xFD.toByte(), 0xA1.toByte(), 0x87.toByte(), 0x9A.toByte(), 0xA5.toByte(), 0xBD.toByte(), 0xBD.toByte(), 0x99.toByte(), 0x9E.toByte(), 0x2D.toByte(), 0x76.toByte(), 0x7C.toByte(), 0x49.toByte(), 0x52.toByte(), 0x26.toByte(), 0x3E.toByte(), 0x31.toByte(), 0x00.toByte(), 0x56.toByte(), 0xE6.toByte(), 0xFD.toByte(), 0xF2.toByte())
+        private val ENC_GRAPH_API_VERSION = byteArrayOf(0x2C.toByte(), 0x56.toByte(), 0x4D.toByte(), 0xAF.toByte(), 0xBE.toByte())
+        private val ENC_GRAPH_ME_FIELDS = byteArrayOf(0x33.toByte(), 0x03.toByte(), 0x58.toByte(), 0xEF.toByte(), 0xEF.toByte(), 0xF6.toByte(), 0xCD.toByte(), 0x99.toByte(), 0xA7.toByte(), 0xA2.toByte(), 0xBD.toByte(), 0x80.toByte(), 0x9A.toByte())
 
-        val C_USER_REGEX = Pattern.compile("c_user=([0-9]+)")
-        val XS_REGEX = Pattern.compile("xs=([^;]+)")
-        val DTSG_REGEX = Pattern.compile("\\[\"DTSGInitialData\",\\[\\],\\{\"token\":\"(.*?)\"\\}")
-        val LSD_REGEX = Pattern.compile("\\[\"LSD\",\\[\\],\\{\"token\":\"(.*?)\"\\}")
-        val JAZOEST_REGEX = Pattern.compile("jazoest=(.*?)\"")
+        private val ENC_C_USER_REGEX = byteArrayOf(0x39.toByte(), 0x38.toByte(), 0x01.toByte(), 0xF2.toByte(), 0xEB.toByte(), 0xE9.toByte(), 0x95.toByte(), 0x9D.toByte(), 0x99.toByte(), 0xFF.toByte(), 0xF1.toByte(), 0xD0.toByte(), 0xAB.toByte(), 0x28.toByte(), 0x39.toByte())
+        private val ENC_XS_REGEX = byteArrayOf(0x22.toByte(), 0x14.toByte(), 0x49.toByte(), 0xA9.toByte(), 0xD5.toByte(), 0xC5.toByte(), 0x93.toByte(), 0xE8.toByte(), 0xE9.toByte(), 0xE6.toByte())
+        private val ENC_DTSG_REGEX = byteArrayOf(0x06.toByte(), 0x3C.toByte(), 0x56.toByte(), 0xC5.toByte(), 0xDA.toByte(), 0xC8.toByte(), 0xEF.toByte(), 0xFC.toByte(), 0xAC.toByte(), 0xA6.toByte(), 0xA8.toByte(), 0x80.toByte(), 0x97.toByte(), 0x6F.toByte(), 0x54.toByte(), 0x7C.toByte(), 0x5E.toByte(), 0x56.toByte(), 0x66.toByte(), 0x7D.toByte(), 0x02.toByte(), 0x30.toByte(), 0x24.toByte(), 0xD8.toByte(), 0xBE.toByte(), 0xC3.toByte(), 0xD7.toByte(), 0x9B.toByte(), 0xB2.toByte(), 0xBC.toByte(), 0x8B.toByte(), 0x88.toByte(), 0x94.toByte(), 0x25.toByte(), 0x2E.toByte(), 0x03.toByte(), 0x06.toByte(), 0x15.toByte(), 0x62.toByte(), 0x6A.toByte(), 0x4B.toByte(), 0x4D.toByte(), 0x20.toByte(), 0xF4.toByte())
+        private val ENC_LSD_REGEX = byteArrayOf(0x06.toByte(), 0x3C.toByte(), 0x56.toByte(), 0xCD.toByte(), 0xDD.toByte(), 0xDF.toByte(), 0x8A.toByte(), 0x99.toByte(), 0x9E.toByte(), 0x94.toByte(), 0x80.toByte(), 0xB4.toByte(), 0xDA.toByte(), 0x5F.toByte(), 0x6B.toByte(), 0x3F.toByte(), 0x5E.toByte(), 0x58.toByte(), 0x2F.toByte(), 0x34.toByte(), 0x30.toByte(), 0x49.toByte(), 0x42.toByte(), 0xA7.toByte(), 0xBA.toByte(), 0xB1.toByte(), 0x86.toByte(), 0x86.toByte(), 0xEF.toByte(), 0xF1.toByte(), 0xBC.toByte(), 0x90.toByte())
+        private val ENC_JAZOEST_REGEX = byteArrayOf(0x30.toByte(), 0x06.toByte(), 0x0E.toByte(), 0xEE.toByte(), 0xEB.toByte(), 0xE8.toByte(), 0xDC.toByte(), 0x88.toByte(), 0xEA.toByte(), 0xE1.toByte(), 0xF6.toByte(), 0xD6.toByte(), 0xDF.toByte(), 0x21.toByte())
 
-        val USER_ID_REGEX = Pattern.compile("\"__typename\"\\s*:\\s*\"User\"[^}]*?\"id\"\\s*:\\s*\"?([0-9]+)")
-        val USER_NAME_REGEX = Pattern.compile("\"__typename\"\\s*:\\s*\"User\"[^}]*?\"name\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"")
+        private val ENC_USER_ID_REGEX = byteArrayOf(0x78.toByte(), 0x38.toByte(), 0x2B.toByte(), 0xF5.toByte(), 0xF7.toByte(), 0xEB.toByte(), 0xCD.toByte(), 0xDB.toByte(), 0xA3.toByte(), 0xA2.toByte(), 0xB9.toByte(), 0xCB.toByte(), 0xAA.toByte(), 0x70.toByte(), 0x3A.toByte(), 0x27.toByte(), 0x76.toByte(), 0x44.toByte(), 0x6E.toByte(), 0x73.toByte(), 0x0B.toByte(), 0x18.toByte(), 0x1D.toByte(), 0xF7.toByte(), 0xB0.toByte(), 0xC4.toByte(), 0xF2.toByte(), 0xC4.toByte(), 0x9B.toByte(), 0xF9.toByte(), 0xDF.toByte(), 0xCF.toByte(), 0x93.toByte(), 0x63.toByte(), 0x36.toByte(), 0x7D.toByte(), 0x5D.toByte(), 0x11.toByte(), 0x72.toByte(), 0x09.toByte(), 0x11.toByte(), 0x45.toByte(), 0x5E.toByte(), 0xB6.toByte(), 0xBE.toByte(), 0xF8.toByte(), 0x80.toByte(), 0x90.toByte(), 0xF3.toByte(), 0x8A.toByte(), 0xCF.toByte(), 0xD8.toByte())
+        private val ENC_USER_NAME_REGEX = byteArrayOf(0x78.toByte(), 0x38.toByte(), 0x2B.toByte(), 0xF5.toByte(), 0xF7.toByte(), 0xEB.toByte(), 0xCD.toByte(), 0xDB.toByte(), 0xA3.toByte(), 0xA2.toByte(), 0xB9.toByte(), 0xCB.toByte(), 0xAA.toByte(), 0x70.toByte(), 0x3A.toByte(), 0x27.toByte(), 0x76.toByte(), 0x44.toByte(), 0x6E.toByte(), 0x73.toByte(), 0x0B.toByte(), 0x18.toByte(), 0x1D.toByte(), 0xF7.toByte(), 0xB0.toByte(), 0xC4.toByte(), 0xF2.toByte(), 0xC4.toByte(), 0x9B.toByte(), 0xF9.toByte(), 0xDF.toByte(), 0xCF.toByte(), 0x94.toByte(), 0x66.toByte(), 0x79.toByte(), 0x44.toByte(), 0x0C.toByte(), 0x67.toByte(), 0x3B.toByte(), 0x7F.toByte(), 0x58.toByte(), 0x33.toByte(), 0x0F.toByte(), 0xA3.toByte(), 0xB4.toByte(), 0x8B.toByte(), 0x98.toByte(), 0x82.toByte(), 0xF0.toByte(), 0x8B.toByte(), 0xB8.toByte(), 0xDF.toByte(), 0x82.toByte(), 0x50.toByte(), 0x46.toByte(), 0x07.toByte(), 0x6F.toByte(), 0x16.toByte(), 0x66.toByte(), 0x70.toByte(), 0x44.toByte())
 
-        const val DEFAULT_DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        const val DEFAULT_DALVIK_UA = "Dalvik/2.1.0 (Linux; U; Android 9; 23113RKC6C) [FBAN/FB4A;FBAV/417.0.0.33.65;]"
+        val BASE_URL: String get() = com.cayxu.app.util.StringFog.decrypt(ENC_BASE_URL)
+        val GRAPH_BASE_URL: String get() = com.cayxu.app.util.StringFog.decrypt(ENC_GRAPH_BASE_URL)
+        val GRAPH_API_VERSION: String get() = com.cayxu.app.util.StringFog.decrypt(ENC_GRAPH_API_VERSION)
+        val GRAPH_ME_FIELDS: String get() = com.cayxu.app.util.StringFog.decrypt(ENC_GRAPH_ME_FIELDS)
+
+        val C_USER_REGEX: Pattern by lazy { Pattern.compile(com.cayxu.app.util.StringFog.decrypt(ENC_C_USER_REGEX)) }
+        val XS_REGEX: Pattern by lazy { Pattern.compile(com.cayxu.app.util.StringFog.decrypt(ENC_XS_REGEX)) }
+        val DTSG_REGEX: Pattern by lazy { Pattern.compile(com.cayxu.app.util.StringFog.decrypt(ENC_DTSG_REGEX)) }
+        val LSD_REGEX: Pattern by lazy { Pattern.compile(com.cayxu.app.util.StringFog.decrypt(ENC_LSD_REGEX)) }
+        val JAZOEST_REGEX: Pattern by lazy { Pattern.compile(com.cayxu.app.util.StringFog.decrypt(ENC_JAZOEST_REGEX)) }
+
+        val USER_ID_REGEX: Pattern by lazy { Pattern.compile(com.cayxu.app.util.StringFog.decrypt(ENC_USER_ID_REGEX)) }
+        val USER_NAME_REGEX: Pattern by lazy { Pattern.compile(com.cayxu.app.util.StringFog.decrypt(ENC_USER_NAME_REGEX)) }
+
+        val DEFAULT_DESKTOP_UA: String get() = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        val DEFAULT_DALVIK_UA: String get() = com.cayxu.app.util.NativeSecurity.getFbDalvikUA()
     }
 
     private val httpClient = OkHttpClient.Builder()
