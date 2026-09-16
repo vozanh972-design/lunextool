@@ -292,17 +292,19 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
 
                 if (!hasTappedProfileTab) {
-                    val tabNode = findProfileTabNode(root)
+                    val tabNode = findProfileTabNode(root, root)
                     if (tabNode != null) {
-                        // Chỉ thấy tab "Tôi" (thanh dưới cùng) MỚI bấm, không bấm khi chưa thấy.
-                        TikTokCaptureBridge.updateProgress("Đã thấy tab \"Tôi\", đang bấm...")
-                        clickNode(tabNode)
+                        TikTokCaptureBridge.updateProgress("Đã thấy tab \"Hồ sơ\", đang bấm...")
+                        val b = Rect()
+                        tabNode.getBoundsInScreen(b)
+                        tapAt(b.exactCenterX(), b.exactCenterY())
                         hasTappedProfileTab = true
                     } else {
-                        TikTokCaptureBridge.updateProgress("Đang tìm tab \"Tôi\" ở thanh dưới cùng...")
+                        TikTokCaptureBridge.updateProgress("Đang tìm tab \"Hồ sơ\" ở thanh dưới cùng...")
+                        tapBottomRightProfileTab(root)
                     }
                 } else {
-                    TikTokCaptureBridge.updateProgress("Đang chờ trang \"Tôi\" hiện @...")
+                    TikTokCaptureBridge.updateProgress("Đang chờ trang \"Hồ sơ\" hiện @...")
                 }
 
                 delay(POLL_INTERVAL_MS)
@@ -1124,13 +1126,16 @@ class TikTokAccessibilityService : AccessibilityService() {
                     }
 
                     // 5. Nếu chưa ở trang Hồ sơ (đang ở Home/Trang chủ/Feed/Khám phá...)
-                    val profileTab = findProfileTabNode(root)
+                    val profileTab = findProfileTabNode(root, root)
                     if (profileTab != null) {
                         XsmmTaskAutomationBridge.updateProgress("Đã thấy tab \"Hồ sơ\", đang bấm...")
-                        clickNode(profileTab)
+                        val b = Rect()
+                        profileTab.getBoundsInScreen(b)
+                        tapAt(b.exactCenterX(), b.exactCenterY())
                         delay(1000)
                     } else {
                         XsmmTaskAutomationBridge.updateProgress("Đang tìm tab \"Hồ sơ\" ở thanh dưới cùng...")
+                        tapBottomRightProfileTab(root)
                         delay(POLL_INTERVAL_MS)
                     }
                 } catch (e: Exception) {
