@@ -1,4 +1,10 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
+    <!-- Cam toan bo HTTP Cleartext de chong sniffing -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- Chi tin tuong chung chi goc cua He thong, chan Certificate do Proxy/Canary/Fiddler cai them vao User Store -->
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
 </network-security-config>
