@@ -451,6 +451,26 @@ object XsmmInstagramTaskRunner {
                                 }
 
                                 if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) {
+                                    if (pendingFollowTaskIds.isNotEmpty()) {
+                                        val remainingBatch = pendingFollowTaskIds.toList()
+                                        notify("Đang gửi nhận xu cho ${remainingBatch.size} job Follow còn lại...")
+                                        val compRes = XsmmTasksRepository.completeTasks2(
+                                            rawToken = token,
+                                            type = "instagram_follow",
+                                            taskIds = remainingBatch,
+                                            uid = xsmmUid,
+                                            cookieCheck = account.cookie
+                                        )
+                                        if (compRes.success || compRes.points > 0) {
+                                            val earned = if (compRes.points > 0) compRes.points else 0
+                                            totalEarnedPoints += earned
+                                            if (compRes.totalPoints != null && compRes.totalPoints > 0) {
+                                                synchronized(XsmmAccountStore) { XsmmAccountStore.updatePoints(context, compRes.totalPoints) }
+                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { XsmmSession.points.value = compRes.totalPoints }
+                                            }
+                                        }
+                                        pendingFollowTaskIds.clear()
+                                    }
                                     notify("Đã hoàn thành mục tiêu $totalCompleted nhiệm vụ!")
                                     return RunResult(totalCompleted, totalErrors, totalEarnedPoints, "Hoàn thành mục tiêu $totalCompleted nhiệm vụ")
                                 }
@@ -473,6 +493,28 @@ object XsmmInstagramTaskRunner {
                     delay(1000L)
                 }
             }
+        }
+
+        // Nhận xu nốt các job Follow đã hoàn thành còn đọng lại trước khi kết thúc
+        if (pendingFollowTaskIds.isNotEmpty()) {
+            val remainingBatch = pendingFollowTaskIds.toList()
+            notify("Đang gửi nhận xu cho ${remainingBatch.size} job Follow đã hoàn tất...")
+            val compRes = XsmmTasksRepository.completeTasks2(
+                rawToken = token,
+                type = "instagram_follow",
+                taskIds = remainingBatch,
+                uid = xsmmUid,
+                cookieCheck = account.cookie
+            )
+            if (compRes.success || compRes.points > 0) {
+                val earned = if (compRes.points > 0) compRes.points else 0
+                totalEarnedPoints += earned
+                if (compRes.totalPoints != null && compRes.totalPoints > 0) {
+                    synchronized(XsmmAccountStore) { XsmmAccountStore.updatePoints(context, compRes.totalPoints) }
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { XsmmSession.points.value = compRes.totalPoints }
+                }
+            }
+            pendingFollowTaskIds.clear()
         }
 
         val finalMsg = "Hoàn tất: $totalCompleted thành công, $totalErrors lỗi (+$totalEarnedPoints điểm)"
