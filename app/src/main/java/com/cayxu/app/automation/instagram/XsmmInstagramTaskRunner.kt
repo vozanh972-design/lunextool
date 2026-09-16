@@ -272,12 +272,13 @@ object XsmmInstagramTaskRunner {
                                                     XsmmSession.points.value = compRes.totalPoints
                                                 }
                                             } else if (earned > 0) {
-                                                synchronized(XsmmAccountStore) {
+                                                val newPts = synchronized(XsmmAccountStore) {
                                                     val currentPts = XsmmAccountStore.getPoints(context) + earned
                                                     XsmmAccountStore.updatePoints(context, currentPts)
-                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                        XsmmSession.points.value = currentPts
-                                                    }
+                                                    currentPts
+                                                }
+                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                    XsmmSession.points.value = newPts
                                                 }
                                             }
 
@@ -346,12 +347,13 @@ object XsmmInstagramTaskRunner {
                                                     XsmmSession.points.value = compRes.totalPoints
                                                 }
                                             } else if (earned > 0) {
-                                                synchronized(XsmmAccountStore) {
+                                                val newPts = synchronized(XsmmAccountStore) {
                                                     val currentPts = XsmmAccountStore.getPoints(context) + earned
                                                     XsmmAccountStore.updatePoints(context, currentPts)
-                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                        XsmmSession.points.value = currentPts
-                                                    }
+                                                    currentPts
+                                                }
+                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                    XsmmSession.points.value = newPts
                                                 }
                                             }
 
