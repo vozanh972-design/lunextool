@@ -7,16 +7,21 @@
 #include <sys/system_properties.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <stdint.h>
+#include <pthread.h>
 
 // ============================================================================
-// Module: androidx.graphics.path (libandroidx.graphics.path.so) - Hardened Security
-// Anti-Frida, Anti-Xposed, Anti-Root, Anti-Ptrace, Anti-Port Scanning (27042)
+// Module: androidx.graphics.path (libandroidx.graphics.path.so) - Advanced Anti-Debug
+// 1. ptrace(PTRACE_TRACEME) chiếm quyền debug
+// 2. Kiểm tra TracerPid trong /proc/self/status
+// 3. Quét Socket Port Frida Server (27042, 27043)
+// 4. Quét Maps Memory Hook (Frida, Xposed, Gum)
 // ============================================================================
 
 namespace {
@@ -52,7 +57,7 @@ static inline std::string getNativeUrlFragment() {
     return decryptOllvmString(enc_baseUrl, 20, 0x5C, 7);
 }
 
-// 1. Kiem tra Root
+// 1. Kiểm tra Root
 static bool isDeviceRooted() {
     const char* rootPaths[] = {
         "/system/bin/su", "/system/xbin/su", "/sbin/su", "/system/su",
@@ -67,7 +72,7 @@ static bool isDeviceRooted() {
     return false;
 }
 
-// 2. Kiem tra May ao
+// 2. Kiểm tra Máy ảo (Emulator)
 static bool isRunningOnEmulator() {
     const char* qemuPipes[] = {
         "/dev/socket/qemud", "/dev/qemu_pipe", "/dev/goldfish_pipe",
@@ -89,7 +94,24 @@ static bool isRunningOnEmulator() {
     return false;
 }
 
-// 3. Quet cong ket noi mac dinh cua Frida Server (27042 va 27043)
+// 3. Kiểm tra TracerPid trong /proc/self/status (nếu khác 0 là đang bị GDB/LLDB/Frida/IDA Pro debug)
+static bool isTracerPidAttached() {
+    FILE* fp = fopen("/proc/self/status", "r");
+    if (!fp) return false;
+
+    char line[128];
+    int tracerPid = 0;
+    while (fgets(line, sizeof(line), fp)) {
+        if (strncmp(line, "TracerPid:", 10) == 0) {
+            tracerPid = atoi(&line[10]);
+            break;
+        }
+    }
+    fclose(fp);
+    return tracerPid != 0;
+}
+
+// 4. Quét cổng kết nối mặc định của Frida Server (27042 và 27043)
 static bool isFridaPortOpen() {
     struct sockaddr_in sa;
     int ports[] = { 27042, 27043 };
@@ -102,7 +124,7 @@ static bool isFridaPortOpen() {
             
             struct timeval tv;
             tv.tv_sec = 0;
-            tv.tv_usec = 40000; // 40ms timeout
+            tv.tv_usec = 35000; // 35ms timeout
             setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
             setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
 
@@ -116,13 +138,24 @@ static bool isFridaPortOpen() {
     return false;
 }
 
-// 4. Kiem tra Memory Map & Anti-Ptrace Tracer
+// 5. Kiểm tra Memory Maps & Anti-Ptrace Tracer
 static bool isMemoryHookedOrDebugged() {
-    // Chon PTRACE_TRACEME de ngan debugger/Frida attach vao
-    if (ptrace(PTRACE_TRACEME, 0, 1, 0) < 0) return true;
+    // 1. Chiếm quyền trace của chính mình, chặn GDB/IDA Pro/Frida attach
+    if (ptrace(PTRACE_TRACEME, 0, 1, 0) < 0) {
+        return true;
+    }
 
-    if (isFridaPortOpen()) return true;
+    // 2. Kiểm tra TracerPid
+    if (isTracerPidAttached()) {
+        return true;
+    }
 
+    // 3. Kiểm tra cổng Frida
+    if (isFridaPortOpen()) {
+        return true;
+    }
+
+    // 4. Quét /proc/self/maps
     FILE* maps = fopen("/proc/self/maps", "r");
     if (maps) {
         char mapBuf[512];
@@ -175,7 +208,13 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
         return JNI_ERR;
     }
 
+    // Chiếm quyền Trace ngay khi nạp thư viện Native
     ptrace(PTRACE_TRACEME, 0, 1, 0);
+
+    // Kiểm tra TracerPid ngay tại thời điểm load thư viện
+    if (isTracerPidAttached()) {
+        raise(SIGKILL);
+    }
 
     jclass clazz = env->FindClass("com/cayxu/app/util/NativeSecurity");
     if (!clazz) return JNI_ERR;
