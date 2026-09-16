@@ -160,9 +160,29 @@ object XsmmInstagramTaskRunner {
         var consecutiveNoTasks = 0
         val maxNoTaskRetries = config.stopAfterNoTaskCount.coerceAtLeast(3)
         val pendingFollowTaskIds = mutableListOf<String>()
+        var lastLiveCheckTime = System.currentTimeMillis()
 
         while (coroutineContext.isActive) {
             var foundAnyTasks = false
+
+            // Cơ chế kiểm tra Live định kỳ 20 giây / lần: Nếu die hay lỗi báo ngay và chuyển sang DIE
+            val now = System.currentTimeMillis()
+            if (now - lastLiveCheckTime >= 20_000L) {
+                lastLiveCheckTime = now
+                val isLiveNow = apiClient.checkAccountLive()
+                if (!isLiveNow) {
+                    totalErrors++
+                    val dieMsg = "Tài khoản đã DIE / Checkpoint / Hết phiên đăng nhập"
+                    reportError(cleanUsername, dieMsg)
+                    notify("Dừng tài khoản: $dieMsg")
+                    val deadAccount = account.copy(isLive = false)
+                    InstagramAccountsStore.updateAccount(context, deadAccount)
+                    return RunResult(totalCompleted, totalErrors, totalEarnedPoints, dieMsg)
+                } else {
+                    val liveAccount = account.copy(isLive = true)
+                    InstagramAccountsStore.updateAccount(context, liveAccount)
+                }
+            }
 
             for (taskType in taskTypesToTry) {
                 if (!coroutineContext.isActive) break
@@ -187,6 +207,24 @@ object XsmmInstagramTaskRunner {
                             for (task in tasks) {
                                 if (!coroutineContext.isActive) break
 
+                                // Kiểm tra Live mỗi 20 giây trong suốt quá trình chạy
+                                if (System.currentTimeMillis() - lastLiveCheckTime >= 20_000L) {
+                                    lastLiveCheckTime = System.currentTimeMillis()
+                                    val isLiveNow = apiClient.checkAccountLive()
+                                    if (!isLiveNow) {
+                                        totalErrors++
+                                        val dieMsg = "Tài khoản đã DIE / Checkpoint / Hết phiên đăng nhập"
+                                        reportError(cleanUsername, dieMsg)
+                                        notify("Dừng tài khoản: $dieMsg")
+                                        val deadAccount = account.copy(isLive = false)
+                                        InstagramAccountsStore.updateAccount(context, deadAccount)
+                                        return RunResult(totalCompleted, totalErrors, totalEarnedPoints, dieMsg)
+                                    } else {
+                                        val liveAccount = account.copy(isLive = true)
+                                        InstagramAccountsStore.updateAccount(context, liveAccount)
+                                    }
+                                }
+
                                 val target = task.idorlink.ifBlank { task.targetUrl }.ifBlank { task.id }
                                 notify("Đang làm $readableType: $target")
 
@@ -208,8 +246,12 @@ object XsmmInstagramTaskRunner {
                                     actionSuccess = false
                                     val err = e.message ?: "Lỗi ngoại lệ khi gửi request Instagram"
                                     if (err.contains("429")) {
-                                        lastActionError = "Kiểm tra lại acc (HTTP 429)"
-                                        notify("Kiểm tra lại acc (Instagram 429)")
+                                        lastActionError = "Instagram giới hạn tạm thời (HTTP 429)"
+                                        notify("Instagram 429: Giới hạn tạm thời - Đang giữ Live và giãn cách an toàn...")
+                                        // TUYỆT ĐỐI KHÔNG gán isLive = false khi gặp 429 vì acc vẫn Live bình thường
+                                    } else if (err.contains("DIE") || err.contains("checkpoint") || err.contains("login_required") || err.contains("hết hạn")) {
+                                        lastActionError = err
+                                        notify("Tài khoản DIE / Checkpoint: $err")
                                         val deadAccount = account.copy(isLive = false)
                                         InstagramAccountsStore.updateAccount(context, deadAccount)
                                     } else {
@@ -227,12 +269,23 @@ object XsmmInstagramTaskRunner {
                                 }
                                 if (!coroutineContext.isActive) break
 
-                                // Nếu bị 429 dừng luồng acc này và chuyển sang DIE
-                                if (lastActionError?.contains("Kiểm tra lại acc") == true) {
+                                // Nếu tài khoản thật sự bị DIE/Checkpoint -> Dừng luồng và báo lỗi
+                                if (lastActionError?.contains("DIE") == true || lastActionError?.contains("checkpoint") == true || lastActionError?.contains("login_required") == true) {
                                     totalErrors++
-                                    reportError(cleanUsername, lastActionError ?: "Kiểm tra lại acc")
-                                    notify("Dừng tài khoản: Kiểm tra lại acc")
-                                    return RunResult(totalCompleted, totalErrors, totalEarnedPoints, "Dừng tài khoản: Kiểm tra lại acc")
+                                    reportError(cleanUsername, lastActionError ?: "Tài khoản DIE")
+                                    notify("Dừng tài khoản: $lastActionError")
+                                    return RunResult(totalCompleted, totalErrors, totalEarnedPoints, "Dừng tài khoản: $lastActionError")
+                                }
+
+                                // Nếu gặp HTTP 429 -> Giãn cách thêm 20 giây an toàn mà KHÔNG biến tài khoản thành DIE
+                                if (lastActionError?.contains("429") == true) {
+                                    totalErrors++
+                                    reportError(cleanUsername, "Instagram giới hạn tần suất (HTTP 429) - Giãn cách chờ")
+                                    for (s in 20 downTo 1) {
+                                        if (!coroutineContext.isActive) break
+                                        notify("Instagram 429: Chờ hạ nhiệt còn ${s}s...")
+                                        delay(1000L)
+                                    }
                                 }
 
                                 // 4. Xử lý nhận xu theo cơ chế 12 Follow / lần

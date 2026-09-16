@@ -268,6 +268,8 @@ class InstagramApiClient(
             .add("X-CSRFToken", csrf)
             .add("X-IG-App-ID", appId)
             .add("X-ASBD-ID", ASBD_ID)
+            .add("X-IG-WWW-Claim", "0")
+            .add("X-Requested-With", "XMLHttpRequest")
             .add("Sec-Fetch-Dest", "empty")
             .add("Sec-Fetch-Mode", "cors")
             .add("Sec-Fetch-Site", "same-origin")
@@ -352,6 +354,34 @@ class InstagramApiClient(
                 followingCount = following,
                 postsCount = posts
             )
+        }
+    }
+
+    /**
+     * Kiểm tra trạng thái Live của tài khoản (nhẹ, nhanh, không tốn quota follow/like).
+     * Trả về true nếu Cookie/Tài khoản đang Live.
+     * Trả về false nếu Cookie DIE, checkpoint, login_required hoặc tài khoản bị khóa.
+     */
+    fun checkAccountLive(): Boolean {
+        return try {
+            val request = Request.Builder()
+                .url(BASE_URL)
+                .headers(buildDocumentHeaders())
+                .get()
+                .build()
+            httpClient.newCall(request).execute().use { response ->
+                if (response.code in listOf(401, 403, 301, 302, 303, 307, 308)) {
+                    return false
+                }
+                val body = response.body?.string() ?: ""
+                if (body.contains("login_required") || body.contains("checkpoint_required") || body.contains("login-form")) {
+                    return false
+                }
+                val uid = PATTERN_USER_ID.matcher(body).let { if (it.find()) it.group(1).orEmpty() else extractDsUserId() ?: "" }
+                uid.isNotBlank()
+            }
+        } catch (_: Exception) {
+            true // Lỗi mạng đơn thuần không kết luận là Die
         }
     }
 
