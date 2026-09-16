@@ -15,33 +15,33 @@ object StringFog {
     @JvmStatic
     fun decrypt(encrypted: ByteArray, key: Byte = DEFAULT_KEY): String {
         val result = CharArray(encrypted.size)
-        var state = 0x1A2B3C4D
+        var state = 1
         var idx = 0
 
         // Control Flow Flattening (CFF) state machine dispatch
         while (state != 0) {
             when (state) {
-                0x1A2B3C4D -> {
+                1 -> {
                     idx = 0
-                    state = 0x5E6F7A8B
+                    state = 2
                 }
-                0x5E6F7A8B -> {
+                2 -> {
                     if (idx < encrypted.size) {
-                        state = 0x9C8D7E6F
+                        state = 3
                     } else {
-                        state = 0x11223344
+                        state = 4
                     }
                 }
-                0x9C8D7E6F -> {
+                3 -> {
                     val k = ((key.toInt() + (idx * 13)) and 0xFF)
                     val raw = encrypted[idx].toInt() and 0xFF
                     // Mixed Boolean-Arithmetic (MBA) substitution: x ^ k == (x | k) - (x & k)
                     val dec = (raw or k) - (raw and k)
                     result[idx] = dec.toChar()
                     idx++
-                    state = 0x5E6F7A8B
+                    state = 2
                 }
-                0x11223344 -> {
+                4 -> {
                     state = 0
                 }
                 else -> {

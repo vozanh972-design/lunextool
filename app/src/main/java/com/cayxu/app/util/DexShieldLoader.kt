@@ -18,25 +18,28 @@ object DexShieldLoader {
     @JvmStatic
     fun decryptDexPayload(encryptedBytes: ByteArray, key: ByteArray): ByteBuffer {
         val decrypted = ByteArray(encryptedBytes.size)
-        var state = 0x55AA55AA
+        var state = 1
         var i = 0
         while (state != 0) {
             when (state) {
-                0x55AA55AA -> { i = 0; state = 0x12345678 }
-                0x12345678 -> {
+                1 -> { i = 0; state = 2 }
+                2 -> {
                     if (i < encryptedBytes.size) {
-                        state = 0x87654321
+                        state = 3
                     } else {
-                        state = 0
+                        state = 4
                     }
                 }
-                0x87654321 -> {
+                3 -> {
                     val k = key[i % key.size].toInt() and 0xFF
                     val b = encryptedBytes[i].toInt() and 0xFF
                     val dec = (b or k) - (b and k)
                     decrypted[i] = dec.toByte()
                     i++
-                    state = 0x12345678
+                    state = 2
+                }
+                4 -> {
+                    state = 0
                 }
                 else -> state = 0
             }
