@@ -787,9 +787,9 @@ class TikTokAccessibilityService : AccessibilityService() {
 
     /**
      * Bấm chính xác vào tab "Hồ sơ" ở thanh điều hướng dưới đáy màn hình TikTok
-     * - Nếu đang ở màn hình phụ (trang nhạc, người khác...): Bấm Quay lại (Back).
-     * - Chỉ tìm node trong dải đáy màn hình (y >= 93%, tránh hoàn toàn đĩa nhạc ở y ~ 88-91%).
-     * - Chạm chính xác toạ độ tâm của Tab Hồ sơ ở thanh đáy: x = 90%, y = 97%.
+     * - Tự động quét cây giao diện tìm đúng vị trí của Tab "Hồ sơ" trên từng loại màn hình/máy khác nhau.
+     * - Nếu không thấy text "Hồ sơ", tự đo vị trí thanh đáy từ các tab lân cận ("Trang chủ", "Hộp thư").
+     * - Kết hợp ACTION_CLICK và Gesture chạm trực tiếp vào tâm tab.
      */
     private fun clickProfileTab(root: AccessibilityNodeInfo): Boolean {
         val rootBounds = Rect()
@@ -809,28 +809,43 @@ class TikTokAccessibilityService : AccessibilityService() {
             return true
         }
 
+        // 1. Quét tìm trực tiếp node Tab "Hồ sơ" / "Tôi" / "Profile" trên cây giao diện của máy
         val profileNode = findProfileTabNode(root)
         if (profileNode != null) {
             val bounds = Rect()
             profileNode.getBoundsInScreen(bounds)
-            if (bounds.centerY() >= rootBounds.top + h * 0.93f) {
-                profileNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (bounds.width() > 0 && bounds.height() > 0) {
+                clickNode(profileNode)
                 tapAt(bounds.exactCenterX(), bounds.exactCenterY())
                 return true
             }
         }
 
-        // Tọa độ chuẩn 100% của Tab Hồ sơ (Góc dưới cùng bên phải: x ~ 90%, y ~ 97%):
+        // 2. Nếu không thấy text "Hồ sơ", tự dò vị trí thanh đáy từ các tab lân cận ("Trang chủ", "Hộp thư", "Cửa hàng")
+        val knownBottomTab = findNodeByText(root, setOf("trang chủ", "home", "hộp thư", "inbox", "cửa hàng", "shop", "bạn bè", "friends"), exact = true)
+        if (knownBottomTab != null) {
+            val bottomBounds = Rect()
+            knownBottomTab.getBoundsInScreen(bottomBounds)
+            if (bottomBounds.top >= (rootBounds.top + h * 0.78f)) {
+                val targetX = rootBounds.left + w * 0.90f
+                val targetY = bottomBounds.exactCenterY()
+                tapAt(targetX, targetY)
+                return true
+            }
+        }
+
+        // 3. Fallback theo tỷ lệ chuẩn góc dưới bên phải màn hình: x ~ 90%, y ~ 96.5%
         val targetX = rootBounds.left + w * 0.90f
-        val targetY = rootBounds.top + h * 0.97f
+        val targetY = rootBounds.top + h * 0.965f
         tapAt(targetX, targetY)
         return true
     }
 
     /**
-     * QUÉT CÂY GIAO DIỆN TÌM CHÍNH XÁC TAB HỒ SƠ Ở THANH ĐÁY:
-     * - BẮT BUỘC: Node phải nằm ở 7% dưới cùng màn hình (centerY >= 93% chiều cao).
-     * - LOẠI TRỪ 100%: Mọi node avatar, follow, author, plus, side rail, đĩa nhạc.
+     * Tự động quét toàn bộ cây giao diện (UI Hierarchy) để tìm chính xác Tab Hồ sơ:
+     * - Tìm node có text hoặc contentDescription là "Hồ sơ" / "Tôi" / "Profile" / "Me"
+     * - BẮT BUỘC: Nằm ở vùng góc dưới bên phải (top >= 80% chiều cao màn hình, right >= 70% chiều rộng).
+     * - LOẠI TRỪ 100%: Mọi node avatar, follow, tác giả, dấu cộng đỏ, đĩa nhạc trên video.
      */
     private fun findProfileTabNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         val rootBounds = Rect()
@@ -843,18 +858,18 @@ class TikTokAccessibilityService : AccessibilityService() {
         collectBottomNavigationTabCandidates(root, rootBounds, candidates)
 
         if (candidates.isNotEmpty()) {
-            // 1. Ưu tiên tìm node có text hoặc contentDescription rõ ràng: "hồ sơ", "tôi", "profile", "me"
+            // Ưu tiên 1: Khớp chính xác nhãn "hồ sơ", "tôi", "profile", "me"
             val explicitMatch = candidates.firstOrNull { n ->
                 val txt = (n.text?.toString() ?: "").trim().lowercase()
                 val desc = (n.contentDescription?.toString() ?: "").trim().lowercase()
                 val resId = (n.viewIdResourceName ?: "").lowercase()
                 txt in PROFILE_TAB_LABELS ||
-                PROFILE_TAB_LABELS.any { label -> desc.contains(label) } ||
+                PROFILE_TAB_LABELS.any { label -> desc == label || (label.length >= 4 && desc.contains(label)) } ||
                 resId.contains("profile") || resId.contains("tab_me") || resId.contains("bottom_tab_me") || resId.contains("bottom_tab_profile")
             }
             if (explicitMatch != null) return explicitMatch
 
-            // 2. Nếu không có text cụ thể, chọn tab ngoài cùng bên phải nhất trong thanh đáy
+            // Ưu tiên 2: Chọn tab ngoài cùng bên phải nhất trong danh sách các tab ở thanh đáy
             candidates.sortByDescending { n ->
                 val b = Rect()
                 n.getBoundsInScreen(b)
@@ -894,17 +909,18 @@ class TikTokAccessibilityService : AccessibilityService() {
             return
         }
 
-        // CHỈ xét những node nằm ở dải thanh đáy (y >= 93% chiều cao màn hình) và có kích thước của 1 tab
+        // Vùng thanh đáy: Nằm ở 20% dưới cùng màn hình (top >= 80%), kích thước nhỏ dạng tab icon/text, nằm ở góc bên phải (right >= 70%)
         val isBottomTabRegion = rootH > 0 &&
-            bounds.centerY() >= (rootBounds.top + rootH * 0.93f) &&
-            bounds.height() <= (rootH * 0.12f) &&
-            bounds.width() <= (rootW * 0.35f)
+            bounds.top >= (rootBounds.top + rootH * 0.80f) &&
+            bounds.height() <= (rootH * 0.16f) &&
+            bounds.width() <= (rootW * 0.35f) &&
+            bounds.right >= (rootBounds.left + rootW * 0.70f)
 
         if (isBottomTabRegion) {
             val isProfileText = text in PROFILE_TAB_LABELS || PROFILE_TAB_LABELS.any { desc.contains(it) } ||
                                 resId.contains("profile") || resId.contains("tab_me") || resId.contains("bottom_tab_me") || resId.contains("bottom_tab_profile")
 
-            val isRightmostTab = bounds.right >= (rootBounds.left + rootW * 0.75f) && bounds.left >= (rootBounds.left + rootW * 0.65f)
+            val isRightmostTab = bounds.right >= (rootBounds.left + rootW * 0.75f)
 
             if (isProfileText || isRightmostTab) {
                 out.add(node)
