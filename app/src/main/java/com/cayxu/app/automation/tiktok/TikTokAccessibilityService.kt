@@ -406,28 +406,17 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 5. NẾU ĐANG Ở TRANG NGƯỜI DÙNG KHÁC (Bị lạc vào profile người khác do bấm nhầm avatar)
-                    val isOtherUserProfile = findNodeByText(root, setOf("nhắn tin", "tin nhắn", "message", "đã follow", "following"), exact = false) != null &&
-                                             findNodeByText(root, setOf("sửa hồ sơ", "chỉnh sửa hồ sơ", "edit profile"), exact = false) == null
-                    if (isOtherUserProfile) {
-                        TikTokCaptureBridge.updateProgress("Đang thoát trang người dùng khác về trang chính...")
-                        performGlobalAction(GLOBAL_ACTION_BACK)
-                        delay(2000)
-                        continue
-                    }
-
-                    // BƯỚC 4 - THỰC HIỆN CLICK VÀO TAB HỒ SƠ:
-                    TikTokCaptureBridge.updateProgress("Đang mở trang Hồ sơ...")
+                    // 5. NẾU Ở TRANG CHỦ / FEED VIDEO: BẤM TRỰC TIẾP VÀO TAB "HỒ SƠ" Ở DƯỚI CÙNG
+                    TikTokCaptureBridge.updateProgress("Đang ở Trang chủ, bấm vào tab \"Hồ sơ\" ở dưới...")
                     val tabNode = findProfileTabNode(root, root)
                     if (tabNode != null) {
                         val b = Rect()
                         tabNode.getBoundsInScreen(b)
-                        // Bấm trực tiếp vào toạ độ tâm (center point x, y) lấy từ bounds của node trên cây UI
                         tapAt(b.exactCenterX(), b.exactCenterY())
                     } else {
                         tapBottomRightProfileTab(root)
                     }
-                    delay(3000)
+                    delay(2500)
                 } catch (e: Exception) {
                     delay(POLL_INTERVAL_MS)
                 }
