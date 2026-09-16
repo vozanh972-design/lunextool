@@ -263,33 +263,38 @@ object XsmmInstagramTaskRunner {
                                             val earned = if (compRes.points > 0) compRes.points else 0
                                             totalEarnedPoints += earned
 
+                                            // Cập nhật điểm thời gian thực ngay lập tức
+                                            if (compRes.totalPoints != null && compRes.totalPoints > 0) {
+                                                synchronized(XsmmAccountStore) {
+                                                    XsmmAccountStore.updatePoints(context, compRes.totalPoints)
+                                                }
+                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                    XsmmSession.points.value = compRes.totalPoints
+                                                }
+                                            } else if (earned > 0) {
+                                                synchronized(XsmmAccountStore) {
+                                                    val currentPts = XsmmAccountStore.getPoints(context) + earned
+                                                    XsmmAccountStore.updatePoints(context, currentPts)
+                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                        XsmmSession.points.value = currentPts
+                                                    }
+                                                }
+                                            }
+
+                                            // Đồng bộ thêm với server để đảm bảo số dư chính xác tuyệt đối
                                             try {
                                                 when (val userRes = XsmmAuthRepository.fetchUser(token)) {
                                                     is XsmmLoginResult.Success -> {
                                                         synchronized(XsmmAccountStore) {
                                                             XsmmAccountStore.updatePoints(context, userRes.info.points)
+                                                        }
+                                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                                             XsmmSession.points.value = userRes.info.points
                                                         }
                                                     }
-                                                    is XsmmLoginResult.Error -> {
-                                                        if (earned > 0) {
-                                                            synchronized(XsmmAccountStore) {
-                                                                val currentPts = XsmmAccountStore.getPoints(context) + earned
-                                                                XsmmAccountStore.updatePoints(context, currentPts)
-                                                                XsmmSession.points.value = currentPts
-                                                            }
-                                                        }
-                                                    }
+                                                    is XsmmLoginResult.Error -> Unit
                                                 }
-                                            } catch (_: Exception) {
-                                                if (earned > 0) {
-                                                    synchronized(XsmmAccountStore) {
-                                                        val currentPts = XsmmAccountStore.getPoints(context) + earned
-                                                        XsmmAccountStore.updatePoints(context, currentPts)
-                                                        XsmmSession.points.value = currentPts
-                                                    }
-                                                }
-                                            }
+                                            } catch (_: Exception) {}
 
                                             pendingFollowTaskIds.removeAll(batchToClaim)
                                             val successMsg = if (earned > 0) "Hoàn thành 12 Follow: +$earned xu" else (if (compRes.message.isNotBlank()) compRes.message else "Đã nhận xu (12 job Follow)")
@@ -332,33 +337,38 @@ object XsmmInstagramTaskRunner {
                                             val earned = if (compRes.points > 0) compRes.points else 0
                                             totalEarnedPoints += earned
 
+                                            // Cập nhật điểm thời gian thực ngay lập tức
+                                            if (compRes.totalPoints != null && compRes.totalPoints > 0) {
+                                                synchronized(XsmmAccountStore) {
+                                                    XsmmAccountStore.updatePoints(context, compRes.totalPoints)
+                                                }
+                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                    XsmmSession.points.value = compRes.totalPoints
+                                                }
+                                            } else if (earned > 0) {
+                                                synchronized(XsmmAccountStore) {
+                                                    val currentPts = XsmmAccountStore.getPoints(context) + earned
+                                                    XsmmAccountStore.updatePoints(context, currentPts)
+                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                        XsmmSession.points.value = currentPts
+                                                    }
+                                                }
+                                            }
+
+                                            // Đồng bộ thêm với server để đảm bảo số dư chính xác tuyệt đối
                                             try {
                                                 when (val userRes = XsmmAuthRepository.fetchUser(token)) {
                                                     is XsmmLoginResult.Success -> {
                                                         synchronized(XsmmAccountStore) {
                                                             XsmmAccountStore.updatePoints(context, userRes.info.points)
+                                                        }
+                                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                                             XsmmSession.points.value = userRes.info.points
                                                         }
                                                     }
-                                                    is XsmmLoginResult.Error -> {
-                                                        if (earned > 0) {
-                                                            synchronized(XsmmAccountStore) {
-                                                                val currentPts = XsmmAccountStore.getPoints(context) + earned
-                                                                XsmmAccountStore.updatePoints(context, currentPts)
-                                                                XsmmSession.points.value = currentPts
-                                                            }
-                                                        }
-                                                    }
+                                                    is XsmmLoginResult.Error -> Unit
                                                 }
-                                            } catch (_: Exception) {
-                                                if (earned > 0) {
-                                                    synchronized(XsmmAccountStore) {
-                                                        val currentPts = XsmmAccountStore.getPoints(context) + earned
-                                                        XsmmAccountStore.updatePoints(context, currentPts)
-                                                        XsmmSession.points.value = currentPts
-                                                    }
-                                                }
-                                            }
+                                            } catch (_: Exception) {}
 
                                             val successMsg = if (earned > 0) "Hoàn thành Like: +$earned xu" else (if (compRes.message.isNotBlank()) compRes.message else "Hoàn thành Like")
                                             notify(successMsg)

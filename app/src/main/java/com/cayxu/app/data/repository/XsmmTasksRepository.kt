@@ -21,9 +21,10 @@ data class XsmmCompleteTask2Result(
     val success: Boolean,
     val message: String,
     val points: Int,
-    val successCount: Int,
-    val countdown: Int,
-    val retry: Boolean
+    val totalPoints: Long? = null,
+    val successCount: Int = 0,
+    val countdown: Int = 0,
+    val retry: Boolean = false
 )
 
 object XsmmTasksRepository {
@@ -37,8 +38,7 @@ object XsmmTasksRepository {
         body?.let { runCatching { JsonParser.parseString(it).asJsonObject.get("error")?.takeIf { e -> e.isJsonPrimitive }?.asString }.getOrNull() } ?: fallback
 
     /**
-     * GET /api/taskapi/tasks2 - lấy danh sách nhiệm vụ theo loại + uid TikTok.
-     * [type]: vd "tiktok_follow", [uid]: account_id TikTok đang chạy (account_id trong acc XSMM).
+     * GET /api/taskapi/tasks2 - lấy danh sách nhiệm vụ theo loại + uid TikTok/Instagram.
      */
     suspend fun getTasks2(rawToken: String, type: String, uid: String, typejob: String? = null): XsmmTasks2Result {
         return try {
@@ -65,14 +65,19 @@ object XsmmTasksRepository {
     }
 
     /**
-     * POST /api/taskapi/tasks2/complete - báo hoàn thành nhiệm vụ.
-     * [uid]: account_id TikTok đang chạy (bắt buộc theo tài liệu API mới).
+     * POST /api/taskapi/tasks2/complete - báo hoàn thành nhiệm vụ và nhận xu.
      */
     suspend fun completeTasks2(rawToken: String, type: String, taskIds: List<String>, uid: String): XsmmCompleteTask2Result {
-        if (taskIds.isEmpty()) return XsmmCompleteTask2Result(false, "Không có nhiệm vụ nào", 0, 0, 0, false)
+        if (taskIds.isEmpty()) return XsmmCompleteTask2Result(false, "Không có nhiệm vụ nào", 0, null, 0, 0, false)
+        
         val body = JsonObject().apply {
             addProperty("type", type)
-            add("task_id", com.google.gson.JsonArray().apply { taskIds.forEach { add(it) } })
+            val arr = com.google.gson.JsonArray()
+            taskIds.forEach { arr.add(it) }
+            add("task_id", arr)
+            if (taskIds.size == 1) {
+                addProperty("id", taskIds.first())
+            }
             addProperty("uid", uid)
         }
 
@@ -82,27 +87,64 @@ object XsmmTasksRepository {
                 val response = XsmmRetrofitClient.api.completeTasks2(auth(rawToken), body)
                 if (!response.isSuccessful) {
                     val msg = errMsg(response.errorBody()?.string(), "Lỗi hoàn thành NV (mã HTTP: ${response.code()})")
-                    return XsmmCompleteTask2Result(false, msg, 0, 0, 0, false)
+                    return XsmmCompleteTask2Result(false, msg, 0, null, 0, 0, false)
                 }
-                val json = response.body()
-                val err = json?.get("error")?.takeIf { it.isJsonPrimitive }?.asString
-                if (!err.isNullOrBlank()) return XsmmCompleteTask2Result(false, err, 0, 0, 0, false)
+                val json = response.body() ?: return XsmmCompleteTask2Result(false, "Phản hồi rỗng từ server XSMM", 0, null, 0, 0, false)
+
+                val hasExplicitError = json.has("error") && !json.get("error").isJsonNull
+                val errorMsg = if (hasExplicitError) {
+                    val errEl = json.get("error")
+                    if (errEl.isJsonPrimitive) errEl.asString else errEl.toString()
+                } else null
+
+                val statusStr = json.get("status")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+                val statusCode = json.get("status")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asInt ?: 0
+                val isSuccessFlag = json.get("success")?.takeIf { it.isJsonPrimitive }?.asBoolean == true ||
+                    statusStr.equals("success", ignoreCase = true) ||
+                    statusCode == 200
+
+                if (!errorMsg.isNullOrBlank() && !isSuccessFlag && json.get("points") == null) {
+                    return XsmmCompleteTask2Result(false, errorMsg, 0, null, 0, 0, false)
+                }
+
+                val points = json.get("points")?.takeIf { it.isJsonPrimitive }?.asInt
+                    ?: json.get("earned_points")?.takeIf { it.isJsonPrimitive }?.asInt
+                    ?: json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject?.get("points")?.takeIf { it.isJsonPrimitive }?.asInt
+                    ?: json.get("bonus")?.takeIf { it.isJsonPrimitive }?.asInt
+                    ?: 0
+
+                val totalPoints = json.get("total_points")?.takeIf { it.isJsonPrimitive }?.asLong
+                    ?: json.get("user")?.takeIf { it.isJsonObject }?.asJsonObject?.get("points")?.takeIf { it.isJsonPrimitive }?.asLong
+                    ?: json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject?.get("user")?.takeIf { it.isJsonObject }?.asJsonObject?.get("points")?.takeIf { it.isJsonPrimitive }?.asLong
+
+                val message = json.get("message")?.takeIf { it.isJsonPrimitive }?.asString
+                    ?: json.get("msg")?.takeIf { it.isJsonPrimitive }?.asString
+                    ?: errorMsg
+                    ?: ""
+
+                val successCount = json.get("success_count")?.takeIf { it.isJsonPrimitive }?.asInt ?: taskIds.size
+                val countdown = json.get("countdown")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+                val retry = json.get("retry")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
+
+                val isSuccess = isSuccessFlag || points > 0 || errorMsg.isNullOrBlank()
+
                 return XsmmCompleteTask2Result(
-                    success = true,
-                    message = json?.get("message")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                    points = json?.get("points")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                    successCount = json?.get("success_count")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                    countdown = json?.get("countdown")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                    retry = json?.get("retry")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
+                    success = isSuccess,
+                    message = message,
+                    points = points,
+                    totalPoints = totalPoints,
+                    successCount = successCount,
+                    countdown = countdown,
+                    retry = retry
                 )
             } catch (e: Exception) {
                 lastException = e
                 if (attempt < 3) {
-                    kotlinx.coroutines.delay(2000L * attempt)
+                    kotlinx.coroutines.delay(1500L * attempt)
                 }
             }
         }
         val errText = lastException?.message ?: "Lỗi kết nối server XSMM (Timeout)"
-        return XsmmCompleteTask2Result(false, errText, 0, 0, 0, false)
+        return XsmmCompleteTask2Result(false, errText, 0, null, 0, 0, false)
     }
 }
