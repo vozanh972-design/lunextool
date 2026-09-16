@@ -819,16 +819,18 @@ class TikTokAccessibilityService : AccessibilityService() {
         val desc = (node.contentDescription?.toString() ?: "").lowercase()
         val text = (node.text?.toString() ?: "").lowercase()
 
-        // Loại trừ ngay lập tức nếu là nút follow, avatar tác giả trên video feed
+        // Tuyệt đối loại trừ nút follow, avatar tác giả, nút dấu cộng đỏ trên video feed
         if (resId.contains("follow") || resId.contains("avatar") || resId.contains("author") ||
-            desc.contains("follow") || desc.contains("theo dõi") || text.contains("follow")
+            resId.contains("plus") || resId.contains("feed") || resId.contains("side") ||
+            desc.contains("follow") || desc.contains("theo dõi") || text.contains("follow") ||
+            desc.contains("avatar") || desc.contains("plus") || desc.contains("dấu cộng")
         ) {
             return
         }
 
-        // Kiểm tra xem node có nằm ở vùng thanh đáy (Bottom Navigation Bar: top >= 86% chiều cao màn hình)
+        // Kiểm tra xem node có nằm đúng ở vùng thanh đáy (Bottom Navigation Bar: top >= 88% chiều cao màn hình)
         val isBottomBarRegion = if (rootH > 0) {
-            bounds.top >= (rootBounds.top + rootH * 0.86f) && bounds.bottom <= (rootBounds.bottom + 50)
+            bounds.top >= (rootBounds.top + rootH * 0.88f) && bounds.bottom <= (rootBounds.bottom + 60)
         } else false
 
         if (isBottomBarRegion) {
@@ -904,8 +906,31 @@ class TikTokAccessibilityService : AccessibilityService() {
 
     private fun collectFollowCandidates(node: AccessibilityNodeInfo, out: MutableList<AccessibilityNodeInfo>, depth: Int = 0) {
         if (depth > 40) return
-        val text = (node.text?.toString() ?: node.contentDescription?.toString())?.trim()?.lowercase()
-        if (!text.isNullOrBlank()) {
+        val rootBounds = Rect()
+        rootInActiveWindow?.getBoundsInScreen(rootBounds)
+        val rootW = rootBounds.width()
+
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+
+        val resId = (node.viewIdResourceName ?: "").lowercase()
+        val desc = (node.contentDescription?.toString() ?: "").lowercase()
+        val text = (node.text?.toString() ?: "").trim().lowercase()
+
+        // Tuyệt đối loại trừ nút avatar, dấu cộng đỏ trên thanh công cụ dọc của video feed
+        if (resId.contains("avatar") || resId.contains("author") || resId.contains("plus") ||
+            resId.contains("feed") || resId.contains("side") || resId.contains("user_avatar") ||
+            desc.contains("avatar") || desc.contains("tác giả") || desc.contains("plus") || desc.contains("dấu cộng")
+        ) {
+            return
+        }
+
+        // Trên video feed, icon avatar + dấu cộng nằm ở cột bên phải ngoài cùng (x >= 78%)
+        if (rootW > 0 && bounds.left >= (rootBounds.left + rootW * 0.78f) && bounds.width() < (rootW * 0.28f)) {
+            return
+        }
+
+        if (text.isNotBlank()) {
             if (text == "follow" || text == "theo dõi" || text == "follow lại" || text == "theo dõi lại") {
                 out.add(node)
                 return
