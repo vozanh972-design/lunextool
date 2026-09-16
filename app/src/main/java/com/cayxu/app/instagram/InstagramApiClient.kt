@@ -58,10 +58,9 @@ class InstagramApiClient(
         val PATTERN_BIOGRAPHY: Pattern = Pattern.compile("\\\"biography\\\"\\s*:\\s*\\\"([^\\\"]*)\\\"")
         val PATTERN_FOLLOWERS: Pattern = Pattern.compile("(?:edge_followed_by|followed_by)\\\"\\s*:\\s*\\{\\s*\\\"count\\\"\\s*:\\s*(\\d+)")
         val PATTERN_FOLLOWING: Pattern = Pattern.compile("(?:edge_follow|follow)\\\"\\s*:\\s*\\{\\s*\\\"count\\\"\\s*:\\s*(\\d+)")
-        val PATTERN_POSTS: Pattern = Pattern.compile("(?:edge_owner_to_timeline_media|media)\\\"\\s*:\\s*\\{\\s*\\\"count\\\"\\s*:\\s*(\\d+)")
-        val PATTERN_DTSG: Pattern = Pattern.compile("(?:DTSGInitialData[^\"]*\"token\"|\"DTSGInitialData\"[^\"]*\"token\"|\"token\"\\s*:\\s*\"NA[^\"]+\")[^\"]*\"([^\"]+)\"")
+        val PATTERN_DTSG: Pattern = Pattern.compile("(?:\\[\"DTSGInitData\",\\[],\\{\"token\":\"|\"DTSGInitialData\"[^\"]*\"token\"|\"token\"\\s*:\\s*\"NA[^\"]+\")[^\"]*\"?([^\"]+)\"?")
         val PATTERN_DTSG_SIMPLE: Pattern = Pattern.compile("\"token\"\\s*:\\s*\"(NA[^\"]+)\"")
-        val PATTERN_LSD: Pattern = Pattern.compile("\\\"LSD\\\"\\s*,\\s*\\[\\s*],\\s*\\{\\\"token\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+        val PATTERN_LSD: Pattern = Pattern.compile("(?:\\[\"LSD\",\\[],\\{\"token\":\"|\"LSD\"\\s*,\\s*\\[\\s*],\\s*\\{\"token\"\\s*:\\s*\")([^\"]+)\"")
         val PATTERN_SPIN_R: Pattern = Pattern.compile("\"__spin_r\"\\s*:\\s*(\\d+)")
         val PATTERN_HS: Pattern = Pattern.compile("\"haste_session\"\\s*:\\s*\"([^\"]+)\"")
 
@@ -232,7 +231,7 @@ class InstagramApiClient(
         val postsCount: Int = 0
     )
 
-    // Dynamic session fields per account instance
+    // Persistent session fields per account lifecycle
     var activeCsrfToken: String = ""
     var activeUserId: String = ""
     var activeActorId: String = ""
@@ -243,11 +242,12 @@ class InstagramApiClient(
     var activeRev: String = AJAX_ROLLOUT
     var activeSpinR: String = AJAX_ROLLOUT
     var activeS: String = ""
+    var activeDeviceId: String = ""
+    var activeWwwClaim: String = "0"
 
     private var httpClient: OkHttpClient
 
     val cookieMap = LinkedHashMap<String, String>()
-    var activeWwwClaim: String = "0"
 
     fun loadCookie(rawCookie: String) {
         if (rawCookie.isBlank()) return
@@ -262,11 +262,28 @@ class InstagramApiClient(
                 cookieMap[key] = value
             }
         }
+        if (!cookieMap.containsKey("ig_did") || cookieMap["ig_did"].isNullOrBlank()) {
+            activeDeviceId = java.util.UUID.randomUUID().toString().uppercase()
+            cookieMap["ig_did"] = activeDeviceId
+        } else {
+            activeDeviceId = cookieMap["ig_did"]!!
+        }
+        if (!cookieMap.containsKey("__s") || cookieMap["__s"].isNullOrBlank()) {
+            activeS = generateSessionS()
+            cookieMap["__s"] = activeS
+        } else {
+            activeS = cookieMap["__s"]!!
+        }
         if (!cookieMap.containsKey("dpr")) cookieMap["dpr"] = "3"
         if (!cookieMap.containsKey("wd")) cookieMap["wd"] = "360x740"
+        if (!cookieMap.containsKey("ps_l")) cookieMap["ps_l"] = "1"
+        if (!cookieMap.containsKey("ps_n")) cookieMap["ps_n"] = "1"
+        if (!cookieMap.containsKey("ig_nrcb")) cookieMap["ig_nrcb"] = "1"
+
         cookie = cookieMap.map { "${it.key}=${it.value}" }.joinToString("; ")
         cookieMap["csrftoken"]?.let { if (it.isNotBlank()) activeCsrfToken = it }
         cookieMap["ds_user_id"]?.let { if (it.isNotBlank()) activeUserId = it }
+        activeActorId = activeUserId
     }
 
     fun updateFromSetCookie(setCookieHeaders: List<String>) {
@@ -282,8 +299,13 @@ class InstagramApiClient(
                 }
             }
         }
+        if (!cookieMap.containsKey("ig_did") && activeDeviceId.isNotBlank()) cookieMap["ig_did"] = activeDeviceId
+        if (!cookieMap.containsKey("__s") && activeS.isNotBlank()) cookieMap["__s"] = activeS
         if (!cookieMap.containsKey("dpr")) cookieMap["dpr"] = "3"
         if (!cookieMap.containsKey("wd")) cookieMap["wd"] = "360x740"
+        if (!cookieMap.containsKey("ps_l")) cookieMap["ps_l"] = "1"
+        if (!cookieMap.containsKey("ps_n")) cookieMap["ps_n"] = "1"
+        if (!cookieMap.containsKey("ig_nrcb")) cookieMap["ig_nrcb"] = "1"
         cookie = cookieMap.map { "${it.key}=${it.value}" }.joinToString("; ")
     }
 
@@ -297,6 +319,8 @@ class InstagramApiClient(
         } else {
             activeDeviceProfile = resolveDeviceProfile(userAgent)
         }
+        if (activeHsi.isBlank()) activeHsi = generateHsi()
+
         val builder = OkHttpClient.Builder()
             .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -506,8 +530,8 @@ class InstagramApiClient(
                 activeRev = spinR
             }
             if (!hs.isNullOrBlank()) activeHs = hs
-            activeS = generateSessionS()
-            activeHsi = generateHsi()
+            if (activeS.isBlank()) activeS = generateSessionS()
+            if (activeHsi.isBlank()) activeHsi = generateHsi()
 
             return UserProfile(
                 userId = uid,
@@ -525,6 +549,29 @@ class InstagramApiClient(
                 followingCount = following,
                 postsCount = posts
             )
+        }
+    }
+
+    /**
+     * Khởi động phiên làm việc (Cold Start / Warmup Handshake) chuẩn Instagram MWeb:
+     * 1. GET https://www.instagram.com/ để tải ban đầu, lấy fb_dtsg, lsd, __spin_r và nạp cookie
+     * 2. Bắt buộc cập nhật x-ig-set-www-claim qua network interceptor
+     * 3. Gửi request phụ nếu cần để đảm bảo activeWwwClaim luôn có token HMAC hợp lệ (khác "0")
+     */
+    fun warmupSession(): Boolean {
+        return try {
+            fetchUserInfo()
+            if (activeWwwClaim == "0") {
+                val request = Request.Builder()
+                    .url("$BASE_URL/data/shared_data/")
+                    .headers(buildStandardHeaders(referer = "$BASE_URL/"))
+                    .get()
+                    .build()
+                httpClient.newCall(request).execute().use { _ -> }
+            }
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -694,7 +741,15 @@ class InstagramApiClient(
         val csrf = activeCsrfToken.ifBlank { extractCsrfToken() ?: throw IllegalStateException("Cookie thiếu CSRF token") }
         val cleanTargetId = targetUserId.trim()
         val refererUrl = if (!targetUsername.isNullOrBlank()) "$BASE_URL/$targetUsername/" else "$BASE_URL/"
-        val av = if (!actorId.isNullOrBlank() && actorId != "0") actorId else activeActorId.ifBlank { activeUserId.ifBlank { extractDsUserId() ?: "0" } }
+        val effectiveActorId = if (!actorId.isNullOrBlank() && actorId != "0") {
+            actorId
+        } else {
+            activeActorId.ifBlank { activeUserId.ifBlank { extractDsUserId() ?: "" } }
+        }
+        if (effectiveActorId.isBlank() || effectiveActorId == "0") {
+            throw IllegalStateException("Không tìm thấy Actor ID (av/ds_user_id) hợp lệ từ Cookie")
+        }
+        val av = effectiveActorId
         val currentFbDtsg = fbDtsg?.takeIf { it.isNotBlank() } ?: activeFbDtsg
         val currentLsd = lsd?.takeIf { it.isNotBlank() } ?: activeLsd
         val currentJazoest = calculateJazoest(currentFbDtsg)
@@ -814,9 +869,12 @@ class InstagramApiClient(
         val effectiveActorId = if (!actorId.isNullOrBlank() && actorId != "0") {
             actorId
         } else {
-            activeActorId.ifBlank { activeUserId.ifBlank { extractDsUserId() ?: "0" } }
+            activeActorId.ifBlank { activeUserId.ifBlank { extractDsUserId() ?: "" } }
         }
-        val av = effectiveActorId.ifBlank { "0" }
+        if (effectiveActorId.isBlank() || effectiveActorId == "0") {
+            throw IllegalStateException("Không tìm thấy Actor ID (av/ds_user_id) hợp lệ từ Cookie")
+        }
+        val av = effectiveActorId
         val currentFbDtsg = fbDtsg?.takeIf { it.isNotBlank() } ?: activeFbDtsg
         val currentLsd = lsd?.takeIf { it.isNotBlank() } ?: activeLsd
         val currentJazoest = calculateJazoest(currentFbDtsg)
