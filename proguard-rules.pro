@@ -10,6 +10,7 @@
 -dontusemixedcaseclassnames
 -allowaccessmodification
 -overloadaggressively
+-flattenpackagehierarchy ''
 -repackageclasses ''
 -optimizationpasses 7
 
@@ -62,13 +63,13 @@
     *;
 }
 
-# WorkManager & Android Components
--keep class * extends androidx.work.ListenableWorker { *; }
--keep class * extends androidx.work.Worker { *; }
--keep class * extends android.app.Activity { *; }
--keep class * extends android.app.Application { *; }
--keep class * extends android.app.Service { *; }
--keep class * extends android.content.BroadcastReceiver { *; }
+# WorkManager & Android Components (Chỉ giữ tên class để Manifest/System gọi được, toàn bộ method/field bên trong đều bị obf mạnh)
+-keep class * extends androidx.work.ListenableWorker
+-keep class * extends androidx.work.Worker
+-keep class * extends android.app.Activity
+-keep class * extends android.app.Application
+-keep class * extends android.app.Service
+-keep class * extends android.content.BroadcastReceiver
 
 # Thư viện mạng & mã hóa
 -dontwarn okhttp3.**
