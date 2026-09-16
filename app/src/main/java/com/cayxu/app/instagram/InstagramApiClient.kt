@@ -576,8 +576,10 @@ class InstagramApiClient(
         val currentRev = activeRev.ifBlank { activeSpinR.ifBlank { AJAX_ROLLOUT } }
         val currentSpinR = activeSpinR.ifBlank { AJAX_ROLLOUT }
         val currentSpinT = (System.currentTimeMillis() / 1000L).toString()
-        val currentS = activeS.ifBlank { generateSessionS() }
-        val currentHsi = activeHsi.ifBlank { generateHsi() }
+        if (activeS.isBlank()) activeS = generateSessionS()
+        if (activeHsi.isBlank()) activeHsi = generateHsi()
+        val currentS = activeS
+        val currentHsi = activeHsi
 
         val variables = JSONObject().apply {
             put("target_user_id", cleanTargetId)
@@ -732,8 +734,10 @@ class InstagramApiClient(
         val currentRev = activeRev.ifBlank { activeSpinR.ifBlank { AJAX_ROLLOUT } }
         val currentSpinR = activeSpinR.ifBlank { AJAX_ROLLOUT }
         val currentSpinT = (System.currentTimeMillis() / 1000L).toString()
-        val currentS = activeS.ifBlank { generateSessionS() }
-        val currentHsi = activeHsi.ifBlank { generateHsi() }
+        if (activeS.isBlank()) activeS = generateSessionS()
+        if (activeHsi.isBlank()) activeHsi = generateHsi()
+        val currentS = activeS
+        val currentHsi = activeHsi
 
         var lastErrorDetail = ""
         val ref = if (shortcode.isNotBlank()) "$BASE_URL/p/$shortcode/" else "$BASE_URL/"
