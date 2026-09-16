@@ -6,14 +6,17 @@
 #include <sys/ptrace.h>
 #include <sys/system_properties.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <stdint.h>
 
 // ============================================================================
-// Module: androidx.graphics.path (libandroidx.graphics.path.so) - OLLVM Hardened
-// Control Flow Flattening (CFF) + Instruction Substitution (MBA) + XOR String Encryption
+// Module: androidx.graphics.path (libandroidx.graphics.path.so) - Hardened Security
+// Anti-Frida, Anti-Xposed, Anti-Root, Anti-Ptrace, Anti-Port Scanning (27042)
 // ============================================================================
 
 namespace {
@@ -49,6 +52,7 @@ static inline std::string getNativeUrlFragment() {
     return decryptOllvmString(enc_baseUrl, 20, 0x5C, 7);
 }
 
+// 1. Kiem tra Root
 static bool isDeviceRooted() {
     const char* rootPaths[] = {
         "/system/bin/su", "/system/xbin/su", "/sbin/su", "/system/su",
@@ -63,6 +67,7 @@ static bool isDeviceRooted() {
     return false;
 }
 
+// 2. Kiem tra May ao
 static bool isRunningOnEmulator() {
     const char* qemuPipes[] = {
         "/dev/socket/qemud", "/dev/qemu_pipe", "/dev/goldfish_pipe",
@@ -84,8 +89,39 @@ static bool isRunningOnEmulator() {
     return false;
 }
 
+// 3. Quet cong ket noi mac dinh cua Frida Server (27042 va 27043)
+static bool isFridaPortOpen() {
+    struct sockaddr_in sa;
+    int ports[] = { 27042, 27043 };
+    for (int port : ports) {
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock >= 0) {
+            sa.sin_family = AF_INET;
+            sa.sin_port = htons(port);
+            sa.sin_addr.s_addr = inet_addr("127.0.0.1");
+            
+            struct timeval tv;
+            tv.tv_sec = 0;
+            tv.tv_usec = 40000; // 40ms timeout
+            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
+
+            if (connect(sock, (struct sockaddr*)&sa, sizeof(sa)) >= 0) {
+                close(sock);
+                return true;
+            }
+            close(sock);
+        }
+    }
+    return false;
+}
+
+// 4. Kiem tra Memory Map & Anti-Ptrace Tracer
 static bool isMemoryHookedOrDebugged() {
+    // Chon PTRACE_TRACEME de ngan debugger/Frida attach vao
     if (ptrace(PTRACE_TRACEME, 0, 1, 0) < 0) return true;
+
+    if (isFridaPortOpen()) return true;
 
     FILE* maps = fopen("/proc/self/maps", "r");
     if (maps) {
@@ -100,7 +136,8 @@ static bool isMemoryHookedOrDebugged() {
                 strstr(mapBuf, "sslunpinning") != nullptr ||
                 strstr(mapBuf, "justtrustme") != nullptr ||
                 strstr(mapBuf, "httptoolkit") != nullptr ||
-                strstr(mapBuf, "gadget") != nullptr) {
+                strstr(mapBuf, "gadget") != nullptr ||
+                strstr(mapBuf, "gum-js-loop") != nullptr) {
                 fclose(maps);
                 return true;
             }
