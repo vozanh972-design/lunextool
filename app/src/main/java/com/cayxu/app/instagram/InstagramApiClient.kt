@@ -405,6 +405,8 @@ class InstagramApiClient(
         val isMobile = userAgent.contains("Mobile", ignoreCase = true) || userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("Android", ignoreCase = true)
         val isIos = userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("iPad", ignoreCase = true)
         val platform = if (isIos) "\"iOS\"" else if (userAgent.contains("Android", ignoreCase = true)) "\"Android\"" else "\"Windows\""
+        val currentRev = activeRev.ifBlank { activeSpinR.ifBlank { AJAX_ROLLOUT } }
+        val currentS = activeS.ifBlank { generateSessionS().also { activeS = it } }
 
         val builder = Headers.Builder()
             .add("User-Agent", userAgent)
@@ -417,6 +419,9 @@ class InstagramApiClient(
             .add("X-IG-App-ID", appId)
             .add("X-ASBD-ID", ASBD_ID)
             .add("X-IG-WWW-Claim", activeWwwClaim)
+            .add("X-IG-Max-Touch-Points", "1")
+            .add("X-Web-Session-Id", currentS)
+            .add("X-Instagram-AJAX", currentRev)
             .add("X-Requested-With", "XMLHttpRequest")
             .add("Sec-Fetch-Dest", "empty")
             .add("Sec-Fetch-Mode", "cors")
