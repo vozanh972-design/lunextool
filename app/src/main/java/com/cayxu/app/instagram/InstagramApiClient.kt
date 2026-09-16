@@ -1065,6 +1065,44 @@ class InstagramApiClient(
     /**
      * Like bài viết dựa trên ID hoặc URL bài viết hoàn toàn bằng GraphQL
      */
+    /**
+     * Đồng bộ token và cookie khi chuyển sang trang bài viết (PolarisPostRouteNext)
+     */
+    fun warmupPostPage(shortcode: String): Boolean {
+        if (shortcode.isBlank()) return false
+        return try {
+            val url = "$BASE_URL/p/$shortcode/"
+            val request = Request.Builder()
+                .url(url)
+                .headers(buildDocumentHeaders(referer = "$BASE_URL/"))
+                .get()
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                val dtsg = PATTERN_DTSG.matcher(body).let { if (it.find()) it.group(1) else null }
+                    ?: PATTERN_DTSG_SIMPLE.matcher(body).let { if (it.find()) it.group(1) else null }
+                val lsd = PATTERN_LSD.matcher(body).let { if (it.find()) it.group(1) else null }
+                val spinR = PATTERN_SPIN_R.matcher(body).let { if (it.find()) it.group(1) else null }
+                val hs = PATTERN_HS.matcher(body).let { if (it.find()) it.group(1) else null }
+
+                if (!dtsg.isNullOrBlank()) activeFbDtsg = dtsg
+                if (!lsd.isNullOrBlank()) activeLsd = lsd
+                if (!spinR.isNullOrBlank()) {
+                    activeSpinR = spinR
+                    activeRev = spinR
+                }
+                if (!hs.isNullOrBlank()) activeHs = hs
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Like bài viết dựa trên ID hoặc URL bài viết hoàn toàn bằng GraphQL
+     */
     @Throws(Exception::class)
     fun likeTarget(targetMediaIdOrUrl: String, fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
         val clean = targetMediaIdOrUrl.trim()
@@ -1083,6 +1121,10 @@ class InstagramApiClient(
             if (decodedId.isNotBlank()) {
                 mediaId = decodedId
             }
+        }
+
+        if (shortcode.isNotBlank()) {
+            warmupPostPage(shortcode)
         }
 
         val finalMediaId = if (mediaId.isNotBlank()) mediaId else clean
