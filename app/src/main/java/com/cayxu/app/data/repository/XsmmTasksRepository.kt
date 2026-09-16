@@ -67,7 +67,13 @@ object XsmmTasksRepository {
     /**
      * POST /api/taskapi/tasks2/complete - báo hoàn thành nhiệm vụ và nhận xu.
      */
-    suspend fun completeTasks2(rawToken: String, type: String, taskIds: List<String>, uid: String): XsmmCompleteTask2Result {
+    suspend fun completeTasks2(
+        rawToken: String,
+        type: String,
+        taskIds: List<String>,
+        uid: String,
+        cookieCheck: String? = null
+    ): XsmmCompleteTask2Result {
         if (taskIds.isEmpty()) return XsmmCompleteTask2Result(false, "Không có nhiệm vụ nào", 0, null, 0, 0, false)
         
         val body = JsonObject().apply {
@@ -79,6 +85,9 @@ object XsmmTasksRepository {
                 addProperty("id", taskIds.first())
             }
             addProperty("uid", uid)
+            if (!cookieCheck.isNullOrBlank()) {
+                addProperty("cookie_check", cookieCheck)
+            }
         }
 
         var lastException: Exception? = null

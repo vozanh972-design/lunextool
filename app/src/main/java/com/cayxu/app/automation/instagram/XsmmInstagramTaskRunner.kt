@@ -309,7 +309,8 @@ object XsmmInstagramTaskRunner {
                                             rawToken = token,
                                             type = "instagram_follow",
                                             taskIds = batchToClaim,
-                                            uid = xsmmUid
+                                            uid = xsmmUid,
+                                            cookieCheck = account.cookie
                                         )
 
                                         if (compRes.success || compRes.points > 0) {
@@ -383,7 +384,8 @@ object XsmmInstagramTaskRunner {
                                             rawToken = token,
                                             type = task.type.ifBlank { taskType },
                                             taskIds = listOf(task.id),
-                                            uid = xsmmUid
+                                            uid = xsmmUid,
+                                            cookieCheck = account.cookie
                                         )
 
                                         if (compRes.success || compRes.points > 0) {
