@@ -37,7 +37,8 @@ class InstagramApiClient(
         const val API_BASE_URL = "https://i.instagram.com"
 
         // Web App ID chuẩn của Instagram Web
-        const val APP_ID = "936619743392459"
+        const val APP_ID = "1217981644879628" // Mobile Web App ID (Chuẩn Chrome Android)
+        const val APP_ID_DESKTOP = "936619743392459"
         const val ASBD_ID = "359341"
         const val AJAX_ROLLOUT = "1047437269"
         const val HS = "20710.HYP:instagram_web_pkg.2.1...0"
@@ -261,6 +262,8 @@ class InstagramApiClient(
                 cookieMap[key] = value
             }
         }
+        if (!cookieMap.containsKey("dpr")) cookieMap["dpr"] = "3"
+        if (!cookieMap.containsKey("wd")) cookieMap["wd"] = "360x740"
         cookie = cookieMap.map { "${it.key}=${it.value}" }.joinToString("; ")
         cookieMap["csrftoken"]?.let { if (it.isNotBlank()) activeCsrfToken = it }
         cookieMap["ds_user_id"]?.let { if (it.isNotBlank()) activeUserId = it }
@@ -279,6 +282,8 @@ class InstagramApiClient(
                 }
             }
         }
+        if (!cookieMap.containsKey("dpr")) cookieMap["dpr"] = "3"
+        if (!cookieMap.containsKey("wd")) cookieMap["wd"] = "360x740"
         cookie = cookieMap.map { "${it.key}=${it.value}" }.joinToString("; ")
     }
 
@@ -293,6 +298,7 @@ class InstagramApiClient(
             activeDeviceProfile = resolveDeviceProfile(userAgent)
         }
         val builder = OkHttpClient.Builder()
+            .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
@@ -395,7 +401,7 @@ class InstagramApiClient(
     private fun buildStandardHeaders(
         csrfToken: String? = null,
         referer: String? = null,
-        appId: String = APP_ID,
+        appId: String? = null,
         friendlyName: String? = null,
         lsdToken: String? = null
     ): Headers {
@@ -407,6 +413,7 @@ class InstagramApiClient(
         val platform = if (isIos) "\"iOS\"" else if (userAgent.contains("Android", ignoreCase = true)) "\"Android\"" else "\"Windows\""
         val currentRev = activeRev.ifBlank { activeSpinR.ifBlank { AJAX_ROLLOUT } }
         val currentS = activeS.ifBlank { generateSessionS().also { activeS = it } }
+        val resolvedAppId = appId ?: if (isMobile) APP_ID else APP_ID_DESKTOP
 
         val builder = Headers.Builder()
             .add("User-Agent", userAgent)
@@ -416,7 +423,7 @@ class InstagramApiClient(
             .add("Origin", BASE_URL)
             .add("Referer", ref)
             .add("X-CSRFToken", csrf)
-            .add("X-IG-App-ID", appId)
+            .add("X-IG-App-ID", resolvedAppId)
             .add("X-ASBD-ID", ASBD_ID)
             .add("X-IG-WWW-Claim", activeWwwClaim)
             .add("X-IG-Max-Touch-Points", "1")
