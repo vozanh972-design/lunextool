@@ -258,21 +258,36 @@ class InstagramApiClient(
     ): Headers {
         val csrf = csrfToken ?: activeCsrfToken.ifBlank { extractCsrfToken() ?: "" }
         val ref = referer ?: "$BASE_URL/"
+        val isMobile = userAgent.contains("Mobile", ignoreCase = true) || userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("Android", ignoreCase = true)
+        val isIos = userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("iPad", ignoreCase = true)
+        val platform = if (isIos) "\"iOS\"" else if (userAgent.contains("Android", ignoreCase = true)) "\"Android\"" else "\"Windows\""
+
         val builder = Headers.Builder()
             .add("User-Agent", userAgent)
             .add("Cookie", cookie)
             .add("Accept", "*/*")
-            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5")
             .add("Origin", BASE_URL)
             .add("Referer", ref)
             .add("X-CSRFToken", csrf)
             .add("X-IG-App-ID", appId)
             .add("X-ASBD-ID", ASBD_ID)
             .add("X-IG-WWW-Claim", "0")
+            .add("X-IG-D", "www")
+            .add("X-IG-Max-Touch-Points", "0")
             .add("X-Requested-With", "XMLHttpRequest")
             .add("Sec-Fetch-Dest", "empty")
             .add("Sec-Fetch-Mode", "cors")
             .add("Sec-Fetch-Site", "same-origin")
+            .add("Priority", "u=1, i")
+            .add("sec-ch-prefers-color-scheme", "dark")
+            .add("sec-ch-ua-mobile", if (isMobile) "?1" else "?0")
+            .add("sec-ch-ua-platform", platform)
+
+        if (isIos) {
+            builder.add("sec-ch-ua-model", "\"iPhone\"")
+            builder.add("sec-ch-ua-platform-version", "\"18.5\"")
+        }
 
         if (!friendlyName.isNullOrBlank()) {
             builder.add("X-FB-Friendly-Name", friendlyName)
@@ -511,10 +526,10 @@ class InstagramApiClient(
     }
 
     /**
-     * Follow tài khoản Instagram chuẩn xác 100% bằng GraphQL usePolarisFollowUserMutation (Doc ID: 26508036048874888)
+     * Follow tài khoản Instagram chuẩn xác 100% bằng GraphQL usePolarisFollowMutation (Doc ID: 26508036048874888)
      */
     @Throws(Exception::class)
-    fun followUser(targetUserId: String, fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
+    fun followUser(targetUserId: String, targetUsername: String? = null, fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
         val csrf = activeCsrfToken.ifBlank { extractCsrfToken() ?: throw IllegalStateException("Cookie thiếu CSRF token") }
         val cleanTargetId = targetUserId.trim()
         val av = if (!actorId.isNullOrBlank()) actorId else activeActorId.ifBlank { activeUserId.ifBlank { extractDsUserId() ?: "0" } }
@@ -531,7 +546,7 @@ class InstagramApiClient(
         val variables = JSONObject().apply {
             put("target_user_id", cleanTargetId)
             put("container_module", "profile")
-            put("nav_chain", "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start")
+            put("nav_chain", "PolarisFeedRoot:feedPage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:2:unexpected")
         }.toString()
 
         val gqlFormBuilder = FormBody.Builder()
@@ -546,6 +561,12 @@ class InstagramApiClient(
             .add("__rev", currentRev)
             .add("__s", currentS)
             .add("__hsi", currentHsi)
+            .add("__dyn", "0900j5w5ux60Vo1up84a0d21dwIxm16wUwtU6C02Vu05-U01tS04-o05-U02zU06QU2Cw8G01Z015o005Xw54w1s82Yw1zU2vw59w39o06do01wO05eE08Xw8y01s-02400-E03io007S00-w")
+            .add("__csr", "")
+            .add("__hsdp", "")
+            .add("__hblp", "")
+            .add("__sjsp", "")
+            .add("__comet_req", "7")
 
         if (currentFbDtsg.isNotBlank()) {
             gqlFormBuilder.add("fb_dtsg", currentFbDtsg)
@@ -559,19 +580,21 @@ class InstagramApiClient(
             .add("__spin_r", currentSpinR)
             .add("__spin_b", "trunk")
             .add("__spin_t", currentSpinT)
-            .add("__crn", "comet.igweb.PolarisExploreRoute")
+            .add("__crn", "comet.igweb.PolarisProfilePostsTabRoute")
             .add("fb_api_caller_class", "RelayModern")
-            .add("fb_api_req_friendly_name", "usePolarisFollowUserMutation")
+            .add("fb_api_req_friendly_name", "usePolarisFollowMutation")
             .add("server_timestamps", "true")
             .add("variables", variables)
             .add("doc_id", DOC_ID_FOLLOW_MUTATION)
             .build()
 
+        val refererUrl = if (!targetUsername.isNullOrBlank()) "$BASE_URL/$targetUsername/" else "$BASE_URL/"
+
         val gqlHeaders = buildStandardHeaders(
             csrfToken = csrf,
-            friendlyName = "usePolarisFollowUserMutation",
+            friendlyName = "usePolarisFollowMutation",
             lsdToken = currentLsd,
-            referer = "$BASE_URL/"
+            referer = refererUrl
         )
 
         val gqlRequest = Request.Builder()
@@ -640,12 +663,14 @@ class InstagramApiClient(
         if (clean.isBlank()) {
             throw IllegalStateException("Link hoặc ID đối tượng rỗng")
         }
-        val targetId = if (clean.all { it.isDigit() }) {
+        val isNumeric = clean.all { it.isDigit() }
+        val targetId = if (isNumeric) {
             clean
         } else {
             getUserIdFromUsername(targetIdOrUsername) ?: clean
         }
-        return followUser(targetId, fbDtsg, lsd, actorId)
+        val targetUsername = if (!isNumeric) clean else null
+        return followUser(targetId, targetUsername = targetUsername, fbDtsg = fbDtsg, lsd = lsd, actorId = actorId)
     }
 
     /**
@@ -702,6 +727,12 @@ class InstagramApiClient(
                 .add("__rev", currentRev)
                 .add("__s", currentS)
                 .add("__hsi", currentHsi)
+                .add("__dyn", "0900j5w5ux60Vo1up84a0d21dwIxm16wUwtU6C02Vu05-U01tS04-o05-U02zU06QU2Cw8G01Z015o005Xw54w1s82Yw1zU2vw59w39o06do01wO05eE08Xw8y01s-02400-E03io007S00-w")
+                .add("__csr", "")
+                .add("__hsdp", "")
+                .add("__hblp", "")
+                .add("__sjsp", "")
+                .add("__comet_req", "7")
 
             if (currentFbDtsg.isNotBlank()) {
                 formBuilder1.add("fb_dtsg", currentFbDtsg)
@@ -723,27 +754,12 @@ class InstagramApiClient(
                 .add("doc_id", DOC_ID_LIKE_MUTATION_POLARIS)
                 .build()
 
-            val headers1 = Headers.Builder()
-                .add("User-Agent", userAgent)
-                .add("Cookie", cookie)
-                .add("Accept", "*/*")
-                .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
-                .add("Origin", BASE_URL)
-                .add("Referer", ref)
-                .add("X-CSRFToken", csrf)
-                .add("X-IG-App-ID", APP_ID)
-                .add("X-ASBD-ID", ASBD_ID)
-                .add("X-IG-WWW-Claim", "0")
-                .add("X-Requested-With", "XMLHttpRequest")
-                .add("X-Instagram-AJAX", currentRev)
-                .add("X-FB-Friendly-Name", "PolarisAPILikePostMutation")
-                .apply {
-                    if (currentLsd.isNotBlank()) add("X-FB-LSD", currentLsd)
-                }
-                .add("Sec-Fetch-Dest", "empty")
-                .add("Sec-Fetch-Mode", "cors")
-                .add("Sec-Fetch-Site", "same-origin")
-                .build()
+            val headers1 = buildStandardHeaders(
+                csrfToken = csrf,
+                friendlyName = "PolarisAPILikePostMutation",
+                lsdToken = currentLsd,
+                referer = ref
+            )
 
             val request1 = Request.Builder()
                 .url("$BASE_URL/api/graphql")
@@ -810,6 +826,12 @@ class InstagramApiClient(
             .add("__rev", currentRev)
             .add("__s", currentS)
             .add("__hsi", currentHsi)
+            .add("__dyn", "0900j5w5ux60Vo1up84a0d21dwIxm16wUwtU6C02Vu05-U01tS04-o05-U02zU06QU2Cw8G01Z015o005Xw54w1s82Yw1zU2vw59w39o06do01wO05eE08Xw8y01s-02400-E03io007S00-w")
+            .add("__csr", "")
+            .add("__hsdp", "")
+            .add("__hblp", "")
+            .add("__sjsp", "")
+            .add("__comet_req", "7")
 
         if (currentFbDtsg.isNotBlank()) {
             formBuilder2.add("fb_dtsg", currentFbDtsg)
@@ -831,27 +853,12 @@ class InstagramApiClient(
             .add("doc_id", DOC_ID_LIKE_MUTATION)
             .build()
 
-        val headers2 = Headers.Builder()
-            .add("User-Agent", userAgent)
-            .add("Cookie", cookie)
-            .add("Accept", "*/*")
-            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
-            .add("Origin", BASE_URL)
-            .add("Referer", ref)
-            .add("X-CSRFToken", csrf)
-            .add("X-IG-App-ID", APP_ID)
-            .add("X-ASBD-ID", ASBD_ID)
-            .add("X-IG-WWW-Claim", "0")
-            .add("X-Requested-With", "XMLHttpRequest")
-            .add("X-Instagram-AJAX", currentRev)
-            .add("X-FB-Friendly-Name", "usePolarisLikeMediaLikeMutation")
-            .apply {
-                if (currentLsd.isNotBlank()) add("X-FB-LSD", currentLsd)
-            }
-            .add("Sec-Fetch-Dest", "empty")
-            .add("Sec-Fetch-Mode", "cors")
-            .add("Sec-Fetch-Site", "same-origin")
-            .build()
+        val headers2 = buildStandardHeaders(
+            csrfToken = csrf,
+            friendlyName = "usePolarisLikeMediaLikeMutation",
+            lsdToken = currentLsd,
+            referer = ref
+        )
 
         val request2 = Request.Builder()
             .url("$BASE_URL/api/graphql")
