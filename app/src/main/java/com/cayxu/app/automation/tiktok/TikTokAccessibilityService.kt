@@ -737,19 +737,19 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Nhận diện màn hình Hồ sơ của NGƯỜI KHÁC (có nút "Nhắn tin", nút "Follow" đỏ / "Đang theo dõi" kèm nút Back ở góc trên bên trái)
-     * Khi rơi vào màn hình này (do lỡ bấm avatar hoặc video chuyển hướng), BẮT BUỘC bấm Quay lại (Back)
-     * TUYỆT ĐỐI không bấm lung tung hay quét nhầm tài khoản của người khác.
+     * Nhận diện mọi màn hình phụ (Trang âm thanh/nhạc, trang cá nhân người khác, trang hashtag, trang tìm kiếm...)
+     * Đặc điểm chung: Có nút Quay lại (<-) ở góc trên bên trái, KHÔNG PHẢI là trang Hồ sơ chính chủ, KHÔNG PHẢI Cài đặt, KHÔNG PHẢI Sheet tài khoản.
+     * Xử lý: BẮT BUỘC bấm Quay lại (Back) để trở về Trang chủ/Hồ sơ, TUYỆT ĐỐI không bấm lung tung vào các nút trên trang này.
      */
-    private fun isOtherUserProfileScreen(root: AccessibilityNodeInfo): Boolean {
+    private fun isSubPageOrOtherScreen(root: AccessibilityNodeInfo): Boolean {
         if (isUserSelfProfileScreen(root)) return false
-
-        val hasMessageBtn = findNodeByText(root, setOf("nhắn tin", "tin nhắn", "message", "direct message"), exact = false) != null
-        val hasFollowStats = findNodeByText(root, setOf("follower", "followers", "người theo dõi", "đã follow", "thích"), exact = false) != null
-        val hasFollowButton = findFollowButtonNode(root) != null
-        val hasBackBtn = findTopLeftBackButton(root) != null
-
-        return (hasMessageBtn || (hasFollowStats && hasFollowButton)) && hasBackBtn
+        val backBtn = findTopLeftBackButton(root)
+        if (backBtn != null) {
+            val isSettings = findNodeByText(root, setOf("quản lý bài đăng", "tùy chọn nội dung", "thời gian và sức khỏe", "gia đình thông minh", "bộ nhớ đệm", "trung tâm trợ giúp", "điều khoản và chính sách", "đăng xuất", "tài khoản"), exact = false) != null
+            val isSheet = findNodeByText(root, ADD_ACCOUNT_LABELS, exact = false) != null
+            return !isSettings && !isSheet
+        }
+        return false
     }
 
     private fun findTopLeftBackButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -786,25 +786,10 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Chạm trực tiếp vào toạ độ góc dưới bên phải màn hình (vị trí chuẩn của Tab Hồ sơ trên TikTok: x ~ 90%, y ~ 96%)
-     */
-    private fun tapBottomRightProfileTab(root: AccessibilityNodeInfo) {
-        val rootBounds = Rect()
-        root.getBoundsInScreen(rootBounds)
-        val w = rootBounds.width()
-        val h = rootBounds.height()
-        if (w > 0 && h > 0) {
-            val targetX = rootBounds.left + w * 0.90f
-            val targetY = rootBounds.top + h * 0.96f
-            tapAt(targetX, targetY)
-        }
-    }
-
-    /**
      * Bấm chính xác vào tab "Hồ sơ" ở thanh điều hướng dưới đáy màn hình TikTok
-     * - Chỉ tìm node trong vùng thanh đáy (y >= 88%, kích thước nhỏ dạng tab).
-     * - Chạm chính xác toạ độ tâm của Tab Hồ sơ ở thanh đáy: x = 90%, y = 95%.
-     * - Tuyệt đối không click vào bất kỳ node nào trên video hoặc container cha của video.
+     * - Nếu đang ở màn hình phụ (trang nhạc, người khác...): Bấm Quay lại (Back).
+     * - Chỉ tìm node trong dải đáy màn hình (y >= 93%, tránh hoàn toàn đĩa nhạc ở y ~ 88-91%).
+     * - Chạm chính xác toạ độ tâm của Tab Hồ sơ ở thanh đáy: x = 90%, y = 97%.
      */
     private fun clickProfileTab(root: AccessibilityNodeInfo): Boolean {
         val rootBounds = Rect()
@@ -813,8 +798,8 @@ class TikTokAccessibilityService : AccessibilityService() {
         val h = rootBounds.height().toFloat()
         if (w <= 0 || h <= 0) return false
 
-        // Nếu đang ở màn hình người khác, bấm Quay lại
-        if (isOtherUserProfileScreen(root)) {
+        // Nếu đang ở màn hình phụ (trang nhạc, trang người khác...), bấm Quay lại
+        if (isSubPageOrOtherScreen(root)) {
             val backBtn = findTopLeftBackButton(root)
             if (backBtn != null) {
                 clickNode(backBtn)
@@ -824,35 +809,30 @@ class TikTokAccessibilityService : AccessibilityService() {
             return true
         }
 
-        val profileNode = findProfileTabNode(root, root)
+        val profileNode = findProfileTabNode(root)
         if (profileNode != null) {
             val bounds = Rect()
             profileNode.getBoundsInScreen(bounds)
-            if (bounds.centerY() >= rootBounds.top + h * 0.88f && bounds.height() <= h * 0.15f) {
+            if (bounds.centerY() >= rootBounds.top + h * 0.93f) {
                 profileNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 tapAt(bounds.exactCenterX(), bounds.exactCenterY())
                 return true
             }
         }
 
-        // Tọa độ chuẩn 100% của Tab Hồ sơ (Góc dưới cùng bên phải: x ~ 90%, y ~ 95%):
+        // Tọa độ chuẩn 100% của Tab Hồ sơ (Góc dưới cùng bên phải: x ~ 90%, y ~ 97%):
         val targetX = rootBounds.left + w * 0.90f
-        val targetY = rootBounds.top + h * 0.95f
+        val targetY = rootBounds.top + h * 0.97f
         tapAt(targetX, targetY)
         return true
     }
 
     /**
      * QUÉT CÂY GIAO DIỆN TÌM CHÍNH XÁC TAB HỒ SƠ Ở THANH ĐÁY:
-     * - BẮT BUỘC: Node phải nằm trong 12% dưới cùng màn hình (top >= 88% chiều cao).
-     * - Kích thước phải nhỏ dạng tab (height <= 14% screen, width <= 35% screen).
-     * - LOẠI TRỪ 100%: Mọi node avatar, follow, author, plus, side rail, video container.
+     * - BẮT BUỘC: Node phải nằm ở 7% dưới cùng màn hình (centerY >= 93% chiều cao).
+     * - LOẠI TRỪ 100%: Mọi node avatar, follow, author, plus, side rail, đĩa nhạc.
      */
-    private fun findProfileTabNode(
-        node: AccessibilityNodeInfo,
-        root: AccessibilityNodeInfo = node,
-        depth: Int = 0
-    ): AccessibilityNodeInfo? {
+    private fun findProfileTabNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         val rootBounds = Rect()
         root.getBoundsInScreen(rootBounds)
         val rootH = rootBounds.height()
@@ -903,21 +883,21 @@ class TikTokAccessibilityService : AccessibilityService() {
         val desc = (node.contentDescription?.toString() ?: "").lowercase()
         val text = (node.text?.toString() ?: "").trim().lowercase()
 
-        // Tuyệt đối loại trừ nút follow, avatar tác giả, nút dấu cộng đỏ, side rail
+        // Tuyệt đối loại trừ nút follow, avatar tác giả, nút dấu cộng đỏ, đĩa nhạc, side rail
         if (resId.contains("follow") || resId.contains("avatar") || resId.contains("author") ||
             resId.contains("plus") || resId.contains("feed") || resId.contains("side") ||
-            resId.contains("music") || resId.contains("disc") || resId.contains("sound") ||
+            resId.contains("music") || resId.contains("disc") || resId.contains("sound") || resId.contains("audio") ||
             desc.contains("follow") || desc.contains("theo dõi") || text.contains("follow") ||
-            desc.contains("avatar") || desc.contains("plus") || desc.contains("dấu cộng") || desc.contains("tác giả")
+            desc.contains("avatar") || desc.contains("plus") || desc.contains("dấu cộng") || desc.contains("tác giả") ||
+            desc.contains("âm thanh") || desc.contains("sound") || desc.contains("nhạc")
         ) {
             return
         }
 
-        // CHỈ xét những node nằm ở vùng thanh đáy (y >= 88% chiều cao màn hình) và có kích thước của 1 tab
+        // CHỈ xét những node nằm ở dải thanh đáy (y >= 93% chiều cao màn hình) và có kích thước của 1 tab
         val isBottomTabRegion = rootH > 0 &&
-            bounds.top >= (rootBounds.top + rootH * 0.88f) &&
-            bounds.bottom <= (rootBounds.bottom + 80) &&
-            bounds.height() <= (rootH * 0.14f) &&
+            bounds.centerY() >= (rootBounds.top + rootH * 0.93f) &&
+            bounds.height() <= (rootH * 0.12f) &&
             bounds.width() <= (rootW * 0.35f)
 
         if (isBottomTabRegion) {
