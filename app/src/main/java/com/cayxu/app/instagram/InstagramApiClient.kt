@@ -22,9 +22,16 @@ import java.util.regex.Pattern
  */
 class InstagramApiClient(
     var cookie: String = "",
-    var userAgent: String = "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36",
+    var userAgent: String = "",
     proxyConfig: ProxyConfig? = null
 ) {
+    data class DeviceProfile(
+        val userAgent: String,
+        val model: String,
+        val platformVersion: String,
+        val chromeMajor: String
+    )
+
     companion object {
         const val BASE_URL = "https://www.instagram.com"
         const val API_BASE_URL = "https://i.instagram.com"
@@ -77,17 +84,77 @@ class InstagramApiClient(
             return "768$randomPart"
         }
 
-        fun generateAndroidChromeUA(seed: String = ""): String {
-            val devices = listOf(
-                "SM-S928B" to "14; SM-S928B",
-                "SM-S918B" to "14; SM-S918B",
-                "SM-A546B" to "14; SM-A546B",
-                "Pixel 8 Pro" to "14; Pixel 8 Pro",
-                "Pixel 9 Pro" to "15; Pixel 9 Pro"
+        fun resolveDeviceProfile(seed: String = ""): DeviceProfile {
+            val profiles = listOf(
+                DeviceProfile(
+                    model = "SM-S928B",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "130",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "SM-S918B",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "131",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "SM-A546B",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "130",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "Pixel 8 Pro",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "130",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "Pixel 9 Pro",
+                    platformVersion = "15.0.0",
+                    chromeMajor = "131",
+                    userAgent = "Mozilla/5.0 (Linux; Android 15; Pixel 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "23116PN5BC",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "130",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; 23116PN5BC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "CPH2581",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "131",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; CPH2581) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "PHY110",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "130",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; PHY110) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "V2324A",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "129",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; V2324A) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.100 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "SM-F946B",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "131",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; SM-F946B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Mobile Safari/537.36"
+                ),
+                DeviceProfile(
+                    model = "XQ-EC54",
+                    platformVersion = "14.0.0",
+                    chromeMajor = "130",
+                    userAgent = "Mozilla/5.0 (Linux; Android 14; XQ-EC54) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
+                )
             )
-            val index = if (seed.isNotBlank()) Math.abs(seed.hashCode()) % devices.size else (0 until devices.size).random()
-            val (_, devStr) = devices[index]
-            return "Mozilla/5.0 (Linux; Android $devStr) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
+            val index = if (seed.isNotBlank()) Math.abs(seed.hashCode()) % profiles.size else (0 until profiles.size).random()
+            return profiles[index]
         }
 
         fun unescapeUnicode(input: String): String {
@@ -215,10 +282,15 @@ class InstagramApiClient(
         cookie = cookieMap.map { "${it.key}=${it.value}" }.joinToString("; ")
     }
 
+    var activeDeviceProfile: DeviceProfile = resolveDeviceProfile(cookie)
+
     init {
         loadCookie(cookie)
         if (userAgent.isBlank()) {
-            userAgent = generateAndroidChromeUA(cookie)
+            activeDeviceProfile = resolveDeviceProfile(cookie)
+            userAgent = activeDeviceProfile.userAgent
+        } else {
+            activeDeviceProfile = resolveDeviceProfile(userAgent)
         }
         val builder = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -305,10 +377,13 @@ class InstagramApiClient(
             .add("Priority", "u=0, i")
 
         if (isChrome) {
-            builder.add("sec-ch-ua", "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"")
+            builder.add("sec-ch-ua", "\"Chromium\";v=\"${activeDeviceProfile.chromeMajor}\", \"Google Chrome\";v=\"${activeDeviceProfile.chromeMajor}\", \"Not?A_Brand\";v=\"99\"")
             builder.add("sec-ch-ua-mobile", if (isMobile) "?1" else "?0")
             builder.add("sec-ch-ua-platform", platform)
+            builder.add("sec-ch-ua-platform-version", "\"${activeDeviceProfile.platformVersion}\"")
+            builder.add("sec-ch-ua-model", "\"${activeDeviceProfile.model}\"")
             builder.add("sec-ch-prefers-color-scheme", "dark")
+            builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"${activeDeviceProfile.chromeMajor}.0.6723.107\", \"Google Chrome\";v=\"${activeDeviceProfile.chromeMajor}.0.6723.107\", \"Not?A_Brand\";v=\"99.0.0.0\"")
         }
 
         if (!referer.isNullOrBlank()) {
@@ -349,10 +424,13 @@ class InstagramApiClient(
             .add("Priority", "u=1, i")
 
         if (isChrome) {
-            builder.add("sec-ch-ua", "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"")
+            builder.add("sec-ch-ua", "\"Chromium\";v=\"${activeDeviceProfile.chromeMajor}\", \"Google Chrome\";v=\"${activeDeviceProfile.chromeMajor}\", \"Not?A_Brand\";v=\"99\"")
             builder.add("sec-ch-ua-mobile", if (isMobile) "?1" else "?0")
             builder.add("sec-ch-ua-platform", platform)
+            builder.add("sec-ch-ua-platform-version", "\"${activeDeviceProfile.platformVersion}\"")
+            builder.add("sec-ch-ua-model", "\"${activeDeviceProfile.model}\"")
             builder.add("sec-ch-prefers-color-scheme", "dark")
+            builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"${activeDeviceProfile.chromeMajor}.0.6723.107\", \"Google Chrome\";v=\"${activeDeviceProfile.chromeMajor}.0.6723.107\", \"Not?A_Brand\";v=\"99.0.0.0\"")
         }
 
         if (!friendlyName.isNullOrBlank()) {
