@@ -106,10 +106,9 @@ object XsmmInstagramTaskRunner {
             XsmmAccountsRepository.setActiveAccount(token, xsmmAcc.id)
         }
 
-        val defaultUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
-        val ua = if (account.userAgent.isNotBlank()) account.userAgent else defaultUA
         val proxyConfig = InstagramApiClient.parseProxy(account.proxy)
-        val apiClient = InstagramApiClient(cookie = account.cookie, userAgent = ua, proxyConfig = proxyConfig)
+        val apiClient = InstagramApiClient(cookie = account.cookie, userAgent = account.userAgent, proxyConfig = proxyConfig)
+        val resolvedUA = apiClient.userAgent
 
         // Luôn luôn fetch fresh fb_dtsg + lsd + actorId trước khi chạy (bắt buộc với đa luồng)
         var activeDtsg = ""
@@ -128,8 +127,14 @@ object XsmmInstagramTaskRunner {
             if (!profile.actorId.isNullOrBlank()) {
                 activeActorId = profile.actorId
             }
-            // Cập nhật lại vào Store với token mới nhất
-            val updatedAccount = account.copy(fbDtsg = activeDtsg, lsd = activeLsd, userId = activeActorId, isLive = true)
+            // Cập nhật lại vào Store với token mới nhất và UA được gán theo cookie
+            val updatedAccount = account.copy(
+                userAgent = resolvedUA,
+                fbDtsg = activeDtsg,
+                lsd = activeLsd,
+                userId = activeActorId,
+                isLive = true
+            )
             InstagramAccountsStore.updateAccount(context, updatedAccount)
             notify("Cookie hợp lệ - Sẵn sàng chạy nhiệm vụ")
         } catch (e: Exception) {
@@ -137,7 +142,7 @@ object XsmmInstagramTaskRunner {
             val errMsg = e.message ?: "Cookie không hợp lệ hoặc đã hết hạn"
             notify("Lỗi xác thực: $errMsg")
             reportError(cleanUsername, errMsg)
-            val deadAccount = account.copy(isLive = false)
+            val deadAccount = account.copy(userAgent = resolvedUA, isLive = false)
             InstagramAccountsStore.updateAccount(context, deadAccount)
             return RunResult(0, 1, 0, "Dừng: $errMsg")
         }

@@ -22,7 +22,7 @@ import java.util.regex.Pattern
  */
 class InstagramApiClient(
     var cookie: String = "",
-    var userAgent: String = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1",
+    var userAgent: String = "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36",
     proxyConfig: ProxyConfig? = null
 ) {
     companion object {
@@ -77,17 +77,17 @@ class InstagramApiClient(
             return "768$randomPart"
         }
 
-        fun generateMobileSafariUA(seed: String = ""): String {
-            val iosVersions = listOf(
-                "18_5" to "15E148",
-                "18_4_1" to "15E148",
-                "18_3_2" to "15E148",
-                "17_7_2" to "15E148",
-                "18_2_1" to "15E148"
+        fun generateAndroidChromeUA(seed: String = ""): String {
+            val devices = listOf(
+                "SM-S928B" to "14; SM-S928B",
+                "SM-S918B" to "14; SM-S918B",
+                "SM-A546B" to "14; SM-A546B",
+                "Pixel 8 Pro" to "14; Pixel 8 Pro",
+                "Pixel 9 Pro" to "15; Pixel 9 Pro"
             )
-            val index = if (seed.isNotBlank()) Math.abs(seed.hashCode()) % iosVersions.size else (0 until iosVersions.size).random()
-            val (version, build) = iosVersions[index]
-            return "Mozilla/5.0 (iPhone; CPU iPhone OS $version like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/${version.replace("_", ".")} Mobile/$build Safari/604.1"
+            val index = if (seed.isNotBlank()) Math.abs(seed.hashCode()) % devices.size else (0 until devices.size).random()
+            val (_, devStr) = devices[index]
+            return "Mozilla/5.0 (Linux; Android $devStr) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.107 Mobile Safari/537.36"
         }
 
         fun unescapeUnicode(input: String): String {
@@ -178,9 +178,47 @@ class InstagramApiClient(
 
     private var httpClient: OkHttpClient
 
+    val cookieMap = LinkedHashMap<String, String>()
+    var activeWwwClaim: String = "0"
+
+    fun loadCookie(rawCookie: String) {
+        if (rawCookie.isBlank()) return
+        val parts = rawCookie.split(";")
+        for (part in parts) {
+            val item = part.trim()
+            if (item.isEmpty()) continue
+            val eqIdx = item.indexOf('=')
+            if (eqIdx > 0) {
+                val key = item.substring(0, eqIdx).trim()
+                val value = item.substring(eqIdx + 1).trim()
+                cookieMap[key] = value
+            }
+        }
+        cookie = cookieMap.map { "${it.key}=${it.value}" }.joinToString("; ")
+        cookieMap["csrftoken"]?.let { if (it.isNotBlank()) activeCsrfToken = it }
+        cookieMap["ds_user_id"]?.let { if (it.isNotBlank()) activeUserId = it }
+    }
+
+    fun updateFromSetCookie(setCookieHeaders: List<String>) {
+        for (header in setCookieHeaders) {
+            val cookiePart = header.substringBefore(";").trim()
+            val eqIdx = cookiePart.indexOf('=')
+            if (eqIdx > 0) {
+                val key = cookiePart.substring(0, eqIdx).trim()
+                val value = cookiePart.substring(eqIdx + 1).trim()
+                cookieMap[key] = value
+                if (key.equals("csrftoken", ignoreCase = true)) {
+                    activeCsrfToken = value
+                }
+            }
+        }
+        cookie = cookieMap.map { "${it.key}=${it.value}" }.joinToString("; ")
+    }
+
     init {
+        loadCookie(cookie)
         if (userAgent.isBlank()) {
-            userAgent = generateMobileSafariUA(cookie)
+            userAgent = generateAndroidChromeUA(cookie)
         }
         val builder = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -188,6 +226,21 @@ class InstagramApiClient(
             .writeTimeout(30, TimeUnit.SECONDS)
             .followRedirects(false)
             .followSslRedirects(false)
+            .addNetworkInterceptor { chain ->
+                val request = chain.request()
+                val response = chain.proceed(request)
+                val setCookies = response.headers("Set-Cookie")
+                if (setCookies.isNotEmpty()) {
+                    synchronized(cookieMap) {
+                        updateFromSetCookie(setCookies)
+                    }
+                }
+                val claim = response.header("x-ig-set-www-claim")
+                if (!claim.isNullOrBlank()) {
+                    activeWwwClaim = claim
+                }
+                response
+            }
 
         if (proxyConfig != null) {
             setupProxy(builder, proxyConfig)
@@ -218,6 +271,7 @@ class InstagramApiClient(
     }
 
     fun extractCsrfToken(): String? {
+        cookieMap["csrftoken"]?.let { if (it.isNotBlank()) return it }
         val matcher = PATTERN_CSRF.matcher(cookie)
         if (matcher.find()) return matcher.group(1)
         val altMatcher = Pattern.compile("(?:^|;\\s*)csrftoken=([^;]+)").matcher(cookie)
@@ -226,12 +280,14 @@ class InstagramApiClient(
     }
 
     fun extractDsUserId(): String? {
+        cookieMap["ds_user_id"]?.let { if (it.isNotBlank()) return it }
         val matcher = PATTERN_DS_USER_ID.matcher(cookie)
         if (matcher.find()) return matcher.group(1)
         return null
     }
 
     private fun buildDocumentHeaders(referer: String? = null): Headers {
+        val isChrome = userAgent.contains("Chrome", ignoreCase = true) || userAgent.contains("CriOS", ignoreCase = true) || userAgent.contains("Chromium", ignoreCase = true)
         val isMobile = userAgent.contains("Mobile", ignoreCase = true) || userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("Android", ignoreCase = true)
         val isIos = userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("iPad", ignoreCase = true)
         val platform = if (isIos) "\"iOS\"" else if (userAgent.contains("Android", ignoreCase = true)) "\"Android\"" else "\"Windows\""
@@ -240,22 +296,19 @@ class InstagramApiClient(
             .add("User-Agent", userAgent)
             .add("Cookie", cookie)
             .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
-            .add("Accept-Language", "vi-VN,vi;q=0.9,ja-JP;q=0.8,ja;q=0.7,en-JP;q=0.6,en;q=0.5,es-ES;q=0.4,es;q=0.3,fr-FR;q=0.2,fr;q=0.1,en-US;q=0.1")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
             .add("Sec-Fetch-Dest", "document")
             .add("Sec-Fetch-Mode", "navigate")
             .add("Sec-Fetch-Site", if (referer != null) "same-origin" else "none")
             .add("Sec-Fetch-User", "?1")
             .add("Upgrade-Insecure-Requests", "1")
             .add("Priority", "u=0, i")
-            .add("sec-ch-prefers-color-scheme", "dark")
-            .add("sec-ch-ua-mobile", if (isMobile) "?1" else "?0")
-            .add("sec-ch-ua-platform", platform)
 
-        if (isIos) {
-            builder.add("sec-ch-ua", "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"")
-            builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"152.0.7977.83\", \"Not?A_Brand\";v=\"24.0.0.0\", \"Google Chrome\";v=\"152.0.7977.83\"")
-            builder.add("sec-ch-ua-model", "\"iPhone\"")
-            builder.add("sec-ch-ua-platform-version", "\"18.5\"")
+        if (isChrome) {
+            builder.add("sec-ch-ua", "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"")
+            builder.add("sec-ch-ua-mobile", if (isMobile) "?1" else "?0")
+            builder.add("sec-ch-ua-platform", platform)
+            builder.add("sec-ch-prefers-color-scheme", "dark")
         }
 
         if (!referer.isNullOrBlank()) {
@@ -273,39 +326,33 @@ class InstagramApiClient(
     ): Headers {
         val csrf = csrfToken ?: activeCsrfToken.ifBlank { extractCsrfToken() ?: "" }
         val ref = referer ?: "$BASE_URL/"
+        val isChrome = userAgent.contains("Chrome", ignoreCase = true) || userAgent.contains("CriOS", ignoreCase = true) || userAgent.contains("Chromium", ignoreCase = true)
         val isMobile = userAgent.contains("Mobile", ignoreCase = true) || userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("Android", ignoreCase = true)
         val isIos = userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("iPad", ignoreCase = true)
         val platform = if (isIos) "\"iOS\"" else if (userAgent.contains("Android", ignoreCase = true)) "\"Android\"" else "\"Windows\""
-        val sessionS = activeS.ifBlank { generateSessionS() }
 
         val builder = Headers.Builder()
             .add("User-Agent", userAgent)
             .add("Cookie", cookie)
             .add("Accept", "*/*")
-            .add("Accept-Language", "vi-VN,vi;q=0.9,ja-JP;q=0.8,ja;q=0.7,en-JP;q=0.6,en;q=0.5,es-ES;q=0.4,es;q=0.3,fr-FR;q=0.2,fr;q=0.1,en-US;q=0.1")
+            .add("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
             .add("Origin", BASE_URL)
             .add("Referer", ref)
             .add("X-CSRFToken", csrf)
             .add("X-IG-App-ID", appId)
             .add("X-ASBD-ID", ASBD_ID)
-            .add("X-IG-WWW-Claim", "0")
-            .add("X-IG-D", "www")
-            .add("X-IG-Max-Touch-Points", if (isMobile) "1" else "0")
-            .add("X-Web-Session-Id", sessionS)
+            .add("X-IG-WWW-Claim", activeWwwClaim)
             .add("X-Requested-With", "XMLHttpRequest")
             .add("Sec-Fetch-Dest", "empty")
             .add("Sec-Fetch-Mode", "cors")
             .add("Sec-Fetch-Site", "same-origin")
             .add("Priority", "u=1, i")
-            .add("sec-ch-prefers-color-scheme", "dark")
-            .add("sec-ch-ua-mobile", if (isMobile) "?1" else "?0")
-            .add("sec-ch-ua-platform", platform)
 
-        if (isIos) {
-            builder.add("sec-ch-ua", "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"")
-            builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"152.0.7977.83\", \"Not?A_Brand\";v=\"24.0.0.0\", \"Google Chrome\";v=\"152.0.7977.83\"")
-            builder.add("sec-ch-ua-model", "\"iPhone\"")
-            builder.add("sec-ch-ua-platform-version", "\"18.5\"")
+        if (isChrome) {
+            builder.add("sec-ch-ua", "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"")
+            builder.add("sec-ch-ua-mobile", if (isMobile) "?1" else "?0")
+            builder.add("sec-ch-ua-platform", platform)
+            builder.add("sec-ch-prefers-color-scheme", "dark")
         }
 
         if (!friendlyName.isNullOrBlank()) {
@@ -502,33 +549,13 @@ class InstagramApiClient(
     }
 
     /**
-     * Tra cứu user ID từ URL hoặc username bằng cách mở trang cá nhân Instagram Web
+     * Tra cứu user ID từ URL hoặc username bằng cách tải trực tiếp trang HTML Instagram Web
      */
     fun getUserIdFromUsername(username: String): String? {
         val cleanName = cleanInstagramUsername(username)
         if (cleanName.isBlank()) return null
         if (cleanName.all { it.isDigit() }) return cleanName
 
-        val csrf = activeCsrfToken.ifBlank { extractCsrfToken() ?: "" }
-
-        // 1. Thử qua Web Profile Info API chuẩn Web
-        try {
-            val infoReq = Request.Builder()
-                .url("$BASE_URL/api/v1/users/web_profile_info/?username=$cleanName")
-                .headers(buildStandardHeaders(csrfToken = csrf, referer = "$BASE_URL/$cleanName/"))
-                .get()
-                .build()
-            httpClient.newCall(infoReq).execute().use { res ->
-                if (res.isSuccessful) {
-                    val body = res.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val id = json.optJSONObject("data")?.optJSONObject("user")?.optString("id", "")
-                    if (!id.isNullOrBlank()) return id
-                }
-            }
-        } catch (_: Exception) {}
-
-        // 2. Fallback: Truy cập trực tiếp link trang cá nhân Instagram Web
         try {
             val targetUrl = if (username.startsWith("http://") || username.startsWith("https://")) {
                 username
@@ -570,13 +597,14 @@ class InstagramApiClient(
     }
 
     /**
-     * Follow tài khoản Instagram chuẩn xác 100% bằng GraphQL usePolarisFollowMutation (Doc ID: 26508036048874888)
+     * Follow tài khoản Instagram 100% qua GraphQL usePolarisFollowMutation (Doc ID: 26508036048874888)
      */
     @Throws(Exception::class)
     fun followUser(targetUserId: String, targetUsername: String? = null, fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
         val csrf = activeCsrfToken.ifBlank { extractCsrfToken() ?: throw IllegalStateException("Cookie thiếu CSRF token") }
         val cleanTargetId = targetUserId.trim()
-        val av = if (!actorId.isNullOrBlank()) actorId else activeActorId.ifBlank { activeUserId.ifBlank { extractDsUserId() ?: "0" } }
+        val refererUrl = if (!targetUsername.isNullOrBlank()) "$BASE_URL/$targetUsername/" else "$BASE_URL/"
+        val av = if (!actorId.isNullOrBlank() && actorId != "0") actorId else activeActorId.ifBlank { activeUserId.ifBlank { extractDsUserId() ?: "0" } }
         val currentFbDtsg = fbDtsg?.takeIf { it.isNotBlank() } ?: activeFbDtsg
         val currentLsd = lsd?.takeIf { it.isNotBlank() } ?: activeLsd
         val currentJazoest = calculateJazoest(currentFbDtsg)
@@ -608,11 +636,6 @@ class InstagramApiClient(
             .add("__rev", currentRev)
             .add("__s", currentS)
             .add("__hsi", currentHsi)
-            .add("__dyn", "7xeUjG1mxu1syaxG4Vp41twpUnwgU7SbzEdF8vyUco2qwJyEiw50x609vCwjE1EEc87m0yE462mcw5Mx62G5UswoEcE7O2l0Fwqo5W1yw9O1lwxwQzXwae4UaEW2G0AEco5G0zK5o4q0HU1IEGdwtUeo9UaQ0Lo6-bwHwKG6U3ewxyo6O1fxC1mgO2m3zhA6bwg8rAwHxW1oxe1OwgU5SbBK4o11olwXyEcFE4616wAwj83KwRzkbwhU")
-            .add("__csr", "gN4MlMVsp5umItszHc_4rikB6lGji8yeji8jGFtd4cBhuaAmlPrv8PmPR9ndOvqIx5ShkDBhXXJvKY_PbFFRIOmKx5kqyp4x1aKhaGXfAGRqZqYyLmpquAcVHLJBAJ4BGHykqArX8hnKdyHz8-mnK-6qCCDzXKifCx6HKEOF89FoOi22AmiiriAK2i9UKut2Ady8jy8kyqDGiEpK58GhlAz8gLVUiAgzx62eVF8Si2Cdx2uiq5E11Eao02O5w0cKa1kwwzEcU0umpEC2ggnw1iG1sy8B2VQVQ0738y9g2Bwh82bgaUR09iKazo1zoHA7w43w6Lw4GwXwfqm2N3UcqnQm0OpcEhVk05PUrwjA01PHw1Emt078xiE08do0Ju0n-")
-            .add("__hsdp", "")
-            .add("__hblp", "")
-            .add("__sjsp", "")
             .add("__comet_req", "7")
             .apply {
                 if (currentFbDtsg.isNotBlank()) {
@@ -634,8 +657,6 @@ class InstagramApiClient(
             .add("doc_id", DOC_ID_FOLLOW_MUTATION)
             .build()
 
-        val refererUrl = if (!targetUsername.isNullOrBlank()) "$BASE_URL/$targetUsername/" else "$BASE_URL/"
-
         val gqlHeaders = buildStandardHeaders(
             csrfToken = csrf,
             friendlyName = "usePolarisFollowMutation",
@@ -649,82 +670,29 @@ class InstagramApiClient(
             .post(gqlBody)
             .build()
 
-        var lastErrorMsg = ""
-        try {
-            httpClient.newCall(gqlRequest).execute().use { gqlResponse ->
-                val gqlResponseBody = gqlResponse.body?.string() ?: ""
-                if (gqlResponse.isSuccessful || gqlResponse.code == 200) {
-                    if (gqlResponseBody.contains("\"status\":\"ok\"") ||
-                        gqlResponseBody.contains("\"following\":true") ||
-                        gqlResponseBody.contains("\"outgoing_request\":true") ||
-                        gqlResponseBody.contains("\"xdt_create_friendship\"") ||
-                        (!gqlResponseBody.trimStart().startsWith("<") && !gqlResponseBody.contains("\"error\"") && !gqlResponseBody.contains("\"errors\""))
-                    ) {
-                        return true
-                    }
-                }
-                if (gqlResponseBody.contains("\"spam\"", ignoreCase = true) || gqlResponseBody.contains("feedback_required", ignoreCase = true)) {
-                    throw IllegalStateException("Instagram chặn follow (Spam/Action blocked)")
-                }
-                if (gqlResponseBody.contains("\"require_login\"", ignoreCase = true) || gqlResponseBody.contains("login_required", ignoreCase = true) || gqlResponseBody.contains("checkpoint_required", ignoreCase = true)) {
-                    throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
-                }
-                if (gqlResponse.code == 429) {
-                    lastErrorMsg = "HTTP 429"
-                }
-            }
-        } catch (e: Exception) {
-            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
-            lastErrorMsg = e.message ?: ""
-        }
-
-        // 2. Fallback 1: Web Friendship API (/api/v1/web/friendships/{id}/follow/)
-        try {
-            val restUrl = "$BASE_URL/api/v1/web/friendships/$cleanTargetId/follow/"
-            val restReq = Request.Builder()
-                .url(restUrl)
-                .headers(buildStandardHeaders(csrfToken = csrf, referer = refererUrl))
-                .post(FormBody.Builder().build())
-                .build()
-
-            httpClient.newCall(restReq).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                if (res.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"following\":true") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
+        httpClient.newCall(gqlRequest).execute().use { gqlResponse ->
+            val gqlResponseBody = gqlResponse.body?.string() ?: ""
+            if (gqlResponse.isSuccessful || gqlResponse.code == 200) {
+                if (gqlResponseBody.contains("\"status\":\"ok\"") ||
+                    gqlResponseBody.contains("\"following\":true") ||
+                    gqlResponseBody.contains("\"outgoing_request\":true") ||
+                    gqlResponseBody.contains("\"xdt_create_friendship\"") ||
+                    (!gqlResponseBody.trimStart().startsWith("<") && !gqlResponseBody.contains("\"error\"") && !gqlResponseBody.contains("\"errors\""))
+                ) {
                     return true
                 }
-                if (res.code == 429) lastErrorMsg = "HTTP 429"
             }
-        } catch (e: Exception) {
-            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
-        }
-
-        // 3. Fallback 2: Friendships Create API (/api/v1/friendships/create/{id}/)
-        try {
-            val createUrl = "$BASE_URL/api/v1/friendships/create/$cleanTargetId/"
-            val createBody = FormBody.Builder()
-                .add("user_id", cleanTargetId)
-                .add("container_module", "profile")
-                .build()
-            val createReq = Request.Builder()
-                .url(createUrl)
-                .headers(buildStandardHeaders(csrfToken = csrf, referer = refererUrl))
-                .post(createBody)
-                .build()
-
-            httpClient.newCall(createReq).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                if (res.isSuccessful && (body.contains("\"status\":\"ok\"") || body.contains("\"following\":true") || body.contains("\"result\":\"following\"") || body.contains("\"result\":\"requested\""))) {
-                    return true
-                }
-                if (res.code == 429) lastErrorMsg = "HTTP 429"
+            if (gqlResponseBody.contains("\"spam\"", ignoreCase = true) || gqlResponseBody.contains("feedback_required", ignoreCase = true)) {
+                throw IllegalStateException("Instagram chặn Follow (Spam/Action blocked)")
             }
-        } catch (e: Exception) {
-            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
+            if (gqlResponseBody.contains("\"require_login\"", ignoreCase = true) || gqlResponseBody.contains("login_required", ignoreCase = true) || gqlResponseBody.contains("checkpoint_required", ignoreCase = true)) {
+                throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
+            }
+            if (gqlResponse.code == 429) {
+                throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429)")
+            }
         }
 
-        if (lastErrorMsg.contains("429")) {
-            throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429)")
-        }
         throw IllegalStateException("Instagram từ chối follow đối tượng $cleanTargetId")
     }
 
@@ -748,11 +716,7 @@ class InstagramApiClient(
     }
 
     /**
-     * Like bài viết qua Instagram GraphQL PolarisAPILikePostMutation (Doc ID: 27358573637160660)
-     */
-    /**
-     * Like bài viết qua Instagram GraphQL chuẩn Web
-     * Đầy đủ Header chuẩn trình duyệt Web Instagram (X-Instagram-AJAX, X-IG-App-ID, X-ASBD-ID, X-FB-Friendly-Name, X-FB-LSD)
+     * Like bài viết qua Instagram GraphQL 100% (PolarisAPILikePostMutation / usePolarisLikeMediaLikeMutation)
      */
     @Throws(Exception::class)
     fun likeMediaGraphQL(mediaId: String, shortcode: String = "", fbDtsg: String? = null, lsd: String? = null, actorId: String? = null): Boolean {
@@ -778,7 +742,7 @@ class InstagramApiClient(
         var lastErrorDetail = ""
         val ref = if (shortcode.isNotBlank()) "$BASE_URL/p/$shortcode/" else "$BASE_URL/"
 
-        // 1. Thử qua PolarisAPILikePostMutation (Doc ID: 27358573637160660)
+        // 1. GraphQL PolarisAPILikePostMutation (Doc ID: 27358573637160660)
         try {
             val variables1 = JSONObject().apply {
                 val inputObj = JSONObject().apply {
@@ -791,34 +755,28 @@ class InstagramApiClient(
                 put("input", inputObj)
             }.toString()
 
-            val formBuilder1 = FormBody.Builder()
+            val body1 = FormBody.Builder()
                 .add("av", av)
                 .add("__d", "www")
                 .add("__user", "0")
                 .add("__a", "1")
-                .add("__req", "1r")
+                .add("__req", nextReq())
                 .add("__hs", currentHs)
                 .add("dpr", "3")
                 .add("__ccg", "GOOD")
                 .add("__rev", currentRev)
                 .add("__s", currentS)
                 .add("__hsi", currentHsi)
-                .add("__dyn", "7xeUjG1mxu1syaxG4Vp41twpUnwgU7SbzEdF8vyUco2qwJyEiw50x609vCwjE1EEc87m0yE462mcw5Mx62G5UswoEcE7O2l0Fwqo5W1yw9O1lwxwQzXwae4UaEW2G0AEco5G0zK5o4q0HU1wEbUGdwtUeo9UaQ0Lo6-bwHwKG6Ufk0zU8oC1IwjUpwlAcwBwUQp1yU426V89F8uwm8jwsE2xyVrx60hK78uyFEaVE4616wAwj83KwRzkbwhU")
-                .add("__csr", "")
-                .add("__hsdp", "")
-                .add("__hblp", "")
-                .add("__sjsp", "")
                 .add("__comet_req", "7")
-
-            if (currentFbDtsg.isNotBlank()) {
-                formBuilder1.add("fb_dtsg", currentFbDtsg)
-                formBuilder1.add("jazoest", currentJazoest)
-            }
-            if (currentLsd.isNotBlank()) {
-                formBuilder1.add("lsd", currentLsd)
-            }
-
-            val body1 = formBuilder1
+                .apply {
+                    if (currentFbDtsg.isNotBlank()) {
+                        add("fb_dtsg", currentFbDtsg)
+                        add("jazoest", currentJazoest)
+                    }
+                    if (currentLsd.isNotBlank()) {
+                        add("lsd", currentLsd)
+                    }
+                }
                 .add("__spin_r", currentSpinR)
                 .add("__spin_b", "trunk")
                 .add("__spin_t", currentSpinT)
@@ -844,13 +802,7 @@ class InstagramApiClient(
                 .build()
 
             httpClient.newCall(request1).execute().use { response ->
-                if (response.code in listOf(301, 302, 303, 307, 308)) {
-                    throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (redirect ${response.code})")
-                }
                 val responseBody = response.body?.string() ?: ""
-                if (response.code == 429) {
-                    throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429)")
-                }
                 if (response.isSuccessful || response.code == 200) {
                     if (responseBody.contains("\"viewer_has_liked\":true") ||
                         responseBody.contains("\"status\":\"ok\"") ||
@@ -867,123 +819,98 @@ class InstagramApiClient(
                 if (responseBody.contains("\"require_login\"", ignoreCase = true) || responseBody.contains("login_required", ignoreCase = true) || responseBody.contains("checkpoint_required", ignoreCase = true)) {
                     throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
                 }
-                if (responseBody.isNotBlank()) {
-                    try {
-                        val json = JSONObject(responseBody)
-                        val errArr = json.optJSONArray("errors")
-                        if (errArr != null && errArr.length() > 0) {
-                            lastErrorDetail = errArr.getJSONObject(0).optString("message", "")
-                        } else if (json.has("message")) {
-                            lastErrorDetail = json.optString("message", "")
-                        }
-                    } catch (_: Exception) {}
+                if (response.code == 429) {
+                    lastErrorDetail = "HTTP 429"
                 }
             }
         } catch (e: Exception) {
-            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true || e.message?.contains("429") == true) throw e
+            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
             lastErrorDetail = e.message ?: ""
         }
 
-        // 2. Fallback: Thử qua usePolarisLikeMediaLikeMutation (Doc ID: 9595477160535898)
-        val variables2 = JSONObject().apply {
-            put("media_id", mediaId)
-            put("container_module", "feed_timeline")
-        }.toString()
+        // 2. GraphQL Fallback: usePolarisLikeMediaLikeMutation (Doc ID: 9595477160535898)
+        try {
+            val variables2 = JSONObject().apply {
+                put("media_id", mediaId)
+                put("container_module", "feed_timeline")
+            }.toString()
 
-        val formBuilder2 = FormBody.Builder()
-            .add("av", av)
-            .add("__d", "www")
-            .add("__user", "0")
-            .add("__a", "1")
-            .add("__req", "1")
-            .add("__hs", currentHs)
-            .add("dpr", "3")
-            .add("__ccg", "GOOD")
-            .add("__rev", currentRev)
-            .add("__s", currentS)
-            .add("__hsi", currentHsi)
-            .add("__dyn", "7xeUjG1mxu1syaxG4Vp41twpUnwgU7SbzEdF8vyUco2qwJyEiw50x609vCwjE1EEc87m0yE462mcw5Mx62G5UswoEcE7O2l0Fwqo5W1yw9O1lwxwQzXwae4UaEW2G0AEco5G0zK5o4q0HU1wEbUGdwtUeo9UaQ0Lo6-bwHwKG6Ufk0zU8oC1IwjUpwlAcwBwUQp1yU426V89F8uwm8jwsE2xyVrx60hK78uyFEaVE4616wAwj83KwRzkbwhU")
-            .add("__csr", "")
-            .add("__hsdp", "")
-            .add("__hblp", "")
-            .add("__sjsp", "")
-            .add("__comet_req", "7")
+            val body2 = FormBody.Builder()
+                .add("av", av)
+                .add("__d", "www")
+                .add("__user", "0")
+                .add("__a", "1")
+                .add("__req", nextReq())
+                .add("__hs", currentHs)
+                .add("dpr", "3")
+                .add("__ccg", "GOOD")
+                .add("__rev", currentRev)
+                .add("__s", currentS)
+                .add("__hsi", currentHsi)
+                .add("__comet_req", "7")
+                .apply {
+                    if (currentFbDtsg.isNotBlank()) {
+                        add("fb_dtsg", currentFbDtsg)
+                        add("jazoest", currentJazoest)
+                    }
+                    if (currentLsd.isNotBlank()) {
+                        add("lsd", currentLsd)
+                    }
+                }
+                .add("__spin_r", currentSpinR)
+                .add("__spin_b", "trunk")
+                .add("__spin_t", currentSpinT)
+                .add("__crn", "comet.igweb.PolarisProfilePostsTabRoute")
+                .add("fb_api_caller_class", "RelayModern")
+                .add("fb_api_req_friendly_name", "usePolarisLikeMediaLikeMutation")
+                .add("server_timestamps", "true")
+                .add("variables", variables2)
+                .add("doc_id", DOC_ID_LIKE_MUTATION)
+                .build()
 
-        if (currentFbDtsg.isNotBlank()) {
-            formBuilder2.add("fb_dtsg", currentFbDtsg)
-            formBuilder2.add("jazoest", currentJazoest)
-        }
-        if (currentLsd.isNotBlank()) {
-            formBuilder2.add("lsd", currentLsd)
-        }
+            val headers2 = buildStandardHeaders(
+                csrfToken = csrf,
+                friendlyName = "usePolarisLikeMediaLikeMutation",
+                lsdToken = currentLsd,
+                referer = ref
+            )
 
-        val body2 = formBuilder2
-            .add("__spin_r", currentSpinR)
-            .add("__spin_b", "trunk")
-            .add("__spin_t", currentSpinT)
-            .add("__crn", "comet.igweb.PolarisProfilePostsTabRoute")
-            .add("fb_api_caller_class", "RelayModern")
-            .add("fb_api_req_friendly_name", "usePolarisLikeMediaLikeMutation")
-            .add("server_timestamps", "true")
-            .add("variables", variables2)
-            .add("doc_id", DOC_ID_LIKE_MUTATION)
-            .build()
+            val request2 = Request.Builder()
+                .url("$BASE_URL/api/graphql")
+                .headers(headers2)
+                .post(body2)
+                .build()
 
-        val headers2 = buildStandardHeaders(
-            csrfToken = csrf,
-            friendlyName = "usePolarisLikeMediaLikeMutation",
-            lsdToken = currentLsd,
-            referer = ref
-        )
-
-        val request2 = Request.Builder()
-            .url("$BASE_URL/api/graphql")
-            .headers(headers2)
-            .post(body2)
-            .build()
-
-        httpClient.newCall(request2).execute().use { response ->
-            if (response.code in listOf(301, 302, 303, 307, 308)) {
-                throw IllegalStateException("Cookie DIE hoặc hết phiên đăng nhập (redirect ${response.code})")
-            }
-            if (response.code == 429) {
-                throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429)")
-            }
-            val responseBody = response.body?.string() ?: ""
-            if (response.isSuccessful || response.code == 200) {
-                if (responseBody.contains("\"viewer_has_liked\":true") ||
-                    responseBody.contains("\"status\":\"ok\"") ||
-                    responseBody.contains("\"is_final\":true") ||
-                    (responseBody.contains("\"data\"") && !responseBody.contains("\"errors\"") && !responseBody.contains("\"error\""))
-                ) {
-                    return true
+            httpClient.newCall(request2).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+                if (response.isSuccessful || response.code == 200) {
+                    if (responseBody.contains("\"viewer_has_liked\":true") ||
+                        responseBody.contains("\"status\":\"ok\"") ||
+                        responseBody.contains("\"is_final\":true") ||
+                        (responseBody.contains("\"data\"") && !responseBody.contains("\"errors\"") && !responseBody.contains("\"error\""))
+                    ) {
+                        return true
+                    }
+                }
+                if (responseBody.contains("\"spam\"", ignoreCase = true) || responseBody.contains("feedback_required", ignoreCase = true)) {
+                    throw IllegalStateException("Instagram chặn Like (Spam/Action blocked)")
+                }
+                if (responseBody.contains("\"require_login\"", ignoreCase = true) || responseBody.contains("login_required", ignoreCase = true) || responseBody.contains("checkpoint_required", ignoreCase = true)) {
+                    throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
+                }
+                if (response.code == 429) {
+                    lastErrorDetail = "HTTP 429"
                 }
             }
-            if (responseBody.contains("\"spam\"", ignoreCase = true) || responseBody.contains("feedback_required", ignoreCase = true)) {
-                throw IllegalStateException("Instagram chặn Like (Spam/Action blocked)")
-            }
-            if (responseBody.contains("\"require_login\"", ignoreCase = true) || responseBody.contains("login_required", ignoreCase = true) || responseBody.contains("checkpoint_required", ignoreCase = true)) {
-                throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
-            }
-            if (responseBody.trimStart().startsWith("<")) {
-                throw IllegalStateException("Instagram trả về HTML - Cookie hết hạn hoặc checkpoint")
-            }
-            if (responseBody.isNotBlank()) {
-                try {
-                    val json = JSONObject(responseBody)
-                    val errArr = json.optJSONArray("errors")
-                    if (errArr != null && errArr.length() > 0) {
-                        lastErrorDetail = errArr.getJSONObject(0).optString("message", "")
-                    } else if (json.has("message")) {
-                        lastErrorDetail = json.optString("message", "")
-                    }
-                } catch (_: Exception) {}
-            }
-            if (lastErrorDetail.isNotBlank()) {
-                throw IllegalStateException("Instagram từ chối Like: $lastErrorDetail")
-            }
-            return false
+        } catch (e: Exception) {
+            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
+            lastErrorDetail = e.message ?: ""
         }
+
+        if (lastErrorDetail.contains("429")) {
+            throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429)")
+        }
+        return false
     }
 
     /**
