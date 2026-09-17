@@ -106,10 +106,10 @@ object XsmmInstagramTaskRunner {
         // ====================================================================
         // 1. KIỂM TRA ĐỘ SỐNG CỦA COOKIE INSTAGRAM (chuẩn check_cookie_ig)
         // ====================================================================
-        notify("Đang kiểm tra độ sống của Cookie Instagram...")
+        notify("Kiểm tra acc")
         val checkRes = InstagramApiClient.checkCookieIg(account.cookie, account.proxy)
         if (!checkRes.isLive || checkRes.userId.isBlank()) {
-            val errMsg = "Cookie Die hoặc Proxy lỗi - ĐANG ĐỔI NICK"
+            val errMsg = "Cookie Die / Proxy lỗi"
             notify(errMsg)
             reportError(cleanUsername, errMsg)
             val deadAccount = account.copy(isLive = false)
@@ -119,8 +119,7 @@ object XsmmInstagramTaskRunner {
 
         val tenfb = checkRes.username.ifBlank { cleanUsername }
         val idfb = checkRes.userId
-        val pxDisplay = if (account.proxy.isNotBlank()) " | Proxy: ${account.proxy}" else " | Không Proxy"
-        notify("● NICK LIVE [$tenfb | UID: $idfb$pxDisplay] ●")
+        notify("Nick Live [$tenfb]")
 
         // Cập nhật lại thông tin mới nhất vào store
         val updatedLiveAccount = account.copy(
@@ -136,7 +135,7 @@ object XsmmInstagramTaskRunner {
         // 2. ĐỒNG BỘ NICK LÊN XSMM (AN TOÀN)
         // ====================================================================
         try {
-            notify("Đang đồng bộ tài khoản lên XSMM...")
+            notify("Đồng bộ acc XSMM")
             val accListRes = XsmmAccountsRepository.getAccounts(token, accountType = "instagram", search = idfb)
             val xsmmAccounts = (accListRes as? XsmmAccountsResult.Success)?.accounts.orEmpty()
             val exists = xsmmAccounts.any {
@@ -148,15 +147,15 @@ object XsmmInstagramTaskRunner {
             if (!exists) {
                 val addRes = XsmmAccountsRepository.addInstagramAccount(token, tenfb, setActive = true)
                 if (addRes is XsmmAddAccountResult.Success) {
-                    notify("➕ Đã thêm tài khoản [$tenfb] vào XSMM thành công!")
+                    notify("Đã thêm acc: $tenfb")
                 } else if (addRes is XsmmAddAccountResult.Error) {
-                    notify("⚠️ Thông báo thêm acc: ${addRes.message}")
+                    notify("Thêm acc: ${addRes.message}")
                 }
             } else {
-                notify("Tài khoản [$tenfb] đã tồn tại trên XSMM")
+                notify("Acc đã có trên XSMM")
             }
         } catch (e: Exception) {
-            notify("⚠️ Không thể đồng bộ tài khoản: ${e.message}")
+            notify("Lỗi đồng bộ: ${e.message}")
         }
 
         // ====================================================================
@@ -199,7 +198,7 @@ object XsmmInstagramTaskRunner {
         // ====================================================================
         while (coroutineContext.isActive) {
             if (maxJob >= doi) {
-                notify("Đã hoàn thành $maxJob nhiệm vụ -> Đổi Nick!")
+                notify("Đủ $maxJob job -> Đổi nick")
                 break
             }
 
@@ -211,12 +210,12 @@ object XsmmInstagramTaskRunner {
                 else -> randJob
             }
 
-            notify("Bắt đầu nhận việc cho UID: $idfb ($tenfb) - Loại: $readableName")
+            notify("Nhận việc: $readableName")
             val tasksRes = XsmmTasksRepository.getTasks2(token, randJob, idfb, typejob = "normal,better,best")
 
             val tasks = when (tasksRes) {
                 is XsmmTasks2Result.Error -> {
-                    notify("❌ Lỗi từ XSMM: ${tasksRes.message}")
+                    notify("Lỗi XSMM: ${tasksRes.message}")
                     emptyList()
                 }
                 is XsmmTasks2Result.Success -> tasksRes.tasks
@@ -224,15 +223,15 @@ object XsmmInstagramTaskRunner {
 
             if (tasks.isEmpty()) {
                 consecutiveNoTasks++
-                notify("❌ Hết nhiệm vụ $readableName hoặc chưa tới lượt!")
+                notify("Hết job $readableName")
                 val waitSec = dl
                 for (j in waitSec downTo 1) {
                     if (!coroutineContext.isActive) break
-                    notify("Đang chờ delay tránh block ${j}s...")
+                    notify("Chờ ${j}s...")
                     delay(1000L)
                 }
                 if (consecutiveNoTasks >= config.stopAfterNoTaskCount) {
-                    notify("Đã hết nhiệm vụ liên tục $consecutiveNoTasks lần -> Dừng")
+                    notify("Hết job liên tục -> Dừng")
                     break
                 }
                 continue
@@ -252,12 +251,12 @@ object XsmmInstagramTaskRunner {
                     val linkJob = nv.targetUrl
                     val csf = extractCsrfToken(account.cookie)
 
-                    notify("Job Tym: $linkJob | MediaID: $idm")
+                    notify("Job Tym: $idm")
                     val chayfl = InstagramApiClient.tym(idm, account.cookie, csf, linkJob, proxy = account.proxy)
                     maxJob++
 
                     if (chayfl.success) {
-                        notify("● TYM THÀNH CÔNG -> Đang gửi nhận xu... ●")
+                        notify("Tym xong -> Nhận xu...")
                         val claimRes = XsmmTasksRepository.completeTasks2(
                             rawToken = token,
                             type = "instagram_like",
@@ -270,32 +269,32 @@ object XsmmInstagramTaskRunner {
                             val earned = claimRes.points
                             totalEarnedPoints += earned
                             updatePointsUi(claimRes.totalPoints)
-                            notify("● TYM THÀNH CÔNG (+${earned} xu | Hoàn thành: ${claimRes.successCount} task) ●")
+                            notify("Tym: +${earned} xu")
                         } else {
                             totalErrors++
-                            notify("LỖI XSMM: ${claimRes.message}")
+                            notify("Lỗi nhận xu: ${claimRes.message}")
                         }
                         soloitym = 0
                         if (claimRes.countdown > 0) {
-                            notify("Hệ thống yêu cầu nghỉ ${claimRes.countdown}s...")
+                            notify("Nghỉ ${claimRes.countdown}s...")
                             delay(claimRes.countdown * 1000L)
                         }
                     } else {
                         totalErrors++
                         soloitym++
-                        notify("● TYM LỖI: ${chayfl.message} ●")
+                        notify("Tym lỗi: ${chayfl.message}")
                         reportError(cleanUsername, "Tym lỗi: ${chayfl.message}")
                     }
 
-                    // Delay tránh block
+                    // Delay
                     for (x in timedelaytym downTo 1) {
                         if (!coroutineContext.isActive) break
-                        notify("Delay Tránh Block: ${x}s")
+                        notify("Delay: ${x}s")
                         delay(1000L)
                     }
 
                     if (soloitym > 4) {
-                        notify("Gặp lỗi quá nhiều (>4 lần) -> Đổi Nick!")
+                        notify("Lỗi liên tiếp -> Đổi nick")
                         break
                     }
                     if (maxJob >= doi) {
@@ -327,10 +326,10 @@ object XsmmInstagramTaskRunner {
                         }
                     }
 
-                    notify("Follow Target ID: $targetId ($linkJob)")
+                    notify("Follow: $targetId")
 
                     if (targetId.isBlank() || !targetId.all { it.isDigit() }) {
-                        notify("❌ Không trích xuất được ID số, bỏ qua!")
+                        notify("Bỏ qua: Không có ID")
                         continue
                     }
 
@@ -339,14 +338,14 @@ object XsmmInstagramTaskRunner {
                     maxJob++
 
                     if (chaySub.success) {
-                        notify("✅ Follow ID $targetId thành công!")
+                        notify("Follow xong: $targetId")
                         cacheBatchNv.add(taskId)
                         soloisub = 0
                         totalCompleted++
 
                         // Gom đủ 10 nhiệm vụ: Gửi nhận xu và break ngay để refresh lấy nhóm task mới
                         if (cacheBatchNv.size >= 10) {
-                            notify("⏩ Gom đủ ${cacheBatchNv.size} task -> Đang gửi duyệt nhận xu...")
+                            notify("Gom đủ 10 -> Nhận xu...")
                             val claimRes = XsmmTasksRepository.completeTasks2(
                                 rawToken = token,
                                 type = "instagram_follow",
@@ -358,35 +357,35 @@ object XsmmInstagramTaskRunner {
                                 val earned = claimRes.points
                                 totalEarnedPoints += earned
                                 updatePointsUi(claimRes.totalPoints)
-                                notify("⏩ ${claimRes.message} (+${earned} xu | Hoàn thành: ${claimRes.successCount} task)")
+                                notify("Follow: +${earned} xu")
                             } else {
                                 totalErrors++
-                                notify("LỖI XSMM: ${claimRes.message}")
+                                notify("Lỗi nhận xu: ${claimRes.message}")
                             }
                             cacheBatchNv.clear()
                             if (claimRes.countdown > 0) {
-                                notify("Hệ thống yêu cầu nghỉ ${claimRes.countdown}s...")
+                                notify("Nghỉ ${claimRes.countdown}s...")
                                 delay(claimRes.countdown * 1000L)
                             }
-                            notify("🔄 Đã hoàn tất đợt 10 task -> Refresh lấy danh sách task mới...")
+                            notify("Xong đợt 10 -> Lấy job mới")
                             break
                         }
                     } else {
                         totalErrors++
                         soloisub++
-                        notify("❌ Follow ID $targetId thất bại: ${chaySub.message}")
+                        notify("Follow lỗi: ${chaySub.message}")
                         reportError(cleanUsername, "Follow thất bại: ${chaySub.message}")
                     }
 
-                    // Delay chạy trực tiếp ngay sau mỗi lần follow
+                    // Delay
                     for (x in timedelaysub downTo 1) {
                         if (!coroutineContext.isActive) break
-                        notify("Delay Tránh Block: ${x}s")
+                        notify("Delay: ${x}s")
                         delay(1000L)
                     }
 
                     if (soloisub > 4) {
-                        notify("Lỗi liên tiếp (>4 lần) -> Đổi Nick!")
+                        notify("Lỗi liên tiếp -> Đổi nick")
                         break
                     }
                     if (maxJob >= doi) {
@@ -396,7 +395,7 @@ object XsmmInstagramTaskRunner {
 
                 // Gửi nhận số task còn dư lại (nếu danh sách ban đầu ít hơn 10 task)
                 if (cacheBatchNv.isNotEmpty()) {
-                    notify("⏩ Gửi duyệt ${cacheBatchNv.size} task Follow còn dư...")
+                    notify("Gửi ${cacheBatchNv.size} job Follow còn lại...")
                     val claimRes = XsmmTasksRepository.completeTasks2(
                         rawToken = token,
                         type = "instagram_follow",
@@ -408,14 +407,14 @@ object XsmmInstagramTaskRunner {
                         val earned = claimRes.points
                         totalEarnedPoints += earned
                         updatePointsUi(claimRes.totalPoints)
-                        notify("⏩ ${claimRes.message} (+${earned} xu | Hoàn thành: ${claimRes.successCount} task)")
+                        notify("Follow: +${earned} xu")
                     } else {
                         totalErrors++
-                        notify("LỖI XSMM: ${claimRes.message}")
+                        notify("Lỗi nhận xu: ${claimRes.message}")
                     }
                     cacheBatchNv.clear()
                     if (claimRes.countdown > 0) {
-                        notify("Hệ thống yêu cầu nghỉ ${claimRes.countdown}s...")
+                        notify("Nghỉ ${claimRes.countdown}s...")
                         delay(claimRes.countdown * 1000L)
                     }
                 }
@@ -444,10 +443,10 @@ object XsmmInstagramTaskRunner {
                         }
                     }
 
-                    notify("Job CMT: $linkJob | ND: $noidung")
+                    notify("Job CMT: $idm")
 
                     if (idm.isBlank()) {
-                        notify("● CMT LỖI: Không tìm thấy Media ID ●")
+                        notify("CMT lỗi: Thiếu ID")
                         soloicmt++
                         totalErrors++
                         continue
@@ -458,7 +457,7 @@ object XsmmInstagramTaskRunner {
                     maxJob++
 
                     if (chayCmt.success) {
-                        notify("● COMMENT THÀNH CÔNG -> Đang gửi nhận xu... ●")
+                        notify("CMT xong -> Nhận xu...")
                         val claimRes = XsmmTasksRepository.completeTasks2(
                             rawToken = token,
                             type = "instagram_comment",
@@ -471,32 +470,32 @@ object XsmmInstagramTaskRunner {
                             val earned = claimRes.points
                             totalEarnedPoints += earned
                             updatePointsUi(claimRes.totalPoints)
-                            notify("● COMMENT THÀNH CÔNG (+${earned} xu | Hoàn thành: ${claimRes.successCount} task) ●")
+                            notify("CMT: +${earned} xu")
                         } else {
                             totalErrors++
-                            notify("LỖI XSMM: ${claimRes.message}")
+                            notify("Lỗi nhận xu: ${claimRes.message}")
                         }
                         soloicmt = 0
                         if (claimRes.countdown > 0) {
-                            notify("Hệ thống yêu cầu nghỉ ${claimRes.countdown}s...")
+                            notify("Nghỉ ${claimRes.countdown}s...")
                             delay(claimRes.countdown * 1000L)
                         }
                     } else {
                         totalErrors++
                         soloicmt++
-                        notify("● CMT LỖI: ${chayCmt.message} ●")
+                        notify("CMT lỗi: ${chayCmt.message}")
                         reportError(cleanUsername, "Comment thất bại: ${chayCmt.message}")
                     }
 
-                    // Delay tránh block
+                    // Delay
                     for (x in timedelaycmt downTo 1) {
                         if (!coroutineContext.isActive) break
-                        notify("Delay Tránh Block: ${x}s")
+                        notify("Delay: ${x}s")
                         delay(1000L)
                     }
 
                     if (soloicmt > 4) {
-                        notify("Lỗi liên tiếp (>4 lần) -> Đổi Nick!")
+                        notify("Lỗi liên tiếp -> Đổi nick")
                         break
                     }
                     if (maxJob >= doi) {
@@ -510,7 +509,7 @@ object XsmmInstagramTaskRunner {
             }
         }
 
-        val finalMsg = "Hoàn tất phiên chạy: $totalCompleted thành công, $totalErrors lỗi, kiếm được $totalEarnedPoints xu"
+        val finalMsg = "Hoàn tất: $totalCompleted thành công, $totalErrors lỗi (+${totalEarnedPoints} xu)"
         notify(finalMsg)
         return RunResult(totalCompleted, totalErrors, totalEarnedPoints, finalMsg)
     }

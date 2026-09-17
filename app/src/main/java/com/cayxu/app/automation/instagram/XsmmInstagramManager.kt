@@ -49,7 +49,7 @@ object XsmmInstagramManager {
         if (!runningAccounts.contains(clean)) {
             runningAccounts.add(clean)
         }
-        statusMap[clean] = if (startDelayMs > 0) "Chờ khởi động lệch luồng (${startDelayMs / 1000}s)..." else "Bắt đầu khởi động luồng..."
+        statusMap[clean] = if (startDelayMs > 0) "Chờ chạy (${startDelayMs / 1000}s)..." else "Bắt đầu chạy..."
         successCountMap[clean] = 0
         errorCountMap[clean] = 0
 
@@ -58,7 +58,7 @@ object XsmmInstagramManager {
                 val totalSec = (startDelayMs / 1000).toInt()
                 for (s in totalSec downTo 1) {
                     scope.launch(Dispatchers.Main) {
-                        statusMap[clean] = "Chờ khởi động (${s}s)..."
+                        statusMap[clean] = "Chờ chạy (${s}s)..."
                     }
                     delay(1000L)
                 }
