@@ -198,13 +198,19 @@ object XsmmInstagramTaskRunner {
                                 var actionSuccess = false
                                 var lastActionError: String? = null
                                 try {
+                                    val currentDtsg = apiClient.activeFbDtsg.ifBlank { activeDtsg }
+                                    val currentLsd = apiClient.activeLsd.ifBlank { activeLsd }
+                                    val currentActorId = apiClient.activeActorId.ifBlank { activeActorId }
+
                                     if (isFollow || task.type.contains("follow", ignoreCase = true)) {
                                         val followTarget = task.idorlink.ifBlank { task.targetUrl }
-                                        actionSuccess = apiClient.followTarget(followTarget, fbDtsg = activeDtsg, lsd = activeLsd, actorId = activeActorId)
+                                        actionSuccess = apiClient.followTarget(followTarget, fbDtsg = currentDtsg, lsd = currentLsd, actorId = currentActorId)
                                     } else {
                                         val likeTarget = task.idorlink.ifBlank { task.targetUrl }
-                                        actionSuccess = apiClient.likeTarget(likeTarget, fbDtsg = activeDtsg, lsd = activeLsd, actorId = activeActorId)
+                                        actionSuccess = apiClient.likeTarget(likeTarget, fbDtsg = currentDtsg, lsd = currentLsd, actorId = currentActorId)
                                     }
+                                    if (apiClient.activeFbDtsg.isNotBlank()) activeDtsg = apiClient.activeFbDtsg
+                                    if (apiClient.activeActorId.isNotBlank()) activeActorId = apiClient.activeActorId
                                     if (!actionSuccess) {
                                         lastActionError = "Instagram trả về thất bại (Không thể hoàn thành hành động)"
                                         notify("Instagram không phản hồi thành công")

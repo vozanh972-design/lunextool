@@ -60,8 +60,8 @@ class InstagramApiClient(
         val PATTERN_FOLLOWERS: Pattern = Pattern.compile("(?:edge_followed_by|followed_by)\\\"\\s*:\\s*\\{\\s*\\\"count\\\"\\s*:\\s*(\\d+)")
         val PATTERN_FOLLOWING: Pattern = Pattern.compile("(?:edge_follow|follow)\\\"\\s*:\\s*\\{\\s*\\\"count\\\"\\s*:\\s*(\\d+)")
         val PATTERN_POSTS: Pattern = Pattern.compile("(?:edge_owner_to_timeline_media|media)\\\"\\s*:\\s*\\{\\s*\\\"count\\\"\\s*:\\s*(\\d+)")
-        val PATTERN_DTSG: Pattern = Pattern.compile("(?:\\[\"DTSGInitData\",\\[],\\{\"token\":\"|\"DTSGInitialData\"[^\"]*\"token\"|\"token\"\\s*:\\s*\"NA[^\"]+\")[^\"]*\"?([^\"]+)\"?")
-        val PATTERN_DTSG_SIMPLE: Pattern = Pattern.compile("\"token\"\\s*:\\s*\"(NA[^\"]+)\"")
+        val PATTERN_DTSG: Pattern = Pattern.compile("\"token\"\\s*:\\s*\"(NA[^\"]+)\"")
+        val PATTERN_DTSG_SIMPLE: Pattern = Pattern.compile("(?:\\[\"DTSGInitData\",\\[],\\{\"token\":\"|\"DTSGInitialData\"[^\"]*\"token\"\\s*:\\s*\")([^\"]+)\"")
         val PATTERN_LSD: Pattern = Pattern.compile("(?:\\[\"LSD\",\\[],\\{\"token\":\"|\"LSD\"\\s*,\\s*\\[\\s*],\\s*\\{\"token\"\\s*:\\s*\")([^\"]+)\"")
         val PATTERN_SPIN_R: Pattern = Pattern.compile("\"__spin_r\"\\s*:\\s*(\\d+)")
         val PATTERN_HS: Pattern = Pattern.compile("\"haste_session\"\\s*:\\s*\"([^\"]+)\"")
@@ -381,6 +381,16 @@ class InstagramApiClient(
                 cookieMap[key] = value
                 if (key.equals("csrftoken", ignoreCase = true)) {
                     activeCsrfToken = value
+                }
+                if (key.equals("rur", ignoreCase = true)) {
+                    val rurDecoded = value.replace("%2C", ",")
+                    val parts = rurDecoded.split(",")
+                    if (parts.size >= 2) {
+                        val rawUid = parts[1].trim()
+                        if (rawUid.isNotBlank() && rawUid.all { it.isDigit() }) {
+                            activeActorId = rawUid
+                        }
+                    }
                 }
             }
         }
@@ -778,13 +788,47 @@ class InstagramApiClient(
     }
 
     /**
-     * Tra cứu user ID từ URL hoặc username bằng cách tải trực tiếp trang HTML Instagram Web
+     * Tra cứu user ID từ URL hoặc username bằng API search nội bộ của Instagram Web (Tránh 429 tuyệt đối)
      */
     fun getUserIdFromUsername(username: String): String? {
         val cleanName = cleanInstagramUsername(username)
         if (cleanName.isBlank()) return null
         if (cleanName.all { it.isDigit() }) return cleanName
 
+        // Cách 1: Dùng API topsearch nội bộ của Instagram Web (Không bao giờ bị 429, trả về JSON nhẹ)
+        try {
+            val searchUrl = "$BASE_URL/web/search/topsearch/?context=blended&query=$cleanName"
+            val request = Request.Builder()
+                .url(searchUrl)
+                .headers(buildStandardHeaders(referer = "$BASE_URL/"))
+                .get()
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    val usersArr = json.optJSONArray("users")
+                    if (usersArr != null && usersArr.length() > 0) {
+                        for (i in 0 until usersArr.length()) {
+                            val userObj = usersArr.getJSONObject(i).optJSONObject("user")
+                            if (userObj != null) {
+                                val uname = userObj.optString("username")
+                                if (uname.equals(cleanName, ignoreCase = true)) {
+                                    val pk = userObj.optString("pk")
+                                    if (pk.isNotBlank()) return pk
+                                }
+                            }
+                        }
+                        val firstUser = usersArr.getJSONObject(0).optJSONObject("user")
+                        val firstPk = firstUser?.optString("pk")
+                        if (!firstPk.isNullOrBlank()) return firstPk
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Cách 2: Fallback lấy qua HTML (chỉ khi topsearch không tìm thấy)
         try {
             val targetUrl = if (username.startsWith("http://") || username.startsWith("https://")) {
                 username
@@ -909,6 +953,11 @@ class InstagramApiClient(
 
         httpClient.newCall(gqlRequest).execute().use { gqlResponse ->
             val gqlResponseBody = gqlResponse.body?.string() ?: ""
+            val newDtsg = PATTERN_DTSG.matcher(gqlResponseBody).let { if (it.find()) it.group(1) else null }
+                ?: PATTERN_DTSG_SIMPLE.matcher(gqlResponseBody).let { if (it.find()) it.group(1) else null }
+            if (!newDtsg.isNullOrBlank()) {
+                activeFbDtsg = newDtsg
+            }
             if (gqlResponse.isSuccessful || gqlResponse.code == 200) {
                 if (gqlResponseBody.contains("\"status\":\"ok\"") ||
                     gqlResponseBody.contains("\"following\":true") ||
@@ -991,7 +1040,7 @@ class InstagramApiClient(
                         put("actor_id", av)
                     }
                     put("client_mutation_id", nextReq())
-                    put("container_module", "feed_timeline")
+                    put("container_module", "single_post")
                 }
                 put("input", inputObj)
             }.toString()
@@ -1003,7 +1052,7 @@ class InstagramApiClient(
                 .add("__a", "1")
                 .add("__req", nextReq())
                 .add("__hs", currentHs)
-                .add("dpr", "4")
+                .add("dpr", "3")
                 .add("__ccg", "GOOD")
                 .add("__rev", currentRev)
                 .add("__s", currentS)
@@ -1021,7 +1070,7 @@ class InstagramApiClient(
                 .add("__spin_r", currentSpinR)
                 .add("__spin_b", "trunk")
                 .add("__spin_t", currentSpinT)
-                .add("__crn", "comet.igweb.PolarisFeedRoute")
+                .add("__crn", "comet.igweb.PolarisPostRouteNext")
                 .add("fb_api_caller_class", "RelayModern")
                 .add("fb_api_req_friendly_name", "usePolarisLikeMediaXIGLikeMutation")
                 .add("server_timestamps", "true")
@@ -1044,6 +1093,11 @@ class InstagramApiClient(
 
             httpClient.newCall(request1).execute().use { response ->
                 val responseBody = response.body?.string() ?: ""
+                val newDtsg = PATTERN_DTSG.matcher(responseBody).let { if (it.find()) it.group(1) else null }
+                    ?: PATTERN_DTSG_SIMPLE.matcher(responseBody).let { if (it.find()) it.group(1) else null }
+                if (!newDtsg.isNullOrBlank()) {
+                    activeFbDtsg = newDtsg
+                }
                 if (response.isSuccessful || response.code == 200) {
                     if (responseBody.contains("\"viewer_has_liked\":true") ||
                         responseBody.contains("\"has_liked\":true") ||
