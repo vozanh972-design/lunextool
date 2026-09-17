@@ -3,11 +3,13 @@ package com.cayxu.app.automation.instagram
 import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
+import com.cayxu.app.data.local.InstagramAccountsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
@@ -139,9 +141,9 @@ object XsmmInstagramManager {
 
             val job = scope.launch {
                 try {
-                    while (kotlinx.coroutines.isActive) {
+                    while (isActive) {
                         for (username in cleanList) {
-                            if (!kotlinx.coroutines.isActive) break
+                            if (!isActive) break
                             val currentAcc = InstagramAccountsStore.getAccount(context, username)
                             if (currentAcc == null || !currentAcc.isLive || currentAcc.cookie.isBlank()) {
                                 scope.launch(Dispatchers.Main) {
