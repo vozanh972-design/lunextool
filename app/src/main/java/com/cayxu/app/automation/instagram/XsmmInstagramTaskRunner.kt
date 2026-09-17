@@ -104,10 +104,18 @@ object XsmmInstagramTaskRunner {
         }
 
         // ====================================================================
-        // 1. KIỂM TRA ĐỘ SỐNG CỦA COOKIE INSTAGRAM (chuẩn check_cookie_ig)
+        // 1. KIỂM TRA ĐỘ SỐNG CỦA COOKIE INSTAGRAM & KHỞI TẠO SESSION
         // ====================================================================
         notify("Kiểm tra acc")
-        val checkRes = InstagramApiClient.checkCookieIg(account.cookie, account.proxy)
+        val proxyConfig = InstagramApiClient.parseProxy(account.proxy)
+        val igClient = InstagramApiClient(
+            cookie = account.cookie,
+            userAgent = account.userAgent,
+            proxyConfig = proxyConfig
+        )
+        igClient.ensureSession()
+
+        val checkRes = igClient.checkCookieIg()
         if (!checkRes.isLive || checkRes.userId.isBlank()) {
             val errMsg = "Cookie Die / Proxy lỗi"
             notify(errMsg)
@@ -121,12 +129,13 @@ object XsmmInstagramTaskRunner {
         val idfb = checkRes.userId
         notify("Nick Live [$tenfb]")
 
-        // Cập nhật lại thông tin mới nhất vào store
+        // Cập nhật lại thông tin mới nhất vào store (kèm avatar)
         val updatedLiveAccount = account.copy(
             username = tenfb,
             userId = idfb,
             fullName = checkRes.fullName.ifBlank { account.fullName },
             biography = checkRes.biography.ifBlank { account.biography },
+            avatar = checkRes.profilePicUrl.ifBlank { account.avatar },
             isLive = true
         )
         InstagramAccountsStore.updateAccount(context, updatedLiveAccount)
@@ -261,10 +270,8 @@ object XsmmInstagramTaskRunner {
                     val taskId = nv.id
                     val idm = nv.targetId.ifBlank { nv.idorlink }
                     val linkJob = nv.targetUrl
-                    val csf = extractCsrfToken(account.cookie)
-
                     notify("Job Tym: $idm")
-                    val chayfl = InstagramApiClient.tym(idm, account.cookie, csf, linkJob, proxy = account.proxy)
+                    val chayfl = igClient.tym(idm, linkJob)
                     maxJob++
 
                     if (chayfl.success) {
@@ -345,8 +352,7 @@ object XsmmInstagramTaskRunner {
                         continue
                     }
 
-                    val csf = extractCsrfToken(account.cookie)
-                    val chaySub = InstagramApiClient.follow(targetId, account.cookie, csf, linkJob, proxy = account.proxy)
+                    val chaySub = igClient.follow(targetId, linkJob)
                     maxJob++
 
                     if (chaySub.success) {
@@ -464,8 +470,7 @@ object XsmmInstagramTaskRunner {
                         continue
                     }
 
-                    val csf = extractCsrfToken(account.cookie)
-                    val chayCmt = InstagramApiClient.cmt(idm, noidung, account.cookie, csf, linkJob, proxy = account.proxy)
+                    val chayCmt = igClient.cmt(idm, noidung, linkJob)
                     maxJob++
 
                     if (chayCmt.success) {

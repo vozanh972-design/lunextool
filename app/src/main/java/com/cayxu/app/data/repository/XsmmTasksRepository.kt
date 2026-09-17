@@ -115,6 +115,9 @@ object XsmmTasksRepository {
             addProperty("uid", uid)
             if (!cookieCheck.isNullOrBlank()) {
                 addProperty("cookie_check", cookieCheck)
+                addProperty("string_ig", cookieCheck)
+                addProperty("string", cookieCheck)
+                addProperty("cookie", cookieCheck)
             }
         }
 

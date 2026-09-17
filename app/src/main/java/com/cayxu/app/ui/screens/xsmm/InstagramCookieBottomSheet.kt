@@ -286,7 +286,10 @@ fun InstagramCookieBottomSheet(
                                             if (checkResult.userId.isNotBlank()) dsUserId = checkResult.userId
                                             fullName = checkResult.fullName
                                             biography = checkResult.biography
+                                            avatar = checkResult.profilePicUrl
                                         }
+
+                                        val devProfile = InstagramApiClient.getDeviceProfileFor(dsUserId.ifBlank { username })
 
                                         withContext(Dispatchers.Main) {
                                             com.cayxu.app.data.local.InstagramAccountsStore.addAccount(
@@ -295,7 +298,7 @@ fun InstagramCookieBottomSheet(
                                                     username = username,
                                                     userId = dsUserId,
                                                     cookie = cookiePart,
-                                                    userAgent = InstagramApiClient.USER_AGENT_WIN,
+                                                    userAgent = devProfile.userAgent,
                                                     proxy = proxyPart,
                                                     fullName = fullName,
                                                     avatar = avatar,
