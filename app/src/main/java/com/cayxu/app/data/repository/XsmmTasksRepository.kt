@@ -62,7 +62,15 @@ object XsmmTasksRepository {
             if (!response.isSuccessful) {
                 return XsmmTasks2Result.Error(errMsg(response.errorBody()?.string(), "Lỗi lấy nhiệm vụ (mã HTTP: ${response.code()})"))
             }
-            val arr = response.body() ?: return XsmmTasks2Result.Error("Không có dữ liệu trả về")
+            val body = response.body() ?: return XsmmTasks2Result.Error("Không có dữ liệu trả về")
+            if (body.isJsonObject) {
+                val errorMsg = body.asJsonObject.get("error")?.takeIf { it.isJsonPrimitive }?.asString
+                return XsmmTasks2Result.Error(errorMsg ?: "Lỗi từ XSMM: $body")
+            }
+            if (!body.isJsonArray) {
+                return XsmmTasks2Result.Error("Phản hồi không hợp lệ từ XSMM")
+            }
+            val arr = body.asJsonArray
             val tasks = arr.mapNotNull { el ->
                 if (!el.isJsonObject) return@mapNotNull null
                 val obj = el.asJsonObject

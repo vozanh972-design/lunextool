@@ -132,30 +132,38 @@ object XsmmInstagramTaskRunner {
         InstagramAccountsStore.updateAccount(context, updatedLiveAccount)
 
         // ====================================================================
-        // 2. ĐỒNG BỘ NICK LÊN XSMM (AN TOÀN)
+        // 2. ĐỒNG BỘ NICK LÊN XSMM (AN TOÀN - CHUẨN 100% PYTHON)
         // ====================================================================
+        var finalUid = idfb
         try {
-            notify("Đồng bộ acc XSMM")
+            notify("Đồng bộ acc XSMM...")
             val accListRes = XsmmAccountsRepository.getAccounts(token, accountType = "instagram", search = idfb)
             val xsmmAccounts = (accListRes as? XsmmAccountsResult.Success)?.accounts.orEmpty()
-            val exists = xsmmAccounts.any {
-                it.accountId == idfb ||
-                it.name.equals(tenfb, ignoreCase = true) ||
-                it.linkAccount.contains(tenfb, ignoreCase = true) ||
-                it.linkAccount.contains(idfb, ignoreCase = true)
+            val matchedAcc = xsmmAccounts.firstOrNull { acc ->
+                acc.accountId == idfb || acc.name.equals(tenfb, ignoreCase = true)
             }
-            if (!exists) {
-                val addRes = XsmmAccountsRepository.addInstagramAccount(token, tenfb, setActive = true)
+            if (matchedAcc == null) {
+                val addRes = XsmmAccountsRepository.addInstagramAccount(token, tenfb)
                 if (addRes is XsmmAddAccountResult.Success) {
-                    notify("Đã thêm acc: $tenfb")
+                    notify("Đã thêm acc [$tenfb] vào XSMM")
+                    if (addRes.account.accountId.isNotBlank()) {
+                        finalUid = addRes.account.accountId
+                    }
+                    delay(1000L)
                 } else if (addRes is XsmmAddAccountResult.Error) {
                     notify("Thêm acc: ${addRes.message}")
+                    reportError(cleanUsername, "Lỗi thêm acc XSMM: ${addRes.message}")
+                    delay(2500L)
                 }
             } else {
-                notify("Acc đã có trên XSMM")
+                notify("Acc [$tenfb] đã có trên XSMM")
+                if (matchedAcc.accountId.isNotBlank()) {
+                    finalUid = matchedAcc.accountId
+                }
             }
         } catch (e: Exception) {
             notify("Lỗi đồng bộ: ${e.message}")
+            delay(1500L)
         }
 
         // ====================================================================
@@ -211,11 +219,13 @@ object XsmmInstagramTaskRunner {
             }
 
             notify("Nhận việc: $readableName")
-            val tasksRes = XsmmTasksRepository.getTasks2(token, randJob, idfb, typejob = "normal,better,best")
+            val tasksRes = XsmmTasksRepository.getTasks2(token, randJob, finalUid, typejob = "normal,better,best")
 
             val tasks = when (tasksRes) {
                 is XsmmTasks2Result.Error -> {
                     notify("Lỗi XSMM: ${tasksRes.message}")
+                    reportError(cleanUsername, "Lỗi XSMM: ${tasksRes.message}")
+                    delay(3000L)
                     emptyList()
                 }
                 is XsmmTasks2Result.Success -> tasksRes.tasks
@@ -223,7 +233,9 @@ object XsmmInstagramTaskRunner {
 
             if (tasks.isEmpty()) {
                 consecutiveNoTasks++
-                notify("Hết job $readableName")
+                if (tasksRes is XsmmTasks2Result.Success) {
+                    notify("Hết job $readableName")
+                }
                 val waitSec = dl
                 for (j in waitSec downTo 1) {
                     if (!coroutineContext.isActive) break
@@ -261,7 +273,7 @@ object XsmmInstagramTaskRunner {
                             rawToken = token,
                             type = "instagram_like",
                             taskIds = listOf(taskId),
-                            uid = idfb,
+                            uid = finalUid,
                             cookieCheck = account.cookie
                         )
                         if (claimRes.success || claimRes.points > 0 || claimRes.isTimeout) {
@@ -350,7 +362,7 @@ object XsmmInstagramTaskRunner {
                                 rawToken = token,
                                 type = "instagram_follow",
                                 taskIds = cacheBatchNv.toList(),
-                                uid = idfb,
+                                uid = finalUid,
                                 cookieCheck = account.cookie
                             )
                             if (claimRes.success || claimRes.points > 0 || claimRes.isTimeout) {
@@ -400,7 +412,7 @@ object XsmmInstagramTaskRunner {
                         rawToken = token,
                         type = "instagram_follow",
                         taskIds = cacheBatchNv.toList(),
-                        uid = idfb,
+                        uid = finalUid,
                         cookieCheck = account.cookie
                     )
                     if (claimRes.success || claimRes.points > 0 || claimRes.isTimeout) {
@@ -462,7 +474,7 @@ object XsmmInstagramTaskRunner {
                             rawToken = token,
                             type = "instagram_comment",
                             taskIds = listOf(taskId),
-                            uid = idfb,
+                            uid = finalUid,
                             cookieCheck = account.cookie
                         )
                         if (claimRes.success || claimRes.points > 0 || claimRes.isTimeout) {

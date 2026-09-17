@@ -141,14 +141,13 @@ object XsmmAccountsRepository {
     }
 
     /** Thêm acc Instagram mới vào XSMM theo username/handle */
-    suspend fun addInstagramAccount(rawToken: String, username: String, setActive: Boolean = true): XsmmAddAccountResult {
-        val cleanName = username.trim().removePrefix("@")
+    suspend fun addInstagramAccount(rawToken: String, username: String): XsmmAddAccountResult {
+        val cleanName = username.trim().removePrefix("@").trim('/')
         if (cleanName.isBlank()) return XsmmAddAccountResult.Error("Thiếu username Instagram để thêm")
 
         val body = JsonObject().apply {
             addProperty("type", "instagram")
-            addProperty("link_account", "https://www.instagram.com/$cleanName/")
-            addProperty("active", setActive)
+            addProperty("link_account", "https://www.instagram.com/$cleanName")
         }
 
         return try {
@@ -172,8 +171,8 @@ object XsmmAccountsRepository {
                         type = "instagram",
                         accountId = "",
                         name = cleanName,
-                        linkAccount = "https://www.instagram.com/$cleanName/",
-                        isActive = setActive
+                        linkAccount = "https://www.instagram.com/$cleanName",
+                        isActive = false
                     )
                 )
             }

@@ -59,7 +59,7 @@ interface XsmmApiService {
         @Query("type") type: String,
         @Query("uid") uid: String,
         @Query("typejob") typejob: String? = "normal,better,best"
-    ): Response<com.google.gson.JsonArray>
+    ): Response<com.google.gson.JsonElement>
 
     /** Hoàn thành nhiệm vụ (tasks2/complete). Body: {"type": "...", "task_id": [...], "uid": "..."} */
     @POST("api/taskapi/tasks2/complete")
