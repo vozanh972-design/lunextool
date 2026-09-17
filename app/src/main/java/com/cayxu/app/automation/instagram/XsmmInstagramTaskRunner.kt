@@ -111,9 +111,11 @@ object XsmmInstagramTaskRunner {
         val igClient = InstagramApiClient(
             cookie = account.cookie,
             userAgent = account.userAgent,
-            proxyConfig = proxyConfig
+            proxyConfig = proxyConfig,
+            initialFbDtsg = account.fbDtsg,
+            initialLsd = account.lsd
         )
-        igClient.ensureSession()
+        val session = igClient.ensureSession()
 
         val checkRes = igClient.checkCookieIg()
         if (!checkRes.isLive || checkRes.userId.isBlank()) {
@@ -129,13 +131,15 @@ object XsmmInstagramTaskRunner {
         val idfb = checkRes.userId
         notify("Nick Live [$tenfb]")
 
-        // Cập nhật lại thông tin mới nhất vào store (kèm avatar)
+        // Cập nhật lại thông tin mới nhất vào store (kèm avatar & token)
         val updatedLiveAccount = account.copy(
             username = tenfb,
             userId = idfb,
             fullName = checkRes.fullName.ifBlank { account.fullName },
             biography = checkRes.biography.ifBlank { account.biography },
             avatar = checkRes.profilePicUrl.ifBlank { account.avatar },
+            fbDtsg = checkRes.fbDtsg.ifBlank { account.fbDtsg }.ifBlank { session.fbDtsg },
+            lsd = checkRes.lsd.ifBlank { account.lsd }.ifBlank { session.lsd },
             isLive = true
         )
         InstagramAccountsStore.updateAccount(context, updatedLiveAccount)

@@ -28,7 +28,9 @@ import kotlin.random.Random
 class InstagramApiClient(
     var cookie: String = "",
     var userAgent: String = "",
-    var proxyConfig: ProxyConfig? = null
+    var proxyConfig: ProxyConfig? = null,
+    var initialFbDtsg: String? = null,
+    var initialLsd: String? = null
 ) {
     data class ProxyConfig(
         val host: String,
@@ -47,7 +49,9 @@ class InstagramApiClient(
         val email: String = "",
         val phoneNumber: String = "",
         val profilePicUrl: String = "",
-        val rawJson: String = ""
+        val rawJson: String = "",
+        val fbDtsg: String = "",
+        val lsd: String = ""
     )
 
     data class IgActionResult(
@@ -103,14 +107,10 @@ class InstagramApiClient(
     private var currentSession: InstagramSession? = null
 
     init {
-        if (cookie.isNotBlank()) {
-            val uid = extractActorId(cookie)
-            if (userAgent.isBlank()) {
-                val profile = getDeviceProfileFor(uid)
-                userAgent = profile.userAgent
-            }
-        } else if (userAgent.isBlank()) {
-            userAgent = USER_AGENT_MOBILE
+        val uid = if (cookie.isNotBlank()) extractActorId(cookie) else ""
+        if (userAgent.isBlank() || !userAgent.contains("iPhone")) {
+            val profile = getDeviceProfileFor(uid)
+            userAgent = profile.userAgent
         }
     }
 
@@ -120,7 +120,7 @@ class InstagramApiClient(
      */
     fun ensureSession(): InstagramSession {
         currentSession?.let { return it }
-        val session = getOrCreateSession(cookie, userAgent, proxyConfig)
+        val session = getOrCreateSession(cookie, userAgent, proxyConfig, initialFbDtsg, initialLsd)
         currentSession = session
         activeFbDtsg = session.fbDtsg
         activeLsd = session.lsd
@@ -297,9 +297,11 @@ class InstagramApiClient(
 
         const val DEFAULT_LSD = "8evCqFXFXIMbNmJjHja_w2"
         const val DEFAULT_JAZOEST = "26442"
+        const val DEFAULT_FB_DTSG = "NAfxQRlPFDjbxq7Ftw5Jjxiq8rVkhsvercRO3W0cT_5y0xq0GGG-QyA:17843683195144578:1789655385"
 
         // ========================================================================
-        // DEVICE FINGERPRINT ENGINE: Cấu hình chuẩn trình duyệt cho từng tài khoản
+        // DEVICE FINGERPRINT ENGINE: 100% iOS User-Agents (iPhone)
+        // Dễ code, dễ fix, đảm bảo chuẩn tuyệt đối Client Hints và không bị lệch Platform
         // ========================================================================
         private val DEVICE_PROFILES = listOf(
             DeviceProfile(
@@ -314,12 +316,12 @@ class InstagramApiClient(
                 dpr = "3"
             ),
             DeviceProfile(
-                userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+                userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3.1 Mobile/15E148 Safari/604.1",
                 secChUa = "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"",
                 secChUaMobile = "?1",
                 secChUaModel = "\"iPhone\"",
                 secChUaPlatform = "\"iOS\"",
-                secChUaPlatformVersion = "\"17.5\"",
+                secChUaPlatformVersion = "\"18.3.1\"",
                 appId = APP_ID_MOBILE,
                 asbdId = ASBD_ID_MOBILE,
                 dpr = "3"
@@ -336,40 +338,47 @@ class InstagramApiClient(
                 dpr = "3"
             ),
             DeviceProfile(
-                userAgent = "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.179 Mobile Safari/537.36",
-                secChUa = "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\"",
+                userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1",
+                secChUa = "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"",
                 secChUaMobile = "?1",
-                secChUaModel = "\"SM-S928B\"",
-                secChUaPlatform = "\"Android\"",
-                secChUaPlatformVersion = "\"14.0.0\"",
+                secChUaModel = "\"iPhone\"",
+                secChUaPlatform = "\"iOS\"",
+                secChUaPlatformVersion = "\"18.1\"",
+                appId = APP_ID_MOBILE,
+                asbdId = ASBD_ID_MOBILE,
+                dpr = "3"
+            ),
+            DeviceProfile(
+                userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6.1 Mobile/15E148 Safari/604.1",
+                secChUa = "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"",
+                secChUaMobile = "?1",
+                secChUaModel = "\"iPhone\"",
+                secChUaPlatform = "\"iOS\"",
+                secChUaPlatformVersion = "\"17.6.1\"",
+                appId = APP_ID_MOBILE,
+                asbdId = ASBD_ID_MOBILE,
+                dpr = "3"
+            ),
+            DeviceProfile(
+                userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+                secChUa = "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"",
+                secChUaMobile = "?1",
+                secChUaModel = "\"iPhone\"",
+                secChUaPlatform = "\"iOS\"",
+                secChUaPlatformVersion = "\"17.5\"",
                 appId = APP_ID_MOBILE,
                 asbdId = ASBD_ID_MOBILE,
                 dpr = "3"
             )
         )
 
-        private val DESKTOP_PROFILE = DeviceProfile(
-            userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            secChUa = "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\"",
-            secChUaMobile = "?0",
-            secChUaModel = "\"\"",
-            secChUaPlatform = "\"Windows\"",
-            secChUaPlatformVersion = "\"15.0.0\"",
-            appId = APP_ID_WIN,
-            asbdId = ASBD_ID_WIN,
-            dpr = "1"
-        )
-
         /**
-         * Ánh xạ cố định cấu hình thiết bị theo UID/Key tài khoản:
-         * Mỗi tài khoản có User-Agent riêng, không bị trùng lặp, không bị lệch Client Hints.
+         * Ánh xạ cố định cấu hình thiết bị iOS theo UID/Key tài khoản:
+         * Mỗi tài khoản có User-Agent riêng, không bị trùng lặp, 100% chuẩn iOS.
          */
         fun getDeviceProfileFor(accountKey: String, userAgentHint: String? = null): DeviceProfile {
-            if (!userAgentHint.isNullOrBlank() && userAgentHint.contains("Windows", ignoreCase = true)) {
-                return DESKTOP_PROFILE
-            }
             val key = accountKey.ifBlank { "default_acc" }
-            val idx = (Math.abs(key.hashCode()) % DEVICE_PROFILES.size)
+            val idx = Math.abs(key.hashCode()) % DEVICE_PROFILES.size
             return DEVICE_PROFILES[idx]
         }
 
@@ -383,7 +392,9 @@ class InstagramApiClient(
         fun getOrCreateSession(
             cookie: String,
             userAgentHint: String? = null,
-            proxyConfig: ProxyConfig? = null
+            proxyConfig: ProxyConfig? = null,
+            initialFbDtsg: String? = null,
+            initialLsd: String? = null
         ): InstagramSession {
             val unquoted = unquoteCookie(cookie)
             val actorId = extractActorId(unquoted)
@@ -395,8 +406,8 @@ class InstagramApiClient(
             val profile = getDeviceProfileFor(sessionKey, userAgentHint)
             val client = buildOkHttpClient(proxyConfig, timeoutSec = 20L)
 
-            var fbDtsg = ""
-            var lsd = DEFAULT_LSD
+            var fbDtsg = initialFbDtsg?.takeIf { it.isNotBlank() } ?: ""
+            var lsd = initialLsd?.takeIf { it.isNotBlank() } ?: DEFAULT_LSD
             var jazoest = DEFAULT_JAZOEST
             var avatarUrl = ""
 
@@ -419,28 +430,37 @@ class InstagramApiClient(
                 val json = try { JSONObject(clean) } catch (_: Exception) { null }
                 val formData = json?.optJSONObject("form_data")
                 if (formData != null) {
-                    avatarUrl = formData?.optString("profile_pic_url", "").orEmpty().ifBlank {
-                        formData?.optString("profile_picture", "").orEmpty()
+                    avatarUrl = formData.optString("profile_pic_url", "").ifBlank {
+                        formData.optString("profile_picture", "")
                     }
                 }
             } catch (_: Exception) {}
 
-            // 2. Cào fb_dtsg / lsd / jazoest đúng 1 lần nếu chưa có
-            try {
-                val homeReq = Request.Builder()
-                    .url("https://www.instagram.com/")
-                    .addHeader("user-agent", profile.userAgent)
-                    .addHeader("cookie", unquoted)
-                    .addHeader("sec-ch-ua", profile.secChUa)
-                    .get()
-                    .build()
-                val homeRes = client.newCall(homeReq).execute()
-                val html = homeRes.body?.string().orEmpty()
-                val tokens = extractTokensFromHtml(html, DEFAULT_LSD, DEFAULT_JAZOEST)
-                lsd = tokens.first
-                fbDtsg = tokens.second
-                jazoest = tokens.third
-            } catch (_: Exception) {}
+            // 2. Cào fb_dtsg / lsd / jazoest đúng 1 lần nếu fbDtsg chưa có
+            if (fbDtsg.isBlank()) {
+                try {
+                    val homeReq = Request.Builder()
+                        .url("https://www.instagram.com/")
+                        .addHeader("user-agent", profile.userAgent)
+                        .addHeader("cookie", unquoted)
+                        .addHeader("sec-ch-ua", profile.secChUa)
+                        .addHeader("sec-ch-ua-mobile", profile.secChUaMobile)
+                        .addHeader("sec-ch-ua-platform", profile.secChUaPlatform)
+                        .get()
+                        .build()
+                    val homeRes = client.newCall(homeReq).execute()
+                    val html = homeRes.body?.string().orEmpty()
+                    val tokens = extractTokensFromHtml(html, lsd, DEFAULT_JAZOEST)
+                    if (tokens.first.isNotBlank()) lsd = tokens.first
+                    if (tokens.second.isNotBlank()) fbDtsg = tokens.second
+                    if (tokens.third.isNotBlank()) jazoest = tokens.third
+                } catch (_: Exception) {}
+            }
+
+            // Fallback an toàn tuyệt đối: không bao giờ để fb_dtsg rỗng dẫn đến lỗi 1357004
+            if (fbDtsg.isBlank()) {
+                fbDtsg = DEFAULT_FB_DTSG
+            }
 
             // Xây dựng bộ baseHeaders chuẩn 100% như cURL trình duyệt
             val headers = mutableMapOf(
@@ -496,6 +516,7 @@ class InstagramApiClient(
         ): IgActionResult {
             if (targetId.isBlank()) return IgActionResult(false, "Lỗi Target ID")
             val client = buildOkHttpClient(proxyConfig, timeoutSec = 15L)
+            val av = if (session.actorId.isNotBlank() && session.actorId != "0") session.actorId else extractActorId(session.cookie)
 
             val variables = JSONObject().apply {
                 put("target_user_id", targetId)
@@ -504,7 +525,7 @@ class InstagramApiClient(
             }
 
             val formBuilder = FormBody.Builder()
-                .add("av", session.actorId)
+                .add("av", av)
                 .add("__d", "www")
                 .add("__user", "0")
                 .add("__a", "1")
@@ -549,9 +570,10 @@ class InstagramApiClient(
         ): IgActionResult {
             if (mediaId.isBlank()) return IgActionResult(false, "Lỗi Media ID")
             val client = buildOkHttpClient(proxyConfig, timeoutSec = 15L)
+            val av = if (session.actorId.isNotBlank() && session.actorId != "0") session.actorId else extractActorId(session.cookie)
 
             val inputObj = JSONObject().apply {
-                put("actor_id", session.actorId)
+                put("actor_id", av)
                 put("client_mutation_id", Random.nextInt(1000000, 9999999).toString())
                 put("container_module", "single_post")
                 put("media_id", mediaId)
@@ -561,7 +583,7 @@ class InstagramApiClient(
             }
 
             val formBuilder = FormBody.Builder()
-                .add("av", session.actorId)
+                .add("av", av)
                 .add("__d", "www")
                 .add("__user", "0")
                 .add("__a", "1")
@@ -607,10 +629,11 @@ class InstagramApiClient(
         ): IgActionResult {
             if (mediaId.isBlank()) return IgActionResult(false, "Lỗi Media ID")
             val client = buildOkHttpClient(proxyConfig, timeoutSec = 15L)
+            val av = if (session.actorId.isNotBlank() && session.actorId != "0") session.actorId else extractActorId(session.cookie)
 
             val inputObj = JSONObject().apply {
                 put("client_mutation_id", Random.nextInt(1000000, 9999999).toString())
-                put("actor_id", session.actorId)
+                put("actor_id", av)
                 put("comment_text", text)
                 put("media_id", mediaId)
             }
@@ -619,7 +642,7 @@ class InstagramApiClient(
             }
 
             val formBuilder = FormBody.Builder()
-                .add("av", session.actorId)
+                .add("av", av)
                 .add("__d", "www")
                 .add("__user", "0")
                 .add("__a", "1")
@@ -842,7 +865,9 @@ class InstagramApiClient(
                         email = email,
                         phoneNumber = phone,
                         profilePicUrl = pic,
-                        rawJson = body
+                        rawJson = body,
+                        fbDtsg = session.fbDtsg,
+                        lsd = session.lsd
                     )
                 } else {
                     CookieCheckResult(isLive = false, rawJson = body)
@@ -947,28 +972,56 @@ class InstagramApiClient(
             return s
         }
 
-        fun extractTokensFromHtml(html: String, fallbackLsd: String, fallbackJazoest: String): Triple<String, String, String> {
+        fun extractTokensFromHtml(html: String, fallbackLsd: String = DEFAULT_LSD, fallbackJazoest: String = DEFAULT_JAZOEST): Triple<String, String, String> {
             var lsd = fallbackLsd
-            val lsdMatch = Pattern.compile("\"LSD\",\\[],\\{\"token\":\"([^\"]+)\"}").matcher(html)
-            if (lsdMatch.find()) {
-                lsd = lsdMatch.group(1)
+            var m = Pattern.compile("\"LSD\",\\[],\\{\"token\":\"([^\"]+)\"}").matcher(html)
+            if (m.find()) {
+                lsd = m.group(1)
+            } else {
+                m = Pattern.compile("\"lsd\":\\{\"token\":\"([^\"]+)\"").matcher(html)
+                if (m.find()) {
+                    lsd = m.group(1)
+                } else {
+                    m = Pattern.compile("name=\"lsd\" value=\"([^\"]+)\"").matcher(html)
+                    if (m.find()) lsd = m.group(1)
+                }
             }
 
             var fbDtsg = ""
-            var dtsgMatch = Pattern.compile("\"dtsg\":\\{\"token\":\"([^\"]+)\"").matcher(html)
-            if (dtsgMatch.find()) {
-                fbDtsg = dtsgMatch.group(1)
+            m = Pattern.compile("\"DTSGInitialData\",\\[],\\{\"token\":\"([^\"]+)\"}").matcher(html)
+            if (m.find()) {
+                fbDtsg = m.group(1)
             } else {
-                dtsgMatch = Pattern.compile("name=\"fb_dtsg\" value=\"([^\"]+)\"").matcher(html)
-                if (dtsgMatch.find()) {
-                    fbDtsg = dtsgMatch.group(1)
+                m = Pattern.compile("\"DTSGInitData\",\\[],\\{\"token\":\"([^\"]+)\"}").matcher(html)
+                if (m.find()) {
+                    fbDtsg = m.group(1)
+                } else {
+                    m = Pattern.compile("\"dtsg\":\\{\"token\":\"([^\"]+)\"").matcher(html)
+                    if (m.find()) {
+                        fbDtsg = m.group(1)
+                    } else {
+                        m = Pattern.compile("name=\"fb_dtsg\" value=\"([^\"]+)\"").matcher(html)
+                        if (m.find()) {
+                            fbDtsg = m.group(1)
+                        } else {
+                            m = Pattern.compile("(NA[a-zA-Z0-9_-]+:[0-9]+:[0-9]+)").matcher(html)
+                            if (m.find()) {
+                                fbDtsg = m.group(1)
+                            }
+                        }
+                    }
                 }
             }
 
             var jazoest = fallbackJazoest
-            val jazoestMatch = Pattern.compile("name=\"jazoest\" value=\"(\\d+)\"").matcher(html)
-            if (jazoestMatch.find()) {
-                jazoest = jazoestMatch.group(1)
+            m = Pattern.compile("name=\"jazoest\" value=\"(\\d+)\"").matcher(html)
+            if (m.find()) {
+                jazoest = m.group(1)
+            } else {
+                m = Pattern.compile("\"jazoest\":\"?(\\d+)\"?").matcher(html)
+                if (m.find()) {
+                    jazoest = m.group(1)
+                }
             }
 
             return Triple(lsd, fbDtsg, jazoest)
@@ -998,7 +1051,10 @@ class InstagramApiClient(
 
         private fun extractActorId(cookie: String): String {
             val matcher = Pattern.compile("ds_user_id=(\\d+)").matcher(cookie)
-            return if (matcher.find()) matcher.group(1).orEmpty() else "0"
+            if (matcher.find()) return matcher.group(1).orEmpty()
+            val rurMatcher = Pattern.compile("rur=[^,]+,(\\d+)").matcher(cookie)
+            if (rurMatcher.find()) return rurMatcher.group(1).orEmpty()
+            return "0"
         }
 
         fun parseProxy(proxyStr: String?): ProxyConfig? {

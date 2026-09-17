@@ -287,6 +287,8 @@ fun InstagramCookieBottomSheet(
                                             fullName = checkResult.fullName
                                             biography = checkResult.biography
                                             avatar = checkResult.profilePicUrl
+                                            fbDtsg = checkResult.fbDtsg
+                                            lsd = checkResult.lsd
                                         }
 
                                         val devProfile = InstagramApiClient.getDeviceProfileFor(dsUserId.ifBlank { username })
