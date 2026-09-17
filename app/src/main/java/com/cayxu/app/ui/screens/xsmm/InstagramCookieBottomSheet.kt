@@ -22,7 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cayxu.app.data.local.LinkedAccountsStore
-import com.cayxu.app.instagram.InstagramAuthService
+import com.cayxu.app.instagram.InstagramApiClient
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
@@ -280,41 +280,12 @@ fun InstagramCookieBottomSheet(
                                         var followersCount = 0
                                         var followingCount = 0
                                         var postsCount = 0
-
-                                        val proxyConfig = com.cayxu.app.instagram.InstagramApiClient.parseProxy(proxyPart)
-                                        val resolvedUA = if (userAgentPart.isNotBlank()) {
-                                            userAgentPart
-                                        } else {
-                                            val seed = if (dsUserId.isNotBlank()) "${dsUserId}_$idx" else "${cookiePart.hashCode()}_$idx"
-                                            com.cayxu.app.instagram.InstagramApiClient.resolveDeviceProfile(seed).userAgent
-                                        }
-
-                                        val client = com.cayxu.app.instagram.InstagramApiClient(
-                                            cookie = cookiePart,
-                                            userAgent = resolvedUA,
-                                            proxyConfig = proxyConfig
-                                        )
-
-                                        try {
-                                            val userInfo = client.fetchAccountDetails()
-                                            if (userInfo.username.isNotBlank()) username = userInfo.username
-                                            fullName = userInfo.fullName
-                                            avatar = userInfo.profilePicUrl ?: ""
-                                            fbDtsg = userInfo.fbDtsg ?: ""
-                                            lsd = userInfo.lsd ?: ""
-                                            biography = userInfo.biography
-                                            followersCount = userInfo.followersCount
-                                            followingCount = userInfo.followingCount
-                                            postsCount = userInfo.postsCount
-                                        } catch (_: Exception) {
-                                            try {
-                                                val profile = client.fetchUserInfo()
-                                                if (profile.username.isNotBlank()) username = profile.username
-                                                fullName = profile.fullName
-                                                avatar = profile.profilePicUrl ?: ""
-                                                fbDtsg = profile.fbDtsg ?: ""
-                                                lsd = profile.lsd ?: ""
-                                            } catch (_: Exception) {}
+                                        val checkResult = InstagramApiClient.checkCookieIg(cookiePart, proxyPart)
+                                        if (checkResult.isLive) {
+                                            if (checkResult.username.isNotBlank()) username = checkResult.username
+                                            if (checkResult.userId.isNotBlank()) dsUserId = checkResult.userId
+                                            fullName = checkResult.fullName
+                                            biography = checkResult.biography
                                         }
 
                                         withContext(Dispatchers.Main) {
@@ -324,7 +295,7 @@ fun InstagramCookieBottomSheet(
                                                     username = username,
                                                     userId = dsUserId,
                                                     cookie = cookiePart,
-                                                    userAgent = client.userAgent,
+                                                    userAgent = InstagramApiClient.USER_AGENT_WIN,
                                                     proxy = proxyPart,
                                                     fullName = fullName,
                                                     avatar = avatar,

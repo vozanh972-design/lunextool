@@ -3,16 +3,20 @@ package com.cayxu.app.automation.instagram
 import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
+import com.cayxu.app.data.local.InstagramAccountsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Singleton quản lý tác vụ chạy ngầm đa luồng (multi-account concurrent) Instagram cho XSMM.
- * Mỗi tài khoản được chạy trên một Coroutine độc lập trong Global Scope (Dispatchers.IO + SupervisorJob).
+ * Singleton quản lý tác vụ chạy ngầm Instagram cho XSMM theo 100% mô hình Python TA Tool:
+ * - Hỗ trợ chạy đơn lẻ từng tài khoản.
+ * - Hỗ trợ chạy xoay vòng liên tục danh sách tài khoản (Nick 1 -> Nick 2 -> ... -> lặp lại).
  */
 object XsmmInstagramManager {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -27,11 +31,11 @@ object XsmmInstagramManager {
 
     fun isRunning(accountUsername: String): Boolean {
         val clean = accountUsername.trim().lowercase()
-        return runningJobs.containsKey(clean)
+        return runningAccounts.contains(clean) || runningJobs.containsKey(clean)
     }
 
     fun isAnyRunning(): Boolean {
-        return runningJobs.isNotEmpty()
+        return runningJobs.isNotEmpty() || runningAccounts.isNotEmpty()
     }
 
     fun start(context: Context, accountUsername: String, startDelayMs: Long = 0L) {
@@ -43,7 +47,7 @@ object XsmmInstagramManager {
         if (!runningAccounts.contains(clean)) {
             runningAccounts.add(clean)
         }
-        statusMap[clean] = if (startDelayMs > 0) "Chờ khởi động lệch luồng (${startDelayMs / 1000}s)..." else "Bắt đầu khởi động tác vụ..."
+        statusMap[clean] = if (startDelayMs > 0) "Chờ khởi động (${startDelayMs / 1000}s)..." else "Bắt đầu khởi động tác vụ..."
         successCountMap[clean] = 0
         errorCountMap[clean] = 0
 
@@ -54,7 +58,7 @@ object XsmmInstagramManager {
                     scope.launch(Dispatchers.Main) {
                         statusMap[clean] = "Chờ khởi động (${s}s)..."
                     }
-                    kotlinx.coroutines.delay(1000L)
+                    delay(1000L)
                 }
             }
             try {
@@ -73,13 +77,13 @@ object XsmmInstagramManager {
                             errorCountMap[clean] = errors
                         }
                     },
-                    onErrorDetail = { username, detail ->
+                    onErrorDetail = { _, detail ->
                         scope.launch(Dispatchers.Main) {
                             lastErrorDetail[clean] = detail
                         }
                     }
                 )
-            } catch (e: kotlinx.coroutines.CancellationException) {
+            } catch (_: kotlinx.coroutines.CancellationException) {
                 scope.launch(Dispatchers.Main) {
                     statusMap[clean] = "Đã dừng chạy"
                 }
@@ -98,11 +102,103 @@ object XsmmInstagramManager {
         runningJobs[clean] = job
     }
 
+    /**
+     * Chạy xoay vòng danh sách tài khoản theo đúng 100% vòng lặp của Python TA Tool
+     * (Nick 1 làm xong mốc job / gặp lỗi > 4 lần -> chuyển sang Nick 2 -> ... -> lặp lại vô tận)
+     */
     fun startAccounts(context: Context, accountUsernames: List<String>) {
         val cleanList = accountUsernames.map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
-        for ((index, username) in cleanList.withIndex()) {
-            start(context, username, startDelayMs = index * 5000L)
+        if (cleanList.isEmpty()) return
+
+        if (cleanList.size == 1) {
+            start(context, cleanList.first())
+            return
         }
+
+        stopAll()
+        val rotationKey = "__rotation__"
+
+        val job = scope.launch {
+            scope.launch(Dispatchers.Main) {
+                cleanList.forEach { user ->
+                    if (!runningAccounts.contains(user)) {
+                        runningAccounts.add(user)
+                    }
+                    statusMap[user] = "Trong hàng đợi xoay vòng..."
+                    successCountMap[user] = 0
+                    errorCountMap[user] = 0
+                }
+            }
+
+            try {
+                while (isActive) {
+                    var anyLive = false
+                    for (user in cleanList) {
+                        if (!isActive) break
+
+                        val acc = InstagramAccountsStore.getAccount(context, user)
+                        if (acc == null || !acc.isLive) {
+                            scope.launch(Dispatchers.Main) {
+                                statusMap[user] = "Bỏ qua (Cookie Die / Không tồn tại)"
+                            }
+                            continue
+                        }
+                        anyLive = true
+
+                        scope.launch(Dispatchers.Main) {
+                            statusMap[user] = "Đang chạy phiên làm việc..."
+                        }
+
+                        val result = XsmmInstagramTaskRunner.runSingleAccount(
+                            context = context.applicationContext,
+                            accountUsername = user,
+                            onStatusUpdate = { status ->
+                                scope.launch(Dispatchers.Main) {
+                                    statusMap[user] = status
+                                }
+                            },
+                            onProgressUpdate = { status, success, errors ->
+                                scope.launch(Dispatchers.Main) {
+                                    statusMap[user] = status
+                                    successCountMap[user] = (successCountMap[user] ?: 0) + success
+                                    errorCountMap[user] = (errorCountMap[user] ?: 0) + errors
+                                }
+                            },
+                            onErrorDetail = { _, detail ->
+                                scope.launch(Dispatchers.Main) {
+                                    lastErrorDetail[user] = detail
+                                }
+                            }
+                        )
+
+                        scope.launch(Dispatchers.Main) {
+                            statusMap[user] = "Nghỉ chuyển nick (${result.totalCompleted} job xong)"
+                        }
+
+                        // Giãn cách ngắn khi đổi nick
+                        delay(2000L)
+                    }
+
+                    if (!anyLive) {
+                        scope.launch(Dispatchers.Main) {
+                            cleanList.forEach { u -> statusMap[u] = "Tất cả cookie đều Die" }
+                        }
+                        break
+                    }
+                }
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                scope.launch(Dispatchers.Main) {
+                    cleanList.forEach { u -> statusMap[u] = "Đã dừng chạy" }
+                }
+            } finally {
+                runningJobs.remove(rotationKey)
+                scope.launch(Dispatchers.Main) {
+                    runningAccounts.clear()
+                }
+            }
+        }
+
+        runningJobs[rotationKey] = job
     }
 
     fun stop(accountUsername: String) {
@@ -111,14 +207,23 @@ object XsmmInstagramManager {
         job?.cancel()
         runningAccounts.remove(clean)
         statusMap[clean] = "Đã dừng chạy"
+
+        // Nếu đang chạy rotation mà user bấm dừng thì dừng rotation
+        val rotationJob = runningJobs.remove("__rotation__")
+        if (rotationJob != null) {
+            rotationJob.cancel()
+            runningAccounts.clear()
+        }
     }
 
     fun stopAll() {
-        for ((user, job) in runningJobs) {
+        for ((_, job) in runningJobs) {
             job.cancel()
-            statusMap[user] = "Đã dừng chạy"
         }
         runningJobs.clear()
+        for (user in runningAccounts) {
+            statusMap[user] = "Đã dừng chạy"
+        }
         runningAccounts.clear()
     }
 }

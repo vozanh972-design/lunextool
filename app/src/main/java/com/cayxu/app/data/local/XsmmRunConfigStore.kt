@@ -60,9 +60,10 @@ object XsmmRunConfigStore {
     )
 
     val instagramTaskTypes = listOf(
-        "instagram_random" to "Ngẫu nhiên (Ưu tiên Follow, hết job chuyển Like)",
+        "instagram_random" to "Ngẫu nhiên (Tym / Follow / Comment)",
         "instagram_follow" to "Chỉ Follow (Theo dõi)",
-        "instagram_like" to "Chỉ Like (Thích bài viết)"
+        "instagram_like" to "Chỉ Tym / Like (Thích bài viết)",
+        "instagram_comment" to "Chỉ Comment (Bình luận)"
     )
 
     fun taskTypesFor(platform: String): List<Pair<String, String>> = when (platform.lowercase()) {
