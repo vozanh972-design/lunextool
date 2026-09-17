@@ -54,7 +54,11 @@ object XsmmTasksRepository {
         typejob: String? = "normal,better,best"
     ): XsmmTasks2Result {
         return try {
-            val response = XsmmRetrofitClient.api.getTasks2(auth(rawToken), type, uid, typejob ?: "normal,better,best")
+            var response = XsmmRetrofitClient.api.getTasks2(auth(rawToken), type, uid, typejob ?: "normal,better,best")
+            if (response.code() == 429) {
+                kotlinx.coroutines.delay(10000L)
+                response = XsmmRetrofitClient.api.getTasks2(auth(rawToken), type, uid, typejob ?: "normal,better,best")
+            }
             if (!response.isSuccessful) {
                 return XsmmTasks2Result.Error(errMsg(response.errorBody()?.string(), "Lỗi lấy nhiệm vụ (mã HTTP: ${response.code()})"))
             }
@@ -112,6 +116,12 @@ object XsmmTasksRepository {
         while (attempt < maxRetries) {
             try {
                 val response = XsmmRetrofitClient.api.completeTasks2(auth(rawToken), body)
+                if (response.code() == 429 && attempt < maxRetries - 1) {
+                    val retryWait = Random.nextLong(10L, 16L)
+                    kotlinx.coroutines.delay(retryWait * 1000L)
+                    attempt++
+                    continue
+                }
                 if (!response.isSuccessful) {
                     val msg = errMsg(response.errorBody()?.string(), "Lỗi hoàn thành NV (mã HTTP: ${response.code()})")
                     return XsmmCompleteTask2Result(false, msg, 0, null, 0, 0, false)

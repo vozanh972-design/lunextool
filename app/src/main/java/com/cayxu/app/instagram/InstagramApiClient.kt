@@ -96,10 +96,19 @@ class InstagramApiClient(
         const val DEFAULT_JAZOEST_COMMENT = "26312"
 
         fun getIgHeaders(cookie: String, csrftoken: String, referer: String = "https://www.instagram.com/"): Map<String, String> {
+            var syncedCookie = cookie
+            if (csrftoken.isNotBlank() && csrftoken != "missing") {
+                syncedCookie = if (syncedCookie.contains("csrftoken=")) {
+                    syncedCookie.replace(Regex("csrftoken=[^;\\s]+"), "csrftoken=$csrftoken")
+                } else {
+                    "csrftoken=$csrftoken; $syncedCookie"
+                }
+            }
             return mapOf(
                 "accept" to "*/*",
                 "accept-language" to "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5",
-                "cookie" to cookie,
+                "content-type" to "application/x-www-form-urlencoded",
+                "cookie" to syncedCookie,
                 "origin" to "https://www.instagram.com",
                 "priority" to "u=1, i",
                 "referer" to referer,
@@ -158,27 +167,34 @@ class InstagramApiClient(
             }
         }
 
-        fun buildOkHttpClient(proxyConfig: ProxyConfig? = null, timeoutSec: Long = 25L): OkHttpClient {
-            val builder = OkHttpClient.Builder()
-                .connectTimeout(timeoutSec, TimeUnit.SECONDS)
-                .readTimeout(timeoutSec, TimeUnit.SECONDS)
-                .writeTimeout(timeoutSec, TimeUnit.SECONDS)
-                .followRedirects(true)
-                .followSslRedirects(true)
+        private val sharedConnectionPool = ConnectionPool(15, 5, TimeUnit.MINUTES)
+        private val clientMap = java.util.concurrent.ConcurrentHashMap<String, OkHttpClient>()
 
-            if (proxyConfig != null && proxyConfig.host.isNotBlank() && proxyConfig.port > 0) {
-                val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress(proxyConfig.host, proxyConfig.port))
-                builder.proxy(proxy)
-                if (!proxyConfig.username.isNullOrBlank()) {
-                    builder.proxyAuthenticator(okhttp3.Authenticator { _, response ->
-                        val credential = Credentials.basic(proxyConfig.username, proxyConfig.password.orEmpty())
-                        response.request.newBuilder()
-                            .header("Proxy-Authorization", credential)
-                            .build()
-                    })
+        fun buildOkHttpClient(proxyConfig: ProxyConfig? = null, timeoutSec: Long = 25L): OkHttpClient {
+            val key = "${proxyConfig?.host}:${proxyConfig?.port}:${proxyConfig?.username}_$timeoutSec"
+            return clientMap.getOrPut(key) {
+                val builder = OkHttpClient.Builder()
+                    .connectionPool(sharedConnectionPool)
+                    .connectTimeout(timeoutSec, TimeUnit.SECONDS)
+                    .readTimeout(timeoutSec, TimeUnit.SECONDS)
+                    .writeTimeout(timeoutSec, TimeUnit.SECONDS)
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+
+                if (proxyConfig != null && proxyConfig.host.isNotBlank() && proxyConfig.port > 0) {
+                    val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress(proxyConfig.host, proxyConfig.port))
+                    builder.proxy(proxy)
+                    if (!proxyConfig.username.isNullOrBlank()) {
+                        builder.proxyAuthenticator(okhttp3.Authenticator { _, response ->
+                            val credential = Credentials.basic(proxyConfig.username, proxyConfig.password.orEmpty())
+                            response.request.newBuilder()
+                                .header("Proxy-Authorization", credential)
+                                .build()
+                        })
+                    }
                 }
+                builder.build()
             }
-            return builder.build()
         }
 
         private fun unquoteCookie(cookie: String): String {
@@ -223,36 +239,23 @@ class InstagramApiClient(
         }
 
         /**
-         * Trích xuất chính xác bộ token: LSD, FB_DTSG, JAZOEST từ mã HTML trang Instagram
+         * Trích xuất token: LSD, FB_DTSG, JAZOEST chuẩn 100% y hệt Python TA Tool
          */
         fun extractTokensFromHtml(html: String, fallbackLsd: String, fallbackJazoest: String): Triple<String, String, String> {
             var lsd = fallbackLsd
-            val lsdPatterns = listOf(
-                Pattern.compile("\"LSD\",\\[],\\{\"token\":\"([^\"]+)\"}"),
-                Pattern.compile("\"LSDInitialData\"[^\"]*\"token\"\\s*:\\s*\"([^\"]+)\""),
-                Pattern.compile("name=\"lsd\" value=\"([^\"]+)\"")
-            )
-            for (p in lsdPatterns) {
-                val m = p.matcher(html)
-                if (m.find()) {
-                    lsd = m.group(1)
-                    break
-                }
+            val lsdMatch = Pattern.compile("\"LSD\",\\[],\\{\"token\":\"([^\"]+)\"}").matcher(html)
+            if (lsdMatch.find()) {
+                lsd = lsdMatch.group(1)
             }
 
             var fbDtsg = ""
-            val dtsgPatterns = listOf(
-                Pattern.compile("\"DTSGInitialData\"[^\"]*\"token\"\\s*:\\s*\"([^\"]+)\""),
-                Pattern.compile("\\[\"DTSGInitData\",\\[],\\{\"token\":\"([^\"]+)\""),
-                Pattern.compile("\"dtsg\":\\{\"token\":\"([^\"]+)\""),
-                Pattern.compile("name=\"fb_dtsg\" value=\"([^\"]+)\""),
-                Pattern.compile("\"token\"\\s*:\\s*\"(NA[^\"]+)\"")
-            )
-            for (p in dtsgPatterns) {
-                val m = p.matcher(html)
-                if (m.find()) {
-                    fbDtsg = m.group(1)
-                    break
+            var dtsgMatch = Pattern.compile("\"dtsg\":\\{\"token\":\"([^\"]+)\"").matcher(html)
+            if (dtsgMatch.find()) {
+                fbDtsg = dtsgMatch.group(1)
+            } else {
+                dtsgMatch = Pattern.compile("name=\"fb_dtsg\" value=\"([^\"]+)\"").matcher(html)
+                if (dtsgMatch.find()) {
+                    fbDtsg = dtsgMatch.group(1)
                 }
             }
 
@@ -260,10 +263,6 @@ class InstagramApiClient(
             val jazoestMatch = Pattern.compile("name=\"jazoest\" value=\"(\\d+)\"").matcher(html)
             if (jazoestMatch.find()) {
                 jazoest = jazoestMatch.group(1)
-            } else if (fbDtsg.isNotBlank()) {
-                var sum = 0
-                for (c in fbDtsg) sum += c.code
-                jazoest = "2$sum"
             }
 
             return Triple(lsd, fbDtsg, jazoest)
