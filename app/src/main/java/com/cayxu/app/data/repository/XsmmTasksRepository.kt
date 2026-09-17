@@ -8,6 +8,7 @@ data class XsmmTask2(
     val id: String,
     val type: String,
     val targetUrl: String,
+    val targetId: String = "",
     val idorlink: String,
     val points: Int
 )
@@ -54,6 +55,7 @@ object XsmmTasksRepository {
                     id = obj.get("id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     type = obj.get("type")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     targetUrl = obj.get("target_url")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                    targetId = obj.get("target_id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     idorlink = obj.get("idorlink")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     points = obj.get("points")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
                 )
@@ -139,7 +141,13 @@ object XsmmTasksRepository {
                 val countdown = json.get("countdown")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
                 val retry = json.get("retry")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
 
-                val isSuccess = isSuccessFlag || points > 0 || errorMsg.isNullOrBlank()
+                if (retry && attempt < 3) {
+                    val waitSec = if (countdown > 0) countdown.toLong() else (10L..15L).random()
+                    kotlinx.coroutines.delay(waitSec * 1000L)
+                    continue
+                }
+
+                val isSuccess = isSuccessFlag || points > 0 || (errorMsg.isNullOrBlank() && !retry)
 
                 return XsmmCompleteTask2Result(
                     success = isSuccess,

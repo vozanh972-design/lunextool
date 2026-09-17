@@ -40,8 +40,8 @@ class InstagramApiClient(
         const val APP_ID = "1217981644879628" // Mobile Web App ID (Chuẩn Chrome Android)
         const val APP_ID_DESKTOP = "936619743392459"
         const val ASBD_ID = "359341"
-        const val AJAX_ROLLOUT = "1047437269"
-        const val HS = "20710.HYP:instagram_web_pkg.2.1...0"
+        const val AJAX_ROLLOUT = "1047762794"
+        const val HS = "20713.HYP:instagram_web_pkg.2.1...0"
 
         const val DOC_ID_FOLLOW_MUTATION = "26508036048874888"
         const val DOC_ID_LIKE_MUTATION = "9595477160535898"
@@ -488,7 +488,7 @@ class InstagramApiClient(
         val isMobile = userAgent.contains("Mobile", ignoreCase = true) || userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("Android", ignoreCase = true)
         val isIos = userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("iPad", ignoreCase = true)
         val platform = if (isIos) "\"iOS\"" else if (userAgent.contains("Android", ignoreCase = true)) "\"Android\"" else "\"Windows\""
-        val isChrome = userAgent.contains("Chrome", ignoreCase = true) || userAgent.contains("CriOS", ignoreCase = true) || userAgent.contains("Chromium", ignoreCase = true) || activeDeviceProfile.chromeMajor.isNotBlank()
+        val isChrome = userAgent.contains("Chrome", ignoreCase = true) || userAgent.contains("CriOS", ignoreCase = true) || userAgent.contains("Chromium", ignoreCase = true)
 
         val builder = Headers.Builder()
             .add("User-Agent", userAgent)
@@ -511,7 +511,8 @@ class InstagramApiClient(
             builder.add("sec-ch-ua-model", "\"${activeDeviceProfile.model}\"")
             builder.add("sec-ch-prefers-color-scheme", "dark")
             if (!isIos) {
-                builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"$chromeVer.0.6723.107\", \"Google Chrome\";v=\"$chromeVer.0.6723.107\", \"Not?A_Brand\";v=\"24.0.0.0\"")
+                val fullVer = "$chromeVer.0.7977.83"
+                builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"$fullVer\", \"Not?A_Brand\";v=\"24.0.0.0\", \"Google Chrome\";v=\"$fullVer\"")
             }
         }
 
@@ -533,7 +534,7 @@ class InstagramApiClient(
         val isMobile = userAgent.contains("Mobile", ignoreCase = true) || userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("Android", ignoreCase = true)
         val isIos = userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("iPad", ignoreCase = true)
         val platform = if (isIos) "\"iOS\"" else if (userAgent.contains("Android", ignoreCase = true)) "\"Android\"" else "\"Windows\""
-        val isChrome = userAgent.contains("Chrome", ignoreCase = true) || userAgent.contains("CriOS", ignoreCase = true) || userAgent.contains("Chromium", ignoreCase = true) || activeDeviceProfile.chromeMajor.isNotBlank()
+        val isChrome = userAgent.contains("Chrome", ignoreCase = true) || userAgent.contains("CriOS", ignoreCase = true) || userAgent.contains("Chromium", ignoreCase = true)
         val currentRev = activeRev.ifBlank { activeSpinR.ifBlank { AJAX_ROLLOUT } }
         val currentS = activeS.ifBlank { generateSessionS().also { activeS = it } }
         val resolvedAppId = appId ?: if (isMobile) APP_ID else APP_ID_DESKTOP
@@ -567,7 +568,8 @@ class InstagramApiClient(
             builder.add("sec-ch-ua-model", "\"${activeDeviceProfile.model}\"")
             builder.add("sec-ch-prefers-color-scheme", "dark")
             if (!isIos) {
-                builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"$chromeVer.0.6723.107\", \"Google Chrome\";v=\"$chromeVer.0.6723.107\", \"Not?A_Brand\";v=\"24.0.0.0\"")
+                val fullVer = "$chromeVer.0.7977.83"
+                builder.add("sec-ch-ua-full-version-list", "\"Chromium\";v=\"$fullVer\", \"Not?A_Brand\";v=\"24.0.0.0\", \"Google Chrome\";v=\"$fullVer\"")
             }
         }
 
@@ -685,8 +687,8 @@ class InstagramApiClient(
     fun checkAccountLive(): Boolean {
         return try {
             val request = Request.Builder()
-                .url(BASE_URL)
-                .headers(buildDocumentHeaders())
+                .url("$BASE_URL/api/v1/accounts/edit/web_form_data/")
+                .headers(buildStandardHeaders(referer = "$BASE_URL/accounts/edit/", appId = APP_ID_DESKTOP))
                 .get()
                 .build()
             httpClient.newCall(request).execute().use { response ->
@@ -694,11 +696,19 @@ class InstagramApiClient(
                     return false
                 }
                 val body = response.body?.string() ?: ""
-                if (body.contains("login_required") || body.contains("checkpoint_required") || body.contains("login-form")) {
+                if (body.contains("login_required") || body.contains("checkpoint_required")) {
                     return false
                 }
-                val uid = PATTERN_USER_ID.matcher(body).let { if (it.find()) it.group(1).orEmpty() else extractDsUserId() ?: "" }
-                uid.isNotBlank()
+                try {
+                    val json = JSONObject(body)
+                    val formData = json.optJSONObject("form_data")
+                    val uname = formData?.optString("username").orEmpty()
+                    if (uname.isNotBlank()) {
+                        activeUsername = uname
+                        return true
+                    }
+                } catch (_: Exception) {}
+                body.contains("\"username\"")
             }
         } catch (_: Exception) {
             true // Lỗi mạng đơn thuần không kết luận là Die
@@ -828,33 +838,22 @@ class InstagramApiClient(
             }
         } catch (_: Exception) {}
 
-        // Cách 2: Fallback lấy qua HTML (chỉ khi topsearch không tìm thấy)
+
+        // Cách 2: Dùng REST endpoint web_profile_info (JSON nhẹ, không bị 429 như tải HTML)
         try {
-            val targetUrl = if (username.startsWith("http://") || username.startsWith("https://")) {
-                username
-            } else {
-                "$BASE_URL/$cleanName/"
-            }
+            val infoUrl = "$API_BASE_URL/api/v1/users/web_profile_info/?username=$cleanName"
             val request = Request.Builder()
-                .url(targetUrl)
-                .headers(buildDocumentHeaders(referer = "$BASE_URL/"))
+                .url(infoUrl)
+                .headers(buildStandardHeaders(referer = "$BASE_URL/$cleanName/"))
                 .get()
                 .build()
-
             httpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: ""
-                
-                val m0 = Pattern.compile("profilePage_([0-9]+)").matcher(body)
-                if (m0.find()) return m0.group(1)
-
-                val mMeta = Pattern.compile("instapp:owner_user_id[\"']?\\s*content=[\"']?([0-9]+)").matcher(body)
-                if (mMeta.find()) return mMeta.group(1)
-
-                val m1 = Pattern.compile("\"(?:profile_id|user_id|target_id)\"\\s*:\\s*\"?([0-9]+)\"?").matcher(body)
-                if (m1.find()) return m1.group(1)
-
-                val m2 = Pattern.compile("\"owner\"\\s*:\\s*\\{\\s*\"id\"\\s*:\\s*\"([0-9]+)\"").matcher(body)
-                if (m2.find()) return m2.group(1)
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    val userId = json.optJSONObject("data")?.optJSONObject("user")?.optString("id")
+                    if (!userId.isNullOrBlank() && userId != "null") return userId
+                }
             }
         } catch (_: Exception) {}
 
@@ -865,7 +864,7 @@ class InstagramApiClient(
 
     fun nextReq(): String {
         synchronized(this) {
-            return (reqIndex++).toString()
+            return (reqIndex++).toString(36)
         }
     }
 
@@ -902,7 +901,7 @@ class InstagramApiClient(
         val variables = JSONObject().apply {
             put("target_user_id", cleanTargetId)
             put("container_module", "profile")
-            put("nav_chain", "PolarisFeedRoot:feedPage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:2:unexpected")
+            put("nav_chain", "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:2:unexpected")
         }.toString()
 
         val gqlBody = FormBody.Builder()
@@ -1031,182 +1030,94 @@ class InstagramApiClient(
         var lastErrorDetail = ""
         val ref = if (shortcode.isNotBlank()) "$BASE_URL/p/$shortcode/" else "$BASE_URL/"
 
-        // 1. GraphQL usePolarisLikeMediaXIGLikeMutation (Doc ID: 27182485238052618)
-        try {
-            val variables1 = JSONObject().apply {
-                val inputObj = JSONObject().apply {
-                    put("media_id", mediaId)
-                    if (av.isNotBlank() && av != "0") {
-                        put("actor_id", av)
-                    }
-                    put("client_mutation_id", nextReq())
-                    put("container_module", "single_post")
-                }
-                put("input", inputObj)
-            }.toString()
-
-            val body1 = FormBody.Builder()
-                .add("av", av)
-                .add("__d", "www")
-                .add("__user", "0")
-                .add("__a", "1")
-                .add("__req", nextReq())
-                .add("__hs", currentHs)
-                .add("dpr", "3")
-                .add("__ccg", "GOOD")
-                .add("__rev", currentRev)
-                .add("__s", currentS)
-                .add("__hsi", currentHsi)
-                .add("__comet_req", "7")
-                .apply {
-                    if (currentFbDtsg.isNotBlank()) {
-                        add("fb_dtsg", currentFbDtsg)
-                        add("jazoest", currentJazoest)
-                    }
-                    if (currentLsd.isNotBlank()) {
-                        add("lsd", currentLsd)
-                    }
-                }
-                .add("__spin_r", currentSpinR)
-                .add("__spin_b", "trunk")
-                .add("__spin_t", currentSpinT)
-                .add("__crn", "comet.igweb.PolarisPostRouteNext")
-                .add("fb_api_caller_class", "RelayModern")
-                .add("fb_api_req_friendly_name", "usePolarisLikeMediaXIGLikeMutation")
-                .add("server_timestamps", "true")
-                .add("variables", variables1)
-                .add("doc_id", DOC_ID_LIKE_MUTATION_POLARIS)
-                .build()
-
-            val headers1 = buildStandardHeaders(
-                csrfToken = csrf,
-                friendlyName = "usePolarisLikeMediaXIGLikeMutation",
-                lsdToken = currentLsd,
-                referer = ref
-            )
-
-            val request1 = Request.Builder()
-                .url("$BASE_URL/api/graphql")
-                .headers(headers1)
-                .post(body1)
-                .build()
-
-            httpClient.newCall(request1).execute().use { response ->
-                val responseBody = response.body?.string() ?: ""
-                val newDtsg = PATTERN_DTSG.matcher(responseBody).let { if (it.find()) it.group(1) else null }
-                    ?: PATTERN_DTSG_SIMPLE.matcher(responseBody).let { if (it.find()) it.group(1) else null }
-                if (!newDtsg.isNullOrBlank()) {
-                    activeFbDtsg = newDtsg
-                }
-                if (response.isSuccessful || response.code == 200) {
-                    if (responseBody.contains("\"viewer_has_liked\":true") ||
-                        responseBody.contains("\"has_liked\":true") ||
-                        responseBody.contains("\"xig_media_like\"") ||
-                        responseBody.contains("\"status\":\"ok\"") ||
-                        responseBody.contains("\"xdt_like_media\"") ||
-                        responseBody.contains("\"is_final\":true") ||
-                        (responseBody.contains("\"data\"") && !responseBody.contains("\"errors\"") && !responseBody.contains("\"error\""))
-                    ) {
-                        return true
-                    }
-                }
-                if (responseBody.contains("\"spam\"", ignoreCase = true) || responseBody.contains("feedback_required", ignoreCase = true)) {
-                    throw IllegalStateException("Instagram chặn Like (Spam/Action blocked)")
-                }
-                if (responseBody.contains("\"require_login\"", ignoreCase = true) || responseBody.contains("login_required", ignoreCase = true) || responseBody.contains("checkpoint_required", ignoreCase = true)) {
-                    throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
-                }
-                if (response.code == 429) {
-                    lastErrorDetail = "HTTP 429"
-                }
-            }
-        } catch (e: Exception) {
-            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
-            lastErrorDetail = e.message ?: ""
-        }
-
-        // 2. GraphQL Fallback: usePolarisLikeMediaLikeMutation (Doc ID: 9595477160535898)
-        try {
-            val variables2 = JSONObject().apply {
+        // GraphQL usePolarisLikeMediaXIGLikeMutation (Doc ID: 27182485238052618) chuẩn từ tool Python
+        val variables1 = JSONObject().apply {
+            val inputObj = JSONObject().apply {
                 put("media_id", mediaId)
-                put("container_module", "feed_timeline")
-            }.toString()
-
-            val body2 = FormBody.Builder()
-                .add("av", av)
-                .add("__d", "www")
-                .add("__user", "0")
-                .add("__a", "1")
-                .add("__req", nextReq())
-                .add("__hs", currentHs)
-                .add("dpr", "3")
-                .add("__ccg", "GOOD")
-                .add("__rev", currentRev)
-                .add("__s", currentS)
-                .add("__hsi", currentHsi)
-                .add("__comet_req", "7")
-                .apply {
-                    if (currentFbDtsg.isNotBlank()) {
-                        add("fb_dtsg", currentFbDtsg)
-                        add("jazoest", currentJazoest)
-                    }
-                    if (currentLsd.isNotBlank()) {
-                        add("lsd", currentLsd)
-                    }
+                if (av.isNotBlank() && av != "0") {
+                    put("actor_id", av)
                 }
-                .add("__spin_r", currentSpinR)
-                .add("__spin_b", "trunk")
-                .add("__spin_t", currentSpinT)
-                .add("__crn", "comet.igweb.PolarisProfilePostsTabRoute")
-                .add("fb_api_caller_class", "RelayModern")
-                .add("fb_api_req_friendly_name", "usePolarisLikeMediaLikeMutation")
-                .add("server_timestamps", "true")
-                .add("variables", variables2)
-                .add("doc_id", DOC_ID_LIKE_MUTATION)
-                .build()
+                put("client_mutation_id", nextReq())
+                put("container_module", "single_post")
+            }
+            put("input", inputObj)
+        }.toString()
 
-            val headers2 = buildStandardHeaders(
-                csrfToken = csrf,
-                friendlyName = "usePolarisLikeMediaLikeMutation",
-                lsdToken = currentLsd,
-                referer = ref
-            )
-
-            val request2 = Request.Builder()
-                .url("$BASE_URL/api/graphql")
-                .headers(headers2)
-                .post(body2)
-                .build()
-
-            httpClient.newCall(request2).execute().use { response ->
-                val responseBody = response.body?.string() ?: ""
-                if (response.isSuccessful || response.code == 200) {
-                    if (responseBody.contains("\"viewer_has_liked\":true") ||
-                        responseBody.contains("\"status\":\"ok\"") ||
-                        responseBody.contains("\"is_final\":true") ||
-                        (responseBody.contains("\"data\"") && !responseBody.contains("\"errors\"") && !responseBody.contains("\"error\""))
-                    ) {
-                        return true
-                    }
+        val body1 = FormBody.Builder()
+            .add("av", av)
+            .add("__d", "www")
+            .add("__user", "0")
+            .add("__a", "1")
+            .add("__req", nextReq())
+            .add("__hs", currentHs)
+            .add("dpr", "1")
+            .add("__ccg", "EXCELLENT")
+            .add("__rev", currentRev)
+            .add("__s", currentS)
+            .add("__hsi", currentHsi)
+            .add("__comet_req", "7")
+            .apply {
+                if (currentFbDtsg.isNotBlank()) {
+                    add("fb_dtsg", currentFbDtsg)
+                    add("jazoest", currentJazoest)
                 }
-                if (responseBody.contains("\"spam\"", ignoreCase = true) || responseBody.contains("feedback_required", ignoreCase = true)) {
-                    throw IllegalStateException("Instagram chặn Like (Spam/Action blocked)")
-                }
-                if (responseBody.contains("\"require_login\"", ignoreCase = true) || responseBody.contains("login_required", ignoreCase = true) || responseBody.contains("checkpoint_required", ignoreCase = true)) {
-                    throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
-                }
-                if (response.code == 429) {
-                    lastErrorDetail = "HTTP 429"
+                if (currentLsd.isNotBlank()) {
+                    add("lsd", currentLsd)
                 }
             }
-        } catch (e: Exception) {
-            if (e.message?.contains("chặn") == true || e.message?.contains("DIE") == true) throw e
-            lastErrorDetail = e.message ?: ""
+            .add("__spin_r", currentSpinR)
+            .add("__spin_b", "trunk")
+            .add("__spin_t", currentSpinT)
+            .add("fb_api_caller_class", "RelayModern")
+            .add("fb_api_req_friendly_name", "usePolarisLikeMediaXIGLikeMutation")
+            .add("server_timestamps", "true")
+            .add("variables", variables1)
+            .add("doc_id", DOC_ID_LIKE_MUTATION_POLARIS)
+            .build()
+
+        val headers1 = buildStandardHeaders(
+            csrfToken = csrf,
+            friendlyName = "usePolarisLikeMediaXIGLikeMutation",
+            lsdToken = currentLsd,
+            referer = ref
+        )
+
+        val request1 = Request.Builder()
+            .url("$BASE_URL/api/graphql")
+            .headers(headers1)
+            .post(body1)
+            .build()
+
+        httpClient.newCall(request1).execute().use { response ->
+            val responseBody = response.body?.string() ?: ""
+            val newDtsg = PATTERN_DTSG.matcher(responseBody).let { if (it.find()) it.group(1) else null }
+                ?: PATTERN_DTSG_SIMPLE.matcher(responseBody).let { if (it.find()) it.group(1) else null }
+            if (!newDtsg.isNullOrBlank()) {
+                activeFbDtsg = newDtsg
+            }
+            if (response.isSuccessful || response.code == 200) {
+                if (responseBody.contains("\"viewer_has_liked\":true") ||
+                    responseBody.contains("\"has_liked\":true") ||
+                    responseBody.contains("\"xig_media_like\"") ||
+                    responseBody.contains("\"status\":\"ok\"") ||
+                    responseBody.contains("\"xdt_like_media\"") ||
+                    responseBody.contains("\"is_final\":true") ||
+                    (responseBody.contains("\"data\"") && !responseBody.contains("\"errors\"") && !responseBody.contains("\"error\""))
+                ) {
+                    return true
+                }
+            }
+            if (responseBody.contains("\"spam\"", ignoreCase = true) || responseBody.contains("feedback_required", ignoreCase = true)) {
+                throw IllegalStateException("Instagram chặn Like (Spam/Action blocked)")
+            }
+            if (responseBody.contains("\"require_login\"", ignoreCase = true) || responseBody.contains("login_required", ignoreCase = true) || responseBody.contains("checkpoint_required", ignoreCase = true)) {
+                throw IllegalStateException("Cookie DIE hoặc yêu cầu đăng nhập lại")
+            }
+            if (response.code == 429) {
+                throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429)")
+            }
         }
 
-        if (lastErrorDetail.contains("429")) {
-            throw IllegalStateException("Instagram giới hạn tạm thời (HTTP 429)")
-        }
         return false
     }
 

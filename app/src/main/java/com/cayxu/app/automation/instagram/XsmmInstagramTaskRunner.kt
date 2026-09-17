@@ -203,10 +203,10 @@ object XsmmInstagramTaskRunner {
                                     val currentActorId = apiClient.activeActorId.ifBlank { activeActorId }
 
                                     if (isFollow || task.type.contains("follow", ignoreCase = true)) {
-                                        val followTarget = task.idorlink.ifBlank { task.targetUrl }
+                                        val followTarget = task.targetId.ifBlank { task.idorlink.ifBlank { task.targetUrl } }
                                         actionSuccess = apiClient.followTarget(followTarget, fbDtsg = currentDtsg, lsd = currentLsd, actorId = currentActorId)
                                     } else {
-                                        val likeTarget = task.idorlink.ifBlank { task.targetUrl }
+                                        val likeTarget = task.targetId.ifBlank { task.idorlink.ifBlank { task.targetUrl } }
                                         actionSuccess = apiClient.likeTarget(likeTarget, fbDtsg = currentDtsg, lsd = currentLsd, actorId = currentActorId)
                                     }
                                     if (apiClient.activeFbDtsg.isNotBlank()) activeDtsg = apiClient.activeFbDtsg
@@ -261,12 +261,12 @@ object XsmmInstagramTaskRunner {
                                     }
                                 }
 
-                                // 4. Xử lý nhận xu theo cơ chế 12 Follow / lần
+                                // 4. Xử lý nhận xu theo cơ chế 10 Follow / lần (chuẩn theo Python tool XSMM)
                                 if (isFollow) {
                                     if (actionSuccess) {
                                          pendingFollowTaskIds.add(task.id)
                                          totalCompleted++
-                                         notify("Đã Follow (${pendingFollowTaskIds.size}/12) - Đủ 12 job sẽ nhận xu")
+                                         notify("Đã Follow (${pendingFollowTaskIds.size}/10) - Đủ 10 job sẽ nhận xu")
                                     } else {
                                          totalErrors++
                                          val detailStr = lastActionError ?: "Lỗi Follow: Instagram từ chối / không thể Follow đối tượng $target"
@@ -274,10 +274,10 @@ object XsmmInstagramTaskRunner {
                                          notify("Lỗi Follow: $detailStr")
                                     }
 
-                                    // Khi đủ 12 job Follow -> Gửi nhận xu 1 lần
-                                    if (pendingFollowTaskIds.size >= 12) {
-                                        val batchToClaim = pendingFollowTaskIds.take(12)
-                                        notify("Đã tích lũy đủ 12 job Follow, đang gửi nhận xu...")
+                                    // Khi đủ 10 job Follow -> Gửi nhận xu ngay và break để refresh danh sách task mới
+                                    if (pendingFollowTaskIds.size >= 10) {
+                                        val batchToClaim = pendingFollowTaskIds.take(10)
+                                        notify("Đã tích lũy đủ 10 job Follow, đang gửi nhận xu...")
                                         val compRes = XsmmTasksRepository.completeTasks2(
                                             rawToken = token,
                                             type = "instagram_follow",
@@ -290,7 +290,6 @@ object XsmmInstagramTaskRunner {
                                             val earned = if (compRes.points > 0) compRes.points else 0
                                             totalEarnedPoints += earned
 
-                                            // Cập nhật điểm thời gian thực ngay lập tức
                                             if (compRes.totalPoints != null && compRes.totalPoints > 0) {
                                                 synchronized(XsmmAccountStore) {
                                                     XsmmAccountStore.updatePoints(context, compRes.totalPoints)
@@ -309,7 +308,6 @@ object XsmmInstagramTaskRunner {
                                                 }
                                             }
 
-                                            // Đồng bộ thêm với server để đảm bảo số dư chính xác tuyệt đối
                                             try {
                                                 when (val userRes = XsmmAuthRepository.fetchUser(token)) {
                                                     is XsmmLoginResult.Success -> {
@@ -325,11 +323,11 @@ object XsmmInstagramTaskRunner {
                                             } catch (_: Exception) {}
 
                                             pendingFollowTaskIds.removeAll(batchToClaim)
-                                            val successMsg = if (earned > 0) "Hoàn thành 12 Follow: +$earned xu" else (if (compRes.message.isNotBlank()) compRes.message else "Đã nhận xu (12 job Follow)")
+                                            val successMsg = if (earned > 0) "Hoàn thành 10 Follow: +$earned xu" else (if (compRes.message.isNotBlank()) compRes.message else "Đã nhận xu (10 job Follow)")
                                             notify(successMsg)
                                         } else {
                                             totalErrors++
-                                            val errMsg = if (compRes.message.isNotBlank()) compRes.message else "Lỗi nhận xu 12 job"
+                                            val errMsg = if (compRes.message.isNotBlank()) compRes.message else "Lỗi nhận xu 10 job"
                                             notify("Thất bại: $errMsg")
                                             pendingFollowTaskIds.removeAll(batchToClaim)
                                         }
@@ -340,12 +338,13 @@ object XsmmInstagramTaskRunner {
                                             notify("Chờ ${s}s lấy nhiệm vụ tiếp theo...")
                                             delay(1000L)
                                         }
+                                        // Hoàn thành đợt 10 task -> break ra ngoài refresh nhóm task mới (giống logic Python)
+                                        break
                                     } else {
-                                        // Chưa đủ 12 job -> đếm ngược giãn cách lấy job tiếp theo
                                         val waitAfter = config.fetchTaskIntervalSeconds.coerceAtLeast(2)
                                         for (s in waitAfter downTo 1) {
                                             if (!coroutineContext.isActive) break
-                                            notify("Đã xong ${pendingFollowTaskIds.size}/12 Follow. Chờ ${s}s tiếp tục...")
+                                            notify("Đã xong ${pendingFollowTaskIds.size}/10 Follow. Chờ ${s}s tiếp tục...")
                                             delay(1000L)
                                         }
                                     }
@@ -446,7 +445,30 @@ object XsmmInstagramTaskRunner {
                                     }
                                     notify("Đã hoàn thành mục tiêu $totalCompleted nhiệm vụ!")
                                     return RunResult(totalCompleted, totalErrors, totalEarnedPoints, "Hoàn thành mục tiêu $totalCompleted nhiệm vụ")
+                            }
+
+                            // Gửi nhận xu nốt các job Follow còn dư lại trong đợt task này (giống Python: if len(cache_batch_nv) > 0)
+                            if (pendingFollowTaskIds.isNotEmpty()) {
+                                val remainingBatch = pendingFollowTaskIds.toList()
+                                notify("Đang gửi nhận xu cho ${remainingBatch.size} job Follow hoàn thành...")
+                                val compRes = XsmmTasksRepository.completeTasks2(
+                                    rawToken = token,
+                                    type = "instagram_follow",
+                                    taskIds = remainingBatch,
+                                    uid = xsmmUid,
+                                    cookieCheck = account.cookie
+                                )
+                                if (compRes.success || compRes.points > 0) {
+                                    val earned = if (compRes.points > 0) compRes.points else 0
+                                    totalEarnedPoints += earned
+                                    if (compRes.totalPoints != null && compRes.totalPoints > 0) {
+                                        synchronized(XsmmAccountStore) { XsmmAccountStore.updatePoints(context, compRes.totalPoints) }
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { XsmmSession.points.value = compRes.totalPoints }
+                                    }
+                                    val successMsg = if (earned > 0) "Hoàn thành ${remainingBatch.size} Follow: +$earned xu" else "Đã nhận xu (${remainingBatch.size} Follow)"
+                                    notify(successMsg)
                                 }
+                                pendingFollowTaskIds.clear()
                             }
                         }
                     }
