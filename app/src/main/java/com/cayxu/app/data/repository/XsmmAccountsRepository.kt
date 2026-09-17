@@ -162,19 +162,16 @@ object XsmmAccountsRepository {
             val accountObj = json?.takeIf { it.has("id") }
                 ?: json?.get("account")?.takeIf { it.isJsonObject }?.asJsonObject
 
-            if (accountObj != null) {
+            val hasValidId = accountObj?.get("id")?.takeIf { it.isJsonPrimitive }?.asString?.isNotBlank() == true ||
+                accountObj?.get("account_id")?.takeIf { it.isJsonPrimitive }?.asString?.isNotBlank() == true
+
+            if (accountObj != null && hasValidId) {
                 XsmmAddAccountResult.Success(parseAccount(accountObj))
             } else {
-                XsmmAddAccountResult.Success(
-                    XsmmAccount(
-                        id = "",
-                        type = "instagram",
-                        accountId = "",
-                        name = cleanName,
-                        linkAccount = "https://www.instagram.com/$cleanName",
-                        isActive = false
-                    )
-                )
+                val err = errorField
+                    ?: json?.get("message")?.takeIf { it.isJsonPrimitive }?.asString
+                    ?: if (json != null) json.toString() else "XSMM không trả về ID tài khoản"
+                XsmmAddAccountResult.Error(err)
             }
         } catch (e: Exception) {
             XsmmAddAccountResult.Error(e.message ?: "Lỗi kết nối mạng")

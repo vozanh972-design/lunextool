@@ -84,6 +84,14 @@ class InstagramApiClient(
     }
 
     companion object {
+        const val USER_AGENT_MOBILE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
+        const val SEC_CH_UA_MOBILE = "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\""
+        const val APP_ID_MOBILE = "1217981644879628"
+        const val ASBD_ID_MOBILE = "359341"
+
+        const val HS_VERSION = "20713.HYP:instagram_web_pkg.2.1...0"
+        const val REV_VERSION = "1047775310"
+
         const val USER_AGENT_WIN = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         const val SEC_CH_UA_120 = "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\""
 
@@ -94,34 +102,82 @@ class InstagramApiClient(
         const val DEFAULT_LSD_FOLLOW = "Jfq8VQNmkkkJufHSbEE9bf"
         const val DEFAULT_JAZOEST_FOLLOW = "26328"
 
-        const val DEFAULT_LSD_LIKE = "GyeZl-huflHZ0K5L3-pzBi"
-        const val DEFAULT_JAZOEST_LIKE = "26492"
+        const val DEFAULT_LSD_LIKE = "8evCqFXFXIMbNmJjHja_w2"
+        const val DEFAULT_JAZOEST_LIKE = "26442"
 
         const val DEFAULT_LSD_COMMENT = "9zei3OjvTBQ-9YG6E0OMzm"
         const val DEFAULT_JAZOEST_COMMENT = "26312"
 
-        fun getIgHeaders(cookie: String, csrftoken: String, referer: String = "https://www.instagram.com/"): Map<String, String> {
-            return mapOf(
+        private val tokenCache = java.util.concurrent.ConcurrentHashMap<String, Triple<String, String, String>>()
+
+        fun getOrFetchTokens(cookie: String, client: OkHttpClient, defaultLsd: String, defaultJazoest: String): Triple<String, String, String> {
+            val actorId = extractActorId(cookie)
+            val cacheKey = if (actorId != "0" && actorId.isNotBlank()) actorId else cookie.hashCode().toString()
+            tokenCache[cacheKey]?.let { return it }
+
+            var lsd = defaultLsd
+            var fbDtsg = ""
+            var jazoest = defaultJazoest
+
+            try {
+                val homeReq = Request.Builder()
+                    .url("https://www.instagram.com/")
+                    .addHeader("user-agent", USER_AGENT_MOBILE)
+                    .addHeader("cookie", cookie)
+                    .addHeader("sec-ch-ua", SEC_CH_UA_MOBILE)
+                    .get()
+                    .build()
+                val homeRes = client.newCall(homeReq).execute()
+                val resHome = homeRes.body?.string().orEmpty()
+                val tokens = extractTokensFromHtml(resHome, defaultLsd, defaultJazoest)
+                lsd = tokens.first
+                fbDtsg = tokens.second
+                jazoest = tokens.third
+            } catch (_: Exception) {}
+
+            val result = Triple(lsd, fbDtsg, jazoest)
+            tokenCache[cacheKey] = result
+            return result
+        }
+
+        fun getIgHeaders(
+            cookie: String,
+            csrftoken: String,
+            referer: String = "https://www.instagram.com/",
+            friendlyName: String = "",
+            lsd: String = ""
+        ): Map<String, String> {
+            val headers = mutableMapOf(
                 "accept" to "*/*",
-                "accept-language" to "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5",
+                "accept-language" to "vi-VN,vi;q=0.9,ja-JP;q=0.8,ja;q=0.7,en-JP;q=0.6,en;q=0.5,es-ES;q=0.4,es;q=0.3,fr-FR;q=0.2,fr;q=0.1,en-US;q=0.1",
                 "content-type" to "application/x-www-form-urlencoded",
                 "cookie" to cookie,
                 "origin" to "https://www.instagram.com",
                 "priority" to "u=1, i",
                 "referer" to referer,
-                "sec-ch-ua" to SEC_CH_UA_120,
-                "sec-ch-ua-mobile" to "?0",
-                "sec-ch-ua-platform" to "\"Windows\"",
+                "sec-ch-prefers-color-scheme" to "dark",
+                "sec-ch-ua" to SEC_CH_UA_MOBILE,
+                "sec-ch-ua-mobile" to "?1",
+                "sec-ch-ua-model" to "\"iPhone\"",
+                "sec-ch-ua-platform" to "\"iOS\"",
+                "sec-ch-ua-platform-version" to "\"18.5\"",
                 "sec-fetch-dest" to "empty",
                 "sec-fetch-mode" to "cors",
                 "sec-fetch-site" to "same-origin",
-                "user-agent" to USER_AGENT_WIN,
-                "x-asbd-id" to "129477",
+                "user-agent" to USER_AGENT_MOBILE,
+                "x-asbd-id" to ASBD_ID_MOBILE,
                 "x-csrftoken" to csrftoken,
-                "x-ig-app-id" to "936619743392459",
-                "x-ig-www-claim" to "0",
+                "x-ig-app-id" to APP_ID_MOBILE,
+                "x-ig-max-touch-points" to "1",
                 "x-requested-with" to "XMLHttpRequest"
             )
+            if (friendlyName.isNotBlank()) {
+                headers["x-fb-friendly-name"] = friendlyName
+            }
+            if (lsd.isNotBlank()) {
+                headers["x-fb-lsd"] = lsd
+            }
+            return headers
         }
 
         fun parseProxy(proxyStr: String?): ProxyConfig? {
@@ -329,12 +385,15 @@ class InstagramApiClient(
             val url = "https://www.instagram.com/api/v1/accounts/edit/web_form_data/"
             val request = Request.Builder()
                 .url(url)
-                .addHeader("x-ig-app-id", "936619743392459")
+                .addHeader("x-ig-app-id", APP_ID_MOBILE)
+                .addHeader("x-asbd-id", ASBD_ID_MOBILE)
                 .addHeader("x-requested-with", "XMLHttpRequest")
                 .addHeader("referer", "https://www.instagram.com/accounts/edit/")
                 .addHeader("cookie", unquoted)
-                .addHeader("user-agent", USER_AGENT_WIN)
-                .addHeader("sec-ch-ua", SEC_CH_UA_120)
+                .addHeader("user-agent", USER_AGENT_MOBILE)
+                .addHeader("sec-ch-ua", SEC_CH_UA_MOBILE)
+                .addHeader("sec-ch-ua-mobile", "?1")
+                .addHeader("sec-ch-ua-platform", "\"iOS\"")
                 .get()
                 .build()
 
@@ -385,7 +444,7 @@ class InstagramApiClient(
             return try {
                 val req = Request.Builder()
                     .url(linkJob)
-                    .addHeader("user-agent", USER_AGENT_WIN)
+                    .addHeader("user-agent", USER_AGENT_MOBILE)
                     .get()
                     .build()
                 val res = client.newCall(req).execute()
@@ -418,7 +477,7 @@ class InstagramApiClient(
             return try {
                 val req = Request.Builder()
                     .url(linkJob)
-                    .addHeader("user-agent", USER_AGENT_WIN)
+                    .addHeader("user-agent", USER_AGENT_MOBILE)
                     .get()
                     .build()
                 val html = client.newCall(req).execute().body?.string().orEmpty()
@@ -439,8 +498,7 @@ class InstagramApiClient(
         }
 
         /**
-         * 2. Nhiệm vụ FOLLOW theo chuẩn 100% Python TA Tool
-         * GraphQL Doc ID: 26508036048874888 (usePolarisFollowMutation)
+         * 2. Nhiệm vụ FOLLOW theo chuẩn GraphQL (usePolarisFollowMutation)
          */
         fun follow(
             targetId: String,
@@ -455,30 +513,12 @@ class InstagramApiClient(
             val unquoted = unquoteCookie(cookie)
             val client = buildOkHttpClient(parseProxy(proxy), timeoutSec = 15L)
 
-            val homeUrl = if (profileUrl.isNotBlank()) profileUrl else "https://www.instagram.com/"
-            var dynamicCsrf = if (csrftoken.isNotBlank() && csrftoken != "missing") csrftoken else extractCsrfToken(unquoted)
+            val dynamicCsrf = if (csrftoken.isNotBlank() && csrftoken != "missing") csrftoken else extractCsrfToken(unquoted)
 
-            var lsd = DEFAULT_LSD_FOLLOW
-            var fbDtsg = ""
-            var jazoest = DEFAULT_JAZOEST_FOLLOW
-
-            try {
-                val homeReq = Request.Builder()
-                    .url(homeUrl)
-                    .addHeader("user-agent", USER_AGENT_WIN)
-                    .addHeader("cookie", unquoted)
-                    .addHeader("sec-ch-ua", SEC_CH_UA_120)
-                    .get()
-                    .build()
-                val homeRes = client.newCall(homeReq).execute()
-                val resHome = homeRes.body?.string().orEmpty()
-
-                val tokens = extractTokensFromHtml(resHome, DEFAULT_LSD_FOLLOW, DEFAULT_JAZOEST_FOLLOW)
-                lsd = tokens.first
-                fbDtsg = tokens.second
-                jazoest = tokens.third
-            } catch (_: Exception) {}
-
+            val tokens = getOrFetchTokens(unquoted, client, DEFAULT_LSD_FOLLOW, DEFAULT_JAZOEST_FOLLOW)
+            val lsd = tokens.first
+            val fbDtsg = tokens.second
+            val jazoest = tokens.third
             val actorId = extractActorId(unquoted)
 
             val variables = JSONObject().apply {
@@ -493,10 +533,10 @@ class InstagramApiClient(
                 .add("__user", "0")
                 .add("__a", "1")
                 .add("__req", "s")
-                .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
-                .add("dpr", "1")
-                .add("__ccg", "EXCELLENT")
-                .add("__rev", "1046917461")
+                .add("__hs", HS_VERSION)
+                .add("dpr", "3")
+                .add("__ccg", "GOOD")
+                .add("__rev", REV_VERSION)
                 .add("__comet_req", "7")
                 .add("fb_dtsg", fbDtsg)
                 .add("jazoest", jazoest)
@@ -507,7 +547,13 @@ class InstagramApiClient(
                 .add("doc_id", DOC_ID_FOLLOW)
                 .add("variables", variables.toString())
 
-            val reqHeaders = getIgHeaders(unquoted, dynamicCsrf, if (profileUrl.isNotBlank()) profileUrl else "https://www.instagram.com/")
+            val reqHeaders = getIgHeaders(
+                cookie = unquoted,
+                csrftoken = dynamicCsrf,
+                referer = if (profileUrl.isNotBlank()) profileUrl else "https://www.instagram.com/",
+                friendlyName = "usePolarisFollowMutation",
+                lsd = lsd
+            )
             val requestBuilder = Request.Builder()
                 .url("https://www.instagram.com/api/graphql")
                 .post(formBuilder.build())
@@ -524,8 +570,7 @@ class InstagramApiClient(
         }
 
         /**
-         * 3. Nhiệm vụ TYM (LIKE) theo chuẩn 100% Python TA Tool
-         * GraphQL Doc ID: 27182485238052618 (usePolarisLikeMediaXIGLikeMutation)
+         * 3. Nhiệm vụ TYM (LIKE) theo chuẩn GraphQL (usePolarisLikeMediaXIGLikeMutation)
          */
         fun tym(
             mediaId: String,
@@ -540,56 +585,19 @@ class InstagramApiClient(
             val unquoted = unquoteCookie(cookie)
             val client = buildOkHttpClient(parseProxy(proxy), timeoutSec = 15L)
 
-            var dynamicCsrf = if (csrftoken.isNotBlank() && csrftoken != "missing") csrftoken else extractCsrfToken(unquoted)
+            val dynamicCsrf = if (csrftoken.isNotBlank() && csrftoken != "missing") csrftoken else extractCsrfToken(unquoted)
 
-            var lsd = DEFAULT_LSD_LIKE
-            var fbDtsg = ""
-            var jazoest = DEFAULT_JAZOEST_LIKE
-
-            try {
-                val homeReq = Request.Builder()
-                    .url("https://www.instagram.com/")
-                    .addHeader("user-agent", USER_AGENT_WIN)
-                    .addHeader("cookie", unquoted)
-                    .addHeader("sec-ch-ua", SEC_CH_UA_120)
-                    .get()
-                    .build()
-                val homeRes = client.newCall(homeReq).execute()
-                val resHome = homeRes.body?.string().orEmpty()
-
-                val tokens = extractTokensFromHtml(resHome, DEFAULT_LSD_LIKE, DEFAULT_JAZOEST_LIKE)
-                lsd = tokens.first
-                fbDtsg = tokens.second
-                jazoest = tokens.third
-            } catch (_: Exception) {}
-
+            val tokens = getOrFetchTokens(unquoted, client, DEFAULT_LSD_LIKE, DEFAULT_JAZOEST_LIKE)
+            val lsd = tokens.first
+            val fbDtsg = tokens.second
+            val jazoest = tokens.third
             val actorId = extractActorId(unquoted)
-
-            var trackingToken = ""
-            if (linkJob.isNotBlank()) {
-                try {
-                    val linkReq = Request.Builder()
-                        .url(linkJob)
-                        .addHeader("user-agent", USER_AGENT_WIN)
-                        .addHeader("cookie", unquoted)
-                        .get()
-                        .build()
-                    val resLink = client.newCall(linkReq).execute().body?.string().orEmpty()
-                    val ttMatch = Pattern.compile("\"tracking_token\":\"([^\"]+)\"").matcher(resLink)
-                    if (ttMatch.find()) {
-                        trackingToken = ttMatch.group(1)
-                    }
-                } catch (_: Exception) {}
-            }
 
             val inputObj = JSONObject().apply {
                 put("actor_id", actorId)
                 put("client_mutation_id", Random.nextInt(1000000, 9999999).toString())
                 put("container_module", "single_post")
                 put("media_id", mediaId)
-                if (trackingToken.isNotBlank()) {
-                    put("tracking_token", trackingToken)
-                }
             }
             val variables = JSONObject().apply {
                 put("input", inputObj)
@@ -601,10 +609,10 @@ class InstagramApiClient(
                 .add("__user", "0")
                 .add("__a", "1")
                 .add("__req", "h")
-                .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
-                .add("dpr", "1")
-                .add("__ccg", "EXCELLENT")
-                .add("__rev", "1046913831")
+                .add("__hs", HS_VERSION)
+                .add("dpr", "3")
+                .add("__ccg", "GOOD")
+                .add("__rev", REV_VERSION)
                 .add("__comet_req", "7")
                 .add("fb_dtsg", fbDtsg)
                 .add("jazoest", jazoest)
@@ -615,7 +623,13 @@ class InstagramApiClient(
                 .add("doc_id", DOC_ID_LIKE)
                 .add("variables", variables.toString())
 
-            val reqHeaders = getIgHeaders(unquoted, dynamicCsrf, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
+            val reqHeaders = getIgHeaders(
+                cookie = unquoted,
+                csrftoken = dynamicCsrf,
+                referer = if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/",
+                friendlyName = "usePolarisLikeMediaXIGLikeMutation",
+                lsd = lsd
+            )
             val requestBuilder = Request.Builder()
                 .url("https://www.instagram.com/api/graphql")
                 .post(formBuilder.build())
@@ -632,8 +646,7 @@ class InstagramApiClient(
         }
 
         /**
-         * 4. Nhiệm vụ COMMENT theo chuẩn 100% Python TA Tool
-         * GraphQL Doc ID: 27261905640092552 (PolarisPostCommentInputRevampedMutation)
+         * 4. Nhiệm vụ COMMENT theo chuẩn GraphQL (PolarisPostCommentInputRevampedMutation)
          */
         fun cmt(
             mediaId: String,
@@ -649,30 +662,12 @@ class InstagramApiClient(
             val unquoted = unquoteCookie(cookie)
             val client = buildOkHttpClient(parseProxy(proxy), timeoutSec = 15L)
 
-            val homeUrl = if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/"
-            var dynamicCsrf = if (csrftoken.isNotBlank() && csrftoken != "missing") csrftoken else extractCsrfToken(unquoted)
+            val dynamicCsrf = if (csrftoken.isNotBlank() && csrftoken != "missing") csrftoken else extractCsrfToken(unquoted)
 
-            var lsd = DEFAULT_LSD_COMMENT
-            var fbDtsg = ""
-            var jazoest = DEFAULT_JAZOEST_COMMENT
-
-            try {
-                val homeReq = Request.Builder()
-                    .url(homeUrl)
-                    .addHeader("user-agent", USER_AGENT_WIN)
-                    .addHeader("cookie", unquoted)
-                    .addHeader("sec-ch-ua", SEC_CH_UA_120)
-                    .get()
-                    .build()
-                val homeRes = client.newCall(homeReq).execute()
-                val resHome = homeRes.body?.string().orEmpty()
-
-                val tokens = extractTokensFromHtml(resHome, DEFAULT_LSD_COMMENT, DEFAULT_JAZOEST_COMMENT)
-                lsd = tokens.first
-                fbDtsg = tokens.second
-                jazoest = tokens.third
-            } catch (_: Exception) {}
-
+            val tokens = getOrFetchTokens(unquoted, client, DEFAULT_LSD_COMMENT, DEFAULT_JAZOEST_COMMENT)
+            val lsd = tokens.first
+            val fbDtsg = tokens.second
+            val jazoest = tokens.third
             val actorId = extractActorId(unquoted)
 
             val connectionsArr = JSONArray().apply {
@@ -693,15 +688,41 @@ class InstagramApiClient(
                 .add("__user", "0")
                 .add("__a", "1")
                 .add("__req", "10")
-                .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
-                .add("dpr", "1")
-                .add("__ccg", "EXCELLENT")
-                .add("__rev", "1046917461")
+                .add("__hs", HS_VERSION)
+                .add("dpr", "3")
+                .add("__ccg", "GOOD")
+                .add("__rev", REV_VERSION)
                 .add("__comet_req", "7")
                 .add("fb_dtsg", fbDtsg)
                 .add("jazoest", jazoest)
                 .add("lsd", lsd)
                 .add("fb_api_caller_class", "RelayModern")
+                .add("fb_api_req_friendly_name", "PolarisPostCommentInputRevampedMutation")
+                .add("server_timestamps", "true")
+                .add("doc_id", DOC_ID_COMMENT)
+                .add("variables", variables.toString())
+
+            val reqHeaders = getIgHeaders(
+                cookie = unquoted,
+                csrftoken = dynamicCsrf,
+                referer = if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/",
+                friendlyName = "PolarisPostCommentInputRevampedMutation",
+                lsd = lsd
+            )
+            val requestBuilder = Request.Builder()
+                .url("https://www.instagram.com/api/graphql")
+                .post(formBuilder.build())
+
+            reqHeaders.forEach { (k, v) -> requestBuilder.addHeader(k, v) }
+
+            return try {
+                val response = client.newCall(requestBuilder.build()).execute()
+                val rawBody = response.body?.string().orEmpty()
+                parseGraphqlResult(rawBody, response.code)
+            } catch (e: Exception) {
+                IgActionResult(false, e.message ?: "Lỗi gửi Comment", "")
+            }
+        }
                 .add("fb_api_req_friendly_name", "PolarisPostCommentInputRevampedMutation")
                 .add("server_timestamps", "true")
                 .add("doc_id", DOC_ID_COMMENT)
