@@ -40,6 +40,30 @@ object XsmmInstagramTaskRunner {
         return if (matcher.find()) matcher.group(1).orEmpty() else ""
     }
 
+    suspend fun run(
+        context: Context,
+        accountUsernames: List<String>,
+        onStatusUpdate: ((String) -> Unit)? = null
+    ): RunResult {
+        var totalCompleted = 0
+        var totalErrors = 0
+        var totalPoints = 0
+        val messages = mutableListOf<String>()
+
+        for (u in accountUsernames) {
+            val res = runSingleAccount(
+                context = context,
+                accountUsername = u,
+                onStatusUpdate = onStatusUpdate
+            )
+            totalCompleted += res.totalCompleted
+            totalErrors += res.totalErrors
+            totalPoints += res.totalEarnedPoints
+            messages.add(res.message)
+        }
+        return RunResult(totalCompleted, totalErrors, totalPoints, messages.joinToString(" | "))
+    }
+
     suspend fun runSingleAccount(
         context: Context,
         accountUsername: String,

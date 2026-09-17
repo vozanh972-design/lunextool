@@ -3,20 +3,19 @@ package com.cayxu.app.automation.instagram
 import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
-import com.cayxu.app.data.local.InstagramAccountsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Singleton quản lý tác vụ chạy ngầm Instagram cho XSMM theo 100% mô hình Python TA Tool:
- * - Hỗ trợ chạy đơn lẻ từng tài khoản.
- * - Hỗ trợ chạy xoay vòng liên tục danh sách tài khoản (Nick 1 -> Nick 2 -> ... -> lặp lại).
+ * Singleton quản lý tác vụ chạy ngầm ĐA LUỒNG (Multi-thread Concurrent) Instagram cho XSMM:
+ * - Mỗi tài khoản chạy trên 1 luồng độc lập (Coroutine riêng trong Dispatchers.IO).
+ * - Tất cả các nick được chạy SONG SONG cùng lúc (Đa luồng thực sự).
+ * - Từng luồng áp dụng 100% logic tương tác, bóc tách ID, GraphQL, gom 10 follow, retry... từ Python TA Tool.
  */
 object XsmmInstagramManager {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -31,13 +30,16 @@ object XsmmInstagramManager {
 
     fun isRunning(accountUsername: String): Boolean {
         val clean = accountUsername.trim().lowercase()
-        return runningAccounts.contains(clean) || runningJobs.containsKey(clean)
+        return runningJobs.containsKey(clean)
     }
 
     fun isAnyRunning(): Boolean {
-        return runningJobs.isNotEmpty() || runningAccounts.isNotEmpty()
+        return runningJobs.isNotEmpty()
     }
 
+    /**
+     * Khởi chạy 1 tài khoản trên 1 luồng Coroutine độc lập
+     */
     fun start(context: Context, accountUsername: String, startDelayMs: Long = 0L) {
         val clean = accountUsername.trim().lowercase()
         if (clean.isBlank() || runningJobs.containsKey(clean)) {
@@ -47,7 +49,7 @@ object XsmmInstagramManager {
         if (!runningAccounts.contains(clean)) {
             runningAccounts.add(clean)
         }
-        statusMap[clean] = if (startDelayMs > 0) "Chờ khởi động (${startDelayMs / 1000}s)..." else "Bắt đầu khởi động tác vụ..."
+        statusMap[clean] = if (startDelayMs > 0) "Chờ khởi động lệch luồng (${startDelayMs / 1000}s)..." else "Bắt đầu khởi động luồng..."
         successCountMap[clean] = 0
         errorCountMap[clean] = 0
 
@@ -103,102 +105,15 @@ object XsmmInstagramManager {
     }
 
     /**
-     * Chạy xoay vòng danh sách tài khoản theo đúng 100% vòng lặp của Python TA Tool
-     * (Nick 1 làm xong mốc job / gặp lỗi > 4 lần -> chuyển sang Nick 2 -> ... -> lặp lại vô tận)
+     * Chạy ĐA LUỒNG ĐỒNG THỜI (Multi-threading Concurrent):
+     * Khởi tạo các luồng độc lập chạy SONG SONG cùng lúc cho tất cả các nick được chọn,
+     * chỉ giãn cách nhẹ vài giây giữa các lần kích hoạt luồng để tránh nghẽn request ban đầu.
      */
     fun startAccounts(context: Context, accountUsernames: List<String>) {
         val cleanList = accountUsernames.map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
-        if (cleanList.isEmpty()) return
-
-        if (cleanList.size == 1) {
-            start(context, cleanList.first())
-            return
+        for ((index, username) in cleanList.withIndex()) {
+            start(context, username, startDelayMs = index * 2000L)
         }
-
-        stopAll()
-        val rotationKey = "__rotation__"
-
-        val job = scope.launch {
-            scope.launch(Dispatchers.Main) {
-                cleanList.forEach { user ->
-                    if (!runningAccounts.contains(user)) {
-                        runningAccounts.add(user)
-                    }
-                    statusMap[user] = "Trong hàng đợi xoay vòng..."
-                    successCountMap[user] = 0
-                    errorCountMap[user] = 0
-                }
-            }
-
-            try {
-                while (isActive) {
-                    var anyLive = false
-                    for (user in cleanList) {
-                        if (!isActive) break
-
-                        val acc = InstagramAccountsStore.getAccount(context, user)
-                        if (acc == null || !acc.isLive) {
-                            scope.launch(Dispatchers.Main) {
-                                statusMap[user] = "Bỏ qua (Cookie Die / Không tồn tại)"
-                            }
-                            continue
-                        }
-                        anyLive = true
-
-                        scope.launch(Dispatchers.Main) {
-                            statusMap[user] = "Đang chạy phiên làm việc..."
-                        }
-
-                        val result = XsmmInstagramTaskRunner.runSingleAccount(
-                            context = context.applicationContext,
-                            accountUsername = user,
-                            onStatusUpdate = { status ->
-                                scope.launch(Dispatchers.Main) {
-                                    statusMap[user] = status
-                                }
-                            },
-                            onProgressUpdate = { status, success, errors ->
-                                scope.launch(Dispatchers.Main) {
-                                    statusMap[user] = status
-                                    successCountMap[user] = (successCountMap[user] ?: 0) + success
-                                    errorCountMap[user] = (errorCountMap[user] ?: 0) + errors
-                                }
-                            },
-                            onErrorDetail = { _, detail ->
-                                scope.launch(Dispatchers.Main) {
-                                    lastErrorDetail[user] = detail
-                                }
-                            }
-                        )
-
-                        scope.launch(Dispatchers.Main) {
-                            statusMap[user] = "Nghỉ chuyển nick (${result.totalCompleted} job xong)"
-                        }
-
-                        // Giãn cách ngắn khi đổi nick
-                        delay(2000L)
-                    }
-
-                    if (!anyLive) {
-                        scope.launch(Dispatchers.Main) {
-                            cleanList.forEach { u -> statusMap[u] = "Tất cả cookie đều Die" }
-                        }
-                        break
-                    }
-                }
-            } catch (_: kotlinx.coroutines.CancellationException) {
-                scope.launch(Dispatchers.Main) {
-                    cleanList.forEach { u -> statusMap[u] = "Đã dừng chạy" }
-                }
-            } finally {
-                runningJobs.remove(rotationKey)
-                scope.launch(Dispatchers.Main) {
-                    runningAccounts.clear()
-                }
-            }
-        }
-
-        runningJobs[rotationKey] = job
     }
 
     fun stop(accountUsername: String) {
@@ -207,13 +122,6 @@ object XsmmInstagramManager {
         job?.cancel()
         runningAccounts.remove(clean)
         statusMap[clean] = "Đã dừng chạy"
-
-        // Nếu đang chạy rotation mà user bấm dừng thì dừng rotation
-        val rotationJob = runningJobs.remove("__rotation__")
-        if (rotationJob != null) {
-            rotationJob.cancel()
-            runningAccounts.clear()
-        }
     }
 
     fun stopAll() {

@@ -6,9 +6,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
-import java.net.Authenticator
 import java.net.InetSocketAddress
-import java.net.PasswordAuthentication
 import java.net.Proxy
 import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
@@ -173,13 +171,11 @@ class InstagramApiClient(
                 val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress(proxyConfig.host, proxyConfig.port))
                 builder.proxy(proxy)
                 if (!proxyConfig.username.isNullOrBlank()) {
-                    builder.proxyAuthenticator(object : Authenticator {
-                        override fun authenticate(route: Route?, response: Response): Request? {
-                            val credential = Credentials.basic(proxyConfig.username, proxyConfig.password.orEmpty())
-                            return response.request.newBuilder()
-                                .header("Proxy-Authorization", credential)
-                                .build()
-                        }
+                    builder.proxyAuthenticator(okhttp3.Authenticator { _, response ->
+                        val credential = Credentials.basic(proxyConfig.username, proxyConfig.password.orEmpty())
+                        response.request.newBuilder()
+                            .header("Proxy-Authorization", credential)
+                            .build()
                     })
                 }
             }
