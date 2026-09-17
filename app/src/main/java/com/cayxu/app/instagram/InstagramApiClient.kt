@@ -704,7 +704,6 @@ class InstagramApiClient(
                     val formData = json.optJSONObject("form_data")
                     val uname = formData?.optString("username").orEmpty()
                     if (uname.isNotBlank()) {
-                        activeUsername = uname
                         return true
                     }
                 } catch (_: Exception) {}

@@ -445,6 +445,7 @@ object XsmmInstagramTaskRunner {
                                     }
                                     notify("Đã hoàn thành mục tiêu $totalCompleted nhiệm vụ!")
                                     return RunResult(totalCompleted, totalErrors, totalEarnedPoints, "Hoàn thành mục tiêu $totalCompleted nhiệm vụ")
+                                }
                             }
 
                             // Gửi nhận xu nốt các job Follow còn dư lại trong đợt task này (giống Python: if len(cache_batch_nv) > 0)
