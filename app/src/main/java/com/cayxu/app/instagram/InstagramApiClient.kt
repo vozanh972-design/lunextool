@@ -475,7 +475,6 @@ class InstagramApiClient(
     }
 
     private fun buildDocumentHeaders(referer: String? = null): Headers {
-        val isChrome = userAgent.contains("Chrome", ignoreCase = true) || userAgent.contains("CriOS", ignoreCase = true) || userAgent.contains("Chromium", ignoreCase = true)
         val isMobile = userAgent.contains("Mobile", ignoreCase = true) || userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("Android", ignoreCase = true)
         val isIos = userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("iPad", ignoreCase = true)
         val platform = if (isIos) "\"iOS\"" else if (userAgent.contains("Android", ignoreCase = true)) "\"Android\"" else "\"Windows\""
