@@ -9,9 +9,13 @@ import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.URLDecoder
+import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
 import java.util.regex.Matcher
 import java.util.regex.Pattern
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 import kotlin.random.Random
 
 /**
@@ -33,7 +37,8 @@ class InstagramApiClient(
         val host: String,
         val port: Int,
         val username: String? = null,
-        val password: String? = null
+        val password: String? = null,
+        val type: Proxy.Type = Proxy.Type.HTTP
     )
 
     data class CookieCheckResult(
@@ -123,8 +128,12 @@ class InstagramApiClient(
             if (proxyStr.isNullOrBlank()) return null
             var s = proxyStr.trim()
             if (s.isBlank()) return null
+            var proxyType = Proxy.Type.HTTP
             if (s.contains("://")) {
                 val split = s.split("://", limit = 2)
+                if (split[0].lowercase().contains("socks")) {
+                    proxyType = Proxy.Type.SOCKS
+                }
                 s = split[1]
             }
             return try {
@@ -136,7 +145,8 @@ class InstagramApiClient(
                         host = hostPort[0],
                         port = hostPort[1].toInt(),
                         username = auth.getOrNull(0),
-                        password = auth.getOrNull(1)
+                        password = auth.getOrNull(1),
+                        type = proxyType
                     )
                 } else {
                     val parts = s.split(":")
@@ -145,12 +155,14 @@ class InstagramApiClient(
                             host = parts[0],
                             port = parts[1].toInt(),
                             username = parts[2],
-                            password = parts[3]
+                            password = parts[3],
+                            type = proxyType
                         )
                     } else if (parts.size == 2) {
                         ProxyConfig(
                             host = parts[0],
-                            port = parts[1].toInt()
+                            port = parts[1].toInt(),
+                            type = proxyType
                         )
                     } else null
                 }
@@ -163,7 +175,7 @@ class InstagramApiClient(
         private val clientMap = java.util.concurrent.ConcurrentHashMap<String, OkHttpClient>()
 
         fun buildOkHttpClient(proxyConfig: ProxyConfig? = null, timeoutSec: Long = 25L): OkHttpClient {
-            val key = "${proxyConfig?.host}:${proxyConfig?.port}:${proxyConfig?.username}_$timeoutSec"
+            val key = "${proxyConfig?.type}:${proxyConfig?.host}:${proxyConfig?.port}:${proxyConfig?.username}_$timeoutSec"
             return clientMap.getOrPut(key) {
                 val builder = OkHttpClient.Builder()
                     .connectionPool(sharedConnectionPool)
@@ -173,16 +185,33 @@ class InstagramApiClient(
                     .followRedirects(true)
                     .followSslRedirects(true)
 
+                // Bỏ qua rào cản SSL để mọi Proxy/Canary/Fiddler/Mitm không bị từ chối kết nối
+                try {
+                    val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+                        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+                        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+                        override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+                    })
+                    val sslContext = SSLContext.getInstance("TLS")
+                    sslContext.init(null, trustAllCerts, java.security.SecureRandom())
+                    builder.sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
+                    builder.hostnameVerifier { _, _ -> true }
+                } catch (_: Exception) {}
+
                 if (proxyConfig != null && proxyConfig.host.isNotBlank() && proxyConfig.port > 0) {
-                    val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress(proxyConfig.host, proxyConfig.port))
+                    val proxy = Proxy(proxyConfig.type, InetSocketAddress(proxyConfig.host, proxyConfig.port))
                     builder.proxy(proxy)
                     if (!proxyConfig.username.isNullOrBlank()) {
-                        builder.proxyAuthenticator(okhttp3.Authenticator { _, response ->
-                            val credential = Credentials.basic(proxyConfig.username, proxyConfig.password.orEmpty())
-                            response.request.newBuilder()
-                                .header("Proxy-Authorization", credential)
-                                .build()
-                        })
+                        builder.proxyAuthenticator { _, response ->
+                            if (response.request.header("Proxy-Authorization") != null) {
+                                null // Đã gửi xác thực nhưng vẫn lỗi, tránh loop
+                            } else {
+                                val credential = Credentials.basic(proxyConfig.username, proxyConfig.password.orEmpty())
+                                response.request.newBuilder()
+                                    .header("Proxy-Authorization", credential)
+                                    .build()
+                            }
+                        }
                     }
                 }
                 builder.build()
