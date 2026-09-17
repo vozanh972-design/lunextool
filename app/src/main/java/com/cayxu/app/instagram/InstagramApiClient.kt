@@ -96,19 +96,11 @@ class InstagramApiClient(
         const val DEFAULT_JAZOEST_COMMENT = "26312"
 
         fun getIgHeaders(cookie: String, csrftoken: String, referer: String = "https://www.instagram.com/"): Map<String, String> {
-            var syncedCookie = cookie
-            if (csrftoken.isNotBlank() && csrftoken != "missing") {
-                syncedCookie = if (syncedCookie.contains("csrftoken=")) {
-                    syncedCookie.replace(Regex("csrftoken=[^;\\s]+"), "csrftoken=$csrftoken")
-                } else {
-                    "csrftoken=$csrftoken; $syncedCookie"
-                }
-            }
             return mapOf(
                 "accept" to "*/*",
                 "accept-language" to "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5",
                 "content-type" to "application/x-www-form-urlencoded",
-                "cookie" to syncedCookie,
+                "cookie" to cookie,
                 "origin" to "https://www.instagram.com",
                 "priority" to "u=1, i",
                 "referer" to referer,
@@ -273,23 +265,15 @@ class InstagramApiClient(
             val json = try { JSONObject(clean) } catch (_: Exception) { null }
             val status = json?.optString("status", "") ?: ""
 
-            val errorObj = json?.optJSONArray("errors")?.optJSONObject(0)
-            val hasErrors = (json?.has("errors") == true || errorObj != null) &&
-                !clean.contains("\"following\":true") &&
-                !clean.contains("\"status\":\"ok\"")
-
-            val isSuccess = json != null && !hasErrors && (
-                (json.has("data") && !json.isNull("data")) ||
-                status.equals("ok", ignoreCase = true) ||
-                status.equals("success", ignoreCase = true) ||
-                clean.contains("\"following\":true") ||
-                clean.contains("\"status\":\"ok\"")
-            )
+            val hasData = json != null && json.has("data") && !json.isNull("data")
+            val isOkStatus = status.equals("ok", ignoreCase = true) || status.equals("success", ignoreCase = true)
+            val isSuccess = hasData || isOkStatus || clean.contains("\"following\":true") || clean.contains("\"status\":\"ok\"")
 
             if (isSuccess) {
                 return IgActionResult(true, "Thành công", clean)
             }
 
+            val errorObj = json?.optJSONArray("errors")?.optJSONObject(0)
             val errorDesc = json?.optString("errorDescription")?.takeIf { it.isNotBlank() }
                 ?: errorObj?.optString("description")?.takeIf { it.isNotBlank() }
             val errorSumm = json?.optString("errorSummary")?.takeIf { it.isNotBlank() }
@@ -297,7 +281,7 @@ class InstagramApiClient(
             val msgField = json?.optString("message")?.takeIf { it.isNotBlank() }
                 ?: errorObj?.optString("message")?.takeIf { it.isNotBlank() }
 
-            val reason = errorDesc ?: errorSumm ?: msgField
+            val reason = msgField ?: errorDesc ?: errorSumm
                 ?: if (clean.contains("checkpoint")) "Checkpoint / Xác minh nick"
                 else if (clean.contains("login_required") || clean.contains("unauthorized")) "Cookie hết hạn"
                 else if (httpCode == 429) "Instagram giới hạn tạm thời (429)"
@@ -460,17 +444,6 @@ class InstagramApiClient(
                 val homeRes = client.newCall(homeReq).execute()
                 val resHome = homeRes.body?.string().orEmpty()
 
-                // Cập nhật csrftoken từ response nếu có
-                homeRes.headers("Set-Cookie").forEach { sc ->
-                    val cm = Pattern.compile("csrftoken=([^;\\s]+)").matcher(sc)
-                    if (cm.find()) {
-                        val tokenVal = cm.group(1).removeSurrounding("\"")
-                        if (tokenVal.isNotBlank()) {
-                            dynamicCsrf = tokenVal
-                        }
-                    }
-                }
-
                 val tokens = extractTokensFromHtml(resHome, DEFAULT_LSD_FOLLOW, DEFAULT_JAZOEST_FOLLOW)
                 lsd = tokens.first
                 fbDtsg = tokens.second
@@ -554,16 +527,6 @@ class InstagramApiClient(
                     .build()
                 val homeRes = client.newCall(homeReq).execute()
                 val resHome = homeRes.body?.string().orEmpty()
-
-                homeRes.headers("Set-Cookie").forEach { sc ->
-                    val cm = Pattern.compile("csrftoken=([^;\\s]+)").matcher(sc)
-                    if (cm.find()) {
-                        val tokenVal = cm.group(1).removeSurrounding("\"")
-                        if (tokenVal.isNotBlank()) {
-                            dynamicCsrf = tokenVal
-                        }
-                    }
-                }
 
                 val tokens = extractTokensFromHtml(resHome, DEFAULT_LSD_LIKE, DEFAULT_JAZOEST_LIKE)
                 lsd = tokens.first
@@ -674,16 +637,6 @@ class InstagramApiClient(
                     .build()
                 val homeRes = client.newCall(homeReq).execute()
                 val resHome = homeRes.body?.string().orEmpty()
-
-                homeRes.headers("Set-Cookie").forEach { sc ->
-                    val cm = Pattern.compile("csrftoken=([^;\\s]+)").matcher(sc)
-                    if (cm.find()) {
-                        val tokenVal = cm.group(1).removeSurrounding("\"")
-                        if (tokenVal.isNotBlank()) {
-                            dynamicCsrf = tokenVal
-                        }
-                    }
-                }
 
                 val tokens = extractTokensFromHtml(resHome, DEFAULT_LSD_COMMENT, DEFAULT_JAZOEST_COMMENT)
                 lsd = tokens.first
