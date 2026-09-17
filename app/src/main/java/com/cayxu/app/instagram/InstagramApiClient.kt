@@ -419,8 +419,8 @@ class InstagramApiClient(
                 val json = try { JSONObject(clean) } catch (_: Exception) { null }
                 val formData = json?.optJSONObject("form_data")
                 if (formData != null) {
-                    avatarUrl = formData.optString("profile_pic_url").ifBlank {
-                        formData.optString("profile_picture")
+                    avatarUrl = formData?.optString("profile_pic_url", "").orEmpty().ifBlank {
+                        formData?.optString("profile_picture", "").orEmpty()
                     }
                 }
             } catch (_: Exception) {}
@@ -815,17 +815,17 @@ class InstagramApiClient(
                 val json = try { JSONObject(body) } catch (_: Exception) { null }
                 val formData = json?.optJSONObject("form_data")
                 val username = formData?.optString("username").orEmpty()
-                if (username.isNotBlank()) {
+                if (username.isNotBlank() && formData != null) {
                     var uid = extractActorId(unquoted)
                     if (uid == "0" || uid.isBlank()) {
-                        uid = formData.optString("id", "")
+                        uid = formData?.optString("id", "").orEmpty()
                     }
-                    val fullName = formData.optString("first_name", "")
-                    val bio = formData.optString("biography", "")
-                    val email = formData.optString("email", "")
-                    val phone = formData.optString("phone_number", "")
-                    var pic = formData.optString("profile_pic_url", "").ifBlank {
-                        formData.optString("profile_picture", "")
+                    val fullName = formData?.optString("first_name", "").orEmpty()
+                    val bio = formData?.optString("biography", "").orEmpty()
+                    val email = formData?.optString("email", "").orEmpty()
+                    val phone = formData?.optString("phone_number", "").orEmpty()
+                    var pic = formData?.optString("profile_pic_url", "").orEmpty().ifBlank {
+                        formData?.optString("profile_picture", "").orEmpty()
                     }
                     if (pic.isBlank()) {
                         pic = fetchProfilePic(username, unquoted, proxy) ?: session.profilePicUrl
