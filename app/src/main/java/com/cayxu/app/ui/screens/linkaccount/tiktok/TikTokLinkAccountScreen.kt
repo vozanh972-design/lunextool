@@ -17,6 +17,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import com.cayxu.app.tiktok.checker.TikTokProfileCheckerClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -55,6 +58,7 @@ private enum class TikTokFilter(val label: String) {
 @Composable
 fun TikTokLinkAccountScreen(navController: NavController) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var accounts by remember { mutableStateOf(TikTokAccountsStore.getAccounts(context)) }
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(TikTokFilter.ALL) }
@@ -89,12 +93,12 @@ fun TikTokLinkAccountScreen(navController: NavController) {
                     TikTokCaptureBridge.reset()
 
                     // Tra cứu full profile và avatar HD chạy ngầm
-                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    scope.launch(Dispatchers.IO) {
                         try {
                             val client = TikTokProfileCheckerClient()
                             val prof = client.fetchProfile(state.handle)
                             TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
-                            withContext(kotlinx.coroutines.Dispatchers.Main) { refresh() }
+                            withContext(Dispatchers.Main) { refresh() }
                         } catch (ignored: Exception) {}
                     }
                 }
