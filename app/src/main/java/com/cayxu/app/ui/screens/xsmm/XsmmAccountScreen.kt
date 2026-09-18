@@ -2135,13 +2135,10 @@ private fun XsmmTikTokAccountCard(
                     )
                 }
 
-                // Dòng thống kê: Followers, Tim, Ngày tạo
+                // Dòng thống kê: Followers, Tim
                 val statsList = buildList {
                     if (account.followerCount > 0) add("${formatTikTokCount(account.followerCount)} followers")
                     if (account.heartCount > 0) add("${formatTikTokCount(account.heartCount)} tim")
-                    if (account.createDateFormatted.isNotBlank()) {
-                        add("Tạo: ${account.createDateFormatted}")
-                    }
                 }
                 if (statsList.isNotEmpty()) {
                     Spacer(Modifier.height(2.dp))
@@ -2150,6 +2147,16 @@ private fun XsmmTikTokAccountCard(
                         color = Color(0xFFE1306C),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
+                    )
+                }
+
+                // Dòng ngày tạo riêng biệt
+                if (account.createDateFormatted.isNotBlank()) {
+                    Spacer(Modifier.height(1.dp))
+                    Text(
+                        text = "Tạo: ${account.createDateFormatted}",
+                        color = TextSecondary,
+                        fontSize = 10.5.sp
                     )
                 }
             }
