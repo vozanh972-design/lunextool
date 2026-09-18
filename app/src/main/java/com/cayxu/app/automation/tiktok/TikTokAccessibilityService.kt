@@ -656,22 +656,65 @@ class TikTokAccessibilityService : AccessibilityService() {
      * trong sheet thường là 1 node clickable chứa avatar + tên; lấy text ngắn gọn nhất (không
      * rỗng) trong mỗi dòng làm tên hiển thị, bỏ qua tiêu đề sheet và nút "Thêm tài khoản".
      */
+    /** Thu thập tất cả các đoạn văn bản (text + contentDescription) bên trong cây con của node. */
+    private fun collectAllTextsInNode(node: AccessibilityNodeInfo, out: MutableList<String>, depth: Int = 0) {
+        if (depth > 20) return
+        val text = node.text?.toString()?.trim()
+        if (!text.isNullOrBlank() && !out.contains(text)) out.add(text)
+        val cd = node.contentDescription?.toString()?.trim()
+        if (!cd.isNullOrBlank() && cd != text && !out.contains(cd)) out.add(cd)
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectAllTextsInNode(child, out, depth + 1)
+        }
+    }
+
     private fun collectSwitchAccountEntries(root: AccessibilityNodeInfo): List<CapturedAccountEntry> {
         val rows = mutableListOf<AccessibilityNodeInfo>()
         findClickableRowsWithText(root, rows)
 
         val seen = LinkedHashSet<String>()
         val entries = mutableListOf<CapturedAccountEntry>()
+        val usernameRegex = Regex("^[A-Za-z0-9._]{2,30}$")
+
         for (row in rows) {
-            val label = firstMeaningfulText(row) ?: continue
-            val normalized = label.trim()
-            val lower = normalized.lowercase()
-            if (normalized.isBlank()) continue
-            if (SWITCH_SHEET_IGNORE_LABELS.any { lower == it || lower.contains(it) }) continue
-            if (!seen.add(normalized)) continue
+            val allTexts = mutableListOf<String>()
+            collectAllTextsInNode(row, allTexts)
+            if (allTexts.isEmpty()) continue
+
+            // Bỏ qua nếu dòng này là nút "Thêm tài khoản", tiêu đề hoặc nút đóng
+            val isIgnored = allTexts.any { t ->
+                val low = t.lowercase()
+                SWITCH_SHEET_IGNORE_LABELS.any { low == it || low.contains(it) }
+            }
+            if (isIgnored) continue
+
+            // Phân biệt @handle và displayName:
+            // 1. Tìm text có tiền tố @ (chuẩn handle TikTok)
+            val atText = allTexts.firstOrNull { it.startsWith("@") && it.length > 1 }
+            // 2. Nếu không có @, tìm text khớp format username TikTok
+            val candidateHandleText = atText ?: allTexts.firstOrNull { usernameRegex.matches(it) }
+
+            val handle = candidateHandleText?.removePrefix("@")?.trim().orEmpty()
+            val displayName = allTexts.firstOrNull { it != candidateHandleText && !it.startsWith("@") }
+                ?: candidateHandleText?.removePrefix("@")?.trim()
+                ?: allTexts.first()
+
+            val normalizedDisplayName = displayName.trim()
+            val uniqueKey = (if (handle.isNotBlank()) handle else normalizedDisplayName).lowercase()
+            if (uniqueKey.isBlank() || !seen.add(uniqueKey)) continue
+
             val isActive = row.isSelected ||
+                allTexts.any { it.lowercase().contains("đang chọn") || it.lowercase().contains("hiện tại") } ||
                 (row.contentDescription?.toString()?.lowercase()?.contains("đang chọn") == true)
-            entries.add(CapturedAccountEntry(displayName = normalized, isActive = isActive))
+
+            entries.add(
+                CapturedAccountEntry(
+                    displayName = normalizedDisplayName,
+                    handle = handle,
+                    isActive = isActive
+                )
+            )
         }
         return entries
     }
@@ -1198,8 +1241,13 @@ class TikTokAccessibilityService : AccessibilityService() {
                         findClickableRowsWithText(root, rows)
                         var foundTargetRow: AccessibilityNodeInfo? = null
                         for (row in rows) {
-                            val label = firstMeaningfulText(row)?.trim()?.lowercase() ?: continue
-                            if (label.contains(target) || target.contains(label)) {
+                            val allTexts = mutableListOf<String>()
+                            collectAllTextsInNode(row, allTexts)
+                            val matched = allTexts.any { text ->
+                                val clean = text.removePrefix("@").trim().lowercase()
+                                clean == target || clean.contains(target) || target.contains(clean)
+                            }
+                            if (matched) {
                                 foundTargetRow = row
                                 break
                             }

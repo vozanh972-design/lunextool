@@ -105,24 +105,43 @@ fun TikTokLinkAccountScreen(navController: NavController) {
                     }
                 }
                 is TikTokCaptureState.CapturedBatch -> {
-                    // Sheet "Chuyển đổi tài khoản" không luôn hiện @handle thật cho từng dòng
-                    // (có thể chỉ hiện tên hiển thị) - dùng tên đọc được làm handle tạm, người
-                    // dùng có thể sửa lại tên phụ (subName) sau trong danh sách nếu cần.
+                    val addedAccounts = mutableListOf<com.cayxu.app.data.local.TikTokAccount>()
                     state.accounts.forEach { entry ->
-                        TikTokAccountsStore.addFromCapture(
+                        val initialHandle = entry.handle.ifBlank { entry.displayName }
+                        val acc = TikTokAccountsStore.addFromCapture(
                             context = context,
-                            handle = entry.displayName,
+                            handle = initialHandle,
                             displayName = entry.displayName,
                             variant = state.variant
                         )
+                        addedAccounts.add(acc)
                     }
                     refresh()
                     Toast.makeText(
                         context,
-                        "Đã quét và thêm ${state.accounts.size} tài khoản",
+                        "Đã quét ${state.accounts.size} tài khoản. Đang kiểm tra API...",
                         Toast.LENGTH_SHORT
                     ).show()
                     TikTokCaptureBridge.reset()
+
+                    // CHÍNH XÁC KHI NÀY: Sau khi mở sheet "Chuyển đổi tài khoản", API check acc mới thực sự chạy!
+                    // Tra cứu full profile qua API cho từng tài khoản:
+                    // Lấy username chuẩn 100% từ server (uniqueId), avatar HD, ngày tạo từ UID và trạng thái Live/Die
+                    scope.launch(Dispatchers.IO) {
+                        val client = TikTokProfileCheckerClient()
+                        for (acc in addedAccounts) {
+                            try {
+                                val lookupUser = acc.handle.removePrefix("@").trim()
+                                if (lookupUser.isNotBlank()) {
+                                    val prof = client.fetchProfile(lookupUser)
+                                    if (prof != null) {
+                                        TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
+                                        withContext(Dispatchers.Main) { refresh() }
+                                    }
+                                }
+                            } catch (ignored: Exception) {}
+                        }
+                    }
                 }
                 else -> Unit
             }

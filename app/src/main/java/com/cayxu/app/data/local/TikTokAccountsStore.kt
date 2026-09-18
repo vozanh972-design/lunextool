@@ -120,6 +120,7 @@ object TikTokAccountsStore {
         if (idx >= 0) {
             val old = current[idx]
             current[idx] = old.copy(
+                handle = if (profile.username.isNotBlank()) profile.username else old.handle,
                 displayName = if (profile.nickname.isNotBlank()) profile.nickname else old.displayName,
                 avatarUrl = if (!profile.avatarHdUrl.isNullOrBlank()) profile.avatarHdUrl else old.avatarUrl,
                 followerCount = profile.followerCount,

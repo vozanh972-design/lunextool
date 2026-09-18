@@ -37,10 +37,11 @@ sealed class TikTokCaptureState {
     data class Failed(val reason: String) : TikTokCaptureState()
 }
 
-/** Một dòng trong sheet "Chuyển đổi tài khoản" - tên hiển thị đọc được từ màn hình. */
+/** Một dòng trong sheet "Chuyển đổi tài khoản" - gồm tên hiển thị và @handle (nếu có). */
 data class CapturedAccountEntry(
     val displayName: String,
-    val isActive: Boolean
+    val handle: String = "",
+    val isActive: Boolean = false
 )
 
 object TikTokCaptureBridge {

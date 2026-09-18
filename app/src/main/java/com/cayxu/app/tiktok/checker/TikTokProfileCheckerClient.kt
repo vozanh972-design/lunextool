@@ -171,10 +171,12 @@ class TikTokProfileCheckerClient(
                                 createTimeSec = calculateAccountCreateTimestamp(userId)
                             }
 
+                            val officialUsername = userJson.optString("uniqueId", cleanUser).ifBlank { cleanUser }
+
                             return TikTokFullProfile(
                                 userId = userId,
                                 secUid = secUid,
-                                username = cleanUser,
+                                username = officialUsername,
                                 nickname = nickname.ifBlank { cleanUser },
                                 avatarHdUrl = finalAvatar,
                                 avatarThumbUrl = avatarThumb,
@@ -210,10 +212,12 @@ class TikTokProfileCheckerClient(
                             if (createTimeSec <= 0L) {
                                 createTimeSec = calculateAccountCreateTimestamp(userId)
                             }
+                            val officialUsername = userJson.optString("uniqueId", cleanUser).ifBlank { cleanUser }
+
                             return TikTokFullProfile(
                                 userId = userId,
                                 secUid = userJson.optString("secUid", null),
-                                username = cleanUser,
+                                username = officialUsername,
                                 nickname = userJson.optString("nickname", cleanUser),
                                 avatarHdUrl = userJson.optString("avatarLarger", userJson.optString("avatarMedium", null)),
                                 avatarThumbUrl = userJson.optString("avatarThumb", null),
