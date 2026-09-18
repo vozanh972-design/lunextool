@@ -405,7 +405,14 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 5. KIỂM TRA NẾU ĐANG Ở MÀN HÌNH PHỤ / TRANG KHÁC (Có nút Back ở góc trên)
+                    // 5. NẾU THẤY TAB "HỒ SƠ" BÊN DƯỚI MÀN HÌNH -> CLICK 1 CÁI VÀO NÓ LÀ XONG!
+                    if (clickProfileTab(root)) {
+                        TikTokCaptureBridge.updateProgress("Đã bấm tab \"Hồ sơ\" bên dưới màn hình...")
+                        delay(2000)
+                        continue
+                    }
+
+                    // 6. NẾU Ở TRANG PHỤ / TRANG KHÁC (Không có tab Hồ sơ): Bấm Quay lại
                     if (isSubPageOrOtherScreen(root)) {
                         TikTokCaptureBridge.updateProgress("Đang ở trang khác, bấm Quay lại...")
                         val backBtn = findTopLeftBackButton(root)
@@ -417,11 +424,6 @@ class TikTokAccessibilityService : AccessibilityService() {
                         delay(1200)
                         continue
                     }
-
-                    // 6. NẾU Ở TRANG CHỦ / FEED VIDEO: BẤM TRỰC TIẾP VÀO TAB "HỒ SƠ" Ở DƯỚI CÙNG
-                    TikTokCaptureBridge.updateProgress("Đang ở Trang chủ, bấm vào tab \"Hồ sơ\" ở dưới...")
-                    clickProfileTab(root)
-                    delay(2500)
                 } catch (e: Exception) {
                     delay(POLL_INTERVAL_MS)
                 }
@@ -732,12 +734,17 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Nhận diện mọi màn hình phụ (Trang âm thanh/nhạc, trang cá nhân người khác, trang hashtag, trang tìm kiếm...)
-     * Đặc điểm chung: Có nút Quay lại (<-) ở góc trên bên trái, KHÔNG PHẢI là trang Hồ sơ chính chủ, KHÔNG PHẢI Cài đặt, KHÔNG PHẢI Sheet tài khoản.
-     * Xử lý: BẮT BUỘC bấm Quay lại (Back) để trở về Trang chủ/Hồ sơ, TUYỆT ĐỐI không bấm lung tung vào các nút trên trang này.
+     * Nhận diện màn hình phụ (Trang âm thanh/nhạc, trang cá nhân người khác, trang hashtag, trang tìm kiếm...).
+     * ĐẶC BIỆT LƯU Ý:
+     * - Nếu màn hình ĐANG CÓ THANH ĐÁY (Bottom Navigation Bar có tab Trang chủ, Hộp thư...) -> Đây là màn hình chính,
+     *   TUYỆT ĐỐI KHÔNG coi là trang phụ và KHÔNG ĐƯỢC BẤM QUAY LẠI!
      */
     private fun isSubPageOrOtherScreen(root: AccessibilityNodeInfo): Boolean {
         if (isUserSelfProfileScreen(root)) return false
+
+        // Nếu thanh đáy đang hiện diện (có tab Trang chủ / Hộp thư ở Y >= 85% màn hình) -> Màn hình chính!
+        if (hasBottomNavigationBar(root)) return false
+
         val backBtn = findTopLeftBackButton(root)
         if (backBtn != null) {
             val isSettings = findNodeByText(root, setOf("cài đặt và quyền riêng tư", "settings and privacy", "quản lý bài đăng", "thời gian và sức khỏe", "gia đình thông minh", "bộ nhớ đệm", "giải phóng dung lượng", "điều khoản và chính sách", "đăng xuất"), exact = false) != null
@@ -747,11 +754,36 @@ class TikTokAccessibilityService : AccessibilityService() {
         return false
     }
 
+    /** Kiểm tra xem màn hình có đang hiện thanh điều hướng đáy (Bottom Bar) không */
+    private fun hasBottomNavigationBar(root: AccessibilityNodeInfo): Boolean {
+        val dm = resources.displayMetrics
+        val screenH = dm.heightPixels.toFloat()
+        if (screenH <= 0f) return false
+
+        val bottomLabels = setOf("trang chủ", "home", "hộp thư", "inbox", "cửa hàng", "shop", "hồ sơ", "profile", "tôi", "me")
+        val node = findNodeByText(root, bottomLabels, exact = true)
+        if (node != null) {
+            val b = Rect()
+            node.getBoundsInScreen(b)
+            if (b.centerY() >= screenH * 0.85f) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * Tìm CHÍNH XÁC nút Quay lại (Back):
+     * - BẮT BUỘC: Có desc hoặc text là "quay lại", "back", "trở về", "đóng", "close"
+     *   HOẶC resource-ID chứa "back", "btn_back", "iv_back", "close"
+     * - TUYỆT ĐỐI LOẠI TRỪ nút LIVE hoặc avatar ở góc trên!
+     */
     private fun findTopLeftBackButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val rootBounds = Rect()
-        root.getBoundsInScreen(rootBounds)
-        val maxTop = rootBounds.top + (rootBounds.height() * 0.15f).toInt()
-        val maxRight = rootBounds.left + (rootBounds.width() * 0.25f).toInt()
+        val dm = resources.displayMetrics
+        val screenW = dm.widthPixels.toFloat()
+        val screenH = dm.heightPixels.toFloat()
+        val maxTop = (screenH * 0.15f).toInt()
+        val maxRight = (screenW * 0.25f).toInt()
 
         val candidates = mutableListOf<AccessibilityNodeInfo>()
         collectTopLeftClickableNodes(root, maxTop, maxRight, candidates)
@@ -766,12 +798,29 @@ class TikTokAccessibilityService : AccessibilityService() {
         depth: Int = 0
     ) {
         if (depth > 40) return
+
+        val resId = (node.viewIdResourceName ?: "").lowercase()
+        val desc = (node.contentDescription?.toString() ?: "").lowercase()
+        val text = (node.text?.toString() ?: "").trim().lowercase()
+
+        // Tuyệt đối loại trừ nút LIVE, Camera, Search, User Avatar ở góc trên
+        if (resId.contains("live") || text == "live" || desc.contains("live") ||
+            resId.contains("avatar") || resId.contains("search") || desc.contains("tìm kiếm")
+        ) {
+            return
+        }
+
         if (node.isClickable) {
             val bounds = Rect()
             node.getBoundsInScreen(bounds)
             if (bounds.bottom in 1..topLimit && bounds.left <= rightLimit && bounds.width() > 0 && bounds.height() > 0) {
-                out.add(node)
-                return
+                val isExplicitBack = resId.contains("back") || resId.contains("close") ||
+                    desc.contains("quay lại") || desc.contains("back") || desc.contains("trở về") || desc.contains("đóng") ||
+                    text == "quay lại" || text == "back" || text == "close"
+                if (isExplicitBack) {
+                    out.add(node)
+                    return
+                }
             }
         }
         for (i in 0 until node.childCount) {
@@ -786,138 +835,69 @@ class TikTokAccessibilityService : AccessibilityService() {
      * - Chỉ tìm TextView hoặc Tab Item có text chính xác là "Hồ sơ" / "Profile" / "Tôi" / "Me" (exact match, KHÔNG dùng contains).
      * - Loại trừ 100% các node avatar, nút follow dấu +, hoặc node có content-description chứa chữ "của".
      */
+    /**
+     * Quét màn hình tìm đúng cái "Hồ sơ" bên dưới màn hình và click 1 cái.
+     * Bỏ hoàn toàn việc đoán mò tọa độ X Y. Chỉ click khi tìm thấy node thực tế ở bên dưới màn hình.
+     */
     private fun clickProfileTab(root: AccessibilityNodeInfo): Boolean {
-        // Lấy kích thước thực tế của toàn màn hình thiết bị (DisplayMetrics), tự co giãn cho mọi máy to/nhỏ
         val dm = resources.displayMetrics
-        val screenW = dm.widthPixels.toFloat()
-        val screenH = dm.heightPixels.toFloat()
-        if (screenW <= 0f || screenH <= 0f) return false
+        val screenH = dm.heightPixels
 
-        // Nếu đang ở màn hình phụ (trang cá nhân người khác, trang hashtag...), bấm Quay lại
-        if (isSubPageOrOtherScreen(root)) {
-            val backBtn = findTopLeftBackButton(root)
-            if (backBtn != null) {
-                clickNode(backBtn)
-            } else {
-                performGlobalAction(GLOBAL_ACTION_BACK)
-            }
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        scanNodesForProfileTab(root, candidates)
+
+        // Lọc node ở phần dưới màn hình (Y >= 75% chiều cao màn hình)
+        // và loại trừ các node avatar tác giả / follow trên video feed
+        val profileTab = candidates.filter { node ->
+            val b = Rect()
+            node.getBoundsInScreen(b)
+            val resId = (node.viewIdResourceName ?: "").lowercase()
+            val desc = (node.contentDescription?.toString() ?: "").lowercase()
+
+            // Bắt buộc nằm ở phần dưới màn hình
+            b.bottom >= (screenH * 0.75f) &&
+            // Loại trừ 100% avatar tác giả, nút follow, dấu cộng
+            !resId.contains("avatar") && !resId.contains("author") && !resId.contains("follow") &&
+            !desc.contains("của") && !desc.contains("avatar") && !desc.contains("tác giả")
+        }.maxByOrNull { node ->
+            // Chọn node nằm thấp nhất (dưới cùng màn hình)
+            val b = Rect()
+            node.getBoundsInScreen(b)
+            b.bottom
+        }
+
+        if (profileTab != null) {
+            // Click trực tiếp vào đúng node "Hồ sơ" bên dưới màn hình!
+            clickNode(profileTab)
             return true
         }
 
-        // 1. Quét tìm trực tiếp node Tab "Hồ sơ" trong vùng thanh đáy màn hình (Y >= 88% screenH, X >= 75% screenW)
-        val profileNode = findProfileTabNode(root, screenW, screenH)
-        if (profileNode != null) {
-            val bounds = Rect()
-            profileNode.getBoundsInScreen(bounds)
-            if (bounds.centerY() >= screenH * 0.88f && bounds.centerX() >= screenW * 0.75f) {
-                tapAt(bounds.exactCenterX(), bounds.exactCenterY())
-                clickNode(profileNode)
-                return true
-            }
-        }
-
-        // 2. Co giãn theo kích thước thực tế màn hình thiết bị:
-        // Tab "Hồ sơ" luôn là tab ngoài cùng bên phải (tab 5 trong 5 tab thanh đáy):
-        // X = 90% chiều rộng màn hình (tâm vùng 80% - 100%)
-        // Y = 96.5% chiều cao màn hình (tâm thanh điều hướng đáy, cách xa avatar ở Y=66% hơn 300px)
-        val targetX = screenW * 0.90f
-        val targetY = screenH * 0.965f
-        tapAt(targetX, targetY)
-        return true
+        return false
     }
 
-    /**
-     * Quét tìm tab Hồ sơ ở thanh đáy:
-     * - BẮT BUỘC: Y >= 88% chiều cao màn hình thiết bị
-     * - BẮT BUỘC: X >= 75% chiều rộng màn hình thiết bị
-     * - Khớp Resource ID chuẩn hoặc khớp chính xác text/contentDescription "Hồ sơ" / "Profile" / "Tôi" / "Me"
-     */
-    private fun findProfileTabNode(root: AccessibilityNodeInfo, screenW: Float, screenH: Float): AccessibilityNodeInfo? {
-        val bottomThresholdY = screenH * 0.88f
-        val rightThresholdX = screenW * 0.75f
-
-        // Ưu tiên 1: Resource-ID chuẩn TikTok/Trill cho tab Profile/Me
-        val profileResIds = listOf(
-            "com.zhiliaoapp.musically:id/tab_profile",
-            "com.zhiliaoapp.musically:id/tab_me",
-            "com.zhiliaoapp.musically:id/profile_tab",
-            "com.zhiliaoapp.musically:id/bottom_tab_profile",
-            "com.zhiliaoapp.musically:id/bottom_tab_me",
-            "com.ss.android.ugc.trill:id/tab_profile",
-            "com.ss.android.ugc.trill:id/tab_me",
-            "com.ss.android.ugc.trill:id/bottom_tab_profile",
-            "com.ss.android.ugc.trill:id/bottom_tab_me"
-        )
-        for (resId in profileResIds) {
-            val nodes = root.findAccessibilityNodeInfosByViewId(resId)
-            for (node in nodes) {
-                val b = Rect()
-                node.getBoundsInScreen(b)
-                if (b.centerY() >= bottomThresholdY && b.centerX() >= rightThresholdX) {
-                    return node
-                }
-            }
-        }
-
-        // Ưu tiên 2: Quét cây theo nhãn CHÍNH XÁC trong vùng đáy
-        val candidates = mutableListOf<AccessibilityNodeInfo>()
-        collectBottomNavigationTabCandidates(root, screenW, screenH, candidates)
-
-        return candidates.firstOrNull { n ->
-            val txt = (n.text?.toString() ?: "").trim().lowercase()
-            val desc = (n.contentDescription?.toString() ?: "").trim().lowercase()
-            txt in PROFILE_TAB_LABELS || (desc in PROFILE_TAB_LABELS && !desc.contains("của"))
-        }
-    }
-
-    private fun collectBottomNavigationTabCandidates(
+    private fun scanNodesForProfileTab(
         node: AccessibilityNodeInfo,
-        screenW: Float,
-        screenH: Float,
         out: MutableList<AccessibilityNodeInfo>,
         depth: Int = 0
     ) {
         if (depth > 40) return
 
-        val bounds = Rect()
-        node.getBoundsInScreen(bounds)
-
+        val text = node.text?.toString()?.trim()?.lowercase().orEmpty()
+        val desc = node.contentDescription?.toString()?.trim()?.lowercase().orEmpty()
         val resId = (node.viewIdResourceName ?: "").lowercase()
-        val desc = (node.contentDescription?.toString() ?: "").lowercase()
-        val text = (node.text?.toString() ?: "").trim().lowercase()
 
-        // LOẠI TRỪ TUYỆT ĐỐI: Bất kỳ node nào của cột video sidebar (avatar tác giả, nút +, tim, share, music...)
-        if (resId.contains("follow") || resId.contains("avatar") || resId.contains("author") ||
-            resId.contains("plus") || resId.contains("feed") || resId.contains("side") ||
-            resId.contains("music") || resId.contains("disc") || resId.contains("sound") ||
-            resId.contains("add") || resId.contains("create") || resId.contains("record") ||
-            desc.contains("của") || desc.contains("follow") || desc.contains("theo dõi") ||
-            desc.contains("avatar") || desc.contains("plus") || desc.contains("dấu cộng") ||
-            desc.contains("tác giả") || desc.contains("tạo video") || desc.contains("đăng video")
-        ) {
-            return
-        }
+        val isTextMatch = text in PROFILE_TAB_LABELS
+        val isDescMatch = desc in PROFILE_TAB_LABELS || (PROFILE_TAB_LABELS.any { desc.startsWith(it) } && !desc.contains("của"))
+        val isIdMatch = resId.contains("tab_profile") || resId.contains("tab_me") ||
+            resId.contains("bottom_tab_profile") || resId.contains("bottom_tab_me")
 
-        // Khóa chặt phạm vi: BẮT BUỘC Y >= 88% screenH, X >= 75% screenW
-        val isBottomBarScope = screenH > 0 &&
-            bounds.centerY() >= (screenH * 0.88f) &&
-            bounds.centerX() >= (screenW * 0.75f)
-
-        if (isBottomBarScope) {
-            val isExactLabel = text in PROFILE_TAB_LABELS ||
-                (desc in PROFILE_TAB_LABELS && !desc.contains("của"))
-            val isProfileResId = resId.contains("profile") || resId.contains("tab_me") ||
-                resId.contains("bottom_tab_me") || resId.contains("bottom_tab_profile")
-
-            if (isExactLabel || isProfileResId) {
-                out.add(node)
-                return
-            }
+        if (isTextMatch || isDescMatch || isIdMatch) {
+            out.add(node)
         }
 
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            collectBottomNavigationTabCandidates(child, screenW, screenH, out, depth + 1)
+            scanNodesForProfileTab(child, out, depth + 1)
         }
     }
 
