@@ -222,8 +222,21 @@ class XsmmJobRunnerOverlayService : Service() {
                                 delay(config.fetchTaskIntervalSeconds * 1000L)
                             } else {
                                 noTaskConsecutiveCount = 0
-                                for (task in taskResult.tasks) {
+                                val pendingBatchTaskIds = mutableListOf<String>()
+
+                                // Làm từng job một trong danh sách vừa lấy về, gom đủ 10 job nhận xu 1 lần
+                                for ((index, task) in taskResult.tasks.withIndex()) {
                                     if (!isActive) break
+
+                                    // Kiểm tra điều kiện dừng mục tiêu
+                                    if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) {
+                                        XsmmJobStatusBridge.update("Đã đạt mục tiêu $totalCompleted NV. Hoàn thành!")
+                                        break
+                                    }
+                                    if (config.stopAfterCompletedCount > 0 && totalCompleted >= config.stopAfterCompletedCount) {
+                                        XsmmJobStatusBridge.update("Đã đạt giới hạn $totalCompleted NV. Hoàn thành!")
+                                        break
+                                    }
 
                                     checkPauseWait()
 
@@ -233,10 +246,6 @@ class XsmmJobRunnerOverlayService : Service() {
                                     }
 
                                     val target = task.idorlink.ifBlank { task.targetUrl }
-                                    launch(Dispatchers.Main) {
-                                        taskInfoView?.text = "${task.type}: $target"
-                                    }
-
                                     val shortTarget = if (target.length > 22) target.take(19) + "..." else target
                                     val shortType = when {
                                         task.type.contains("follow", ignoreCase = true) -> "Follow"
@@ -244,12 +253,14 @@ class XsmmJobRunnerOverlayService : Service() {
                                         task.type.contains("comment", ignoreCase = true) -> "Comment"
                                         else -> task.type.removePrefix("tiktok_")
                                     }
-                                    XsmmJobStatusBridge.update("Mở $shortType: $shortTarget")
+                                    val jobPosText = "[${index + 1}/${taskResult.tasks.size}]"
+                                    XsmmJobStatusBridge.update("$jobPosText Mở $shortType: $shortTarget")
+
                                     if (task.targetUrl.isNotBlank()) {
                                         TikTokAppLauncher.openUserProfile(applicationContext, task.targetUrl)
                                     }
 
-                                    // Kích hoạt Accessibility Service tự động bấm Follow/Like, quay về Home lướt tin
+                                    // Kích hoạt Accessibility Service tự động bấm Follow/Like
                                     val actionId = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.triggerTask(
                                         taskType = task.type.ifBlank { config.taskType },
                                         swipeBefore = config.swipeBeforeTask,
@@ -257,7 +268,7 @@ class XsmmJobRunnerOverlayService : Service() {
                                         durationSeconds = config.doTaskDurationSeconds
                                     )
 
-                                    // Chờ Accessibility Service thực hiện xong
+                                    var taskActionSuccess = true
                                     val actionStartTime = System.currentTimeMillis()
                                     val maxWaitTime = (config.doTaskDurationSeconds + 20) * 1000L
                                     while (isActive && (System.currentTimeMillis() - actionStartTime) < maxWaitTime) {
@@ -268,25 +279,89 @@ class XsmmJobRunnerOverlayService : Service() {
                                             }
                                             is com.cayxu.app.automation.tiktok.XsmmTaskActionResult.Completed -> {
                                                 if (res.actionId == actionId) {
+                                                    taskActionSuccess = res.success
                                                     XsmmJobStatusBridge.update(res.message)
                                                     break
                                                 }
                                             }
                                             else -> Unit
                                         }
-                                        delay(500L)
+                                        delay(400L)
                                     }
 
-                                    checkPauseWait()
-                                    XsmmJobStatusBridge.update("Gửi hoàn thành nhận xu...")
+                                    if (taskActionSuccess) {
+                                        pendingBatchTaskIds.add(task.id)
+                                        totalCompleted++
+                                        launch(Dispatchers.Main) { updateProgressDisplay() }
+                                        XsmmJobStatusBridge.update("Xong $shortType $jobPosText (Đã gom ${pendingBatchTaskIds.size}/10)")
+                                    } else {
+                                        failedJobsThisAccount++
+                                        XsmmJobStatusBridge.update("Job lỗi (Lỗi $failedJobsThisAccount/${config.failJobCountToSwitchAccount})")
+                                        if (config.failJobCountToSwitchAccount > 0 && failedJobsThisAccount >= config.failJobCountToSwitchAccount) {
+                                            XsmmJobStatusBridge.update("Nick @$cleanHandle lỗi $failedJobsThisAccount job -> Đổi nick...")
+                                            delay(2000L)
+                                            break
+                                        }
+                                    }
+
+                                    val isLastInList = (index == taskResult.tasks.size - 1)
+                                    // Gom đủ 10 job HOẶC hết danh sách nhiệm vụ mẻ này -> Gửi nhận xu 1 lần!
+                                    if (pendingBatchTaskIds.size >= 10 || (isLastInList && pendingBatchTaskIds.isNotEmpty())) {
+                                        checkPauseWait()
+                                        val batchSize = pendingBatchTaskIds.size
+                                        XsmmJobStatusBridge.update("Gửi nhận xu $batchSize job...")
+
+                                        val compRes = XsmmTasksRepository.completeTasks2(
+                                            token,
+                                            task.type.ifBlank { config.taskType },
+                                            pendingBatchTaskIds.toList(),
+                                            uid
+                                        )
+
+                                        val pts = if (compRes.points > 0) compRes.points else 0
+                                        if (pts > 0) {
+                                            totalEarnedPoints += pts
+                                            launch(Dispatchers.Main) {
+                                                val currentPts = XsmmAccountStore.getPoints(applicationContext) + pts
+                                                XsmmAccountStore.updatePoints(applicationContext, currentPts)
+                                                XsmmSession.points.value = currentPts
+                                                updateProgressDisplay()
+                                            }
+                                        }
+
+                                        if (compRes.success && pts > 0) {
+                                            val sc = if (compRes.successCount > 0) compRes.successCount else batchSize
+                                            XsmmJobStatusBridge.update("+$pts xu ($sc/$batchSize job) (Xong $totalCompleted NV)")
+                                            if (compRes.countdown > 0) {
+                                                delay(compRes.countdown * 1000L)
+                                            }
+                                        } else {
+                                            val failedBatch = (batchSize - compRes.successCount).coerceAtLeast(1)
+                                            failedJobsThisAccount += failedBatch
+                                            XsmmJobStatusBridge.update("Nhận xu lỗi/nhả ($failedJobsThisAccount/${config.failJobCountToSwitchAccount})")
+                                            if (config.failJobCountToSwitchAccount > 0 && failedJobsThisAccount >= config.failJobCountToSwitchAccount) {
+                                                XsmmJobStatusBridge.update("Nick @$cleanHandle bị $failedJobsThisAccount job lỗi/nhả -> Đổi nick...")
+                                                pendingBatchTaskIds.clear()
+                                                delay(2000L)
+                                                break
+                                            }
+                                        }
+                                        pendingBatchTaskIds.clear()
+                                    }
+
+                                    delay(1500L)
+                                }
+
+                                // Gửi nốt nếu còn sót trong batch (phòng trường hợp break)
+                                if (pendingBatchTaskIds.isNotEmpty() && isActive) {
+                                    val batchSize = pendingBatchTaskIds.size
+                                    XsmmJobStatusBridge.update("Gửi nhận xu nốt $batchSize job...")
                                     val compRes = XsmmTasksRepository.completeTasks2(
                                         token,
-                                        task.type.ifBlank { config.taskType },
-                                        listOf(task.id),
+                                        config.taskType,
+                                        pendingBatchTaskIds.toList(),
                                         uid
                                     )
-
-                                    totalCompleted++
                                     val pts = if (compRes.points > 0) compRes.points else 0
                                     if (pts > 0) {
                                         totalEarnedPoints += pts
@@ -294,37 +369,11 @@ class XsmmJobRunnerOverlayService : Service() {
                                             val currentPts = XsmmAccountStore.getPoints(applicationContext) + pts
                                             XsmmAccountStore.updatePoints(applicationContext, currentPts)
                                             XsmmSession.points.value = currentPts
+                                            updateProgressDisplay()
                                         }
-                                    }
-
-                                    launch(Dispatchers.Main) {
-                                        updateProgressDisplay()
-                                    }
-
-                                    if (compRes.success && pts > 0) {
                                         XsmmJobStatusBridge.update("+$pts xu (Xong $totalCompleted NV)")
-                                        if (compRes.countdown > 0) {
-                                            delay(compRes.countdown * 1000L)
-                                        }
-                                    } else {
-                                        failedJobsThisAccount++
-                                        val msg = if (compRes.message.isNotBlank()) compRes.message else "Job lỗi/nhả (chưa nhận được xu)"
-                                        XsmmJobStatusBridge.update("$msg (Lỗi $failedJobsThisAccount/${config.failJobCountToSwitchAccount})")
-
-                                        // Nếu số job lỗi hoặc bị nhả đạt mốc cấu hình -> tự động chuyển sang nick tiếp theo
-                                        if (config.failJobCountToSwitchAccount > 0 && failedJobsThisAccount >= config.failJobCountToSwitchAccount) {
-                                            XsmmJobStatusBridge.update("Nick @$cleanHandle bị $failedJobsThisAccount job lỗi/nhả -> Đổi sang tài khoản tiếp theo...")
-                                            delay(2500L)
-                                            break // Thoát danh sách nhiệm vụ của nick hiện tại để chuyển sang nick kế tiếp
-                                        }
                                     }
-
-                                    if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) {
-                                        XsmmJobStatusBridge.update("Hoàn thành mục tiêu $totalCompleted NV!")
-                                        return@launch
-                                    }
-
-                                    delay(config.fetchTaskIntervalSeconds * 1000L)
+                                    pendingBatchTaskIds.clear()
                                 }
                             }
                         }
