@@ -170,7 +170,7 @@ fun TikTokApiCheckLiveDialog(
                                     .border(1.dp, Color(0xFFCBD5E1), CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (prof != null && prof.avatarHdUrl.isNotBlank()) {
+                                if (prof != null && !prof.avatarHdUrl.isNullOrBlank()) {
                                     AsyncImage(
                                         model = ImageRequest.Builder(context)
                                             .data(prof.avatarHdUrl)
