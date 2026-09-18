@@ -18,6 +18,7 @@ import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import com.cayxu.app.tiktok.checker.TikTokProfileCheckerClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.draw.clip
@@ -64,8 +65,73 @@ fun TikTokLinkAccountScreen(navController: NavController) {
     var filter by remember { mutableStateOf(TikTokFilter.ALL) }
     var showAddSheet by remember { mutableStateOf(false) }
     var subNameDialogFor by remember { mutableStateOf<TikTokAccount?>(null) }
+    var apiCheckDialogItems by remember { mutableStateOf<List<ApiCheckLiveItem>?>(null) }
+    var isApiCheckAllDone by remember { mutableStateOf(false) }
 
     fun refresh() { accounts = TikTokAccountsStore.getAccounts(context) }
+
+    fun runApiCheckForAccounts(targetAccounts: List<TikTokAccount>) {
+        if (targetAccounts.isEmpty()) return
+        // Khởi tạo tất cả tài khoản ở trạng thái Đang chạy đồng thời
+        val items = targetAccounts.map { acc ->
+            ApiCheckLiveItem(
+                initialHandle = acc.handle,
+                initialDisplayName = acc.displayName,
+                uid = acc.uid,
+                isRunning = true,
+                statusText = "Đang kiểm tra..."
+            )
+        }
+        apiCheckDialogItems = items
+        isApiCheckAllDone = false
+
+        scope.launch(Dispatchers.IO) {
+            val client = TikTokProfileCheckerClient()
+            // Bắn request kiểm tra TẤT CẢ acc hết 1 lượt cùng lúc (song song hoàn toàn)
+            val jobs = items.map { item ->
+                launch(Dispatchers.IO) {
+                    try {
+                        val clean = item.initialHandle.removePrefix("@").trim()
+                        val prof = client.fetchProfile(clean)
+                        if (prof != null) {
+                            TikTokAccountsStore.updateFullProfile(context, item.uid, prof)
+                            withContext(Dispatchers.Main) {
+                                item.profile = prof
+                                item.isSuccess = prof.isLive
+                                item.statusText = if (prof.isLive) {
+                                    "Hoạt động" + (if (prof.formattedCreateDate.isNotBlank()) " • Tạo: ${prof.formattedCreateDate}" else "")
+                                } else {
+                                    "Không khả dụng"
+                                }
+                            }
+                        } else {
+                            withContext(Dispatchers.Main) {
+                                item.statusText = "Không có phản hồi"
+                            }
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            item.statusText = "Lỗi kết nối"
+                        }
+                    } finally {
+                        withContext(Dispatchers.Main) {
+                            item.isRunning = false
+                            item.isDone = true
+                            apiCheckDialogItems = items.toList()
+                        }
+                    }
+                }
+            }
+
+            // Chờ toàn bộ các lượt gọi API song song hoàn tất cùng lúc
+            jobs.forEach { it.join() }
+
+            withContext(Dispatchers.Main) {
+                isApiCheckAllDone = true
+                refresh()
+            }
+        }
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -89,20 +155,9 @@ fun TikTokLinkAccountScreen(navController: NavController) {
                         variant = state.variant
                     )
                     refresh()
-                    Toast.makeText(context, "Đã thêm tài khoản ${state.handle}", Toast.LENGTH_SHORT).show()
                     TikTokCaptureBridge.reset()
-
-                    // Tra cứu full profile và avatar HD chạy ngầm
-                    scope.launch(Dispatchers.IO) {
-                        try {
-                            val client = TikTokProfileCheckerClient()
-                            val prof = client.fetchProfile(state.handle)
-                            if (prof != null) {
-                                TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
-                                withContext(Dispatchers.Main) { refresh() }
-                            }
-                        } catch (ignored: Exception) {}
-                    }
+                    // Hiện hộp thoại kiểm tra trực quan bằng API
+                    runApiCheckForAccounts(listOf(acc))
                 }
                 is TikTokCaptureState.CapturedBatch -> {
                     val addedAccounts = mutableListOf<com.cayxu.app.data.local.TikTokAccount>()
@@ -117,31 +172,11 @@ fun TikTokLinkAccountScreen(navController: NavController) {
                         addedAccounts.add(acc)
                     }
                     refresh()
-                    Toast.makeText(
-                        context,
-                        "Đã quét ${state.accounts.size} tài khoản. Đang kiểm tra API...",
-                        Toast.LENGTH_SHORT
-                    ).show()
                     TikTokCaptureBridge.reset()
 
-                    // CHÍNH XÁC KHI NÀY: Sau khi mở sheet "Chuyển đổi tài khoản", API check acc mới thực sự chạy!
-                    // Tra cứu full profile qua API cho từng tài khoản:
-                    // Lấy username chuẩn 100% từ server (uniqueId), avatar HD, ngày tạo từ UID và trạng thái Live/Die
-                    scope.launch(Dispatchers.IO) {
-                        val client = TikTokProfileCheckerClient()
-                        for (acc in addedAccounts) {
-                            try {
-                                val lookupUser = acc.handle.removePrefix("@").trim()
-                                if (lookupUser.isNotBlank()) {
-                                    val prof = client.fetchProfile(lookupUser)
-                                    if (prof != null) {
-                                        TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
-                                        withContext(Dispatchers.Main) { refresh() }
-                                    }
-                                }
-                            } catch (ignored: Exception) {}
-                        }
-                    }
+                    // KHI BẤM CHUYỂN ĐỔI TÀI KHOẢN: Hiện ngay hộp thoại kiểm tra bằng API
+                    // để người dùng thấy trực tiếp API TikTok đang chạy và trả kết quả thật 100%
+                    runApiCheckForAccounts(addedAccounts)
                 }
                 else -> Unit
             }
@@ -171,6 +206,22 @@ fun TikTokLinkAccountScreen(navController: NavController) {
             Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("TikTok", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                 Text("Quản lý tài khoản · ${accounts.size} tổng", fontSize = 11.sp, color = TextSecondary)
+            }
+            IconButton(
+                onClick = {
+                    if (accounts.isNotEmpty()) {
+                        runApiCheckForAccounts(accounts)
+                    } else {
+                        Toast.makeText(context, "Chưa có tài khoản nào để đồng bộ", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier.align(Alignment.CenterEnd)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Sync,
+                    contentDescription = "Đồng bộ tất cả tài khoản",
+                    tint = TextPrimary
+                )
             }
         }
 
@@ -289,6 +340,16 @@ fun TikTokLinkAccountScreen(navController: NavController) {
                 TikTokAccountsStore.setSubName(context, account.uid, newName)
                 refresh()
                 subNameDialogFor = null
+            }
+        )
+    }
+
+    if (apiCheckDialogItems != null) {
+        TikTokApiCheckLiveDialog(
+            items = apiCheckDialogItems!!,
+            isAllDone = isApiCheckAllDone,
+            onDismiss = {
+                apiCheckDialogItems = null
             }
         )
     }

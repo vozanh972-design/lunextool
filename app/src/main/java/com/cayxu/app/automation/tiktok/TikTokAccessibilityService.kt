@@ -380,10 +380,10 @@ class TikTokAccessibilityService : AccessibilityService() {
                     val addAccountNode = findNodeByText(root, ADD_ACCOUNT_LABELS, exact = false)
                     val sheetTitleNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
                     if (addAccountNode != null || (sheetTitleNode != null && isSheetVisible(root))) {
-                        TikTokCaptureBridge.updateProgress("Đã mở danh sách tài khoản, đang quét...")
+                        TikTokCaptureBridge.updateProgress("Đã mở Chuyển đổi tài khoản, đang quét...")
                         val entries = collectSwitchAccountEntries(root)
                         if (entries.isNotEmpty()) {
-                            TikTokCaptureBridge.updateProgress("Đã quét ${entries.size} tài khoản, đang lưu...")
+                            TikTokCaptureBridge.updateProgress("Đã quét ${entries.size} tài khoản, đang đồng bộ...")
                             TikTokCaptureBridge.onCapturedBatch(entries, variant)
                             stopService(Intent(applicationContext, TikTokCaptureOverlayService::class.java))
                             TikTokAppLauncher.bringToolToFront(applicationContext)
@@ -416,7 +416,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                     if (isSettingsScreen) {
                         val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
                         if (switchRowNode != null) {
-                            TikTokCaptureBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
+                            TikTokCaptureBridge.updateProgress("Đã bấm \"Chuyển đổi tài khoản\"! Đang mở sheet danh sách...")
                             clickNode(switchRowNode)
                             // Quét 1s/lần: chờ 10s, chưa hiện đợi tiếp 10s nữa (tối đa 3 phút). Hiện Sheet là quét luôn!
                             waitForCondition(expectedPkg, onWaitingMore = { elapsed ->
@@ -437,7 +437,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                                 delay(650)
                             }
                             if (foundNode != null) {
-                                TikTokCaptureBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
+                                TikTokCaptureBridge.updateProgress("Đã bấm \"Chuyển đổi tài khoản\"! Đang mở sheet danh sách...")
                                 clickNode(foundNode)
                                 // Quét 1s/lần: chờ 10s, chưa hiện đợi tiếp 10s nữa (tối đa 3 phút). Hiện Sheet là quét luôn!
                                 waitForCondition(expectedPkg, onWaitingMore = { elapsed ->

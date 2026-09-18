@@ -140,15 +140,17 @@ fun XsmmAccountScreen(navController: NavController) {
             if (needCheck.isNotEmpty()) {
                 scope.launch(Dispatchers.IO) {
                     val client = TikTokProfileCheckerClient()
-                    for (acc in needCheck) {
-                        try {
-                            val prof = client.fetchProfile(acc.handle)
-                            if (prof != null) {
-                                TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
-                            }
-                        } catch (ignored: Exception) {}
-                        delay(600)
+                    val jobs = needCheck.map { acc ->
+                        launch(Dispatchers.IO) {
+                            try {
+                                val prof = client.fetchProfile(acc.handle)
+                                if (prof != null) {
+                                    TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
+                                }
+                            } catch (ignored: Exception) {}
+                        }
                     }
+                    jobs.forEach { it.join() }
                     withContext(Dispatchers.Main) {
                         allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
                     }
