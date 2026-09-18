@@ -9,10 +9,10 @@ import java.util.Locale
  * Model đầy đủ thông tin tài khoản TikTok trích xuất từ ByteDance Web/API & Snowflake ID.
  */
 data class TikTokFullProfile(
-    val userId: String = "",                    // UID 64-bit của TikTok: e.g. "7123456789012345678"
+    val userId: String = "",                    // UID 64-bit của TikTok: e.g. "6714932179850478593"
     val secUid: String? = null,                 // sec_user_id bảo mật
-    val username: String = "",                  // Handle / Unique ID: e.g. "minh_tran99"
-    val nickname: String = "",                  // Tên hiển thị: e.g. "Minh Tran"
+    val username: String = "",                  // Handle / Unique ID: e.g. "theanhgmn"
+    val nickname: String = "",                  // Tên hiển thị: e.g. "gmn"
     val avatarHdUrl: String? = null,            // Ảnh đại diện HD (avatarLarger)
     val avatarThumbUrl: String? = null,         // Ảnh đại diện thumbnail
     val biography: String = "",                 // Tiểu sử
@@ -27,14 +27,14 @@ data class TikTokFullProfile(
 ) : Serializable {
 
     /**
-     * Ngày tạo tài khoản định dạng ngày tháng năm (dd/MM/yyyy HH:mm)
+     * Ngày tạo tài khoản định dạng ngày tháng năm (dd/MM/yyyy)
      */
     val formattedCreateDate: String
         get() {
             if (createTimestampSec <= 0L) return ""
             return try {
                 val date = Date(createTimestampSec * 1000L)
-                val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+                val sdf = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
                 sdf.format(date)
             } catch (e: Exception) {
                 ""

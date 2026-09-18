@@ -47,6 +47,7 @@ import coil.compose.AsyncImage
 import androidx.navigation.NavController
 import com.cayxu.app.data.local.TikTokAccount
 import com.cayxu.app.data.local.TikTokAccountsStore
+import android.widget.Toast
 import com.cayxu.app.tiktok.checker.TikTokProfileCheckerClient
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.data.local.XsmmAccountStore
@@ -131,14 +132,20 @@ fun XsmmAccountScreen(navController: NavController) {
 
     LaunchedEffect(selectedPlatform, selectedVariant, allTikTokAccounts.size) {
         if (selectedPlatform == "tiktok") {
-            val unprofiled = accountsForVariant.filter { it.avatarUrl.isBlank() && it.handle.isNotBlank() && it.uid !in reloadingTikTokUids }
-            if (unprofiled.isNotEmpty()) {
+            // Tự động kiểm tra và làm mới cho các tài khoản chưa có avatar, chưa có ngày tạo chuẩn, hoặc bị đánh dấu Die do lỗi cũ
+            val needCheck = accountsForVariant.filter {
+                (it.avatarUrl.isBlank() || it.createDateFormatted.isBlank() || !it.isLive) &&
+                it.handle.isNotBlank() && it.uid !in reloadingTikTokUids
+            }
+            if (needCheck.isNotEmpty()) {
                 scope.launch(Dispatchers.IO) {
                     val client = TikTokProfileCheckerClient()
-                    for (acc in unprofiled) {
+                    for (acc in needCheck) {
                         try {
                             val prof = client.fetchProfile(acc.handle)
-                            TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
+                            if (prof != null) {
+                                TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
+                            }
                         } catch (ignored: Exception) {}
                         delay(600)
                     }
@@ -739,15 +746,21 @@ fun XsmmAccountScreen(navController: NavController) {
                                         try {
                                             val client = TikTokProfileCheckerClient()
                                             val profile = client.fetchProfile(account.handle)
-                                            TikTokAccountsStore.updateFullProfile(context, account.uid, profile)
-                                            withContext(Dispatchers.Main) {
-                                                allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
-                                                val msg = if (profile.isLive) {
-                                                    "Đã cập nhật @${profile.username}: Live (${formatTikTokCount(profile.followerCount)} follow)"
-                                                } else {
-                                                    "Tài khoản @${profile.username} không tồn tại hoặc bị khóa"
+                                            if (profile != null) {
+                                                TikTokAccountsStore.updateFullProfile(context, account.uid, profile)
+                                                withContext(Dispatchers.Main) {
+                                                    allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+                                                    val msg = if (profile.isLive) {
+                                                        "Đã cập nhật @${profile.username}: Live (${formatTikTokCount(profile.followerCount)} follow)"
+                                                    } else {
+                                                        "Tài khoản @${profile.username} không tồn tại hoặc bị khóa"
+                                                    }
+                                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                                                 }
-                                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                withContext(Dispatchers.Main) {
+                                                    android.widget.Toast.makeText(context, "Không thể kết nối TikTok, vui lòng thử lại", Toast.LENGTH_SHORT).show()
+                                                }
                                             }
                                         } catch (e: Exception) {
                                             withContext(Dispatchers.Main) {
@@ -2128,9 +2141,6 @@ private fun XsmmTikTokAccountCard(
                     if (account.heartCount > 0) add("${formatTikTokCount(account.heartCount)} tim")
                     if (account.createDateFormatted.isNotBlank()) {
                         add("Tạo: ${account.createDateFormatted}")
-                    } else if (account.createdAt > 0) {
-                        val sdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
-                        add("Tạo: ${sdf.format(java.util.Date(account.createdAt))}")
                     }
                 }
                 if (statsList.isNotEmpty()) {

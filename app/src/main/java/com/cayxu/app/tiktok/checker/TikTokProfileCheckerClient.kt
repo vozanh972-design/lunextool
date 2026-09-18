@@ -22,12 +22,10 @@ class TikTokProfileCheckerClient(
     companion object {
         const val BASE_URL = "https://www.tiktok.com"
 
-        // Regex trích xuất JSON Data từ trang Profile HTML (hỗ trợ nhiều định dạng thẻ script)
         val UNIVERSAL_DATA_REGEX = Pattern.compile("<script id=\"__UNIVERSAL_DATA_FOR_REHYDRATION__\"[^>]*>(.*?)</script>", Pattern.DOTALL)
         val SIGI_STATE_REGEX = Pattern.compile("<script id=\"SIGI_STATE\"[^>]*>(.*?)</script>", Pattern.DOTALL)
         val USERNAME_REGEX = Pattern.compile("^(?=.{1,30}$)(?!.*\\.\\.)(?!\\.)[A-Za-z0-9](?:[A-Za-z0-9._]*[A-Za-z0-9])?$")
 
-        // Mobile UA giúp bypass SlardarWAF / Cloudflare captcha của TikTok Web
         const val MOBILE_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
         const val DESKTOP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
     }
@@ -85,33 +83,21 @@ class TikTokProfileCheckerClient(
 
     /**
      * Tra cứu thông tin Profile TikTok bằng Username (chạy trên Dispatchers.IO)
+     * Trả về null nếu lỗi mạng / không kết nối được (không tự tiện đánh dấu acc die)
      */
-    suspend fun fetchProfile(username: String): TikTokFullProfile = withContext(Dispatchers.IO) {
+    suspend fun fetchProfile(username: String): TikTokFullProfile? = withContext(Dispatchers.IO) {
         val cleanUser = username.removePrefix("@").trim()
-        if (cleanUser.isBlank()) {
-            return@withContext TikTokFullProfile(
-                userId = "",
-                username = cleanUser,
-                nickname = cleanUser,
-                isLive = false
-            )
-        }
+        if (cleanUser.isBlank()) return@withContext null
 
-        // Thử Mobile UA trước (tỷ lệ thành công cao nhất không bị WAF)
+        // 1. Thử Mobile UA trước (tỷ lệ thành công cao nhất, không bị WAF)
         val profile = tryFetch(cleanUser, MOBILE_USER_AGENT)
         if (profile != null) return@withContext profile
 
-        // Fallback thử Desktop UA
+        // 2. Fallback thử Desktop UA
         val fallback = tryFetch(cleanUser, DESKTOP_USER_AGENT)
         if (fallback != null) return@withContext fallback
 
-        // Nếu cả 2 đều không ra json hoặc bị 404
-        TikTokFullProfile(
-            userId = "",
-            username = cleanUser,
-            nickname = cleanUser,
-            isLive = false
-        )
+        null
     }
 
     private fun tryFetch(cleanUser: String, userAgent: String): TikTokFullProfile? {
@@ -128,9 +114,7 @@ class TikTokProfileCheckerClient(
 
         return try {
             httpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: ""
-
-                if (response.code == 404 || body.contains("user-not-found") || body.contains("Couldn't find this account")) {
+                if (response.code == 404) {
                     return TikTokFullProfile(
                         userId = "",
                         username = cleanUser,
@@ -139,101 +123,116 @@ class TikTokProfileCheckerClient(
                     )
                 }
 
-                val userJson = extractUserJson(body, cleanUser)
-                val statsJson = extractStatsJson(body, cleanUser)
+                val body = response.body?.string() ?: ""
 
-                if (userJson != null) {
-                    val userId = userJson.optString("id", userJson.optString("uid", ""))
-                    val secUid = userJson.optString("secUid", userJson.optString("sec_uid", null))
-                    val nickname = userJson.optString("nickname", cleanUser)
-                    val avatarHd = userJson.optString("avatarLarger", userJson.optString("avatarMedium", null))
-                    val avatarThumb = userJson.optString("avatarThumb", null)
-                    val bio = userJson.optString("signature", "")
-                    val isPrivate = userJson.optBoolean("privateAccount", false)
-                    val isVerified = userJson.optBoolean("verified", false)
+                // 1. Kiểm tra JSON dữ liệu từ __UNIVERSAL_DATA_FOR_REHYDRATION__
+                val mUniversal = UNIVERSAL_DATA_REGEX.matcher(body)
+                if (mUniversal.find()) {
+                    val root = JSONObject(mUniversal.group(1))
+                    val defaultScope = root.optJSONObject("__DEFAULT_SCOPE__")
+                    val userDetail = defaultScope?.optJSONObject("webapp.user-detail")
 
-                    val followers = statsJson?.optLong("followerCount", 0L) ?: 0L
-                    val following = statsJson?.optLong("followingCount", 0L) ?: 0L
-                    val totalHearts = statsJson?.optLong("heartCount", statsJson.optLong("heart", 0L)) ?: 0L
-                    val videoCount = statsJson?.optLong("videoCount", 0L) ?: 0L
+                    val statusCode = userDetail?.optInt("statusCode", 0) ?: 0
+                    if (statusCode == 10221) {
+                        // User not found trên TikTok
+                        return TikTokFullProfile(
+                            userId = "",
+                            username = cleanUser,
+                            nickname = cleanUser,
+                            isLive = false
+                        )
+                    }
 
-                    val createTimeSec = calculateAccountCreateTimestamp(userId)
+                    val userInfo = userDetail?.optJSONObject("userInfo")
+                    val userJson = userInfo?.optJSONObject("user")
+                    val statsJson = userInfo?.optJSONObject("stats")
 
-                    TikTokFullProfile(
-                        userId = userId,
-                        secUid = secUid,
-                        username = cleanUser,
-                        nickname = nickname.ifBlank { cleanUser },
-                        avatarHdUrl = avatarHd,
-                        avatarThumbUrl = avatarThumb,
-                        biography = bio,
-                        followerCount = followers,
-                        followingCount = following,
-                        totalFavorited = totalHearts,
-                        videoCount = videoCount,
-                        isPrivate = isPrivate,
-                        isVerified = isVerified,
-                        createTimestampSec = createTimeSec,
-                        isLive = true
-                    )
-                } else {
-                    null
+                    if (userJson != null) {
+                        val userId = userJson.optString("id", userJson.optString("uid", ""))
+                        if (userId.isNotBlank()) {
+                            val secUid = userJson.optString("secUid", userJson.optString("sec_uid", null))
+                            val nickname = userJson.optString("nickname", cleanUser)
+                            val avatarLarger = userJson.optString("avatarLarger", "")
+                            val avatarMedium = userJson.optString("avatarMedium", "")
+                            val avatarThumb = userJson.optString("avatarThumb", null)
+                            val finalAvatar = avatarLarger.ifBlank { avatarMedium }
+                            val bio = userJson.optString("signature", "")
+                            val isPrivate = userJson.optBoolean("privateAccount", false)
+                            val isVerified = userJson.optBoolean("verified", false)
+
+                            val followers = statsJson?.optLong("followerCount", 0L) ?: 0L
+                            val following = statsJson?.optLong("followingCount", 0L) ?: 0L
+                            val totalHearts = statsJson?.optLong("heartCount", statsJson.optLong("heart", 0L)) ?: 0L
+                            val videoCount = statsJson?.optLong("videoCount", 0L) ?: 0L
+
+                            // Thời gian tạo: ưu tiên lấy createTime có sẵn trong user JSON, nếu không có thì tính từ Snowflake UID
+                            var createTimeSec = userJson.optLong("createTime", 0L)
+                            if (createTimeSec <= 0L) {
+                                createTimeSec = calculateAccountCreateTimestamp(userId)
+                            }
+
+                            return TikTokFullProfile(
+                                userId = userId,
+                                secUid = secUid,
+                                username = cleanUser,
+                                nickname = nickname.ifBlank { cleanUser },
+                                avatarHdUrl = finalAvatar,
+                                avatarThumbUrl = avatarThumb,
+                                biography = bio,
+                                followerCount = followers,
+                                followingCount = following,
+                                totalFavorited = totalHearts,
+                                videoCount = videoCount,
+                                isPrivate = isPrivate,
+                                isVerified = isVerified,
+                                createTimestampSec = createTimeSec,
+                                isLive = true
+                            )
+                        }
+                    }
                 }
+
+                // 2. Thử SIGI_STATE
+                val mSigi = SIGI_STATE_REGEX.matcher(body)
+                if (mSigi.find()) {
+                    val root = JSONObject(mSigi.group(1))
+                    val userModule = root.optJSONObject("UserModule")
+                    val users = userModule?.optJSONObject("users")
+                    val stats = userModule?.optJSONObject("stats")
+
+                    val userJson = users?.optJSONObject(cleanUser)
+                    val statsJson = stats?.optJSONObject(cleanUser)
+
+                    if (userJson != null) {
+                        val userId = userJson.optString("id", "")
+                        if (userId.isNotBlank()) {
+                            var createTimeSec = userJson.optLong("createTime", 0L)
+                            if (createTimeSec <= 0L) {
+                                createTimeSec = calculateAccountCreateTimestamp(userId)
+                            }
+                            return TikTokFullProfile(
+                                userId = userId,
+                                secUid = userJson.optString("secUid", null),
+                                username = cleanUser,
+                                nickname = userJson.optString("nickname", cleanUser),
+                                avatarHdUrl = userJson.optString("avatarLarger", userJson.optString("avatarMedium", null)),
+                                avatarThumbUrl = userJson.optString("avatarThumb", null),
+                                biography = userJson.optString("signature", ""),
+                                followerCount = statsJson?.optLong("followerCount", 0L) ?: 0L,
+                                followingCount = statsJson?.optLong("followingCount", 0L) ?: 0L,
+                                totalFavorited = statsJson?.optLong("heartCount", 0L) ?: 0L,
+                                videoCount = statsJson?.optLong("videoCount", 0L) ?: 0L,
+                                createTimestampSec = createTimeSec,
+                                isLive = true
+                            )
+                        }
+                    }
+                }
+
+                null
             }
         } catch (e: Exception) {
             null
         }
-    }
-
-    private fun extractUserJson(html: String, username: String): JSONObject? {
-        try {
-            val mUniversal = UNIVERSAL_DATA_REGEX.matcher(html)
-            if (mUniversal.find()) {
-                val root = JSONObject(mUniversal.group(1))
-                val defaultScope = root.optJSONObject("__DEFAULT_SCOPE__")
-                val userDetail = defaultScope?.optJSONObject("webapp.user-detail")?.optJSONObject("userInfo")
-                if (userDetail != null && userDetail.has("user")) {
-                    return userDetail.getJSONObject("user")
-                }
-            }
-
-            val mSigi = SIGI_STATE_REGEX.matcher(html)
-            if (mSigi.find()) {
-                val root = JSONObject(mSigi.group(1))
-                val userModule = root.optJSONObject("UserModule")?.optJSONObject("users")
-                if (userModule != null && userModule.has(username)) {
-                    return userModule.getJSONObject(username)
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return null
-    }
-
-    private fun extractStatsJson(html: String, username: String): JSONObject? {
-        try {
-            val mUniversal = UNIVERSAL_DATA_REGEX.matcher(html)
-            if (mUniversal.find()) {
-                val root = JSONObject(mUniversal.group(1))
-                val defaultScope = root.optJSONObject("__DEFAULT_SCOPE__")
-                val userDetail = defaultScope?.optJSONObject("webapp.user-detail")?.optJSONObject("userInfo")
-                if (userDetail != null && userDetail.has("stats")) {
-                    return userDetail.getJSONObject("stats")
-                }
-            }
-
-            val mSigi = SIGI_STATE_REGEX.matcher(html)
-            if (mSigi.find()) {
-                val root = JSONObject(mSigi.group(1))
-                val statsModule = root.optJSONObject("UserModule")?.optJSONObject("stats")
-                if (statsModule != null && statsModule.has(username)) {
-                    return statsModule.getJSONObject(username)
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return null
     }
 }
