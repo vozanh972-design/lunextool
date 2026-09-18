@@ -18,6 +18,8 @@ data class XsmmRunConfig(
     val stopAfterNoTaskCount: Int = 100,
     /** Số lần hoàn thành nhiệm vụ thì tự dừng. */
     val stopAfterCompletedCount: Int = 100,
+    /** Số job lỗi hoặc bị nhả sẽ tự động đổi sang nick tiếp theo (mặc định: 50). */
+    val failJobCountToSwitchAccount: Int = 50,
     /** Lướt (vuốt) một chút trước khi làm nhiệm vụ. */
     val swipeBeforeTask: Boolean = false,
     /** Trở về Home rồi lướt sau khi làm xong (giữa các nhiệm vụ). */
@@ -33,6 +35,7 @@ object XsmmRunConfigStore {
     private const val KEY_TASK_COUNT_TARGET = "task_count_target"
     private const val KEY_STOP_AFTER_NO_TASK = "stop_after_no_task_count"
     private const val KEY_STOP_AFTER_COMPLETED = "stop_after_completed_count"
+    private const val KEY_FAIL_JOB_COUNT_TO_SWITCH = "fail_job_count_to_switch"
     private const val KEY_SWIPE_BEFORE = "swipe_before_task"
     private const val KEY_RETURN_HOME_SWIPE = "return_home_and_swipe"
 
@@ -72,11 +75,26 @@ object XsmmRunConfigStore {
         else -> tiktokTaskTypes
     }
 
+    fun defaultTaskTypeFor(platform: String): String = when (platform.lowercase()) {
+        "instagram" -> "instagram_random"
+        "facebook" -> "facebook_follow"
+        else -> "tiktok_follow"
+    }
+
+    private fun prefixFor(platform: String): String = when (platform.lowercase()) {
+        "instagram" -> "instagram_"
+        "facebook" -> "facebook_"
+        else -> "tiktok_"
+    }
+
     val supportedTaskTypes: List<Pair<String, String>>
         get() = tiktokTaskTypes
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    fun getActivePlatform(context: Context): String =
+        prefs(context).getString(KEY_PLATFORM, "tiktok") ?: "tiktok"
 
     fun setActivePlatform(context: Context, platform: String) {
         prefs(context).edit().putString(KEY_PLATFORM, platform).apply()
@@ -85,15 +103,27 @@ object XsmmRunConfigStore {
     fun get(context: Context, platform: String? = null): XsmmRunConfig {
         val p = prefs(context)
         val selectedPlatform = (platform ?: p.getString(KEY_PLATFORM, "tiktok") ?: "tiktok").lowercase()
-        val prefix = if (selectedPlatform != "tiktok") "${selectedPlatform}_" else ""
+        val prefix = prefixFor(selectedPlatform)
+
+        val validTypes = taskTypesFor(selectedPlatform).map { it.first }
+        val rawTaskType = p.getString("${prefix}${KEY_TASK_TYPE}", null)
+            ?: if (selectedPlatform == "tiktok") p.getString(KEY_TASK_TYPE, null) else null
+
+        val safeTaskType = if (rawTaskType != null && rawTaskType in validTypes) {
+            rawTaskType
+        } else {
+            defaultTaskTypeFor(selectedPlatform)
+        }
+
         return XsmmRunConfig(
             platform = selectedPlatform,
-            taskType = p.getString("${prefix}${KEY_TASK_TYPE}", if (selectedPlatform == "instagram") "instagram_random" else "tiktok_follow") ?: "tiktok_follow",
+            taskType = safeTaskType,
             fetchTaskIntervalSeconds = p.getInt("${prefix}${KEY_FETCH_INTERVAL}", p.getInt(KEY_FETCH_INTERVAL, 10)),
             doTaskDurationSeconds = p.getInt("${prefix}${KEY_DO_DURATION}", p.getInt(KEY_DO_DURATION, 10)),
             taskCountTarget = p.getInt("${prefix}${KEY_TASK_COUNT_TARGET}", p.getInt(KEY_TASK_COUNT_TARGET, 0)),
             stopAfterNoTaskCount = p.getInt("${prefix}${KEY_STOP_AFTER_NO_TASK}", p.getInt(KEY_STOP_AFTER_NO_TASK, 100)),
             stopAfterCompletedCount = p.getInt("${prefix}${KEY_STOP_AFTER_COMPLETED}", p.getInt(KEY_STOP_AFTER_COMPLETED, 100)),
+            failJobCountToSwitchAccount = p.getInt("${prefix}${KEY_FAIL_JOB_COUNT_TO_SWITCH}", p.getInt(KEY_FAIL_JOB_COUNT_TO_SWITCH, 50)),
             swipeBeforeTask = p.getBoolean("${prefix}${KEY_SWIPE_BEFORE}", p.getBoolean(KEY_SWIPE_BEFORE, false)),
             returnHomeAndSwipe = p.getBoolean("${prefix}${KEY_RETURN_HOME_SWIPE}", p.getBoolean(KEY_RETURN_HOME_SWIPE, false))
         )
@@ -102,15 +132,19 @@ object XsmmRunConfigStore {
     fun save(context: Context, config: XsmmRunConfig) {
         val p = prefs(context)
         val selectedPlatform = config.platform.lowercase()
-        val prefix = if (selectedPlatform != "tiktok") "${selectedPlatform}_" else ""
+        val prefix = prefixFor(selectedPlatform)
+        val validTypes = taskTypesFor(selectedPlatform).map { it.first }
+        val safeTaskType = if (config.taskType in validTypes) config.taskType else defaultTaskTypeFor(selectedPlatform)
+
         p.edit()
             .putString(KEY_PLATFORM, selectedPlatform)
-            .putString("${prefix}${KEY_TASK_TYPE}", config.taskType)
+            .putString("${prefix}${KEY_TASK_TYPE}", safeTaskType)
             .putInt("${prefix}${KEY_FETCH_INTERVAL}", config.fetchTaskIntervalSeconds)
             .putInt("${prefix}${KEY_DO_DURATION}", config.doTaskDurationSeconds)
             .putInt("${prefix}${KEY_TASK_COUNT_TARGET}", config.taskCountTarget)
             .putInt("${prefix}${KEY_STOP_AFTER_NO_TASK}", config.stopAfterNoTaskCount)
             .putInt("${prefix}${KEY_STOP_AFTER_COMPLETED}", config.stopAfterCompletedCount)
+            .putInt("${prefix}${KEY_FAIL_JOB_COUNT_TO_SWITCH}", config.failJobCountToSwitchAccount)
             .putBoolean("${prefix}${KEY_SWIPE_BEFORE}", config.swipeBeforeTask)
             .putBoolean("${prefix}${KEY_RETURN_HOME_SWIPE}", config.returnHomeAndSwipe)
             .apply()

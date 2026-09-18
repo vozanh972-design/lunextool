@@ -90,7 +90,8 @@ class XsmmJobRunnerOverlayService : Service() {
                 return@launch
             }
 
-            val config = XsmmRunConfigStore.get(applicationContext)
+            val activePlatform = XsmmRunConfigStore.getActivePlatform(applicationContext)
+            val config = XsmmRunConfigStore.get(applicationContext, activePlatform)
             var noTaskConsecutiveCount = 0
 
             // Ensure we have account IDs for all handles
@@ -149,6 +150,7 @@ class XsmmJobRunnerOverlayService : Service() {
 
                     val cleanHandle = handle.trim().removePrefix("@").lowercase()
                     val uid = accountIdMap[cleanHandle] ?: cleanHandle
+                    var failedJobsThisAccount = 0
 
                     launch(Dispatchers.Main) {
                         updateProgressDisplay()
@@ -263,15 +265,23 @@ class XsmmJobRunnerOverlayService : Service() {
                                         updateProgressDisplay()
                                     }
 
-                                    if (compRes.success) {
+                                    if (compRes.success && pts > 0) {
                                         val msg = if (compRes.message.isNotBlank()) compRes.message else "Thành công +$pts xu!"
                                         XsmmJobStatusBridge.update("$msg (Đã làm $totalCompleted NV)")
                                         if (compRes.countdown > 0) {
                                             delay(compRes.countdown * 1000L)
                                         }
                                     } else {
-                                        val msg = if (compRes.message.isNotBlank()) compRes.message else "Đã làm xong NV"
-                                        XsmmJobStatusBridge.update("$msg (Đã làm $totalCompleted NV)")
+                                        failedJobsThisAccount++
+                                        val msg = if (compRes.message.isNotBlank()) compRes.message else "Job lỗi/nhả (chưa nhận được xu)"
+                                        XsmmJobStatusBridge.update("$msg (Lỗi $failedJobsThisAccount/${config.failJobCountToSwitchAccount})")
+
+                                        // Nếu số job lỗi hoặc bị nhả đạt mốc cấu hình -> tự động chuyển sang nick tiếp theo
+                                        if (config.failJobCountToSwitchAccount > 0 && failedJobsThisAccount >= config.failJobCountToSwitchAccount) {
+                                            XsmmJobStatusBridge.update("Nick @$cleanHandle bị $failedJobsThisAccount job lỗi/nhả -> Đổi sang tài khoản tiếp theo...")
+                                            delay(2500L)
+                                            break // Thoát danh sách nhiệm vụ của nick hiện tại để chuyển sang nick kế tiếp
+                                        }
                                     }
 
                                     if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) {

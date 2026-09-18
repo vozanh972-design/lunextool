@@ -46,7 +46,8 @@ private val XsmmAccent = Color(0xFF16A34A)
 @Composable
 fun XsmmRunConfigScreen(navController: NavController) {
     val context = LocalContext.current
-    val saved = remember { XsmmRunConfigStore.get(context) }
+    val activePlatform = remember { XsmmRunConfigStore.getActivePlatform(context) }
+    val saved = remember(activePlatform) { XsmmRunConfigStore.get(context, activePlatform) }
 
     var platform by remember { mutableStateOf(saved.platform) }
     var taskType by remember { mutableStateOf(saved.taskType) }
@@ -55,6 +56,7 @@ fun XsmmRunConfigScreen(navController: NavController) {
     var taskCountTarget by remember { mutableStateOf(if (saved.taskCountTarget > 0) saved.taskCountTarget.toString() else "") }
     var stopAfterNoTask by remember { mutableStateOf(saved.stopAfterNoTaskCount.toString()) }
     var stopAfterCompleted by remember { mutableStateOf(saved.stopAfterCompletedCount.toString()) }
+    var failJobCountToSwitch by remember { mutableStateOf(saved.failJobCountToSwitchAccount.toString()) }
     var swipeBeforeTask by remember { mutableStateOf(saved.swipeBeforeTask) }
     var returnHomeAndSwipe by remember { mutableStateOf(saved.returnHomeAndSwipe) }
 
@@ -72,6 +74,7 @@ fun XsmmRunConfigScreen(navController: NavController) {
                 taskCountTarget = taskCountTarget.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                 stopAfterNoTaskCount = stopAfterNoTask.toIntOrNull()?.coerceAtLeast(1) ?: 100,
                 stopAfterCompletedCount = stopAfterCompleted.toIntOrNull()?.coerceAtLeast(1) ?: 100,
+                failJobCountToSwitchAccount = failJobCountToSwitch.toIntOrNull()?.coerceAtLeast(1) ?: 50,
                 swipeBeforeTask = swipeBeforeTask,
                 returnHomeAndSwipe = returnHomeAndSwipe
             )
@@ -113,10 +116,18 @@ fun XsmmRunConfigScreen(navController: NavController) {
         ) {
             ConfigPlatformSelector(
                 selectedPlatform = platform,
-                onSelectPlatform = {
-                    platform = it
-                    val defaultTask = XsmmRunConfigStore.taskTypesFor(it).firstOrNull()?.first ?: "tiktok_follow"
-                    taskType = defaultTask
+                onSelectPlatform = { newPlat ->
+                    platform = newPlat
+                    val platConfig = XsmmRunConfigStore.get(context, newPlat)
+                    taskType = platConfig.taskType
+                    fetchTaskInterval = platConfig.fetchTaskIntervalSeconds.toString()
+                    doTaskDuration = platConfig.doTaskDurationSeconds.toString()
+                    taskCountTarget = if (platConfig.taskCountTarget > 0) platConfig.taskCountTarget.toString() else ""
+                    stopAfterNoTask = platConfig.stopAfterNoTaskCount.toString()
+                    stopAfterCompleted = platConfig.stopAfterCompletedCount.toString()
+                    failJobCountToSwitch = platConfig.failJobCountToSwitchAccount.toString()
+                    swipeBeforeTask = platConfig.swipeBeforeTask
+                    returnHomeAndSwipe = platConfig.returnHomeAndSwipe
                 }
             )
             ConfigTaskTypeSelector(
@@ -148,6 +159,13 @@ fun XsmmRunConfigScreen(navController: NavController) {
                 suffix = "lần",
                 value = stopAfterNoTask,
                 onValueChange = { stopAfterNoTask = it }
+            )
+            ConfigNumberField(
+                label = "Số job lỗi / nhả sẽ đổi acc",
+                suffix = "job",
+                value = failJobCountToSwitch,
+                onValueChange = { failJobCountToSwitch = it },
+                placeholder = "Mặc định = 50 job"
             )
             ConfigNumberField(
                 label = "Số lần hoàn thành NV sẽ dừng",
