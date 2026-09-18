@@ -57,6 +57,20 @@ class XsmmJobRunnerOverlayService : Service() {
     private var totalCompleted = 0
     private var totalEarnedPoints = 0L
 
+    private var isPaused = false
+    private var pauseButtonView: TextView? = null
+    private var lastBubbleX = -1
+    private var lastBubbleY = -1
+
+    private suspend fun checkPauseWait() {
+        if (isPaused) {
+            XsmmJobStatusBridge.update("Đã tạm dừng (nhấn Tiếp tục để chạy lại)")
+            while (isPaused && serviceScope.isActive) {
+                delay(400L)
+            }
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -156,9 +170,15 @@ class XsmmJobRunnerOverlayService : Service() {
                         updateProgressDisplay()
                     }
 
+                    checkPauseWait()
+
                     // Kiểm tra xem TikTok có đang ở đúng tài khoản cần chạy không
                     if (cleanHandle.isNotBlank() && config.taskType.contains("tiktok", ignoreCase = true)) {
-                        XsmmJobStatusBridge.update("Đang mở TikTok kiểm tra tài khoản...")
+                        // Chủ động thu nhỏ để không che màn hình khi thao tác
+                        launch(Dispatchers.Main) {
+                            if (!isPaused && fullPanel != null) showMiniBubble()
+                        }
+                        XsmmJobStatusBridge.update("Mở TikTok kiểm tra nick...")
                         TikTokAppLauncher.launch(applicationContext, TikTokAppVariant.STANDARD)
                         delay(1200L)
                         val verifyActionId = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.triggerVerifyAccount(cleanHandle)
@@ -177,7 +197,8 @@ class XsmmJobRunnerOverlayService : Service() {
                         }
                     }
 
-                    XsmmJobStatusBridge.update("Đang lấy nhiệm vụ cho @$cleanHandle...")
+                    checkPauseWait()
+                    XsmmJobStatusBridge.update("Lấy nhiệm vụ @$cleanHandle...")
                     val taskResult = XsmmTasksRepository.getTasks2(token, config.taskType, uid)
 
                     when (taskResult) {
@@ -204,12 +225,26 @@ class XsmmJobRunnerOverlayService : Service() {
                                 for (task in taskResult.tasks) {
                                     if (!isActive) break
 
+                                    checkPauseWait()
+
+                                    // Chủ động thu nhỏ thành bong bóng khi chạy job tránh chạm nhầm nút
+                                    launch(Dispatchers.Main) {
+                                        if (!isPaused && fullPanel != null) showMiniBubble()
+                                    }
+
                                     val target = task.idorlink.ifBlank { task.targetUrl }
                                     launch(Dispatchers.Main) {
                                         taskInfoView?.text = "${task.type}: $target"
                                     }
 
-                                    XsmmJobStatusBridge.update("Đang mở nhiệm vụ: $target")
+                                    val shortTarget = if (target.length > 22) target.take(19) + "..." else target
+                                    val shortType = when {
+                                        task.type.contains("follow", ignoreCase = true) -> "Follow"
+                                        task.type.contains("like", ignoreCase = true) -> "Like"
+                                        task.type.contains("comment", ignoreCase = true) -> "Comment"
+                                        else -> task.type.removePrefix("tiktok_")
+                                    }
+                                    XsmmJobStatusBridge.update("Mở $shortType: $shortTarget")
                                     if (task.targetUrl.isNotBlank()) {
                                         TikTokAppLauncher.openUserProfile(applicationContext, task.targetUrl)
                                     }
@@ -242,7 +277,8 @@ class XsmmJobRunnerOverlayService : Service() {
                                         delay(500L)
                                     }
 
-                                    XsmmJobStatusBridge.update("Đang gửi xác nhận hoàn thành...")
+                                    checkPauseWait()
+                                    XsmmJobStatusBridge.update("Gửi hoàn thành nhận xu...")
                                     val compRes = XsmmTasksRepository.completeTasks2(
                                         token,
                                         task.type.ifBlank { config.taskType },
@@ -266,8 +302,7 @@ class XsmmJobRunnerOverlayService : Service() {
                                     }
 
                                     if (compRes.success && pts > 0) {
-                                        val msg = if (compRes.message.isNotBlank()) compRes.message else "Thành công +$pts xu!"
-                                        XsmmJobStatusBridge.update("$msg (Đã làm $totalCompleted NV)")
+                                        XsmmJobStatusBridge.update("+$pts xu (Xong $totalCompleted NV)")
                                         if (compRes.countdown > 0) {
                                             delay(compRes.countdown * 1000L)
                                         }
@@ -387,46 +422,86 @@ class XsmmJobRunnerOverlayService : Service() {
 
         root.addView(divider())
 
-        root.addView(TextView(this).apply { text = "NV HIỆN TẠI"; setTextColor(Color.parseColor("#8A93A6")); textSize = 11.5f; setPadding(0, dp(2), 0, dp(2)) })
-        val taskTv = TextView(this).apply {
-            text = "Đang kết nối hệ thống lấy nhiệm vụ..."
-            setTextColor(Color.parseColor("#C7CBD4"))
-            textSize = 12.5f
-            setPadding(0, 0, 0, dp(4))
+        // Đẩy trạng thái thao tác lên vị trí NV HIỆN TẠI, rút gọn nội dung
+        val statusRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(10))
         }
-        taskInfoView = taskTv
-        root.addView(taskTv)
-        root.addView(divider())
-
-        val statusRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
-        statusRow.addView(View(this).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#16A34A")) } }, LinearLayout.LayoutParams(dp(7), dp(7)).apply { topMargin = dp(5); rightMargin = dp(8) })
-        val statusTv = TextView(this).apply { text = ""; setTextColor(Color.parseColor("#C7CBD4")); textSize = 12.5f; setLineSpacing(dp(2).toFloat(), 1f) }
+        statusRow.addView(
+            View(this).apply {
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#16A34A")) }
+            },
+            LinearLayout.LayoutParams(dp(7), dp(7)).apply { rightMargin = dp(8) }
+        )
+        val statusTv = TextView(this).apply {
+            val cur = XsmmJobStatusBridge.status.value
+            text = if (cur.isNotBlank()) cur else "Đang lấy nhiệm vụ..."
+            setTextColor(Color.parseColor("#C7CBD4"))
+            textSize = 13f
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
         statusRow.addView(statusTv, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         statusValueView = statusTv
-        root.addView(statusRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6); bottomMargin = dp(14) })
-        val cur = XsmmJobStatusBridge.status.value
-        statusTv.text = cur; statusRow.visibility = if (cur.isBlank()) View.GONE else View.VISIBLE
+        root.addView(statusRow)
 
-        root.addView(TextView(this).apply {
-            text = "\u25A0  TẠM DỪNG"; setTextColor(Color.WHITE); textSize = 14f; gravity = Gravity.CENTER
+        val pauseBtn = TextView(this).apply {
+            textSize = 14f
+            gravity = Gravity.CENTER
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(Color.parseColor("#F2534A")) }
-            setPadding(0, dp(14), 0, dp(14)); setOnClickListener { stopSelf() }
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
+            setTextColor(Color.WHITE)
+            setPadding(0, dp(14), 0, dp(14))
+            updatePauseButtonState(this)
+            setOnClickListener {
+                togglePause()
+            }
+        }
+        pauseButtonView = pauseBtn
+        root.addView(pauseBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
 
         makeDraggable(root, params)
         windowManager.addView(root, params)
         fullPanel = root
     }
 
+    private fun updatePauseButtonState(btn: TextView) {
+        if (isPaused) {
+            btn.text = "▶  TIẾP TỤC"
+            btn.background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(Color.parseColor("#16A34A")) // Xanh lá tiếp tục
+            }
+        } else {
+            btn.text = "\u25A0  TẠM DỪNG"
+            btn.background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(Color.parseColor("#F2534A")) // Đỏ tạm dừng
+            }
+        }
+    }
+
+    private fun togglePause() {
+        isPaused = !isPaused
+        pauseButtonView?.let { updatePauseButtonState(it) }
+        if (isPaused) {
+            XsmmJobStatusBridge.update("Đã tạm dừng (nhấn Tiếp tục để chạy lại)")
+        } else {
+            XsmmJobStatusBridge.update("Đang tiếp tục chạy...")
+        }
+    }
+
     private fun showMiniBubble() {
         fullPanel?.let { runCatching { windowManager.removeView(it) } }; fullPanel = null
+        pauseButtonView = null
         val size = dp(52)
+        val initialX = if (lastBubbleX >= 0) lastBubbleX else dp(16)
+        val initialY = if (lastBubbleY >= 0) lastBubbleY else dp(160)
         val params = WindowManager.LayoutParams(
             size, size, overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.START; x = dp(16); y = dp(160) }
+        ).apply { gravity = Gravity.TOP or Gravity.START; x = initialX; y = initialY }
         bubbleParams = params
         val bubble = FrameLayout(this).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#F00E1611")); setStroke(dp(1.5f), Color.parseColor("#16A34A")) } }
         bubble.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher_round) }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { val i = dp(6); setMargins(i, i, i, i) })
@@ -434,7 +509,17 @@ class XsmmJobRunnerOverlayService : Service() {
         bubble.setOnTouchListener { _, e ->
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> { drag = false; ix = params.x; iy = params.y; tx = e.rawX; ty = e.rawY; true }
-                MotionEvent.ACTION_MOVE -> { val dx = (e.rawX - tx).toInt(); val dy = (e.rawY - ty).toInt(); if (kotlin.math.abs(dx) > 8 || kotlin.math.abs(dy) > 8) drag = true; params.x = ix + dx; params.y = iy + dy; windowManager.updateViewLayout(bubble, params); true }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (e.rawX - tx).toInt()
+                    val dy = (e.rawY - ty).toInt()
+                    if (kotlin.math.abs(dx) > 8 || kotlin.math.abs(dy) > 8) drag = true
+                    params.x = ix + dx
+                    params.y = iy + dy
+                    lastBubbleX = params.x
+                    lastBubbleY = params.y
+                    windowManager.updateViewLayout(bubble, params)
+                    true
+                }
                 MotionEvent.ACTION_UP -> { if (!drag) showFullPanel(); true }
                 else -> false
             }

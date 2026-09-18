@@ -1184,7 +1184,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                 try {
                     val root = findTikTokRoot()
                     if (root == null) {
-                        XsmmTaskAutomationBridge.updateProgress("Đang đợi TikTok tải xong...")
+                        XsmmTaskAutomationBridge.updateProgress("Đợi TikTok tải...")
                         delay(POLL_INTERVAL_MS)
                         continue
                     }
@@ -1193,7 +1193,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                     val sheetTitleNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
                     val addAccountNode = findNodeByText(root, ADD_ACCOUNT_LABELS, exact = false)
                     if (sheetTitleNode != null && addAccountNode != null) {
-                        XsmmTaskAutomationBridge.updateProgress("Đang tìm @$target trong danh sách tài khoản...")
+                        XsmmTaskAutomationBridge.updateProgress("Tìm @$target...")
                         val rows = mutableListOf<AccessibilityNodeInfo>()
                         findClickableRowsWithText(root, rows)
                         var foundTargetRow: AccessibilityNodeInfo? = null
@@ -1205,7 +1205,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                             }
                         }
                         if (foundTargetRow != null) {
-                            XsmmTaskAutomationBridge.updateProgress("Đã thấy @$target, đang bấm chuyển...")
+                            XsmmTaskAutomationBridge.updateProgress("Chọn @$target...")
                             clickNode(foundTargetRow)
                             delay(2500)
                             XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đã chuyển sang tài khoản @$target")
@@ -1224,11 +1224,11 @@ class TikTokAccessibilityService : AccessibilityService() {
                     val isMenuDrawer = findNodeByText(root, setOf("tiktok studio", "quảng bá", "mã qr của bạn", "nhạc của bạn", "tài nguyên", "số dư", "công cụ sáng tạo"), exact = false) != null
                     val xsmmPkg = action.variant.let { TikTokAppLauncher.packageNameOf(it) }
                     if (settingsMenuNode != null && isMenuDrawer) {
-                        XsmmTaskAutomationBridge.updateProgress("Đã mở menu ☰, đang bấm \"Cài đặt và quyền riêng tư\"...")
+                        XsmmTaskAutomationBridge.updateProgress("Mở Cài đặt...")
                         clickNode(settingsMenuNode)
                         // Quét 1s/lần: chờ 10s, chưa hiện đợi tiếp 10s nữa (tối đa 3 phút). Hiện Cài đặt là chạy tiếp luôn!
                         waitForCondition(xsmmPkg, onWaitingMore = { elapsed ->
-                            XsmmTaskAutomationBridge.updateProgress("Đang đợi mở Cài đặt (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                            XsmmTaskAutomationBridge.updateProgress("Đợi Cài đặt (${elapsed}s)...")
                         }) { currentRoot ->
                             val drawerGone = findNodeByText(currentRoot, setOf("tiktok studio", "quảng bá", "tài nguyên", "số dư"), exact = false) == null
                             val inSettings = findNodeByText(currentRoot, setOf("cài đặt và quyền riêng tư", "settings and privacy", "quản lý bài đăng", "bộ nhớ đệm", "giải phóng dung lượng", "chuyển đổi tài khoản"), exact = false) != null
@@ -1240,11 +1240,11 @@ class TikTokAccessibilityService : AccessibilityService() {
                     // 3. Kiểm tra: Đang ở trong màn Cài đặt và quyền riêng tư thật sự (không còn menu drawer)
                     val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
                     if (switchRowNode != null && addAccountNode == null) {
-                        XsmmTaskAutomationBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
+                        XsmmTaskAutomationBridge.updateProgress("Bấm Chuyển đổi nick...")
                         clickNode(switchRowNode)
                         // Quét 1s/lần: chờ 10s, chưa hiện đợi tiếp 10s nữa (tối đa 3 phút). Hiện Sheet là quét luôn!
                         waitForCondition(xsmmPkg, onWaitingMore = { elapsed ->
-                            XsmmTaskAutomationBridge.updateProgress("Đang đợi danh sách tài khoản (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                            XsmmTaskAutomationBridge.updateProgress("Đợi danh sách nick (${elapsed}s)...")
                         }) { currentRoot ->
                             findNodeByText(currentRoot, ADD_ACCOUNT_LABELS, exact = false) != null
                         }
@@ -1253,21 +1253,21 @@ class TikTokAccessibilityService : AccessibilityService() {
 
                     val settingsTitle = !isMenuDrawer && findNodeByText(root, setOf("cài đặt và quyền riêng tư", "settings and privacy", "quản lý bài đăng", "thời gian và sức khỏe", "gia đình thông minh", "bộ nhớ đệm", "giải phóng dung lượng", "điều khoản và chính sách", "đăng xuất"), exact = false) != null
                     if (settingsTitle && switchRowNode == null) {
-                        XsmmTaskAutomationBridge.updateProgress("Đang ở Cài đặt, cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
+                        XsmmTaskAutomationBridge.updateProgress("Cuộn tìm Chuyển đổi nick...")
                         var foundNode: AccessibilityNodeInfo? = null
                         for (scrollIndex in 1..4) {
                             val currentRoot = findRootForPackage(xsmmPkg) ?: root
                             foundNode = findNodeByText(currentRoot, SWITCH_SHEET_TITLE, exact = false)
                             if (foundNode != null) break
-                            XsmmTaskAutomationBridge.updateProgress("Đang cuộn xuống tìm \"Chuyển đổi tài khoản\" (lần $scrollIndex/3)...")
+                            XsmmTaskAutomationBridge.updateProgress("Cuộn tìm Chuyển đổi ($scrollIndex/3)...")
                             scrollDown(currentRoot)
                             delay(650)
                         }
                         if (foundNode != null) {
-                            XsmmTaskAutomationBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
+                            XsmmTaskAutomationBridge.updateProgress("Bấm Chuyển đổi nick...")
                             clickNode(foundNode)
                             waitForCondition(xsmmPkg, onWaitingMore = { elapsed ->
-                                XsmmTaskAutomationBridge.updateProgress("Đang đợi danh sách tài khoản (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                                XsmmTaskAutomationBridge.updateProgress("Đợi danh sách nick (${elapsed}s)...")
                             }) { currentRoot ->
                                 findNodeByText(currentRoot, ADD_ACCOUNT_LABELS, exact = false) != null
                             }
@@ -1277,7 +1277,7 @@ class TikTokAccessibilityService : AccessibilityService() {
 
                     // 4. Kiểm tra: Đang ở trang Hồ sơ (Profile) - có @handle và là chính chủ
                     if (isSubPageOrOtherScreen(root)) {
-                        XsmmTaskAutomationBridge.updateProgress("Đang ở trang khác, bấm Quay lại...")
+                        XsmmTaskAutomationBridge.updateProgress("Bấm Quay lại...")
                         val backBtn = findTopLeftBackButton(root)
                         if (backBtn != null) {
                             clickNode(backBtn)
@@ -1299,7 +1299,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                                 return@launch
                             } else {
                                 // Đang ở tài khoản khác -> Mở menu (☰)
-                                XsmmTaskAutomationBridge.updateProgress("Đang ở @$currentHandle -> Mở menu chuyển sang @$target...")
+                                XsmmTaskAutomationBridge.updateProgress("Đổi @$currentHandle sang @$target...")
                                 val menuNode = findMenuIcon(root)
                                 if (menuNode != null) {
                                     clickNode(menuNode)
@@ -1315,7 +1315,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                     }
 
                     // 5. Nếu chưa ở trang Hồ sơ (đang ở Home/Trang chủ/Feed/Khám phá...)
-                    XsmmTaskAutomationBridge.updateProgress("Đang ở Trang chủ, bấm tab \"Hồ sơ\" ở dưới cùng...")
+                    XsmmTaskAutomationBridge.updateProgress("Bấm tab Hồ sơ...")
                     clickProfileTab(root)
                     delay(1500)
                 } catch (e: Exception) {
