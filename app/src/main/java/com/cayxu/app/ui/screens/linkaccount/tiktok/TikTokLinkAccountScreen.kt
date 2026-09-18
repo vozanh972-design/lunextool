@@ -97,8 +97,10 @@ fun TikTokLinkAccountScreen(navController: NavController) {
                         try {
                             val client = TikTokProfileCheckerClient()
                             val prof = client.fetchProfile(state.handle)
-                            TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
-                            withContext(Dispatchers.Main) { refresh() }
+                            if (prof != null) {
+                                TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
+                                withContext(Dispatchers.Main) { refresh() }
+                            }
                         } catch (ignored: Exception) {}
                     }
                 }

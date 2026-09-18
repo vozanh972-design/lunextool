@@ -113,7 +113,8 @@ object TikTokAccountsStore {
         save(context, current)
     }
 
-    fun updateFullProfile(context: Context, uid: String, profile: com.cayxu.app.tiktok.checker.TikTokFullProfile) {
+    fun updateFullProfile(context: Context, uid: String, profile: com.cayxu.app.tiktok.checker.TikTokFullProfile?) {
+        if (profile == null) return
         val current = getAccounts(context).toMutableList()
         val idx = current.indexOfFirst { it.uid == uid }
         if (idx >= 0) {
