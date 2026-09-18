@@ -27,5 +27,12 @@ data class TikTokAccount(
     val status: TikTokAccountStatus = TikTokAccountStatus.ACTIVE,
     val enabled: Boolean = true,
     val taskCount: Int = 0,
-    val variant: TikTokAppVariant = TikTokAppVariant.STANDARD
+    val variant: TikTokAppVariant = TikTokAppVariant.STANDARD,
+    val followerCount: Long = 0L,
+    val followingCount: Long = 0L,
+    val heartCount: Long = 0L,
+    val videoCount: Long = 0L,
+    val bio: String = "",
+    val isLive: Boolean = true,
+    val createDateFormatted: String = ""
 )

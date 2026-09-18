@@ -36,7 +36,14 @@ object TikTokAccountsStore {
                         enabled = p.getOrElse(7) { "1" } == "1",
                         taskCount = p.getOrElse(8) { "0" }.toIntOrNull() ?: 0,
                         variant = runCatching { TikTokAppVariant.valueOf(p.getOrElse(9) { "STANDARD" }) }
-                            .getOrDefault(TikTokAppVariant.STANDARD)
+                            .getOrDefault(TikTokAppVariant.STANDARD),
+                        followerCount = p.getOrElse(10) { "0" }.toLongOrNull() ?: 0L,
+                        followingCount = p.getOrElse(11) { "0" }.toLongOrNull() ?: 0L,
+                        heartCount = p.getOrElse(12) { "0" }.toLongOrNull() ?: 0L,
+                        videoCount = p.getOrElse(13) { "0" }.toLongOrNull() ?: 0L,
+                        bio = p.getOrElse(14) { "" },
+                        isLive = p.getOrElse(15) { "1" } == "1",
+                        createDateFormatted = p.getOrElse(16) { "" }
                     )
                 } catch (e: Exception) {
                     null
@@ -106,6 +113,27 @@ object TikTokAccountsStore {
         save(context, current)
     }
 
+    fun updateFullProfile(context: Context, uid: String, profile: com.cayxu.app.tiktok.checker.TikTokFullProfile) {
+        val current = getAccounts(context).toMutableList()
+        val idx = current.indexOfFirst { it.uid == uid }
+        if (idx >= 0) {
+            val old = current[idx]
+            current[idx] = old.copy(
+                displayName = if (profile.nickname.isNotBlank()) profile.nickname else old.displayName,
+                avatarUrl = if (!profile.avatarHdUrl.isNullOrBlank()) profile.avatarHdUrl else old.avatarUrl,
+                followerCount = profile.followerCount,
+                followingCount = profile.followingCount,
+                heartCount = profile.totalFavorited,
+                videoCount = profile.videoCount,
+                bio = profile.biography.ifBlank { old.bio },
+                isLive = profile.isLive,
+                createdAt = if (profile.createTimestampSec > 0) profile.createTimestampSec * 1000L else old.createdAt,
+                createDateFormatted = if (profile.formattedCreateDate.isNotBlank()) profile.formattedCreateDate else old.createDateFormatted
+            )
+            save(context, current)
+        }
+    }
+
     private fun save(context: Context, accounts: List<TikTokAccount>) {
         val raw = accounts.joinToString(ENTRY_SEP) { a ->
             listOf(
@@ -118,7 +146,14 @@ object TikTokAccountsStore {
                 a.status.name,
                 if (a.enabled) "1" else "0",
                 a.taskCount.toString(),
-                a.variant.name
+                a.variant.name,
+                a.followerCount.toString(),
+                a.followingCount.toString(),
+                a.heartCount.toString(),
+                a.videoCount.toString(),
+                a.bio,
+                if (a.isLive) "1" else "0",
+                a.createDateFormatted
             ).joinToString(FIELD_SEP)
         }
         prefs(context).edit().putString(KEY_ACCOUNTS, raw).apply()

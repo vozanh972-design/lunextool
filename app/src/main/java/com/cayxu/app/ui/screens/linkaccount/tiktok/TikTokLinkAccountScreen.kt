@@ -14,6 +14,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import com.cayxu.app.tiktok.checker.TikTokProfileCheckerClient
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -74,7 +77,7 @@ fun TikTokLinkAccountScreen(navController: NavController) {
         TikTokCaptureBridge.state.collect { state ->
             when (state) {
                 is TikTokCaptureState.Captured -> {
-                    TikTokAccountsStore.addFromCapture(
+                    val acc = TikTokAccountsStore.addFromCapture(
                         context = context,
                         handle = state.handle,
                         displayName = state.displayName,
@@ -84,6 +87,16 @@ fun TikTokLinkAccountScreen(navController: NavController) {
                     refresh()
                     Toast.makeText(context, "Đã thêm tài khoản ${state.handle}", Toast.LENGTH_SHORT).show()
                     TikTokCaptureBridge.reset()
+
+                    // Tra cứu full profile và avatar HD chạy ngầm
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                        try {
+                            val client = TikTokProfileCheckerClient()
+                            val prof = client.fetchProfile(state.handle)
+                            TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
+                            withContext(kotlinx.coroutines.Dispatchers.Main) { refresh() }
+                        } catch (ignored: Exception) {}
+                    }
                 }
                 is TikTokCaptureState.CapturedBatch -> {
                     // Sheet "Chuyển đổi tài khoản" không luôn hiện @handle thật cho từng dòng
@@ -384,7 +397,16 @@ private fun TikTokAccountCard(
                     modifier = Modifier.size(42.dp).clip(CircleShape).background(avatarColor),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(initials, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    if (account.avatarUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = account.avatarUrl,
+                            contentDescription = "Avatar TikTok",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Text(initials, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {

@@ -47,6 +47,7 @@ import coil.compose.AsyncImage
 import androidx.navigation.NavController
 import com.cayxu.app.data.local.TikTokAccount
 import com.cayxu.app.data.local.TikTokAccountsStore
+import com.cayxu.app.tiktok.checker.TikTokProfileCheckerClient
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.data.local.XsmmAccountStore
 import com.cayxu.app.data.repository.XsmmAccountsRepository
@@ -107,6 +108,7 @@ fun XsmmAccountScreen(navController: NavController) {
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
 
     var allTikTokAccounts by remember { mutableStateOf(TikTokAccountsStore.getAccounts(context).filter { it.enabled }) }
+    var reloadingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
     var facebookAccounts by remember { mutableStateOf(com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)) }
     var instagramAccounts by remember {
@@ -124,6 +126,27 @@ fun XsmmAccountScreen(navController: NavController) {
                 .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
         } else {
             allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+        }
+    }
+
+    LaunchedEffect(selectedPlatform, selectedVariant, allTikTokAccounts.size) {
+        if (selectedPlatform == "tiktok") {
+            val unprofiled = accountsForVariant.filter { it.avatarUrl.isBlank() && it.handle.isNotBlank() && it.uid !in reloadingTikTokUids }
+            if (unprofiled.isNotEmpty()) {
+                scope.launch(Dispatchers.IO) {
+                    val client = TikTokProfileCheckerClient()
+                    for (acc in unprofiled) {
+                        try {
+                            val prof = client.fetchProfile(acc.handle)
+                            TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
+                        } catch (ignored: Exception) {}
+                        delay(600)
+                    }
+                    withContext(Dispatchers.Main) {
+                        allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+                    }
+                }
+            }
         }
     }
     var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -695,18 +718,48 @@ fun XsmmAccountScreen(navController: NavController) {
                         accountsForVariant.forEach { account ->
                             val handleLower = account.handle.trim().removePrefix("@").lowercase()
                             val isLinked = handleLower in linkedHandles
+                            val isThisReloading = account.uid in reloadingTikTokUids
                             XsmmTikTokAccountCard(
                                 account = account,
                                 isSelected = account.uid == selectedAccountUid,
                                 isAdded = isLinked,
                                 isAdding = addingUid == account.uid,
                                 isCheckedForRun = account.uid in selectedForRunUids,
+                                isReloading = isThisReloading,
                                 onCheckedForRunChange = { checked ->
                                     if (!isLinked) return@XsmmTikTokAccountCard
                                     selectedForRunUids = if (checked) selectedForRunUids + account.uid
                                     else selectedForRunUids - account.uid
                                 },
                                 onClick = { selectedAccountUid = account.uid },
+                                onReloadProfile = {
+                                    if (isThisReloading || account.handle.isBlank()) return@XsmmTikTokAccountCard
+                                    reloadingTikTokUids = reloadingTikTokUids + account.uid
+                                    scope.launch(Dispatchers.IO) {
+                                        try {
+                                            val client = TikTokProfileCheckerClient()
+                                            val profile = client.fetchProfile(account.handle)
+                                            TikTokAccountsStore.updateFullProfile(context, account.uid, profile)
+                                            withContext(Dispatchers.Main) {
+                                                allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+                                                val msg = if (profile.isLive) {
+                                                    "Đã cập nhật @${profile.username}: Live (${formatTikTokCount(profile.followerCount)} follow)"
+                                                } else {
+                                                    "Tài khoản @${profile.username} không tồn tại hoặc bị khóa"
+                                                }
+                                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        } catch (e: Exception) {
+                                            withContext(Dispatchers.Main) {
+                                                android.widget.Toast.makeText(context, "Lỗi cập nhật: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        } finally {
+                                            withContext(Dispatchers.Main) {
+                                                reloadingTikTokUids = reloadingTikTokUids - account.uid
+                                            }
+                                        }
+                                    }
+                                },
                                 onAddClick = {
                                     val token = XsmmAccountStore.getToken(context)
                                     if (token.isNullOrBlank()) {
@@ -1908,6 +1961,14 @@ private fun VariantTabChip(
     }
 }
 
+private fun formatTikTokCount(count: Long): String {
+    return when {
+        count >= 1_000_000 -> String.format(java.util.Locale.US, "%.1fM", count / 1_000_000.0)
+        count >= 1_000 -> String.format(java.util.Locale.US, "%.1fK", count / 1_000.0)
+        else -> count.toString()
+    }
+}
+
 @Composable
 private fun XsmmTikTokAccountCard(
     account: TikTokAccount,
@@ -1915,10 +1976,24 @@ private fun XsmmTikTokAccountCard(
     isAdded: Boolean,
     isAdding: Boolean,
     isCheckedForRun: Boolean,
+    isReloading: Boolean,
     onCheckedForRunChange: (Boolean) -> Unit,
     onClick: () -> Unit,
+    onReloadProfile: () -> Unit,
     onAddClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    val title = account.displayName.ifBlank { account.handle.ifBlank { "TikTok User" } }
+    val initialLetter = (title.firstOrNull { it.isLetterOrDigit() } ?: 'T').uppercase()
+
+    val ttAvatarModel = remember(account.avatarUrl) {
+        if (account.avatarUrl.isBlank()) null
+        else coil.request.ImageRequest.Builder(context)
+            .data(account.avatarUrl)
+            .crossfade(true)
+            .build()
+    }
+
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = CardWhite),
@@ -1949,15 +2024,151 @@ private fun XsmmTikTokAccountCard(
                     colors = CheckboxDefaults.colors(checkedColor = TikTokBrandBlack),
                     modifier = Modifier.size(24.dp)
                 )
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(8.dp))
             } else {
-                Spacer(Modifier.width(30.dp))
+                Spacer(Modifier.width(8.dp))
             }
+
+            // Avatar TikTok hiển thị ảnh HD thực tế
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .border(1.5.dp, Color(0xFF111111).copy(alpha = 0.6f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                if (ttAvatarModel != null) {
+                    AsyncImage(
+                        model = ttAvatarModel,
+                        contentDescription = "Avatar TikTok",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF111111)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = initialLetter,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.width(10.dp))
+
+            // Nội dung thông tin tài khoản TikTok
             Column(Modifier.weight(1f)) {
-                Text("@${account.handle.ifBlank { "chưa_rõ" }}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
-                Spacer(Modifier.height(2.dp))
-                Text(account.displayName.ifBlank { "Chưa có tên hiển thị" }, color = TextSecondary, fontSize = 12.sp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.5.sp,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+
+                    // Nút trạng thái Live / Die
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (account.isLive) Color(0xFF22C55E).copy(alpha = 0.12f) else DangerRed.copy(alpha = 0.12f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(if (account.isLive) Color(0xFF16A34A) else DangerRed)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            if (account.isLive) "Live" else "Die",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (account.isLive) Color(0xFF16A34A) else DangerRed
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(1.dp))
+                Text(
+                    text = "@${account.handle.ifBlank { "chưa_rõ" }}",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    maxLines = 1
+                )
+
+                if (account.bio.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = account.bio,
+                        color = TextSecondary.copy(alpha = 0.85f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Dòng thống kê: Followers, Tim, Ngày tạo
+                val statsList = buildList {
+                    if (account.followerCount > 0) add("${formatTikTokCount(account.followerCount)} followers")
+                    if (account.heartCount > 0) add("${formatTikTokCount(account.heartCount)} tim")
+                    if (account.createDateFormatted.isNotBlank()) {
+                        add("Tạo: ${account.createDateFormatted}")
+                    } else if (account.createdAt > 0) {
+                        val sdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
+                        add("Tạo: ${sdf.format(java.util.Date(account.createdAt))}")
+                    }
+                }
+                if (statsList.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = statsList.joinToString(" • "),
+                        color = Color(0xFFE1306C),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
+
+            Spacer(Modifier.width(4.dp))
+
+            // Nút làm mới (Reload) thông tin profile TikTok
+            IconButton(
+                onClick = onReloadProfile,
+                enabled = !isReloading,
+                modifier = Modifier.size(32.dp)
+            ) {
+                if (isReloading) {
+                    CircularProgressIndicator(
+                        color = TikTokBrandBlack,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(16.dp)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = "Làm mới thông tin TikTok",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // Nút Thêm / Đã thêm
             when {
                 isAdding -> {
                     CircularProgressIndicator(color = TikTokBrandBlack, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
