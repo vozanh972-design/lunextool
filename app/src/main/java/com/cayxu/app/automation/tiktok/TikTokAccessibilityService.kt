@@ -426,12 +426,25 @@ class TikTokAccessibilityService : AccessibilityService() {
                             }
                         } else {
                             TikTokCaptureBridge.updateProgress("Đang ở Cài đặt, cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
-                            scrollDown(root)
-                            // Quét 1s/lần: cuộn xong hễ thấy dòng "Chuyển đổi tài khoản" là bấm luôn!
-                            waitForCondition(expectedPkg, onWaitingMore = { elapsed ->
-                                TikTokCaptureBridge.updateProgress("Đang tìm Chuyển đổi tài khoản (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
-                            }) { currentRoot ->
-                                findNodeByText(currentRoot, SWITCH_SHEET_TITLE, exact = false) != null
+                            // Cuộn 3-4 lần để xuống tận đáy trang Cài đặt (nơi có mục Chuyển đổi tài khoản)
+                            var foundNode: AccessibilityNodeInfo? = null
+                            for (scrollIndex in 1..4) {
+                                val currentRoot = findRootForPackage(expectedPkg) ?: root
+                                foundNode = findNodeByText(currentRoot, SWITCH_SHEET_TITLE, exact = false)
+                                if (foundNode != null) break
+                                TikTokCaptureBridge.updateProgress("Đang cuộn xuống tìm \"Chuyển đổi tài khoản\" (lần $scrollIndex/3)...")
+                                scrollDown(currentRoot)
+                                delay(650)
+                            }
+                            if (foundNode != null) {
+                                TikTokCaptureBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
+                                clickNode(foundNode)
+                                // Quét 1s/lần: chờ 10s, chưa hiện đợi tiếp 10s nữa (tối đa 3 phút). Hiện Sheet là quét luôn!
+                                waitForCondition(expectedPkg, onWaitingMore = { elapsed ->
+                                    TikTokCaptureBridge.updateProgress("Đang đợi danh sách tài khoản (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                                }) { currentRoot ->
+                                    findNodeByText(currentRoot, ADD_ACCOUNT_LABELS, exact = false) != null
+                                }
                             }
                         }
                         continue
@@ -607,22 +620,22 @@ class TikTokAccessibilityService : AccessibilityService() {
         swipeUpSettings()
     }
 
-    /** Vuốt từ dưới lên trên (y từ 80% lên 20%) để cuộn nội dung Cài đặt xuống cuối */
+    /** Vuốt từ dưới lên trên (y từ 82% lên 18%) để cuộn nội dung Cài đặt xuống cuối */
     private fun swipeUpSettings() {
-        val root = rootInActiveWindow ?: return
-        val bounds = Rect()
-        root.getBoundsInScreen(bounds)
-        if (bounds.width() <= 0 || bounds.height() <= 0) return
+        val dm = resources.displayMetrics
+        val screenW = dm.widthPixels.toFloat()
+        val screenH = dm.heightPixels.toFloat()
+        if (screenW <= 0f || screenH <= 0f) return
 
-        val centerX = (bounds.left + bounds.right) / 2f
-        val startY = bounds.top + bounds.height() * 0.82f // Điểm bắt đầu ở phía dưới màn hình
-        val endY = bounds.top + bounds.height() * 0.22f   // Vuốt kéo lên phía trên màn hình
+        val centerX = screenW / 2f
+        val startY = screenH * 0.82f // Điểm bắt đầu ở 82% phía dưới màn hình
+        val endY = screenH * 0.18f   // Vuốt kéo lên 18% phía trên màn hình
         val path = Path().apply {
             moveTo(centerX, startY)
             lineTo(centerX, endY)
         }
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 320))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 300))
             .build()
         dispatchGesture(gesture, null, null)
     }
@@ -1241,11 +1254,23 @@ class TikTokAccessibilityService : AccessibilityService() {
                     val settingsTitle = !isMenuDrawer && findNodeByText(root, setOf("cài đặt và quyền riêng tư", "settings and privacy", "quản lý bài đăng", "thời gian và sức khỏe", "gia đình thông minh", "bộ nhớ đệm", "giải phóng dung lượng", "điều khoản và chính sách", "đăng xuất"), exact = false) != null
                     if (settingsTitle && switchRowNode == null) {
                         XsmmTaskAutomationBridge.updateProgress("Đang ở Cài đặt, cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
-                        scrollDown(root)
-                        waitForCondition(xsmmPkg, onWaitingMore = { elapsed ->
-                            XsmmTaskAutomationBridge.updateProgress("Đang tìm Chuyển đổi tài khoản (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
-                        }) { currentRoot ->
-                            findNodeByText(currentRoot, SWITCH_SHEET_TITLE, exact = false) != null
+                        var foundNode: AccessibilityNodeInfo? = null
+                        for (scrollIndex in 1..4) {
+                            val currentRoot = findRootForPackage(xsmmPkg) ?: root
+                            foundNode = findNodeByText(currentRoot, SWITCH_SHEET_TITLE, exact = false)
+                            if (foundNode != null) break
+                            XsmmTaskAutomationBridge.updateProgress("Đang cuộn xuống tìm \"Chuyển đổi tài khoản\" (lần $scrollIndex/3)...")
+                            scrollDown(currentRoot)
+                            delay(650)
+                        }
+                        if (foundNode != null) {
+                            XsmmTaskAutomationBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
+                            clickNode(foundNode)
+                            waitForCondition(xsmmPkg, onWaitingMore = { elapsed ->
+                                XsmmTaskAutomationBridge.updateProgress("Đang đợi danh sách tài khoản (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                            }) { currentRoot ->
+                                findNodeByText(currentRoot, ADD_ACCOUNT_LABELS, exact = false) != null
+                            }
                         }
                         continue
                     }
