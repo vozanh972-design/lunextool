@@ -1063,47 +1063,82 @@ class TikTokAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Tìm nút Follow màu đỏ trên trang cá nhân TikTok.
+     * Nút Follow luôn nằm ở khu vực trên của trang cá nhân (15% - 65% chiều cao màn hình),
+     * bên cạnh nút "Nhắn tin", có chữ hoặc contentDescription là "Follow" hoặc "Theo dõi".
+     */
     private fun findFollowButtonNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val rootBounds = Rect()
+        root.getBoundsInScreen(rootBounds)
+        val rootH = if (rootBounds.height() > 0) rootBounds.height() else resources.displayMetrics.heightPixels
+        val rootW = if (rootBounds.width() > 0) rootBounds.width() else resources.displayMetrics.widthPixels
+
         val candidates = mutableListOf<AccessibilityNodeInfo>()
-        collectFollowCandidates(root, candidates)
-        return candidates.firstOrNull()
+        collectFollowCandidates(root, rootW, rootH, candidates)
+        // Ưu tiên node có thể click được
+        return candidates.firstOrNull { it.isClickable } ?: candidates.firstOrNull()
     }
 
-    private fun collectFollowCandidates(node: AccessibilityNodeInfo, out: MutableList<AccessibilityNodeInfo>, depth: Int = 0) {
+    private fun collectFollowCandidates(
+        node: AccessibilityNodeInfo,
+        rootW: Int,
+        rootH: Int,
+        out: MutableList<AccessibilityNodeInfo>,
+        depth: Int = 0
+    ) {
         if (depth > 40) return
-        val rootBounds = Rect()
-        rootInActiveWindow?.getBoundsInScreen(rootBounds)
-        val rootW = rootBounds.width()
 
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
 
+        // Tuyệt đối bỏ qua nếu nằm ở thanh điều hướng đáy màn hình (y >= 80% chiều cao)
+        if (bounds.top >= rootH * 0.80f) return
+
+        // Nút Follow trên trang cá nhân luôn nằm ở khoảng 15% đến 65% màn hình
+        val inProfileArea = bounds.top >= rootH * 0.15f && bounds.bottom <= rootH * 0.65f
+
         val resId = (node.viewIdResourceName ?: "").lowercase()
-        val desc = (node.contentDescription?.toString() ?: "").lowercase()
+        val desc = (node.contentDescription?.toString() ?: "").trim().lowercase()
         val text = (node.text?.toString() ?: "").trim().lowercase()
 
-        // Tuyệt đối loại trừ nút avatar, dấu cộng đỏ trên thanh công cụ dọc của video feed
-        if (resId.contains("avatar") || resId.contains("author") || resId.contains("plus") ||
-            resId.contains("feed") || resId.contains("side") || resId.contains("user_avatar") ||
-            desc.contains("avatar") || desc.contains("tác giả") || desc.contains("plus") || desc.contains("dấu cộng")
+        // Loại trừ avatar tác giả / dấu cộng trên video feed
+        if (resId.contains("avatar") || resId.contains("author") || resId.contains("user_avatar") ||
+            desc.contains("avatar") || desc.contains("tác giả") || desc.contains("dấu cộng")
         ) {
             return
         }
 
-        // Trên video feed, icon avatar + dấu cộng nằm ở cột bên phải ngoài cùng (x >= 78%)
-        if (rootW > 0 && bounds.left >= (rootBounds.left + rootW * 0.78f) && bounds.width() < (rootW * 0.28f)) {
+        // Trên video feed, avatar nằm ở cột bên phải ngoài cùng
+        if (rootW > 0 && bounds.left >= rootW * 0.78f && bounds.width() < rootW * 0.28f) {
             return
         }
 
-        if (text.isNotBlank()) {
-            if (text == "follow" || text == "theo dõi" || text == "follow lại" || text == "theo dõi lại") {
-                out.add(node)
-                return
-            }
+        // Tuyệt đối không nhận các nhãn phụ/nhầm lẫn như "bạn bè", "đang follow", "following", "follower", "tin nhắn"
+        val isExcluded = text.contains("follower") || text.contains("following") ||
+                text.contains("người theo dõi") || text.contains("đang theo dõi") ||
+                text.contains("đang follow") || text.contains("bạn bè") || text.contains("friends") ||
+                text.contains("tin nhắn") || text.contains("nhắn tin") ||
+                desc.contains("follower") || desc.contains("following") ||
+                desc.contains("người theo dõi") || desc.contains("đang theo dõi") ||
+                desc.contains("đang follow") || desc.contains("bạn bè") || desc.contains("friends") ||
+                desc.contains("tin nhắn") || desc.contains("nhắn tin")
+
+        if (isExcluded) return
+
+        val followTexts = setOf("follow", "theo dõi", "follow lại", "theo dõi lại", "+ follow", "+ theo dõi")
+        val isFollowMatch = followTexts.any { text == it || desc == it } ||
+                text.startsWith("follow") || desc.startsWith("follow") ||
+                text.startsWith("theo dõi") || desc.startsWith("theo dõi")
+
+        if (inProfileArea && isFollowMatch) {
+            out.add(node)
+            return
         }
+
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            collectFollowCandidates(child, out, depth + 1)
+            collectFollowCandidates(child, rootW, rootH, out, depth + 1)
         }
     }
 
@@ -1130,85 +1165,82 @@ class TikTokAccessibilityService : AccessibilityService() {
         xsmmTaskJob?.cancel()
         xsmmTaskJob = scope.launch {
             try {
-                if (action.swipeBefore) {
+                // TUYỆT ĐỐI KHÔNG vuốt lên nếu là nhiệm vụ Follow (Follow mở thẳng trang cá nhân, vuốt sẽ làm trôi nút Follow)
+                if (action.swipeBefore && !action.taskType.contains("follow", ignoreCase = true)) {
                     XsmmTaskAutomationBridge.updateProgress("Đang lướt trước khi làm...")
-                    delay(1500)
+                    delay(1200)
                     swipeUpNextVideo()
-                    delay(1500)
-                }
-
-                if (action.taskType.contains("follow", ignoreCase = true)) {
-                    XsmmTaskAutomationBridge.updateProgress("Đang mở trang cá nhân và tìm nút Follow...")
-                    var followed = false
-                    val maxTries = 15 // ~10 seconds
-                    for (i in 0 until maxTries) {
-                        val root = findTikTokRoot()
-                        if (root != null) {
-                            // Check if already followed
-                            val alreadyNode = findNodeByText(
-                                root,
-                                setOf("đang follow", "đang theo dõi", "following", "bạn bè", "friends"),
-                                exact = false
-                            )
-                            if (alreadyNode != null && !alreadyNode.text.toString().equals("follow", ignoreCase = true)) {
-                                XsmmTaskAutomationBridge.updateProgress("Tài khoản đã được follow từ trước")
-                                followed = true
-                                delay(1000)
-                                break
-                            }
-
-                            // Find follow button
-                            val followNode = findFollowButtonNode(root)
-                            if (followNode != null) {
-                                XsmmTaskAutomationBridge.updateProgress("Đã thấy nút Follow màu đỏ, đang bấm...")
-                                clickNode(followNode)
-                                delay(1200)
-                                followed = true
-                                break
-                            }
-                        }
-                        delay(700)
-                    }
-                    if (!followed) {
-                        XsmmTaskAutomationBridge.updateProgress("Đã qua bước kiểm tra Follow")
-                    }
-                } else if (action.taskType.contains("like", ignoreCase = true)) {
-                    XsmmTaskAutomationBridge.updateProgress("Đang thả tim video...")
-                    delay(1500)
-                    doubleTapCenter()
                     delay(1200)
                 }
 
-                if (action.returnHomeAndSwipe) {
-                    XsmmTaskAutomationBridge.updateProgress("Bấm Follow xong -> Đang quay về Home...")
-                    performGlobalAction(GLOBAL_ACTION_BACK)
-                    delay(800)
-                    val root = findTikTokRoot()
-                    val homeTab = root?.let { findHomeTabNode(it) }
-                    if (homeTab != null) {
-                        clickNode(homeTab)
-                        delay(1000)
+                var taskSuccess = false
+                if (action.taskType.contains("follow", ignoreCase = true)) {
+                    XsmmTaskAutomationBridge.updateProgress("Đang mở trang cá nhân...")
+                    delay(1500) // Đợi TikTok tải và hiển thị trang cá nhân hoàn tất
+                    val maxTries = 12
+                    for (i in 0 until maxTries) {
+                        val root = findTikTokRoot()
+                        if (root != null) {
+                            val followNode = findFollowButtonNode(root)
+                            if (followNode != null) {
+                                XsmmTaskAutomationBridge.updateProgress("Đã thấy nút Follow, đang bấm...")
+                                clickNode(followNode)
+                                delay(1200)
+                                taskSuccess = true
+                                break
+                            }
+                        }
+                        delay(600)
                     }
 
-                    val duration = action.durationSeconds.coerceAtLeast(3)
-                    val startTime = System.currentTimeMillis()
-                    val endTime = startTime + duration * 1000L
-
-                    while (System.currentTimeMillis() < endTime && scope.isActive) {
-                        val remainingSec = ((endTime - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
-                        XsmmTaskAutomationBridge.updateProgress("Đang lướt tin TikTok... còn ${remainingSec}s")
-                        delay(Random.nextLong(2500L, 4000L))
-                        swipeUpNextVideo()
+                    if (taskSuccess) {
+                        XsmmTaskAutomationBridge.updateProgress("Đã Follow thành công!")
+                    } else {
+                        XsmmTaskAutomationBridge.updateProgress("Không thấy nút Follow")
                     }
+                } else if (action.taskType.contains("like", ignoreCase = true)) {
+                    XsmmTaskAutomationBridge.updateProgress("Đang thả tim video...")
+                    delay(1200)
+                    doubleTapCenter()
+                    delay(1000)
+                    taskSuccess = true
                 } else {
-                    val duration = action.durationSeconds.coerceAtLeast(1)
-                    for (s in duration downTo 1) {
-                        XsmmTaskAutomationBridge.updateProgress("Đang làm nhiệm vụ... còn ${s}s")
-                        delay(1000L)
-                    }
+                    taskSuccess = true
                 }
 
-                XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đã hoàn thành thao tác")
+                // Luôn trở về Home và lướt tin đợi job tiếp theo
+                XsmmTaskAutomationBridge.updateProgress("Đang về Home lướt tin đợi nhiệm vụ tiếp...")
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                delay(800)
+                var rootAfter = findTikTokRoot()
+                if (rootAfter == null) {
+                    // Đưa TikTok về foreground nếu lỡ bị văng
+                    TikTokAppLauncher.launch(applicationContext, com.cayxu.app.data.local.TikTokAppVariant.STANDARD)
+                    delay(1000)
+                    rootAfter = findTikTokRoot()
+                }
+                val homeTab = rootAfter?.let { findHomeTabNode(it) }
+                if (homeTab != null) {
+                    clickNode(homeTab)
+                    delay(800)
+                }
+
+                val duration = action.durationSeconds.coerceAtLeast(3)
+                val startTime = System.currentTimeMillis()
+                val endTime = startTime + duration * 1000L
+
+                while (System.currentTimeMillis() < endTime && scope.isActive) {
+                    val remainingSec = ((endTime - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
+                    XsmmTaskAutomationBridge.updateProgress("Đang lướt tin đợi nhiệm vụ... còn ${remainingSec}s")
+                    delay(Random.nextLong(2500L, 4000L))
+                    swipeUpNextVideo()
+                }
+
+                XsmmTaskAutomationBridge.completeTask(
+                    action.actionId,
+                    taskSuccess,
+                    if (taskSuccess) "Follow thành công" else "Không tìm thấy nút Follow"
+                )
             } catch (e: Exception) {
                 XsmmTaskAutomationBridge.completeTask(action.actionId, false, e.message ?: "Lỗi tự động hóa")
             }

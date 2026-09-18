@@ -258,9 +258,10 @@ class XsmmJobRunnerOverlayService : Service() {
 
                                     if (task.targetUrl.isNotBlank()) {
                                         TikTokAppLauncher.openUserProfile(applicationContext, task.targetUrl)
+                                        delay(1200L) // Chờ TikTok chuyển sang trang cá nhân ổn định
                                     }
 
-                                    // Kích hoạt Accessibility Service tự động bấm Follow/Like
+                                    // Kích hoạt Accessibility Service tự động bấm Follow/Like tuần tự, không nhảy lung tung
                                     val actionId = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.triggerTask(
                                         taskType = task.type.ifBlank { config.taskType },
                                         swipeBefore = config.swipeBeforeTask,
