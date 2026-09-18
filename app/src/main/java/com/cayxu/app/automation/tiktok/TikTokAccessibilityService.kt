@@ -245,6 +245,38 @@ class TikTokAccessibilityService : AccessibilityService() {
         dispatchGesture(gesture, null, null)
     }
 
+    /**
+     * Chờ màn hình mục tiêu xuất hiện:
+     * - Quét kiểm tra mỗi 1 giây (1000ms) 1 lần để máy yếu theo kịp nhẹ nhàng.
+     * - Mỗi chu kỳ 10 giây; nếu sau 10 giây chưa hiện thì đợi tiếp 10 giây nữa.
+     * - Lặp lại liên tục cho tới TỐI ĐA 3 PHÚT (180 giây).
+     * - Bất cứ giây nào giao diện hiện ra thì click tiếp luôn ngay lập tức, không đợi thừa.
+     */
+    private suspend fun waitForCondition(
+        expectedPkg: String,
+        maxSeconds: Int = 180, // Tối đa 3 phút (180 giây)
+        onWaitingMore: ((elapsedSeconds: Int) -> Unit)? = null,
+        condition: (AccessibilityNodeInfo) -> Boolean
+    ): AccessibilityNodeInfo? {
+        val intervalMs = 1000L
+
+        for (sec in 1..maxSeconds) {
+            if (!scope.isActive) break
+            delay(intervalMs)
+
+            val root = findRootForPackage(expectedPkg)
+            if (root != null && condition(root)) {
+                return root
+            }
+
+            // Cứ mỗi 10 giây nếu chưa xuất hiện giao diện thì báo đợi tiếp 10 giây nữa
+            if (sec % 10 == 0 && sec < maxSeconds) {
+                onWaitingMore?.invoke(sec)
+            }
+        }
+        return findRootForPackage(expectedPkg)
+    }
+
     private fun startPolling(variant: TikTokAppVariant) {
         if (variant == TikTokAppVariant.STANDARD) {
             startPollingSwitchAccountList(variant)
@@ -331,10 +363,11 @@ class TikTokAccessibilityService : AccessibilityService() {
         pollingJob?.cancel()
         pollingJob = scope.launch {
             var attempt = 0
-            while (attempt < MAX_POLL_ATTEMPTS) {
+            val expectedPkg = TikTokAppLauncher.packageNameOf(variant)
+
+            while (attempt < MAX_POLL_ATTEMPTS && isActive) {
                 attempt++
                 try {
-                    val expectedPkg = TikTokAppLauncher.packageNameOf(variant)
                     val root = findRootForPackage(expectedPkg)
 
                     if (root == null) {
@@ -343,7 +376,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 1. KIỂM TRA MÀN HÌNH DANH SÁCH TÀI KHOẢN (Sheet Chuyển đổi tài khoản)
+                    // 1. KIỂM TRA MÀN HÌNH DANH SÁCH TÀI KHOẢN (Sheet Chuyển đổi tài khoản) -> Đã đến đích, quét acc ngay!
                     val addAccountNode = findNodeByText(root, ADD_ACCOUNT_LABELS, exact = false)
                     val sheetTitleNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
                     if (addAccountNode != null || (sheetTitleNode != null && isSheetVisible(root))) {
@@ -356,37 +389,51 @@ class TikTokAccessibilityService : AccessibilityService() {
                             TikTokAppLauncher.bringToolToFront(applicationContext)
                             return@launch
                         }
-                        delay(2500)
+                        delay(1000)
                         continue
                     }
 
-                    // 2. KIỂM TRA MÀN HÌNH "CÀI ĐẶT VÀ QUYỀN RIÊNG TƯ" (Đã bấm vào trong màn cài đặt)
-                    val isSettingsScreen = findNodeByText(root, setOf("cài đặt và quyền riêng tư", "settings and privacy", "quản lý bài đăng", "thời gian và sức khỏe", "gia đình thông minh", "bộ nhớ đệm", "giải phóng dung lượng", "điều khoản và chính sách", "đăng xuất"), exact = false) != null
+                    // 2. KIỂM TRA MENU SIDEBAR / DRAWER 3 GẠCH ☰ (Đang có mục "Cài đặt và quyền riêng tư")
+                    val settingsRowNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
+                    val isMenuDrawer = findNodeByText(root, setOf("tiktok studio", "quảng bá", "mã qr của bạn", "nhạc của bạn", "tài nguyên", "số dư", "công cụ sáng tạo"), exact = false) != null
+                    
+                    if (settingsRowNode != null && isMenuDrawer) {
+                        TikTokCaptureBridge.updateProgress("Đã mở menu ☰, đang bấm \"Cài đặt và quyền riêng tư\"...")
+                        clickNode(settingsRowNode)
+                        // Quét 1s/lần: chờ 10s, chưa hiện thì đợi tiếp 10s nữa (tối đa 3 phút). Hiện ra là click luôn!
+                        waitForCondition(expectedPkg, onWaitingMore = { elapsed ->
+                            TikTokCaptureBridge.updateProgress("Đang đợi mở Cài đặt (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                        }) { currentRoot ->
+                            val drawerGone = findNodeByText(currentRoot, setOf("tiktok studio", "quảng bá", "tài nguyên", "số dư"), exact = false) == null
+                            val inSettings = findNodeByText(currentRoot, setOf("cài đặt và quyền riêng tư", "settings and privacy", "quản lý bài đăng", "bộ nhớ đệm", "giải phóng dung lượng", "chuyển đổi tài khoản"), exact = false) != null
+                            drawerGone && inSettings
+                        }
+                        continue
+                    }
+
+                    // 3. KIỂM TRA MÀN HÌNH "CÀI ĐẶT VÀ QUYỀN RIÊNG TƯ" THẬT SỰ (Đã vào Cài đặt, không còn menu drawer)
+                    val isSettingsScreen = !isMenuDrawer && findNodeByText(root, setOf("cài đặt và quyền riêng tư", "settings and privacy", "quản lý bài đăng", "thời gian và sức khỏe", "gia đình thông minh", "bộ nhớ đệm", "giải phóng dung lượng", "điều khoản và chính sách", "đăng xuất"), exact = false) != null
                     if (isSettingsScreen) {
                         val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
                         if (switchRowNode != null) {
                             TikTokCaptureBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
                             clickNode(switchRowNode)
-                            delay(4000)
+                            // Quét 1s/lần: chờ 10s, chưa hiện đợi tiếp 10s nữa (tối đa 3 phút). Hiện Sheet là quét luôn!
+                            waitForCondition(expectedPkg, onWaitingMore = { elapsed ->
+                                TikTokCaptureBridge.updateProgress("Đang đợi danh sách tài khoản (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                            }) { currentRoot ->
+                                findNodeByText(currentRoot, ADD_ACCOUNT_LABELS, exact = false) != null
+                            }
                         } else {
-                            TikTokCaptureBridge.updateProgress("Đang cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
+                            TikTokCaptureBridge.updateProgress("Đang ở Cài đặt, cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
                             scrollDown(root)
-                            delay(800)
+                            // Quét 1s/lần: cuộn xong hễ thấy dòng "Chuyển đổi tài khoản" là bấm luôn!
+                            waitForCondition(expectedPkg, onWaitingMore = { elapsed ->
+                                TikTokCaptureBridge.updateProgress("Đang tìm Chuyển đổi tài khoản (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                            }) { currentRoot ->
+                                findNodeByText(currentRoot, SWITCH_SHEET_TITLE, exact = false) != null
+                            }
                         }
-                        continue
-                    }
-
-                    // 3. KIỂM TRA MENU SIDEBAR / BOTTOM SHEET 3 GẠCH (Đang có mục "Cài đặt và quyền riêng tư")
-                    val settingsRowNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
-                    val isMenuDrawer = settingsRowNode != null && 
-                        findNodeByText(root, setOf("tiktok studio", "quảng bá", "mã qr của bạn", "nhạc của bạn", "tài nguyên"), exact = false) != null
-                    
-                    if (isMenuDrawer || settingsRowNode != null) {
-                        TikTokCaptureBridge.updateProgress("Đã thấy \"Cài đặt và quyền riêng tư\", đang bấm...")
-                        if (settingsRowNode != null) {
-                            clickNode(settingsRowNode)
-                        }
-                        delay(2500)
                         continue
                     }
 
@@ -397,10 +444,15 @@ class TikTokAccessibilityService : AccessibilityService() {
                         if (menuNode != null) {
                             TikTokCaptureBridge.updateProgress("Đã vào Hồ sơ, đang mở menu (☰)...")
                             clickNode(menuNode)
-                            delay(2500)
+                            // Quét 1s/lần: chờ 10s, chưa hiện đợi tiếp 10s nữa (tối đa 3 phút). Menu hiện ra là bấm Cài đặt luôn!
+                            waitForCondition(expectedPkg, onWaitingMore = { elapsed ->
+                                TikTokCaptureBridge.updateProgress("Đang đợi menu ☰ mở (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                            }) { currentRoot ->
+                                findNodeByText(currentRoot, SETTINGS_PRIVACY_LABELS, exact = false) != null
+                            }
                         } else {
                             TikTokCaptureBridge.updateProgress("Đang chờ trang Hồ sơ tải xong...")
-                            delay(1500)
+                            delay(1000)
                         }
                         continue
                     }
@@ -408,7 +460,12 @@ class TikTokAccessibilityService : AccessibilityService() {
                     // 5. NẾU THẤY TAB "HỒ SƠ" BÊN DƯỚI MÀN HÌNH -> CLICK 1 CÁI VÀO NÓ LÀ XONG!
                     if (clickProfileTab(root)) {
                         TikTokCaptureBridge.updateProgress("Đã bấm tab \"Hồ sơ\" bên dưới màn hình...")
-                        delay(2000)
+                        // Quét 1s/lần: chờ 10s, chưa hiện đợi tiếp 10s nữa (tối đa 3 phút). Vào Hồ sơ là tiếp tục ngay!
+                        waitForCondition(expectedPkg, onWaitingMore = { elapsed ->
+                            TikTokCaptureBridge.updateProgress("Đang đợi vào Hồ sơ (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                        }) { currentRoot ->
+                            isUserSelfProfileScreen(currentRoot)
+                        }
                         continue
                     }
 
@@ -421,7 +478,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                         } else {
                             performGlobalAction(GLOBAL_ACTION_BACK)
                         }
-                        delay(1200)
+                        delay(1000)
                         continue
                     }
                 } catch (e: Exception) {
@@ -1149,29 +1206,47 @@ class TikTokAccessibilityService : AccessibilityService() {
                         }
                     }
 
-                    // 2. Kiểm tra: Đang ở màn Cài đặt và quyền riêng tư (Settings)
+                    // 2. Kiểm tra: Đang mở Menu (☰) drawer / popup (có dòng "Cài đặt và quyền riêng tư")
+                    val settingsMenuNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
+                    val isMenuDrawer = findNodeByText(root, setOf("tiktok studio", "quảng bá", "mã qr của bạn", "nhạc của bạn", "tài nguyên", "số dư", "công cụ sáng tạo"), exact = false) != null
+                    val xsmmPkg = action.variant.let { TikTokAppLauncher.packageNameOf(it) }
+                    if (settingsMenuNode != null && isMenuDrawer) {
+                        XsmmTaskAutomationBridge.updateProgress("Đã mở menu ☰, đang bấm \"Cài đặt và quyền riêng tư\"...")
+                        clickNode(settingsMenuNode)
+                        // Quét 1s/lần: chờ 10s, chưa hiện đợi tiếp 10s nữa (tối đa 3 phút). Hiện Cài đặt là chạy tiếp luôn!
+                        waitForCondition(xsmmPkg, onWaitingMore = { elapsed ->
+                            XsmmTaskAutomationBridge.updateProgress("Đang đợi mở Cài đặt (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                        }) { currentRoot ->
+                            val drawerGone = findNodeByText(currentRoot, setOf("tiktok studio", "quảng bá", "tài nguyên", "số dư"), exact = false) == null
+                            val inSettings = findNodeByText(currentRoot, setOf("cài đặt và quyền riêng tư", "settings and privacy", "quản lý bài đăng", "bộ nhớ đệm", "giải phóng dung lượng", "chuyển đổi tài khoản"), exact = false) != null
+                            drawerGone && inSettings
+                        }
+                        continue
+                    }
+
+                    // 3. Kiểm tra: Đang ở trong màn Cài đặt và quyền riêng tư thật sự (không còn menu drawer)
                     val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
                     if (switchRowNode != null && addAccountNode == null) {
                         XsmmTaskAutomationBridge.updateProgress("Đã thấy \"Chuyển đổi tài khoản\", đang bấm...")
                         clickNode(switchRowNode)
-                        delay(1200)
+                        // Quét 1s/lần: chờ 10s, chưa hiện đợi tiếp 10s nữa (tối đa 3 phút). Hiện Sheet là quét luôn!
+                        waitForCondition(xsmmPkg, onWaitingMore = { elapsed ->
+                            XsmmTaskAutomationBridge.updateProgress("Đang đợi danh sách tài khoản (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                        }) { currentRoot ->
+                            findNodeByText(currentRoot, ADD_ACCOUNT_LABELS, exact = false) != null
+                        }
                         continue
                     }
 
-                    val settingsTitle = findNodeByText(root, setOf("cài đặt và quyền riêng tư", "settings and privacy", "bảo mật", "quyền riêng tư"), exact = false)
-                    if (settingsTitle != null && switchRowNode == null) {
-                        XsmmTaskAutomationBridge.updateProgress("Đang cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
+                    val settingsTitle = !isMenuDrawer && findNodeByText(root, setOf("cài đặt và quyền riêng tư", "settings and privacy", "quản lý bài đăng", "thời gian và sức khỏe", "gia đình thông minh", "bộ nhớ đệm", "giải phóng dung lượng", "điều khoản và chính sách", "đăng xuất"), exact = false) != null
+                    if (settingsTitle && switchRowNode == null) {
+                        XsmmTaskAutomationBridge.updateProgress("Đang ở Cài đặt, cuộn xuống tìm \"Chuyển đổi tài khoản\"...")
                         scrollDown(root)
-                        delay(POLL_INTERVAL_MS)
-                        continue
-                    }
-
-                    // 3. Kiểm tra: Đang mở Menu (☰) popup / bottom sheet (có nút "Cài đặt và quyền riêng tư")
-                    val settingsMenuNode = findNodeByText(root, SETTINGS_PRIVACY_LABELS, exact = false)
-                    if (settingsMenuNode != null) {
-                        XsmmTaskAutomationBridge.updateProgress("Đã thấy \"Cài đặt và quyền riêng tư\", đang bấm...")
-                        clickNode(settingsMenuNode)
-                        delay(1200)
+                        waitForCondition(xsmmPkg, onWaitingMore = { elapsed ->
+                            XsmmTaskAutomationBridge.updateProgress("Đang tìm Chuyển đổi tài khoản (đã chờ ${elapsed}s, đợi tiếp 10s nữa)...")
+                        }) { currentRoot ->
+                            findNodeByText(currentRoot, SWITCH_SHEET_TITLE, exact = false) != null
+                        }
                         continue
                     }
 
