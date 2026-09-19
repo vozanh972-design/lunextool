@@ -104,8 +104,7 @@ class XsmmJobRunnerOverlayService : Service() {
                 return@launch
             }
 
-            val activePlatform = XsmmRunConfigStore.getActivePlatform(applicationContext)
-            val config = XsmmRunConfigStore.get(applicationContext, activePlatform)
+            val config = XsmmRunConfigStore.get(applicationContext, "tiktok")
             var noTaskConsecutiveCount = 0
 
             // Ensure we have account IDs for all handles
@@ -129,24 +128,6 @@ class XsmmJobRunnerOverlayService : Service() {
 
             val activeList = accountHandles.ifEmpty { listOf("") }
             XsmmJobStatusBridge.update("Bắt đầu chạy nhiệm vụ ${config.taskType}...")
-
-            if (config.taskType.contains("instagram", ignoreCase = true) || accountHandles.any { com.cayxu.app.data.local.InstagramAccountsStore.getAccount(applicationContext, it) != null }) {
-                XsmmJobStatusBridge.update("Bắt đầu chạy nhiệm vụ Instagram...")
-                val result = com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner.run(
-                    context = applicationContext,
-                    accountUsernames = accountHandles,
-                    onStatusUpdate = { status ->
-                        XsmmJobStatusBridge.update(status)
-                    }
-                )
-                totalCompleted = result.totalCompleted
-                totalEarnedPoints = result.totalEarnedPoints.toLong()
-                launch(Dispatchers.Main) {
-                    updateProgressDisplay()
-                }
-                XsmmJobStatusBridge.update(result.message)
-                return@launch
-            }
 
             while (isActive) {
                 for (handle in activeList) {
@@ -172,16 +153,20 @@ class XsmmJobRunnerOverlayService : Service() {
 
                     checkPauseWait()
 
-                    // Kiểm tra xem TikTok có đang ở đúng tài khoản cần chạy không
-                    if (cleanHandle.isNotBlank() && config.taskType.contains("tiktok", ignoreCase = true)) {
+                    // Kiểm tra và chuyển đúng tài khoản TikTok cần chạy như khi bấm kiểm tra tài khoản
+                    if (cleanHandle.isNotBlank()) {
                         // Chủ động thu nhỏ để không che màn hình khi thao tác
                         launch(Dispatchers.Main) {
                             if (!isPaused && fullPanel != null) showMiniBubble()
                         }
-                        XsmmJobStatusBridge.update("Mở TikTok kiểm tra nick...")
-                        TikTokAppLauncher.launch(applicationContext, TikTokAppVariant.STANDARD)
+                        val allAccounts = com.cayxu.app.data.local.TikTokAccountsStore.getAccounts(applicationContext)
+                        val matchedAccount = allAccounts.firstOrNull { it.handle.trim().removePrefix("@").equals(cleanHandle, ignoreCase = true) }
+                        val variant = matchedAccount?.variant ?: TikTokAppVariant.STANDARD
+
+                        XsmmJobStatusBridge.update("Mở TikTok (${variant.name}) kiểm tra nick...")
+                        TikTokAppLauncher.launch(applicationContext, variant)
                         delay(1200L)
-                        val verifyActionId = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.triggerVerifyAccount(cleanHandle)
+                        val verifyActionId = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.triggerVerifyAccount(cleanHandle, variant)
                         val verifyStartTime = System.currentTimeMillis()
                         val maxVerifyWait = 90000L // 90s để máy yếu mở app và tải chậm thoải mái
                         while (isActive && (System.currentTimeMillis() - verifyStartTime) < maxVerifyWait) {

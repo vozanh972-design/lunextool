@@ -119,7 +119,7 @@ object XsmmInstagramTaskRunner {
 
         val checkRes = igClient.checkCookieIg()
         if (!checkRes.isLive || checkRes.userId.isBlank()) {
-            val errMsg = "Cookie Die / Proxy lỗi"
+            val errMsg = if (checkRes.rawJson.isNotBlank()) checkRes.rawJson else "Cookie Die / Proxy lỗi"
             notify(errMsg)
             reportError(cleanUsername, errMsg)
             val deadAccount = account.copy(isLive = false)
@@ -140,9 +140,16 @@ object XsmmInstagramTaskRunner {
             avatar = checkRes.profilePicUrl.ifBlank { account.avatar },
             fbDtsg = checkRes.fbDtsg.ifBlank { account.fbDtsg }.ifBlank { session.fbDtsg },
             lsd = checkRes.lsd.ifBlank { account.lsd }.ifBlank { session.lsd },
+            followersCount = if (checkRes.followersCount > 0) checkRes.followersCount else account.followersCount,
+            followingCount = if (checkRes.followingCount > 0) checkRes.followingCount else account.followingCount,
+            postsCount = if (checkRes.postsCount > 0) checkRes.postsCount else account.postsCount,
             isLive = true
         )
         InstagramAccountsStore.updateAccount(context, updatedLiveAccount)
+        if (cleanUsername != tenfb) {
+            com.cayxu.app.data.local.LinkedAccountsStore.removeAccount(context, "Instagram", cleanUsername)
+            com.cayxu.app.data.local.LinkedAccountsStore.addAccount(context, "Instagram", tenfb)
+        }
 
         // ====================================================================
         // 2. ĐỒNG BỘ NICK LÊN XSMM (AN TOÀN - CHUẨN 100% PYTHON)
@@ -156,6 +163,11 @@ object XsmmInstagramTaskRunner {
                 acc.accountId == idfb || acc.name.equals(tenfb, ignoreCase = true)
             }
             if (matchedAcc == null) {
+                if (tenfb.startsWith("IG_")) {
+                    notify("Lỗi: Chưa có username hợp lệ ($tenfb)")
+                    reportError(cleanUsername, "Chưa lấy được username Instagram thật từ Cookie ($tenfb)")
+                    return RunResult(0, 1, 0, "Chưa lấy được username Instagram thật")
+                }
                 val addRes = XsmmAccountsRepository.addInstagramAccount(token, tenfb)
                 if (addRes is XsmmAddAccountResult.Success) {
                     notify("Đã thêm acc [$tenfb] vào XSMM")

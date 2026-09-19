@@ -51,7 +51,10 @@ class InstagramApiClient(
         val profilePicUrl: String = "",
         val rawJson: String = "",
         val fbDtsg: String = "",
-        val lsd: String = ""
+        val lsd: String = "",
+        val followersCount: Int = 0,
+        val followingCount: Int = 0,
+        val postsCount: Int = 0
     )
 
     data class IgActionResult(
@@ -175,27 +178,30 @@ class InstagramApiClient(
     fun fetchAccountDetails(targetUsername: String? = null): InstagramUserInfo {
         val session = ensureSession()
         val check = checkCookieIg()
-        if (!check.isLive) {
-            throw IllegalStateException("Cookie DIE hoặc không hợp lệ")
+        val targetName = targetUsername?.trim()?.removePrefix("@").orEmpty()
+        val finalUsername = check.username.ifBlank {
+            if (!targetName.startsWith("IG_")) targetName else ""
         }
-        val targetName = targetUsername?.ifBlank { check.username } ?: check.username
         var pic = check.profilePicUrl
-        if (pic.isBlank() && targetName.isNotBlank()) {
-            pic = fetchProfilePic(targetName, cookie, proxyConfig?.let { "${it.host}:${it.port}:${it.username.orEmpty()}:${it.password.orEmpty()}" }) ?: ""
+        if (pic.isBlank() && finalUsername.isNotBlank()) {
+            pic = fetchProfilePic(finalUsername, cookie, proxyConfig?.let { "${it.host}:${it.port}:${it.username.orEmpty()}:${it.password.orEmpty()}" }) ?: ""
         }
         if (pic.isNotBlank()) {
             session.profilePicUrl = pic
         }
         return InstagramUserInfo(
-            username = check.username,
-            userId = check.userId,
+            username = finalUsername,
+            userId = check.userId.ifBlank { session.actorId },
             fullName = check.fullName,
             profilePicUrl = pic.takeIf { it.isNotBlank() } ?: session.profilePicUrl.takeIf { it.isNotBlank() },
             biography = check.biography,
-            isLive = true,
+            followersCount = check.followersCount,
+            followingCount = check.followingCount,
+            postsCount = check.postsCount,
+            isLive = check.isLive,
             fbDtsg = session.fbDtsg,
             lsd = session.lsd,
-            actorId = check.userId
+            actorId = check.userId.ifBlank { session.actorId }
         )
     }
 
@@ -283,8 +289,8 @@ class InstagramApiClient(
         const val APP_ID_MOBILE = "1217981644879628"
         const val ASBD_ID_MOBILE = "359341"
 
-        const val HS_VERSION = "20713.HYP:instagram_web_pkg.2.1...0"
-        const val REV_VERSION = "1047775310"
+        const val HS_VERSION = "20715.HYP:instagram_web_pkg.2.1...0"
+        const val REV_VERSION = "1047943561"
 
         const val USER_AGENT_WIN = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         const val SEC_CH_UA_120 = "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\""
@@ -294,6 +300,8 @@ class InstagramApiClient(
         const val DOC_ID_FOLLOW = "26508036048874888"
         const val DOC_ID_LIKE = "27182485238052618"
         const val DOC_ID_COMMENT = "27261905640092552"
+        const val DOC_ID_PROFILE_PAGE = "28036671149327607"
+        const val DOC_ID_PROFILE_POSTS = "28821682214127849"
 
         const val DEFAULT_LSD = "8evCqFXFXIMbNmJjHja_w2"
         const val DEFAULT_JAZOEST = "26442"
@@ -404,63 +412,10 @@ class InstagramApiClient(
 
             val csrf = extractCsrfToken(unquoted)
             val profile = getDeviceProfileFor(sessionKey, userAgentHint)
-            val client = buildOkHttpClient(proxyConfig, timeoutSec = 20L)
 
-            var fbDtsg = initialFbDtsg?.takeIf { it.isNotBlank() } ?: ""
-            var lsd = initialLsd?.takeIf { it.isNotBlank() } ?: DEFAULT_LSD
-            var jazoest = DEFAULT_JAZOEST
-            var avatarUrl = ""
-
-            // 1. Thử lấy từ web_form_data (endpoint chính thống của web edit profile)
-            try {
-                val req = Request.Builder()
-                    .url("https://www.instagram.com/api/v1/accounts/edit/web_form_data/")
-                    .addHeader("accept", "*/*")
-                    .addHeader("cookie", unquoted)
-                    .addHeader("user-agent", profile.userAgent)
-                    .addHeader("x-ig-app-id", profile.appId)
-                    .addHeader("x-asbd-id", profile.asbdId)
-                    .addHeader("x-csrftoken", csrf)
-                    .addHeader("x-requested-with", "XMLHttpRequest")
-                    .get()
-                    .build()
-                val res = client.newCall(req).execute()
-                val rawBody = res.body?.string().orEmpty()
-                val clean = cleanJsonResponse(rawBody)
-                val json = try { JSONObject(clean) } catch (_: Exception) { null }
-                val formData = json?.optJSONObject("form_data")
-                if (formData != null) {
-                    avatarUrl = formData.optString("profile_pic_url", "").ifBlank {
-                        formData.optString("profile_picture", "")
-                    }
-                }
-            } catch (_: Exception) {}
-
-            // 2. Cào fb_dtsg / lsd / jazoest đúng 1 lần nếu fbDtsg chưa có
-            if (fbDtsg.isBlank()) {
-                try {
-                    val homeReq = Request.Builder()
-                        .url("https://www.instagram.com/")
-                        .addHeader("user-agent", profile.userAgent)
-                        .addHeader("cookie", unquoted)
-                        .addHeader("sec-ch-ua", profile.secChUa)
-                        .addHeader("sec-ch-ua-mobile", profile.secChUaMobile)
-                        .addHeader("sec-ch-ua-platform", profile.secChUaPlatform)
-                        .get()
-                        .build()
-                    val homeRes = client.newCall(homeReq).execute()
-                    val html = homeRes.body?.string().orEmpty()
-                    val tokens = extractTokensFromHtml(html, lsd, DEFAULT_JAZOEST)
-                    if (tokens.first.isNotBlank()) lsd = tokens.first
-                    if (tokens.second.isNotBlank()) fbDtsg = tokens.second
-                    if (tokens.third.isNotBlank()) jazoest = tokens.third
-                } catch (_: Exception) {}
-            }
-
-            // Fallback an toàn tuyệt đối: không bao giờ để fb_dtsg rỗng dẫn đến lỗi 1357004
-            if (fbDtsg.isBlank()) {
-                fbDtsg = DEFAULT_FB_DTSG
-            }
+            val fbDtsg = initialFbDtsg?.takeIf { it.isNotBlank() } ?: DEFAULT_FB_DTSG
+            val lsd = initialLsd?.takeIf { it.isNotBlank() } ?: DEFAULT_LSD
+            val jazoest = DEFAULT_JAZOEST
 
             // Xây dựng bộ baseHeaders chuẩn 100% như cURL trình duyệt
             val headers = mutableMapOf(
@@ -496,7 +451,7 @@ class InstagramApiClient(
                 fbDtsg = fbDtsg,
                 lsd = lsd,
                 jazoest = jazoest,
-                profilePicUrl = avatarUrl,
+                profilePicUrl = "",
                 deviceProfile = profile,
                 baseHeaders = headers
             )
@@ -816,39 +771,129 @@ class InstagramApiClient(
         fun checkCookieIg(cookie: String, proxy: String? = null): CookieCheckResult {
             val unquoted = unquoteCookie(cookie)
             val session = getOrCreateSession(unquoted, proxyConfig = parseProxy(proxy))
-            val client = buildOkHttpClient(parseProxy(proxy), timeoutSec = 30L)
-            val url = "https://www.instagram.com/api/v1/accounts/edit/web_form_data/"
+            val client = buildOkHttpClient(parseProxy(proxy), timeoutSec = 20L)
+            val actorId = session.actorId.ifBlank { extractActorId(unquoted) }
 
-            val requestBuilder = Request.Builder().url(url).get()
-            session.baseHeaders.forEach { (k, v) ->
-                if (!k.equals("content-type", ignoreCase = true)) {
-                    requestBuilder.addHeader(k, v)
-                }
+            // 1. Ưu tiên GraphQL PolarisProfilePageContentQuery (chuẩn 100% Web theo UID)
+            if (actorId.isNotBlank() && actorId != "0") {
+                try {
+                    val variables = JSONObject().apply {
+                        put("enable_integrity_filters", true)
+                        put("id", actorId)
+                        put("__relay_internal__pv__PolarisCannesGuardianExperienceEnabledrelayprovider", true)
+                        put("__relay_internal__pv__PolarisCASB976ProfileEnabledrelayprovider", false)
+                        put("__relay_internal__pv__PolarisWebSchoolsEnabledrelayprovider", false)
+                        put("__relay_internal__pv__PolarisRepostsConsumptionEnabledrelayprovider", true)
+                        put("__relay_internal__pv__PolarisShortDramaEnabledrelayprovider", false)
+                    }
+
+                    val formBuilder = FormBody.Builder()
+                        .add("av", actorId)
+                        .add("__d", "www")
+                        .add("__user", "0")
+                        .add("__a", "1")
+                        .add("__req", "3")
+                        .add("__hs", HS_VERSION)
+                        .add("dpr", session.deviceProfile.dpr)
+                        .add("__ccg", "MODERATE")
+                        .add("__rev", REV_VERSION)
+                        .add("__comet_req", "7")
+                        .add("fb_dtsg", session.fbDtsg)
+                        .add("jazoest", session.jazoest)
+                        .add("lsd", session.lsd)
+                        .add("fb_api_caller_class", "RelayModern")
+                        .add("fb_api_req_friendly_name", "PolarisProfilePageContentQuery")
+                        .add("server_timestamps", "true")
+                        .add("doc_id", DOC_ID_PROFILE_PAGE)
+                        .add("variables", variables.toString())
+
+                    val reqBuilder = Request.Builder()
+                        .url("https://www.instagram.com/api/graphql")
+                        .post(formBuilder.build())
+
+                    session.baseHeaders.forEach { (k, v) -> reqBuilder.addHeader(k, v) }
+                    reqBuilder.header("referer", "https://www.instagram.com/")
+                    reqBuilder.header("x-fb-friendly-name", "PolarisProfilePageContentQuery")
+                    reqBuilder.header("x-fb-lsd", session.lsd)
+
+                    val res = client.newCall(reqBuilder.build()).execute()
+                    val rawBody = res.body?.string().orEmpty()
+                    val clean = cleanJsonResponse(rawBody)
+
+                    if (clean.contains("checkpoint_required") || clean.contains("accounts/suspended") || clean.contains("1357031")) {
+                        val isSuspended = clean.contains("accounts/suspended") || clean.contains("1357031")
+                        val msg = if (isSuspended) "Tài khoản bị tạm khóa / Checkpoint (accounts/suspended)" else "Checkpoint / Xác minh danh tính"
+                        return CookieCheckResult(isLive = false, userId = actorId, rawJson = msg)
+                    }
+
+                    val json = try { JSONObject(clean) } catch (_: Exception) { null }
+                    val userObj = json?.optJSONObject("data")?.optJSONObject("user")
+                    val username = userObj?.optString("username").orEmpty()
+                    if (username.isNotBlank()) {
+                        val fullName = userObj?.optString("full_name").orEmpty()
+                        val bio = userObj?.optString("biography").orEmpty()
+                        val pic = userObj?.optString("profile_pic_url").orEmpty()
+                        val followers = userObj?.optJSONObject("edge_followed_by")?.optInt("count") ?: 0
+                        val following = userObj?.optJSONObject("edge_follow")?.optInt("count") ?: 0
+                        val posts = userObj?.optJSONObject("edge_owner_to_timeline_media")?.optInt("count") ?: 0
+
+                        if (pic.isNotBlank()) {
+                            session.profilePicUrl = pic
+                        }
+
+                        return CookieCheckResult(
+                            isLive = true,
+                            username = username,
+                            userId = actorId,
+                            fullName = fullName,
+                            biography = bio,
+                            profilePicUrl = pic,
+                            rawJson = clean,
+                            fbDtsg = session.fbDtsg,
+                            lsd = session.lsd,
+                            followersCount = followers,
+                            followingCount = following,
+                            postsCount = posts
+                        )
+                    }
+                } catch (_: Exception) {}
             }
-            requestBuilder.header("referer", "https://www.instagram.com/accounts/edit/")
 
-            return try {
+            // 2. Fallback: web_form_data (chính thống của Instagram edit profile)
+            try {
+                val url = "https://www.instagram.com/api/v1/accounts/edit/web_form_data/"
+                val requestBuilder = Request.Builder().url(url).get()
+                session.baseHeaders.forEach { (k, v) ->
+                    if (!k.equals("content-type", ignoreCase = true)) {
+                        requestBuilder.addHeader(k, v)
+                    }
+                }
+                requestBuilder.header("referer", "https://www.instagram.com/accounts/edit/")
+
                 val response = client.newCall(requestBuilder.build()).execute()
                 val rawBody = response.body?.string().orEmpty()
                 val body = cleanJsonResponse(rawBody)
-                if (!response.isSuccessful || body.isBlank()) {
-                    return CookieCheckResult(isLive = false, rawJson = body)
+
+                if (body.contains("checkpoint_required") || body.contains("accounts/suspended")) {
+                    return CookieCheckResult(isLive = false, userId = actorId, rawJson = "Tài khoản bị Checkpoint / Xác minh")
+                }
+                if (body.contains("login_required") || response.code == 401) {
+                    return CookieCheckResult(isLive = false, userId = actorId, rawJson = "Cookie hết hạn / Cần đăng nhập lại")
+                }
+                if (response.code == 429) {
+                    return CookieCheckResult(isLive = false, userId = actorId, rawJson = "Instagram giới hạn tạm thời (429)")
                 }
 
                 val json = try { JSONObject(body) } catch (_: Exception) { null }
                 val formData = json?.optJSONObject("form_data")
                 val username = formData?.optString("username").orEmpty()
-                if (username.isNotBlank() && formData != null) {
-                    var uid = extractActorId(unquoted)
-                    if (uid == "0" || uid.isBlank()) {
-                        uid = formData?.optString("id", "").orEmpty()
-                    }
-                    val fullName = formData?.optString("first_name", "").orEmpty()
-                    val bio = formData?.optString("biography", "").orEmpty()
-                    val email = formData?.optString("email", "").orEmpty()
-                    val phone = formData?.optString("phone_number", "").orEmpty()
-                    var pic = formData?.optString("profile_pic_url", "").orEmpty().ifBlank {
-                        formData?.optString("profile_picture", "").orEmpty()
+                if (username.isNotBlank()) {
+                    val fullName = formData?.optString("first_name").orEmpty()
+                    val bio = formData?.optString("biography").orEmpty()
+                    val email = formData?.optString("email").orEmpty()
+                    val phone = formData?.optString("phone_number").orEmpty()
+                    var pic = formData?.optString("profile_pic_url").orEmpty().ifBlank {
+                        formData?.optString("profile_picture").orEmpty()
                     }
                     if (pic.isBlank()) {
                         pic = fetchProfilePic(username, unquoted, proxy) ?: session.profilePicUrl
@@ -856,10 +901,10 @@ class InstagramApiClient(
                     if (pic.isNotBlank()) {
                         session.profilePicUrl = pic
                     }
-                    CookieCheckResult(
+                    return CookieCheckResult(
                         isLive = true,
                         username = username,
-                        userId = uid,
+                        userId = actorId.ifBlank { formData?.optString("id").orEmpty() },
                         fullName = fullName,
                         biography = bio,
                         email = email,
@@ -869,12 +914,12 @@ class InstagramApiClient(
                         fbDtsg = session.fbDtsg,
                         lsd = session.lsd
                     )
-                } else {
-                    CookieCheckResult(isLive = false, rawJson = body)
                 }
             } catch (e: Exception) {
-                CookieCheckResult(isLive = false, rawJson = "Lỗi kết nối: ${e.message}")
+                return CookieCheckResult(isLive = false, userId = actorId, rawJson = "Lỗi kết nối: ${e.message}")
             }
+
+            return CookieCheckResult(isLive = false, userId = actorId, rawJson = "Không thể xác thực cookie Instagram")
         }
 
         fun resolveTargetUserId(linkJob: String, proxy: String? = null): String? {

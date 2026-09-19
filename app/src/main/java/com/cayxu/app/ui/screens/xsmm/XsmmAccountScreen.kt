@@ -165,6 +165,12 @@ fun XsmmAccountScreen(navController: NavController) {
     val igErrorCountMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.errorCountMap
     val igErrorDetailMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.lastErrorDetail
 
+    val runningFbAccounts = com.cayxu.app.automation.facebook.XsmmFacebookManager.runningAccounts
+    val fbStatusMap = com.cayxu.app.automation.facebook.XsmmFacebookManager.statusMap
+    val fbSuccessCountMap = com.cayxu.app.automation.facebook.XsmmFacebookManager.successCountMap
+    val fbErrorCountMap = com.cayxu.app.automation.facebook.XsmmFacebookManager.errorCountMap
+    val fbErrorDetailMap = com.cayxu.app.automation.facebook.XsmmFacebookManager.lastErrorDetail
+
     var selectedErrorDetailAccount by remember { mutableStateOf<String?>(null) }
     var targetAvatarChangeUsername by remember { mutableStateOf<String?>(null) }
     var targetFbAvatarChangeUid by remember { mutableStateOf<String?>(null) }
@@ -526,7 +532,11 @@ fun XsmmAccountScreen(navController: NavController) {
             ) {
                 FilterChip(
                     selected = selectedPlatform == "tiktok",
-                    onClick = { selectedPlatform = "tiktok" },
+                    onClick = {
+                        selectedPlatform = "tiktok"
+                        com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, "tiktok")
+                        selectedForRunUids = emptySet()
+                    },
                     label = { Text("TikTok (${allTikTokAccounts.size})", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = TikTokBrandBlack.copy(alpha = 0.12f),
@@ -535,7 +545,11 @@ fun XsmmAccountScreen(navController: NavController) {
                 )
                 FilterChip(
                     selected = selectedPlatform == "facebook",
-                    onClick = { selectedPlatform = "facebook" },
+                    onClick = {
+                        selectedPlatform = "facebook"
+                        com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, "facebook")
+                        selectedForRunUids = emptySet()
+                    },
                     label = { Text("Facebook (${facebookAccounts.size})", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = Color(0xFF1877F2).copy(alpha = 0.15f),
@@ -544,7 +558,11 @@ fun XsmmAccountScreen(navController: NavController) {
                 )
                 FilterChip(
                     selected = selectedPlatform == "instagram",
-                    onClick = { selectedPlatform = "instagram" },
+                    onClick = {
+                        selectedPlatform = "instagram"
+                        com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, "instagram")
+                        selectedForRunUids = emptySet()
+                    },
                     label = { Text("Instagram (${instagramAccounts.size})", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = Color(0xFFE1306C).copy(alpha = 0.15f),
@@ -1079,10 +1097,17 @@ fun XsmmAccountScreen(navController: NavController) {
 
                                         Spacer(Modifier.width(6.dp))
 
-                                        // Nút Chạy (Play tam giác màu xanh Facebook)
+                                        // Nút Chạy (Play tam giác màu xanh Facebook) / Dừng
+                                        val isRunningFbThis = com.cayxu.app.automation.facebook.XsmmFacebookManager.isRunning(account.uid)
                                         IconButton(
                                             onClick = {
-                                                android.widget.Toast.makeText(context, "Sẵn sàng chạy Facebook: ${account.name.ifBlank { account.uid }}", android.widget.Toast.LENGTH_SHORT).show()
+                                                if (isRunningFbThis) {
+                                                    com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(account.uid)
+                                                    android.widget.Toast.makeText(context, "Đã dừng chạy Facebook: ${account.name.ifBlank { account.uid }}", android.widget.Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    com.cayxu.app.automation.facebook.XsmmFacebookManager.start(context, account.uid)
+                                                    android.widget.Toast.makeText(context, "Bắt đầu chạy Facebook: ${account.name.ifBlank { account.uid }}", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
                                             },
                                             modifier = Modifier.size(32.dp)
                                         ) {
@@ -1090,15 +1115,56 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 modifier = Modifier
                                                     .size(28.dp)
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFF1877F2)),
+                                                    .background(if (isRunningFbThis) DangerRed else Color(0xFF1877F2)),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.PlayArrow,
-                                                    contentDescription = "Chạy",
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
+                                                if (isRunningFbThis) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(10.dp)
+                                                            .clip(RoundedCornerShape(2.dp))
+                                                            .background(Color.White)
+                                                    )
+                                                } else {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.PlayArrow,
+                                                        contentDescription = "Chạy",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    val fbStatus = fbStatusMap[account.uid]
+                                    val fbSuccess = fbSuccessCountMap[account.uid] ?: 0
+                                    val fbErrors = fbErrorCountMap[account.uid] ?: 0
+                                    if (!fbStatus.isNullOrBlank() || fbSuccess > 0 || fbErrors > 0) {
+                                        Spacer(Modifier.height(6.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = fbStatus ?: "Sẵn sàng",
+                                                fontSize = 11.5.sp,
+                                                color = if (isRunningFbThis) Color(0xFF1877F2) else TextSecondary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (fbSuccess > 0 || fbErrors > 0) {
+                                                Spacer(Modifier.width(6.dp))
+                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    if (fbSuccess > 0) {
+                                                        Text("+$fbSuccess", color = Color(0xFF16A34A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                    if (fbErrors > 0) {
+                                                        Text("-$fbErrors", color = DangerRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -1461,25 +1527,32 @@ fun XsmmAccountScreen(navController: NavController) {
                                                             proxyConfig = proxyConfig
                                                         )
                                                         val info = client.fetchAccountDetails(acc.username)
+                                                        val finalUsername = info.username.ifBlank { acc.username }
                                                         val updatedAcc = acc.copy(
-                                                            username = info.username.ifBlank { acc.username },
-                                                            fullName = info.fullName,
+                                                            username = finalUsername,
+                                                            userId = info.userId.ifBlank { acc.userId },
+                                                            fullName = info.fullName.ifBlank { acc.fullName },
                                                             avatar = info.profilePicUrl ?: acc.avatar,
                                                             fbDtsg = info.fbDtsg ?: acc.fbDtsg,
                                                             lsd = info.lsd ?: acc.lsd,
-                                                            biography = info.biography,
-                                                            followersCount = info.followersCount,
-                                                            followingCount = info.followingCount,
-                                                            postsCount = info.postsCount,
-                                                            isLive = true
+                                                            biography = info.biography.ifBlank { acc.biography },
+                                                            followersCount = if (info.followersCount > 0) info.followersCount else acc.followersCount,
+                                                            followingCount = if (info.followingCount > 0) info.followingCount else acc.followingCount,
+                                                            postsCount = if (info.postsCount > 0) info.postsCount else acc.postsCount,
+                                                            isLive = info.isLive
                                                         )
                                                         com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updatedAcc)
+                                                        if (cleanIg != finalUsername) {
+                                                            com.cayxu.app.data.local.LinkedAccountsStore.removeAccount(context, "Instagram", cleanIg)
+                                                            com.cayxu.app.data.local.LinkedAccountsStore.addAccount(context, "Instagram", finalUsername)
+                                                        }
                                                         withContext(Dispatchers.Main) {
                                                             avatarVersion = System.currentTimeMillis()
-                                                            val nameDisplay = if (info.fullName.isNotBlank()) info.fullName else info.username
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Sẵn sàng"
+                                                            val nameDisplay = if (updatedAcc.fullName.isNotBlank()) updatedAcc.fullName else updatedAcc.username
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[finalUsername] = if (info.isLive) "Sẵn sàng" else "Lỗi: Checkpoint / DIE"
                                                             instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
-                                                            android.widget.Toast.makeText(context, "Đã cập nhật thông tin: $nameDisplay", android.widget.Toast.LENGTH_SHORT).show()
+                                                            val toastMsg = if (info.isLive) "Đã cập nhật: $nameDisplay" else "Cookie DIE hoặc bị Checkpoint: $nameDisplay"
+                                                            android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_SHORT).show()
                                                         }
                                                     } catch (e: Exception) {
                                                         val deadAcc = acc.copy(isLive = false)
@@ -1875,7 +1948,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                 onClick = {
                                     if (isAnyIgRunning) {
                                         com.cayxu.app.automation.instagram.XsmmInstagramManager.stopAll()
-                                        android.widget.Toast.makeText(context, "Đã dừng tất cả tác vụ", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(context, "Đã dừng tất cả tác vụ Instagram", android.widget.Toast.LENGTH_SHORT).show()
                                     } else {
                                         val accountsToRun = if (selectedForRunUids.isNotEmpty()) {
                                             selectedForRunUids.toList()
@@ -1896,6 +1969,50 @@ fun XsmmAccountScreen(navController: NavController) {
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (isAnyIgRunning) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(11.dp)
+                                                .clip(RoundedCornerShape(2.dp))
+                                                .background(Color.White)
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Filled.PlayArrow,
+                                            contentDescription = "Chạy tất cả",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        } else if (!isIg && facebookAccounts.isNotEmpty()) {
+                            // Nút Chạy tất cả / Dừng tất cả (Dành cho Facebook)
+                            val isAnyFbRunning = com.cayxu.app.automation.facebook.XsmmFacebookManager.isAnyRunning()
+                            IconButton(
+                                onClick = {
+                                    if (isAnyFbRunning) {
+                                        com.cayxu.app.automation.facebook.XsmmFacebookManager.stopAll()
+                                        android.widget.Toast.makeText(context, "Đã dừng tất cả tác vụ Facebook", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        val accountsToRun = if (selectedForRunUids.isNotEmpty()) {
+                                            facebookAccounts.filter { it.uid in selectedForRunUids }.map { it.uid }
+                                        } else {
+                                            facebookAccounts.map { it.uid }
+                                        }
+                                        com.cayxu.app.automation.facebook.XsmmFacebookManager.startAccounts(context, accountsToRun)
+                                        android.widget.Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Facebook", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isAnyFbRunning) DangerRed else platformColor),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isAnyFbRunning) {
                                         Box(
                                             modifier = Modifier
                                                 .size(11.dp)

@@ -103,7 +103,12 @@ object InstagramAccountsStore {
 
         val current = getAccounts(context).toMutableList()
         trimmedNew.forEach { entry ->
-            val idx = current.indexOfFirst { it.username.equals(entry.username, ignoreCase = true) }
+            val idx = current.indexOfFirst { 
+                it.username.equals(entry.username, ignoreCase = true) ||
+                (entry.userId.isNotBlank() && it.userId == entry.userId) ||
+                (entry.userId.isNotBlank() && ("IG_" + entry.userId).equals(it.username, ignoreCase = true)) ||
+                (it.userId.isNotBlank() && ("IG_" + it.userId).equals(entry.username, ignoreCase = true))
+            }
             if (idx >= 0) {
                 current[idx] = entry
             } else {
@@ -117,10 +122,14 @@ object InstagramAccountsStore {
         addAccount(context, account)
     }
 
-    fun removeAccount(context: Context, username: String) {
-        val clean = username.trim().removePrefix("@")
+    fun removeAccount(context: Context, usernameOrId: String) {
+        val clean = usernameOrId.trim().removePrefix("@").lowercase()
         val current = getAccounts(context).toMutableList()
-        current.removeAll { it.username.equals(clean, ignoreCase = true) }
+        current.removeAll { 
+            it.username.trim().removePrefix("@").lowercase() == clean ||
+            (it.userId.isNotBlank() && ("IG_" + it.userId).lowercase() == clean) ||
+            it.userId.lowercase() == clean
+        }
         save(context, current)
     }
 

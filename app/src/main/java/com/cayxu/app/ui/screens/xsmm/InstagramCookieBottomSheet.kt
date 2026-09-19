@@ -234,6 +234,7 @@ fun InstagramCookieBottomSheet(
                                         var cookiePart = ""
                                         var proxyPart = ""
                                         var userAgentPart = ""
+                                        var explicitUsername = ""
 
                                         if (line.contains("|")) {
                                             val parts = line.split("|").map { it.trim() }
@@ -244,6 +245,8 @@ fun InstagramCookieBottomSheet(
                                                     userAgentPart = p
                                                 } else if (p.contains(":") && p.any { it.isDigit() } && !p.contains("=")) {
                                                     proxyPart = p
+                                                } else if (explicitUsername.isBlank() && !p.contains("=") && !p.contains(";") && p.length in 1..40 && p.matches(Regex("^[a-zA-Z0-9._]+$"))) {
+                                                    explicitUsername = p
                                                 } else if (cookiePart.isBlank()) {
                                                     cookiePart = p
                                                 }
@@ -271,7 +274,7 @@ fun InstagramCookieBottomSheet(
                                         if (dsUserId.isBlank()) {
                                             dsUserId = "${System.currentTimeMillis() % 1000000}"
                                         }
-                                        var username = "IG_$dsUserId"
+                                        var username = explicitUsername.ifBlank { "IG_$dsUserId" }
                                         var fullName = ""
                                         var avatar = ""
                                         var fbDtsg = ""
@@ -281,15 +284,21 @@ fun InstagramCookieBottomSheet(
                                         var followingCount = 0
                                         var postsCount = 0
                                         val checkResult = InstagramApiClient.checkCookieIg(cookiePart, proxyPart)
-                                        if (checkResult.isLive) {
-                                            if (checkResult.username.isNotBlank()) username = checkResult.username
-                                            if (checkResult.userId.isNotBlank()) dsUserId = checkResult.userId
-                                            fullName = checkResult.fullName
-                                            biography = checkResult.biography
-                                            avatar = checkResult.profilePicUrl
-                                            fbDtsg = checkResult.fbDtsg
-                                            lsd = checkResult.lsd
+                                        val isLive = checkResult.isLive
+                                        if (checkResult.username.isNotBlank()) {
+                                            username = checkResult.username
+                                        } else if (username.startsWith("IG_") && explicitUsername.isNotBlank()) {
+                                            username = explicitUsername
                                         }
+                                        if (checkResult.userId.isNotBlank()) dsUserId = checkResult.userId
+                                        fullName = checkResult.fullName
+                                        biography = checkResult.biography
+                                        avatar = checkResult.profilePicUrl
+                                        fbDtsg = checkResult.fbDtsg
+                                        lsd = checkResult.lsd
+                                        followersCount = checkResult.followersCount
+                                        followingCount = checkResult.followingCount
+                                        postsCount = checkResult.postsCount
 
                                         val devProfile = InstagramApiClient.getDeviceProfileFor(dsUserId.ifBlank { username })
 
@@ -310,7 +319,7 @@ fun InstagramCookieBottomSheet(
                                                     followersCount = followersCount,
                                                     followingCount = followingCount,
                                                     postsCount = postsCount,
-                                                    isLive = true
+                                                    isLive = isLive
                                                 )
                                             )
                                             LinkedAccountsStore.addAccount(context, "Instagram", username)

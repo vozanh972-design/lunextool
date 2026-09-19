@@ -26,6 +26,7 @@ fun startXsmmJobRunnerOverlay(context: Context, accountHandles: List<String>) {
         Toast.makeText(context, "Hãy tick chọn ít nhất 1 tài khoản để chạy", Toast.LENGTH_SHORT).show()
         return
     }
+    com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, "tiktok")
     context.startService(Intent(context, XsmmJobRunnerOverlayService::class.java).apply {
         putExtra(XsmmJobRunnerOverlayService.EXTRA_ACCOUNT_HANDLES, accountHandles.joinToString(","))
     })
