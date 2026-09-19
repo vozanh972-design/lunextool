@@ -38,12 +38,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private enum class FbFieldKey(val type: AccountFieldType, val label: String, val sample: String) {
-    USERNAME(AccountFieldType.USERNAME, "Tài khoản", "100088992211334"),
-    PASSWORD(AccountFieldType.PASSWORD, "Mật khẩu", "matkhau123"),
-    TWOFA(AccountFieldType.TWO_FACTOR, "2FA", "JBSWY3DPEHPK3PXP"),
+    TOKEN(AccountFieldType.TOKEN, "Token", "EAAB..."),
     COOKIE(AccountFieldType.COOKIE, "Cookie", "c_user=...; xs=..."),
-    PROXY(AccountFieldType.PROXY, "Proxy", "1.2.3.4:8080"),
-    TOKEN(AccountFieldType.TOKEN, "Token", "EAAB...")
+    PROXY(AccountFieldType.PROXY, "Proxy", "1.2.3.4:8080")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,12 +59,9 @@ fun FacebookLoginBottomSheet(
     var isLoading by remember { mutableStateOf(false) }
 
     val allFields = listOf(
-        FbFieldKey.USERNAME,
-        FbFieldKey.PASSWORD,
-        FbFieldKey.TWOFA,
+        FbFieldKey.TOKEN,
         FbFieldKey.COOKIE,
-        FbFieldKey.PROXY,
-        FbFieldKey.TOKEN
+        FbFieldKey.PROXY
     )
 
     fun toggleField(field: FbFieldKey) {
@@ -82,7 +76,7 @@ fun FacebookLoginBottomSheet(
     else selectedFields.joinToString(" | ") { it.label }
 
     val placeholderExample = if (selectedFields.isEmpty()) {
-        "Dán UID|Pass|2FA, Cookie hoặc Token (mỗi dòng 1 nick)"
+        "Dán Token, Cookie hoặc Token|Cookie|Proxy (mỗi dòng 1 nick)"
     } else {
         selectedFields.joinToString(" | ") { it.sample }
     }
@@ -127,7 +121,7 @@ fun FacebookLoginBottomSheet(
                         color = TextPrimary
                     )
                     Text(
-                        "Chọn định dạng trường hoặc dán trực tiếp dữ liệu tài khoản",
+                        "Chọn định dạng trường hoặc dán trực tiếp Token / Cookie",
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
@@ -139,45 +133,39 @@ fun FacebookLoginBottomSheet(
             Text("Chọn trường & thứ tự kết hợp (tùy chọn):", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Spacer(Modifier.height(8.dp))
 
-            // 2 hàng x 3 nút chọn trường
-            val chunked = allFields.chunked(3)
-            chunked.forEachIndexed { rowIndex, rowFields ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    rowFields.forEach { field ->
-                        val orderIndex = selectedFields.indexOf(field).let { if (it >= 0) it + 1 else null }
-                        val isSelected = orderIndex != null
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (isSelected) Color(0xFF1877F2) else CardWhite)
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isSelected) Color(0xFF1877F2) else Color(0xFFE2E8F0),
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = { toggleField(field) }
-                                )
-                                .padding(vertical = 9.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (orderIndex != null) "$orderIndex. ${field.label}" else field.label,
-                                fontSize = 12.5.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) CardWhite else TextPrimary
+            // 1 hàng x 3 nút chọn trường: Token, Cookie, Proxy
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                allFields.forEach { field ->
+                    val orderIndex = selectedFields.indexOf(field).let { if (it >= 0) it + 1 else null }
+                    val isSelected = orderIndex != null
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSelected) Color(0xFF1877F2) else CardWhite)
+                            .border(
+                                width = 1.dp,
+                                color = if (isSelected) Color(0xFF1877F2) else Color(0xFFE2E8F0),
+                                shape = RoundedCornerShape(10.dp)
                             )
-                        }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { toggleField(field) }
+                            )
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (orderIndex != null) "$orderIndex. ${field.label}" else field.label,
+                            fontSize = 13.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) CardWhite else TextPrimary
+                        )
                     }
-                }
-                if (rowIndex < chunked.lastIndex) {
-                    Spacer(Modifier.height(8.dp))
                 }
             }
 
@@ -267,101 +255,85 @@ fun FacebookLoginBottomSheet(
                                     async(Dispatchers.IO) {
                                         val authenticator = FacebookAuthenticator()
 
-                                        // TH 1: Token EAA... riêng
-                                        if (line.startsWith("EAA")) {
+                                        val parts = if (line.contains("|")) line.split("|").map { it.trim() } else listOf(line)
+
+                                        // 1. Tìm Token (EAA...)
+                                        val token = parts.find { it.startsWith("EAA") } ?: if (line.startsWith("EAA")) line else null
+
+                                        // 2. Tìm Cookie (chứa c_user hoặc xs)
+                                        val cookie = parts.find { it.contains("c_user=") || it.contains("xs=") }
+                                            ?: if (line.contains("c_user=") || line.contains("xs=")) line else null
+
+                                        // 3. Tìm Proxy (chứa ip:port)
+                                        val proxy = parts.find { it.matches(Regex("""\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+.*""")) }
+
+                                        // Ưu tiên 1: Đăng nhập bằng Token EAA nếu có
+                                        if (!token.isNullOrBlank()) {
                                             try {
-                                                val details = accountManager.fetchAccountDetailsWithToken(line, null)
+                                                val details = accountManager.fetchAccountDetailsWithToken(token, proxy)
                                                 if (details.isLive) {
-                                                    return@async details.copy(bio = line, isLive = true)
+                                                    return@async details.copy(
+                                                        bio = token,
+                                                        note = cookie ?: details.note,
+                                                        phone = proxy.orEmpty(),
+                                                        isLive = true
+                                                    )
                                                 }
                                             } catch (_: Exception) {}
-                                            return@async FacebookAccount(
-                                                uid = "N/A",
-                                                bio = line,
-                                                isLive = false
-                                            )
                                         }
 
-                                        // TH 2: Dạng có dấu gạch đứng | (UID|Pass|2FA|Cookie hoặc UID|Pass|2FA) -> 100% chuẩn Python
-                                        if (line.contains("|")) {
-                                            val parts = line.split("|").map { it.trim() }
-                                            val uid = parts.getOrNull(0) ?: ""
-                                            val pwd = parts.getOrNull(1) ?: ""
-                                            var twofa = ""
-                                            var datr: String? = null
-
-                                            val fullCookie = if (parts.size >= 4) {
-                                                parts.subList(3, parts.size).joinToString("|")
-                                            } else {
-                                                parts.find { it.contains("c_user=") || it.contains("xs=") || it.contains("datr=") } ?: ""
-                                            }
-
-                                            if (fullCookie.contains("datr=")) {
-                                                val m = "datr=([^;]+)".toRegex().find(fullCookie)
-                                                if (m != null) datr = m.groupValues[1].trim()
-                                            }
-
-                                            if (parts.size >= 3 && !parts[2].contains("datr=") && !parts[2].contains("c_user=") && !parts[2].contains("xs=") && !parts[2].startsWith("EAA")) {
-                                                twofa = parts[2]
-                                            }
-
-                                            // 1. Thử login bằng Authenticator
-                                            if (uid.isNotBlank() && pwd.isNotBlank()) {
-                                                try {
-                                                    val authResult = authenticator.login(
-                                                        uid = uid,
-                                                        pass = pwd,
-                                                        twoFaSecret = twofa,
-                                                        proxyStr = null,
-                                                        rawCookie = fullCookie
+                                        // Ưu tiên 2: Đăng nhập bằng Cookie nếu có
+                                        if (!cookie.isNullOrBlank()) {
+                                            try {
+                                                val cookieAcc = accountManager.getTokenFromCookie(cookie, proxy)
+                                                if (cookieAcc != null && cookieAcc.isLive) {
+                                                    return@async cookieAcc.copy(
+                                                        bio = token ?: cookieAcc.bio,
+                                                        note = cookie,
+                                                        phone = proxy.orEmpty(),
+                                                        isLive = true
                                                     )
-
-                                                    if (authResult.isSuccess && authResult.account.isLive) {
-                                                        return@async authResult.account.copy(
-                                                            password = pwd,
-                                                            link = twofa,
-                                                            note = if (authResult.account.note.isNotBlank()) authResult.account.note else fullCookie,
-                                                            isLive = true
-                                                        )
-                                                    }
-                                                } catch (_: Exception) {}
-                                            }
-
-                                            // 2. Thử lấy token từ Cookie nếu có c_user hoặc xs
-                                            if (fullCookie.isNotBlank() && (fullCookie.contains("c_user=") || fullCookie.contains("xs="))) {
-                                                try {
-                                                    val cookieAcc = accountManager.getTokenFromCookie(fullCookie, null)
-                                                    if (cookieAcc != null && cookieAcc.isLive) {
-                                                        return@async cookieAcc.copy(
-                                                            uid = uid.ifBlank { cookieAcc.uid },
-                                                            password = pwd,
-                                                            link = twofa,
-                                                            isLive = true
-                                                        )
-                                                    }
-                                                } catch (_: Exception) {}
-                                            }
-
-                                            return@async FacebookAccount(
-                                                uid = uid.ifBlank { "N/A" },
-                                                name = uid,
-                                                password = pwd,
-                                                link = twofa,
-                                                note = fullCookie,
-                                                isLive = false
-                                            )
+                                                }
+                                            } catch (_: Exception) {}
                                         }
 
-                                        // TH 3: Cookie thuần (không có |) -> 100% chuẩn Python get_token_from_cookie
-                                        val cookieAcc = accountManager.getTokenFromCookie(line, null)
-                                        if (cookieAcc != null && cookieAcc.isLive) {
-                                            return@async cookieAcc.copy(isLive = true)
+                                        // Ưu tiên 3: Dạng UID|Pass|2FA
+                                        if (parts.size >= 2 && !parts[0].startsWith("EAA") && !parts[0].contains("c_user=")) {
+                                            val uid = parts[0]
+                                            val pwd = parts[1]
+                                            val twofa = parts.getOrNull(2)?.takeIf { !it.contains("=") && !it.startsWith("EAA") }.orEmpty()
+
+                                            try {
+                                                val authResult = authenticator.login(
+                                                    uid = uid,
+                                                    pass = pwd,
+                                                    twoFaSecret = twofa,
+                                                    proxyStr = proxy,
+                                                    rawCookie = cookie
+                                                )
+                                                if (authResult.isSuccess && authResult.account.isLive) {
+                                                    return@async authResult.account.copy(
+                                                        password = pwd,
+                                                        link = twofa,
+                                                        note = cookie ?: authResult.account.note,
+                                                        phone = proxy.orEmpty(),
+                                                        isLive = true
+                                                    )
+                                                }
+                                            } catch (_: Exception) {}
                                         }
+
+                                        // Mặc định: Không xác thực được
+                                        val fallbackUid = cookie?.let { c ->
+                                            Regex("""c_user=(\d+)""").find(c)?.groupValues?.get(1)
+                                        } ?: parts.getOrNull(0)?.takeIf { it.matches(Regex("""\d+""")) } ?: "N/A"
 
                                         return@async FacebookAccount(
-                                            uid = "N/A",
-                                            name = "",
-                                            note = line,
+                                            uid = fallbackUid,
+                                            name = fallbackUid,
+                                            note = cookie.orEmpty(),
+                                            bio = token.orEmpty(),
+                                            phone = proxy.orEmpty(),
                                             isLive = false
                                         )
                                     }
