@@ -841,6 +841,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         facebookAccounts.forEach { account ->
                             val isChecked = account.uid in selectedForRunUids
+                            val isRunningFbThis = com.cayxu.app.automation.facebook.XsmmFacebookManager.isRunning(account.uid)
                             val fbAvatarModel = remember(account.avatar, avatarVersion) {
                                 if (account.avatar.isBlank()) null
                                 else coil.request.ImageRequest.Builder(context)
@@ -1098,7 +1099,6 @@ fun XsmmAccountScreen(navController: NavController) {
                                         Spacer(Modifier.width(6.dp))
 
                                         // Nút Chạy (Play tam giác màu xanh Facebook) / Dừng
-                                        val isRunningFbThis = com.cayxu.app.automation.facebook.XsmmFacebookManager.isRunning(account.uid)
                                         IconButton(
                                             onClick = {
                                                 if (isRunningFbThis) {
