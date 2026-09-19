@@ -70,16 +70,8 @@ fun InstagramCookieBottomSheet(
         selectedFields.joinToString(" | ") { it.label.substringAfter(". ") }
     }
 
-    val placeholderText = remember(selectedFields) {
-        val has2fa = selectedFields.any { it.key == "TWO_FA" }
-        val hasProxy = selectedFields.any { it.key == "PROXY" }
-        when {
-            has2fa && hasProxy -> "czzpbkh8745|matkhau123|JBSWY3DPEHPK3PXP|127.0.0.1:3128:user:pass\n9q6r7q1498u@mail.com|benben10@|4XZ6...|1.1.1.1:8080"
-            has2fa -> "czzpbkh8745|matkhau123|JBSWY3DPEHPK3PXP\n9q6r7q1498u@mail.com|benben10@|4XZ6..."
-            hasProxy -> "czzpbkh8745|matkhau123|127.0.0.1:3128:user:pass\n9q6r7q1498u@mail.com|benben10@|1.1.1.1:8080"
-            else -> "czzpbkh8745|matkhau123\n9q6r7q1498u@mail.com|benben10@"
-        }
-    }
+    val placeholderText = "Mỗi dòng 1 tài khoản theo định dạng đã chọn:\nusername|password\nemail@example.com|password"
+
 
     ModalBottomSheet(
         onDismissRequest = { if (!isLoading) onDismiss() },
@@ -264,6 +256,7 @@ fun InstagramCookieBottomSheet(
                             val lines = rawInput.lines().map { it.trim() }.filter { it.isNotBlank() }
                             val addedAccounts = mutableListOf<String>()
                             var failedCount = 0
+                            var lastErrorMessage = ""
 
                             withContext(Dispatchers.IO) {
                                 for (line in lines) {
@@ -306,6 +299,7 @@ fun InstagramCookieBottomSheet(
 
                                             if (username.isBlank() || password.isBlank()) {
                                                 failedCount++
+                                                lastErrorMessage = "Thiếu tài khoản hoặc mật khẩu"
                                                 continue
                                             }
 
@@ -348,6 +342,7 @@ fun InstagramCookieBottomSheet(
                                                 }
                                             } else {
                                                 failedCount++
+                                                lastErrorMessage = result.message.ifBlank { "Lỗi đăng nhập từ máy chủ" }
                                             }
 
                                         } else {
@@ -427,9 +422,10 @@ fun InstagramCookieBottomSheet(
                                 onCookieSaved?.invoke(addedAccounts.first())
                                 onDismiss()
                             } else {
-                                val msg = if (failedCount > 0)
-                                    "Không thể đăng nhập $failedCount tài khoản. Vui lòng kiểm tra lại thông tin!"
-                                else "Không có dữ liệu hợp lệ để xử lý."
+                                val msg = if (failedCount > 0) {
+                                    if (lastErrorMessage.isNotBlank()) "Không thể đăng nhập: $lastErrorMessage"
+                                    else "Không thể đăng nhập $failedCount tài khoản. Vui lòng kiểm tra lại thông tin!"
+                                } else "Không có dữ liệu hợp lệ để xử lý."
                                 statusMessage = msg
                                 Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             }
