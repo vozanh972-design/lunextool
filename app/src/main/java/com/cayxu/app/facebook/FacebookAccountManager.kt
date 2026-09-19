@@ -126,7 +126,7 @@ class FacebookAccountManager {
         }
         val request = reqBuilder.post(form).build()
 
-        return try {
+        try {
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string() ?: ""
                 val json = JSONObject(body)
@@ -135,7 +135,6 @@ class FacebookAccountManager {
                     val eaaaa = convertToken(rawToken, "350685531728", proxyStr) ?: rawToken
                     val realUid = if (uid.isNotBlank()) uid else json.optString("uid", "")
                     
-                    // Lấy session cookies mới
                     val cookieBuilder = StringBuilder()
                     if (json.has("session_cookies")) {
                         val arr = json.getJSONArray("session_cookies")
@@ -163,7 +162,7 @@ class FacebookAccountManager {
                         if (details.pages.isNotEmpty()) pages = details.pages
                     } catch (_: Exception) {}
 
-                    FacebookAccount(
+                    return FacebookAccount(
                         uid = realUid.ifBlank { "FB_${System.currentTimeMillis() % 1000000}" },
                         name = name.ifBlank { realUid },
                         avatar = avatarUrl,
@@ -175,13 +174,37 @@ class FacebookAccountManager {
                         phone = proxyStr.orEmpty(),
                         isLive = true
                     )
-                } else {
-                    null
                 }
             }
-        } catch (_: Exception) {
-            null
+        } catch (_: Exception) {}
+
+        // Fallback chuẩn GoMax: Xác thực trực tiếp qua FacebookAuthEngine.loginWithCookie
+        val proxyParts = proxyStr?.split(":")
+        val proxyHost = proxyParts?.getOrNull(0)
+        val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+        val authEngine = FacebookAuthEngine(proxyHost = proxyHost, proxyPort = proxyPort)
+        val cookieRes = authEngine.loginWithCookie(cleanCookie)
+        if (cookieRes.isSuccess) {
+            val realUid = cookieRes.userId?.ifBlank { uid } ?: uid.ifBlank { "FB_${System.currentTimeMillis() % 1000000}" }
+            val realName = cookieRes.userName?.ifBlank { realUid } ?: realUid
+            val avatar = cookieRes.avatarUrl ?: if (realUid.startsWith("615") || realUid.matches(Regex("\\d+"))) "$GRAPH_BASE_URL/$realUid/picture?type=large" else ""
+
+            val pageEngine = FacebookPageEngine(proxyHost = proxyHost, proxyPort = proxyPort)
+            val pages = pageEngine.getAdminedPages(cookieRes.accessToken)
+
+            return FacebookAccount(
+                uid = realUid,
+                name = realName,
+                avatar = avatar,
+                note = cleanCookie,
+                bio = cookieRes.accessToken.orEmpty(),
+                pages = pages,
+                phone = proxyStr.orEmpty(),
+                isLive = true
+            )
         }
+
+        return null
     }
 
     /**
