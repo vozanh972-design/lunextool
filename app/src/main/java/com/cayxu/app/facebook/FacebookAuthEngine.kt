@@ -159,7 +159,7 @@ class FacebookAuthEngine(
             put("waterfall_id", waterfallId)
             put("credential_type", "password")
             put("event_flow", "login_manual")
-            put("login_attempt_count", "1")
+            put("login_attempts_count", "1")
             put("access_flow_version", "F2_FLOW")
             put("is_caa_perf_enabled", true)
         }
