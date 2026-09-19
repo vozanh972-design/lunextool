@@ -207,12 +207,21 @@ fun FacebookAccountDetailSheet(
                         isUploadingCover = false
                         if (result.isSuccess) {
                             Toast.makeText(context, "Đổi Ảnh Bìa thành công!", Toast.LENGTH_SHORT).show()
+                            // Delay nhỏ để Facebook CDN cập nhật trước khi lấy URL mới
+                            kotlinx.coroutines.delay(1500)
                             val updatedMedia = mediaEngine.getProfileMedia(account.uid, tokenParam = token)
                             val rawCover = updatedMedia?.coverUrl.orEmpty()
-                            if (rawCover.isNotBlank()) {
-                                val newCoverUrl = if (rawCover.contains("?")) "$rawCover&t=${System.currentTimeMillis()}" else "$rawCover?t=${System.currentTimeMillis()}"
-                                currentCover = newCoverUrl
+                            val newCoverUrl = if (rawCover.isNotBlank()) {
+                                // Cache-bust để Coil không dùng ảnh cũ
+                                if (rawCover.contains("?")) "$rawCover&t=${System.currentTimeMillis()}"
+                                else "$rawCover?t=${System.currentTimeMillis()}"
+                            } else if (result.mediaId != null) {
+                                // Fallback: dùng trực tiếp URL ảnh từ photo_id vừa upload
+                                "https://graph.facebook.com/v21.0/${result.mediaId}/picture?access_token=$token&t=${System.currentTimeMillis()}"
+                            } else {
+                                currentCover
                             }
+                            if (newCoverUrl != currentCover) currentCover = newCoverUrl
                             val updatedAcc = account.copy(avatar = currentAvatar, cover = currentCover)
                             FacebookAccountsStore.updateAccount(context, updatedAcc)
                         } else {

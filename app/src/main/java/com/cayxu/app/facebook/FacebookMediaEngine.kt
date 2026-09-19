@@ -250,16 +250,16 @@ class FacebookMediaEngine(
     }
 
     /**
-     * 100% Graph API: Cập nhật Ảnh Bìa (Cover Photo) qua Token (không dùng cookie, không lai tạp)
-     * Bước 1: Upload ảnh vào /{target}/photos (published=true) lấy photo_id
-     * Bước 2: Thiết lập làm Cover qua POST /{target} với tham số cover={photo_id}, offset_x, offset_y
+     * 100% Graph API: Cập nhật Ảnh Bìa (Cover Photo) qua Token
+     * Bước 1: Upload ảnh lên /me/photos với is_profile_cover=true + published=true → lấy photo_id
+     * Bước 2: POST /{photo_id} với cover_photo={"cover_id": photo_id} để set làm bìa chính thức
      */
     fun updateCoverPhoto(
         imageBytes: ByteArray,
         mimeType: String = "image/jpeg",
         targetId: String? = null,
         tokenParam: String? = null,
-        cookieParam: String? = null // Giữ tham số tương thích, không dùng cookie
+        cookieParam: String? = null
     ): MediaResult {
         val token = (tokenParam ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
         if (token.isEmpty()) return MediaResult(false, null, "Cần có Access Token để đổi ảnh bìa", "")
@@ -268,14 +268,13 @@ class FacebookMediaEngine(
         val mediaType = mimeType.toMediaTypeOrNull()
         val fileBody = imageBytes.toRequestBody(mediaType)
 
-        // 1. Upload ảnh bìa lên Graph API /{target}/photos (với fallback 'me')
-        // Lưu ý: Param no_feed trong multipart photos thường bị Meta báo lỗi "An unknown error has occurred."
-        // Chuẩn Facebook API chỉ nhận published=true/false hoặc không truyền no_feed ở tầng photos upload
-        fun doUploadPhoto(endpointTarget: String): Pair<String, String> {
+        // Bước 1: Upload ảnh với is_profile_cover=true (Facebook nhận dạng đây là ảnh bìa)
+        fun doUploadCover(endpointTarget: String): Pair<String, String> {
             val uploadBody = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("access_token", token)
-                .addFormDataPart("published", "false")
+                .addFormDataPart("is_profile_cover", "true")
+                .addFormDataPart("published", "true")
                 .addFormDataPart("source", "cover_${System.currentTimeMillis()}.jpg", fileBody)
                 .build()
 
@@ -299,16 +298,17 @@ class FacebookMediaEngine(
             }
         }
 
-        val uploadResult = doUploadPhoto(target)
+        val uploadResult = doUploadCover(target)
         var photoId = uploadResult.first
         var errMsg = uploadResult.second
-        // Fallback upload với "me" nếu targetId (như 615...) bị Meta từ chối upload ảnh cá nhân
+
+        // Fallback: nếu target bị từ chối thì thử "me"
         if (photoId.isEmpty() && target != "me") {
-            val fallbackUpload = doUploadPhoto("me")
-            if (fallbackUpload.first.isNotEmpty()) {
-                photoId = fallbackUpload.first
+            val fallback = doUploadCover("me")
+            if (fallback.first.isNotEmpty()) {
+                photoId = fallback.first
             } else {
-                errMsg = fallbackUpload.second
+                errMsg = fallback.second
             }
         }
 
@@ -316,37 +316,32 @@ class FacebookMediaEngine(
             return MediaResult(false, null, "Lỗi tải ảnh bìa lên: $errMsg", errMsg)
         }
 
-        // 2. Gán photoId làm Cover qua POST /{target} (và fallback "me")
-        val res1 = updateCoverPhotoWithPhotoId(photoId, target, tokenParam = token)
-        if (res1.isSuccess) return res1
-
-        if (target != "me") {
-            val res2 = updateCoverPhotoWithPhotoId(photoId, "me", tokenParam = token)
-            if (res2.isSuccess) return res2
-        }
-        return res1
+        // Bước 2: Set photo này làm cover qua POST /{uid} với cover field JSON
+        return updateCoverPhotoWithPhotoId(photoId, target, tokenParam = token)
     }
 
     fun updateCoverPhotoWithPhotoId(
         photoId: String,
         targetId: String? = null,
-        offsetX: Int = 50,
-        offsetY: Int = 50,
+        offsetX: Int = 0,
+        offsetY: Int = 0,
         tokenParam: String? = null
     ): MediaResult {
         val token = (tokenParam ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
         if (token.isEmpty()) return MediaResult(false, null, "Cần có Access Token để đổi ảnh bìa", "")
 
         val target = if (targetId.isNullOrBlank() || targetId == "me") "me" else targetId
+
+        // POST /{uid}?cover={"cover_id":"<photoId>","offset_x":0,"offset_y":0}
+        // Đây là cách Graph API chuẩn để set cover photo
+        val coverJson = """{"cover_id":"$photoId","offset_x":$offsetX,"offset_y":$offsetY}"""
         val formBody = FormBody.Builder()
             .add("access_token", token)
-            .add("cover", photoId)
-            .add("offset_x", offsetX.toString())
-            .add("offset_y", offsetY.toString())
+            .add("cover", coverJson)
             .build()
 
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$target?access_token=$token")
+            .url("$GRAPH_API_URL/$target")
             .post(formBody)
             .header("User-Agent", KATANA_USER_AGENT)
             .header("Authorization", "OAuth $token")
@@ -355,10 +350,34 @@ class FacebookMediaEngine(
         return try {
             httpClient.newCall(request).execute().use { res ->
                 val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && !body.contains("\"error\"")
                 val json = try { JSONObject(body) } catch (_: Exception) { null }
+                val hasError = json?.has("error") == true
+                val isOk = res.isSuccessful && !hasError
                 val errMsg = json?.optJSONObject("error")?.optString("message") ?: body
-                MediaResult(isOk, photoId, if (isOk) "Cập nhật ảnh bìa thành công" else "Lỗi đặt ảnh bìa: $errMsg", body)
+                if (isOk) {
+                    MediaResult(true, photoId, "Cập nhật ảnh bìa thành công", body)
+                } else if (target != "me") {
+                    // Fallback: thử lại với "me"
+                    val fallbackBody = FormBody.Builder()
+                        .add("access_token", token)
+                        .add("cover", coverJson)
+                        .build()
+                    val fallbackReq = Request.Builder()
+                        .url("$GRAPH_API_URL/me")
+                        .post(fallbackBody)
+                        .header("User-Agent", KATANA_USER_AGENT)
+                        .header("Authorization", "OAuth $token")
+                        .build()
+                    httpClient.newCall(fallbackReq).execute().use { res2 ->
+                        val body2 = res2.body?.string() ?: ""
+                        val json2 = try { JSONObject(body2) } catch (_: Exception) { null }
+                        val isOk2 = res2.isSuccessful && json2?.has("error") != true
+                        val err2 = json2?.optJSONObject("error")?.optString("message") ?: body2
+                        MediaResult(isOk2, photoId, if (isOk2) "Cập nhật ảnh bìa thành công" else "Lỗi đặt ảnh bìa: $err2", body2)
+                    }
+                } else {
+                    MediaResult(false, null, "Lỗi đặt ảnh bìa: $errMsg", body)
+                }
             }
         } catch (e: Exception) {
             MediaResult(false, null, e.message, "")
