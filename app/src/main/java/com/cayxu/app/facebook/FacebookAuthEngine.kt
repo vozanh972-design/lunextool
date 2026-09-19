@@ -3,8 +3,6 @@ package com.cayxu.app.facebook
 import androidx.annotation.Keep
 import com.cayxu.app.util.NativeSecurity
 import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
@@ -28,10 +26,9 @@ class FacebookAuthEngine(
 ) {
 
     companion object {
-        const val B_GRAPH_URL = "https://b-graph.facebook.com"
         const val GRAPHQL_ENDPOINT = "https://b-graph.facebook.com/graphql"
-        const val KATANA_APP_ID = "350685531728"
-        const val KATANA_APP_SECRET = "62f8ce9f74b12f84c123cc23437a4a32"
+        const val PWD_KEY_FETCH_ENDPOINT = "https://b-graph.facebook.com/pwd_key_fetch"
+        const val APP_ID_LOGIN = "com.bloks.www.bloks.caa.login.async.send_login_request"
         const val BLOKS_VERSIONING_ID = "3469837656910fc29c9aa968ab33845cd52eb5253ae110610b944c8e9028d8f6"
         const val PREFIX_PWD_FB4A = "#PWD_FB4A:2:"
     }
@@ -51,7 +48,6 @@ class FacebookAuthEngine(
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
-
         if (!proxyHost.isNullOrBlank() && proxyPort != null && proxyPort > 0) {
             builder.proxy(Proxy(proxyType, InetSocketAddress(proxyHost, proxyPort)))
         }
@@ -59,20 +55,18 @@ class FacebookAuthEngine(
     }
 
     /**
-     * Lấy public key để mã hoá password — dùng token đúng chuẩn từ NativeSecurity
+     * Lấy public key mã hóa mật khẩu — 100% chuẩn FacebookBloksLogin gốc.
+     * Trả về raw JSON string để parse key_id và public_key.
      */
     fun fetchPasswordEncryptionKey(): Pair<Int, String>? {
-        val keyFetchToken = NativeSecurity.getFbKeyFetchToken()
-        val url = "$B_GRAPH_URL/pwd_key_fetch?version=2&flow=CONTROLLER_INITIALIZATION&access_token=$keyFetchToken"
-        val ua = NativeSecurity.getFbKatanaUA()
+        val oauthToken = NativeSecurity.getFbOAuthToken()
+        val katanaUa = NativeSecurity.getFbKatanaUA()
         val request = Request.Builder()
-            .url(url)
+            .url(PWD_KEY_FETCH_ENDPOINT)
+            .header("User-Agent", katanaUa)
+            .header("Authorization", oauthToken)
             .get()
-            .header("User-Agent", ua)
-            .header("X-Fb-Connection-Type", "WIFI")
-            .header("X-Fb-Http-Engine", "Liger")
             .build()
-
         return try {
             httpClient.newCall(request).execute().use { res ->
                 val body = res.body?.string() ?: return null
@@ -134,92 +128,90 @@ class FacebookAuthEngine(
     }
 
     /**
-     * Đăng nhập qua CAA Bloks GraphQL — đúng chuẩn b-graph.facebook.com với flat params Bloks.
-     * Dùng Authorization OAuth token từ NativeSecurity, bloks_versioning_id chuẩn, client_doc_id từ NativeSecurity.
+     * Đăng nhập CAA Bloks — 100% logic từ FacebookBloksLogin.kt gốc (git f0ba884).
+     * Không lai tạp, không bịa.
      */
     fun loginCAA(contactPoint: String, passwordRaw: String): LoginResult {
-        val oauthToken = NativeSecurity.getFbOAuthToken()       // "OAuth 350685531728|..."
+        val oauthToken = NativeSecurity.getFbOAuthToken()
         val katanaUa = NativeSecurity.getFbKatanaUA()
-        val clientDocId = NativeSecurity.getFbBloksDocId()      // "119940804214876861379510865434"
+        val clientDocId = NativeSecurity.getFbBloksDocId()
 
-        // Bước 1: Mã hoá password
+        // Mã hoá password
         val keyInfo = fetchPasswordEncryptionKey()
         val encryptedPassword = if (keyInfo != null) {
-            try {
-                encryptPassword(passwordRaw, keyInfo.first, keyInfo.second)
-            } catch (_: Exception) {
-                passwordRaw
-            }
+            try { encryptPassword(passwordRaw, keyInfo.first, keyInfo.second) }
+            catch (_: Exception) { passwordRaw }
         } else {
             passwordRaw
         }
 
-        // Bước 2: Xây dựng params JSON chuẩn Bloks CAA login
+        val deviceId = UUID.randomUUID().toString()
+        val familyDeviceId = UUID.randomUUID().toString()
+        val waterfallId = UUID.randomUUID().toString()
+
+        // client_input_params — 100% từ FacebookBloksLogin.executeLogin()
         val clientInputParams = JSONObject().apply {
             put("contact_point", contactPoint)
             put("password", encryptedPassword)
+            put("device_id", deviceId)
+            put("family_device_id", familyDeviceId)
             put("login_source", "Login")
-            put("device_id", UUID.randomUUID().toString())
-            put("family_device_id", UUID.randomUUID().toString())
-            put("access_flow_version", "F2_FLOW")
+            put("waterfall_id", waterfallId)
             put("credential_type", "password")
-            put("waterfall_id", UUID.randomUUID().toString())
-            put("headers_flow_mode", "regular")
+            put("event_flow", "login_manual")
+            put("login_attempt_count", "1")
+            put("access_flow_version", "F2_FLOW")
+            put("is_caa_perf_enabled", true)
         }
 
         val serverParams = JSONObject().apply {
-            put("server_login_source", "Login")
             put("credential_type", "password")
+            put("server_login_source", "login")
         }
 
-        val innerParams = JSONObject().apply {
+        // rootParams — 100% từ FacebookBloksLogin.executeLogin()
+        val rootParams = JSONObject().apply {
             put("client_input_params", clientInputParams)
             put("server_params", serverParams)
         }
 
-        // Flat params chuẩn Bloks (KHÔNG lồng trong variables JSON)
-        val paramsJson = JSONObject().apply {
-            put("params", innerParams.toString())
-        }
-
+        // FormBody — 100% từ FacebookBloksLogin.executeLogin()
         val formBody = FormBody.Builder()
-            .add("params", paramsJson.toString())
+            .add("params", rootParams.toString())
             .add("bloks_versioning_id", BLOKS_VERSIONING_ID)
-            .add("app_id", "com.bloks.www.bloks.caa.login.async.send_login_request")
-            .add("fb_api_req_friendly_name", "FbBloksActionRootQuery-com.bloks.www.bloks.caa.login.async.send_login_request")
-            .add("fb_api_caller_class", "com.bloks.www.bloks.caa.login.async.send_login_request")
+            .add("app_id", APP_ID_LOGIN)
+            .add("fb_api_req_friendly_name", "FbBloksActionRootQuery-$APP_ID_LOGIN")
+            .add("fb_api_caller_class", "graphservice")
             .add("client_doc_id", clientDocId)
             .add("method", "post")
             .add("format", "json")
             .build()
 
+        // Request headers — 100% từ FacebookBloksLogin.executeLogin()
         val request = Request.Builder()
             .url(GRAPHQL_ENDPOINT)
-            .post(formBody)
-            .header("Authorization", oauthToken)
             .header("User-Agent", katanaUa)
+            .header("Authorization", oauthToken)
             .header("X-Fb-Connection-Type", "WIFI")
-            .header("X-Fb-Http-Engine", "Liger")
-            .header("X-FB-Friendly-Name", "FbBloksActionRootQuery-com.bloks.www.bloks.caa.login.async.send_login_request")
+            .header("X-Fb-Http-Engine", "Tigon/Liger")
+            .header("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
+            .post(formBody)
             .build()
 
         return try {
             httpClient.newCall(request).execute().use { res ->
                 val body = res.body?.string() ?: ""
 
-                // Parse token từ response Bloks
                 val tokenRegex = Regex("""["'](?:access_token|token)["']\s*:\s*["']([A-Za-z0-9\-_|]+)["']""")
                 val uidRegex = Regex("""["'](?:uid|user_id|actor_id)["']\s*:\s*["']?(\d+)["']?""")
 
                 val token = tokenRegex.find(body)?.groupValues?.get(1)
                 val uid = uidRegex.find(body)?.groupValues?.get(1)
-
                 val isOk = !token.isNullOrEmpty()
 
                 val errorMsg: String = if (isOk) {
                     "Login Success"
                 } else {
-                    // Trích xuất lỗi CHÍNH XÁC từ response Instagram/Facebook trả về
                     when {
                         body.contains("checkpoint", ignoreCase = true) ->
                             "Tài khoản bị checkpoint – yêu cầu xác minh bảo mật"
@@ -233,14 +225,10 @@ class FacebookAuthEngine(
                         body.contains("disabled", ignoreCase = true) ->
                             "Tài khoản đã bị vô hiệu hoá"
                         else -> {
-                            // Thử lấy thông báo lỗi trực tiếp từ JSON Facebook trả về
-                            val msgPattern = Regex("""["'](?:error_message|message|description|title)["']\s*:\s*["']([^"']+)["']""")
+                            val msgPattern = Regex("""["'](?:error_message|message|description|title)["']\s*:\s*["']([^"']{1,300})["']""")
                             val foundMsg = msgPattern.find(body)?.groupValues?.get(1)
-                            if (!foundMsg.isNullOrBlank() && foundMsg.length < 300) {
-                                foundMsg
-                            } else {
-                                "Đăng nhập thất bại (HTTP ${res.code})"
-                            }
+                            if (!foundMsg.isNullOrBlank()) foundMsg
+                            else "Đăng nhập thất bại (HTTP ${res.code})"
                         }
                     }
                 }
