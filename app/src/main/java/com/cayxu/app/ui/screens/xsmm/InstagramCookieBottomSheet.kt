@@ -255,10 +255,11 @@ fun InstagramCookieBottomSheet(
                                             cookiePart = line
                                         }
 
-                                        val dsUserIdMatch = Regex("ds_user_id=([0-9]+)").find(cookiePart)
-                                        val sessionIdMatch = Regex("sessionid=([^;]+)").find(cookiePart)
+                                        val normalizedCookie = InstagramApiClient.normalizeToIosCookie(cookiePart)
+                                        val dsUserIdMatch = Regex("ds_user_id=([0-9]+)").find(normalizedCookie)
+                                        val sessionIdMatch = Regex("sessionid=([^;]+)").find(normalizedCookie)
 
-                                        if (dsUserIdMatch == null && sessionIdMatch == null && !cookiePart.contains("sessionid")) {
+                                        if (dsUserIdMatch == null && sessionIdMatch == null && !normalizedCookie.contains("sessionid")) {
                                             failedCount++
                                             continue
                                         }
@@ -283,7 +284,7 @@ fun InstagramCookieBottomSheet(
                                         var followersCount = 0
                                         var followingCount = 0
                                         var postsCount = 0
-                                        val checkResult = InstagramApiClient.checkCookieIg(cookiePart, proxyPart)
+                                        val checkResult = InstagramApiClient.checkCookieIg(normalizedCookie, proxyPart)
                                         val isLive = checkResult.isLive
                                         if (checkResult.username.isNotBlank()) {
                                             username = checkResult.username
@@ -308,7 +309,7 @@ fun InstagramCookieBottomSheet(
                                                 com.cayxu.app.data.local.InstagramAccount(
                                                     username = username,
                                                     userId = dsUserId,
-                                                    cookie = cookiePart,
+                                                    cookie = normalizedCookie,
                                                     userAgent = devProfile.userAgent,
                                                     proxy = proxyPart,
                                                     fullName = fullName,

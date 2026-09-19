@@ -164,7 +164,7 @@ fun XsmmAccountScreen(navController: NavController) {
         if (selectedPlatform == "instagram") {
             val needCheck = instagramAccounts.mapNotNull { username ->
                 val acc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, username)
-                if (acc != null && (acc.avatar.isBlank() || !acc.avatar.startsWith("http") || acc.fullName.isBlank()) && acc.cookie.isNotBlank()) acc else null
+                if (acc != null && (acc.username.startsWith("IG_") || !acc.isLive || acc.avatar.isBlank() || !acc.avatar.startsWith("http") || acc.fullName.isBlank()) && acc.cookie.isNotBlank()) acc else null
             }
             if (needCheck.isNotEmpty()) {
                 scope.launch(Dispatchers.IO) {
@@ -177,8 +177,9 @@ fun XsmmAccountScreen(navController: NavController) {
                             )
                             val info = client.fetchAccountDetails(acc.username)
                             val freshPic = info.profilePicUrl?.takeIf { it.startsWith("http") }
-                            if (freshPic != null || info.fullName.isNotBlank()) {
+                            if (freshPic != null || info.fullName.isNotBlank() || (info.username.isNotBlank() && acc.username.startsWith("IG_")) || info.isLive != acc.isLive) {
                                 val updated = acc.copy(
+                                    username = if (info.username.isNotBlank() && !info.username.startsWith("IG_")) info.username else acc.username,
                                     fullName = info.fullName.ifBlank { acc.fullName },
                                     avatar = freshPic ?: acc.avatar,
                                     followersCount = if (info.followersCount > 0) info.followersCount else acc.followersCount,
