@@ -60,15 +60,14 @@ fun FacebookAccountDetailSheet(
     var isUploadingAvatar by remember { mutableStateOf(false) }
     var isUploadingCover by remember { mutableStateOf(false) }
 
-    // Launcher chọn ảnh đại diện (Avatar)
+    // Launcher chọn ảnh đại diện (Avatar) qua 100% Graph API (Token)
     val pickAvatarLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val token = account.bio.ifBlank { null }
-            val cookie = account.note.ifBlank { null }
-            if (token.isNullOrBlank() && cookie.isNullOrBlank()) {
-                Toast.makeText(context, "Tài khoản cần có Token hoặc Cookie để đổi Avatar", Toast.LENGTH_SHORT).show()
+            val token = account.bio.ifBlank { "" }
+            if (token.isBlank()) {
+                Toast.makeText(context, "Tài khoản cần có Access Token để đổi Avatar", Toast.LENGTH_SHORT).show()
                 return@rememberLauncherForActivityResult
             }
 
@@ -94,15 +93,13 @@ fun FacebookAccountDetailSheet(
 
                     val mediaEngine = FacebookMediaEngine(
                         accessToken = token,
-                        cookieStr = cookie,
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
                     val result = mediaEngine.updateAvatar(
                         imageBytes = bytes,
                         targetId = account.uid,
-                        tokenParam = token,
-                        cookieParam = cookie
+                        tokenParam = token
                     )
 
                     withContext(Dispatchers.Main) {
@@ -110,8 +107,8 @@ fun FacebookAccountDetailSheet(
                         if (result.isSuccess) {
                             Toast.makeText(context, "Đổi Avatar thành công!", Toast.LENGTH_SHORT).show()
                             // Lấy lại URL avatar mới
-                            val updatedMedia = mediaEngine.getProfileMedia(account.uid, tokenParam = token, cookieParam = cookie)
-                            val rawAvatar = updatedMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/${account.uid}/picture?type=large"
+                            val updatedMedia = mediaEngine.getProfileMedia(account.uid, tokenParam = token)
+                            val rawAvatar = updatedMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/${account.uid}/picture?type=large&access_token=$token"
                             val newAvatarUrl = if (rawAvatar.contains("?")) "$rawAvatar&t=${System.currentTimeMillis()}" else "$rawAvatar?t=${System.currentTimeMillis()}"
                             currentAvatar = newAvatarUrl
                             val updatedAcc = account.copy(avatar = newAvatarUrl, cover = currentCover)
@@ -130,15 +127,14 @@ fun FacebookAccountDetailSheet(
         }
     }
 
-    // Launcher chọn ảnh bìa (Cover)
+    // Launcher chọn ảnh bìa (Cover) qua 100% Graph API (Token)
     val pickCoverLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val token = account.bio.ifBlank { null }
-            val cookie = account.note.ifBlank { null }
-            if (token.isNullOrBlank() && cookie.isNullOrBlank()) {
-                Toast.makeText(context, "Tài khoản cần có Token hoặc Cookie để đổi Ảnh Bìa", Toast.LENGTH_SHORT).show()
+            val token = account.bio.ifBlank { "" }
+            if (token.isBlank()) {
+                Toast.makeText(context, "Tài khoản cần có Access Token để đổi Ảnh Bìa", Toast.LENGTH_SHORT).show()
                 return@rememberLauncherForActivityResult
             }
 
@@ -164,22 +160,20 @@ fun FacebookAccountDetailSheet(
 
                     val mediaEngine = FacebookMediaEngine(
                         accessToken = token,
-                        cookieStr = cookie,
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
                     val result = mediaEngine.updateCoverPhoto(
                         imageBytes = bytes,
                         targetId = account.uid,
-                        tokenParam = token,
-                        cookieParam = cookie
+                        tokenParam = token
                     )
 
                     withContext(Dispatchers.Main) {
                         isUploadingCover = false
                         if (result.isSuccess) {
                             Toast.makeText(context, "Đổi Ảnh Bìa thành công!", Toast.LENGTH_SHORT).show()
-                            val updatedMedia = mediaEngine.getProfileMedia(account.uid, tokenParam = token, cookieParam = cookie)
+                            val updatedMedia = mediaEngine.getProfileMedia(account.uid, tokenParam = token)
                             val rawCover = updatedMedia?.coverUrl.orEmpty()
                             if (rawCover.isNotBlank()) {
                                 val newCoverUrl = if (rawCover.contains("?")) "$rawCover&t=${System.currentTimeMillis()}" else "$rawCover?t=${System.currentTimeMillis()}"

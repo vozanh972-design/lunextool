@@ -485,35 +485,33 @@ class FacebookAccountManager {
     }
 
     /**
-     * Đổi avatar Facebook qua FacebookMediaEngine (hỗ trợ Cookie Web và Graph API)
+     * Đổi avatar Facebook qua FacebookMediaEngine 100% Graph API (Token)
      */
     @Throws(Exception::class)
     fun changeProfilePicture(
         token: String?,
         imageBytes: ByteArray,
         proxyStr: String? = null,
-        cookieStr: String? = null,
         uid: String? = null
     ): String? {
+        if (token.isNullOrBlank()) return null
         val proxyParts = proxyStr?.split(":")
         val proxyHost = proxyParts?.getOrNull(0)
         val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
 
         val mediaEngine = FacebookMediaEngine(
             accessToken = token,
-            cookieStr = cookieStr,
             proxyHost = proxyHost,
             proxyPort = proxyPort
         )
         val result = mediaEngine.updateAvatar(
             imageBytes = imageBytes,
             targetId = uid,
-            tokenParam = token,
-            cookieParam = cookieStr
+            tokenParam = token
         )
         if (result.isSuccess) {
-            val media = mediaEngine.getProfileMedia(uid, tokenParam = token, cookieParam = cookieStr)
-            return media?.avatarUrl ?: "$GRAPH_BASE_URL/${uid ?: "me"}/picture?type=large"
+            val media = mediaEngine.getProfileMedia(uid, tokenParam = token)
+            return media?.avatarUrl ?: "$GRAPH_BASE_URL/${uid ?: "me"}/picture?type=large&access_token=$token"
         }
         return null
     }

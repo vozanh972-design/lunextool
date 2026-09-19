@@ -309,11 +309,18 @@ fun XsmmAccountScreen(navController: NavController) {
                         }
                         return@launch
                     }
+                    val token = acc.bio.ifBlank { "" }
+                    if (token.isBlank()) {
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Tài khoản cần có Access Token để đổi Avatar", android.widget.Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                        return@launch
+                    }
+
                     withContext(Dispatchers.Main) {
                         android.widget.Toast.makeText(context, "Đang đổi ảnh đại diện Facebook...", android.widget.Toast.LENGTH_SHORT).show()
                     }
-                    val token = acc.bio.ifBlank { null }
-                    val cookie = acc.note.ifBlank { null }
                     val proxy = acc.phone.ifBlank { null }
                     val proxyParts = proxy?.split(":")
                     val proxyHost = proxyParts?.getOrNull(0)
@@ -321,20 +328,18 @@ fun XsmmAccountScreen(navController: NavController) {
 
                     val mediaEngine = com.cayxu.app.facebook.FacebookMediaEngine(
                         accessToken = token,
-                        cookieStr = cookie,
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
                     val result = mediaEngine.updateAvatar(
                         imageBytes = bytes,
                         targetId = acc.uid,
-                        tokenParam = token,
-                        cookieParam = cookie
+                        tokenParam = token
                     )
 
                     if (result.isSuccess) {
-                        val updatedMedia = mediaEngine.getProfileMedia(acc.uid, tokenParam = token, cookieParam = cookie)
-                        val rawAvatar = updatedMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/${acc.uid}/picture?type=large"
+                        val updatedMedia = mediaEngine.getProfileMedia(acc.uid, tokenParam = token)
+                        val rawAvatar = updatedMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/${acc.uid}/picture?type=large&access_token=$token"
                         val finalAvatar = if (rawAvatar.contains("?")) "$rawAvatar&t=${System.currentTimeMillis()}" else "$rawAvatar?t=${System.currentTimeMillis()}"
                         val updatedAcc = acc.copy(avatar = finalAvatar)
                         com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updatedAcc)
