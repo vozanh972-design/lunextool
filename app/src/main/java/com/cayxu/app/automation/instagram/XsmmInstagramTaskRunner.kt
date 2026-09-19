@@ -18,7 +18,7 @@ import kotlin.coroutines.coroutineContext
 
 /**
  * Runner chạy tự động nhiệm vụ Instagram trên XSMM áp dụng 100% logic từ script Python TA Tool:
- * 1. Kiểm tra Cookie Live qua checkCookieIg (/api/v1/accounts/edit/web_form_data/).
+ * 1. Kiểm tra Cookie Live qua checkCookieIg (100% Instagram App REST API: /api/v1/users/{userId}/info/).
  * 2. Đồng bộ Nick lên XSMM (accounts2 -> add_account nếu chưa có).
  * 3. Chế độ nhiệm vụ: Tym (Like), Follow, Comment, hoặc Ngẫu nhiên (random.choice).
  * 4. Luồng Follow: Tự động gom đủ 10 job -> Gửi duyệt nhận xu và break để refresh task mới.

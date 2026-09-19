@@ -21,11 +21,10 @@ import com.cayxu.app.util.NativeSecurity
 import com.cayxu.app.facebook.TotpGenerator
 
 /**
- * Client tương tác Instagram theo 100% LOGIC THỰC TẾ TỪ CURL INSTAGRAM WEB (không lai tạp logic cũ):
- * - Device Fingerprint Engine: Sinh cấu hình thiết bị (UA + Sec-CH Client Hints) riêng biệt cho từng acc dựa trên UID, không trùng UA, không lệch thông số.
- * - InstagramSession: Lưu trữ cache toàn bộ Header & Token (fb_dtsg, lsd, jazoest, av, csrftoken) 1 lần duy nhất, dùng xuyên suốt phiên (không tạo mới header hay gọi request thừa).
- * - GraphQL Mutations chuẩn cURL Web: usePolarisFollowMutation, usePolarisLikeMediaXIGLikeMutation, PolarisPostCommentInputRevampedMutation.
- * - Đổi Avatar & Lấy Avatar: POST web_change_profile_picture và GET get_profile_pic_props.
+ * Client tương tác Instagram chuẩn 100% INSTAGRAM APP NATIVE (không lai tạp Instagram Web):
+ * - Device Fingerprint Engine: Sinh cấu hình thiết bị Android App (Instagram 447.0.0.55.81 Android) riêng biệt cho từng acc dựa trên UID.
+ * - InstagramSession: Lưu trữ cache Session chuẩn Instagram App REST API (Cookie, X-IG-App-ID, X-IG-Capabilities, X-IG-Connection-Type, X-CSRFToken).
+ * - 100% App REST API: Đăng nhập (/api/v1/accounts/login/), 2FA (/api/v1/accounts/two_factor_login/), Lấy Avatar HD (/api/v1/users/{userId}/info/), Đổi Avatar (/api/v1/accounts/change_profile_picture/), Xóa Avatar (/api/v1/accounts/remove_profile_picture/), Follow (/api/v1/friendships/create/), Like (/api/v1/media/{mediaId}/like/), Comment (/api/v1/media/{mediaId}/comment/).
  */
 class InstagramApiClient(
     var cookie: String = "",
@@ -237,7 +236,7 @@ class InstagramApiClient(
         var finalId = targetIdOrUsername.trim().removePrefix("@")
         val proxyStr = proxyConfig?.let { "${it.host}:${it.port}:${it.username.orEmpty()}:${it.password.orEmpty()}" }
         if (!finalId.all { it.isDigit() }) {
-            val resolved = resolveTargetUserId(profileUrl.ifBlank { "https://www.instagram.com/$finalId/" }, proxyStr)
+            val resolved = resolveTargetUserId(profileUrl.ifBlank { finalId }, proxyStr)
             if (!resolved.isNullOrBlank()) {
                 finalId = resolved
             }
@@ -311,18 +310,10 @@ class InstagramApiClient(
         val APP_ID_MOBILE: String get() = IG_APP_ID_PRIVATE
         val ASBD_ID_MOBILE: String get() = ""
 
-        val HS_VERSION: String get() = NativeSecurity.getIgHsVersion()
-        val REV_VERSION: String get() = NativeSecurity.getIgRevVersion()
-
-        val DOC_ID_FOLLOW: String get() = NativeSecurity.getIgDocIdFollow()
-        val DOC_ID_LIKE: String get() = NativeSecurity.getIgDocIdLike()
-        val DOC_ID_COMMENT: String get() = NativeSecurity.getIgDocIdComment()
-        val DOC_ID_PROFILE_PAGE: String get() = NativeSecurity.getIgDocIdProfilePage()
-        val DOC_ID_PROFILE_POSTS: String get() = NativeSecurity.getIgDocIdProfilePosts()
-
-        val DEFAULT_LSD: String get() = NativeSecurity.getIgDefaultLsd()
-        val DEFAULT_JAZOEST: String get() = NativeSecurity.getIgDefaultJazoest()
-        val DEFAULT_FB_DTSG: String get() = NativeSecurity.getIgDefaultFbDtsg()
+        const val BASE_URL = "https://i.instagram.com/api/v1"
+        const val APP_ID = IG_APP_ID_PRIVATE
+        const val CONNECTION_TYPE = IG_CONN_TYPE
+        const val CAPABILITIES = IG_CAPABILITIES
 
         // ========================================================================
         // DEVICE FINGERPRINT ENGINE: 100% Android App Instagram 447
@@ -716,11 +707,6 @@ class InstagramApiClient(
         }
 
         /**
-         * LẤY ẢNH ĐẠI DIỆN CHUẨN 100% THEO INSTAGRAM ENGINE (APP REST API):
-         * 1. GET https://i.instagram.com/api/v1/users/{userId|username}/info/ (App API lấy HD Avatar)
-         * 2. HTML trang cá nhân & web fallback
-         */
-        /**
          * LẤY ẢNH ĐẠI DIỆN CHUẨN 100% THEO INSTAGRAM APP REST API:
          * 1. GET https://i.instagram.com/api/v1/users/{userId|username}/info/ (App API lấy HD Avatar)
          * 2. GET https://i.instagram.com/api/v1/users/web_profile_info/?username={username} (App REST Fallback)
@@ -1033,31 +1019,56 @@ class InstagramApiClient(
                 } catch (_: Exception) {}
             }
 
-            // 2. Fallback trích xuất UID từ link
-            return try {
-                val req = Request.Builder()
-                    .url(if (clean.startsWith("http")) clean else "https://www.instagram.com/$clean/")
-                    .addHeader("User-Agent", IG_APP_UA)
-                    .get()
-                    .build()
-                val html = client.newCall(req).execute().body?.string().orEmpty()
-
-                var m = Pattern.compile("\"profile_id\":\"(\\d+)\"").matcher(html)
-                if (m.find()) return m.group(1)
-
-                m = Pattern.compile("\"user_id\":\"(\\d+)\"").matcher(html)
-                if (m.find()) return m.group(1)
-
-                m = Pattern.compile("profilePage_(\\d+)").matcher(html)
-                if (m.find()) return m.group(1)
-
-                m = Pattern.compile("\"id\":\"(\\d{5,})\"").matcher(html)
-                if (m.find()) return m.group(1)
-
-                null
-            } catch (_: Exception) {
-                null
+            // 2. Fallback tra cứu bằng App REST API /api/v1/users/{clean}/info/
+            if (!clean.startsWith("http")) {
+                try {
+                    val req = Request.Builder()
+                        .url("https://i.instagram.com/api/v1/users/$clean/info/")
+                        .get()
+                        .header("User-Agent", IG_APP_UA)
+                        .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                        .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                        .header("X-IG-Capabilities", IG_CAPABILITIES)
+                        .build()
+                    val res = client.newCall(req).execute()
+                    if (res.isSuccessful) {
+                        val body = cleanJsonResponse(res.body?.string().orEmpty())
+                        val json = try { JSONObject(body) } catch (_: Exception) { null }
+                        val uid = json?.optJSONObject("user")?.optString("pk")
+                        if (!uid.isNullOrBlank()) return uid
+                    }
+                } catch (_: Exception) {}
             }
+
+            // 3. Fallback trích xuất UID từ link nếu truyền vào dạng URL
+            if (clean.startsWith("http")) {
+                return try {
+                    val req = Request.Builder()
+                        .url(clean)
+                        .addHeader("User-Agent", IG_APP_UA)
+                        .get()
+                        .build()
+                    val html = client.newCall(req).execute().body?.string().orEmpty()
+
+                    var m = Pattern.compile("\"profile_id\":\"(\\d+)\"").matcher(html)
+                    if (m.find()) return m.group(1)
+
+                    m = Pattern.compile("\"user_id\":\"(\\d+)\"").matcher(html)
+                    if (m.find()) return m.group(1)
+
+                    m = Pattern.compile("profilePage_(\\d+)").matcher(html)
+                    if (m.find()) return m.group(1)
+
+                    m = Pattern.compile("\"id\":\"(\\d{5,})\"").matcher(html)
+                    if (m.find()) return m.group(1)
+
+                    null
+                } catch (_: Exception) {
+                    null
+                }
+            }
+
+            return null
         }
 
         fun resolveMediaId(linkJob: String, proxy: String? = null): String? {
@@ -1152,13 +1163,9 @@ class InstagramApiClient(
         }
 
         /**
-         * TỰ ĐỘNG CHUẨN HÓA MỌI LOẠI COOKIE (Desktop Chrome/Firefox/Edge, Android app/webview, iOS)
-         * VỀ CHUẨN 100% MOBILE WEB SAFARI IOS:
-         * - Không hardcode bất kỳ tài khoản hay giá trị riêng nào.
-         * - Chuẩn hóa tham số viewport wd về chuẩn iPhone (390x844).
-         * - Chuẩn hóa mật độ điểm ảnh dpr về Retina (3).
+         * CHUẨN HÓA COOKIE CHO INSTAGRAM APP NATIVE:
          * - Tự động trích xuất ds_user_id từ sessionid nếu cookie nguồn thiếu ds_user_id.
-         * - Giữ nguyên toàn bộ token xác thực phiên: sessionid, ds_user_id, csrftoken, mid, ig_did, datr, rur,...
+         * - Giữ nguyên toàn bộ token xác thực phiên App: sessionid, ds_user_id, csrftoken, mid, ig_did, datr, rur,...
          */
         fun normalizeToIosCookie(rawCookie: String): String {
             if (rawCookie.isBlank()) return ""
@@ -1192,10 +1199,6 @@ class InstagramApiClient(
                     cookieMap["ds_user_id"] = potentialUid
                 }
             }
-
-            // Luôn đồng bộ chuẩn thông số màn hình iOS Retina (iPhone)
-            cookieMap["wd"] = "390x844"
-            cookieMap["dpr"] = "3"
 
             return cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
         }
@@ -1437,11 +1440,6 @@ class InstagramApiClient(
         }
 
         /**
-         * Đăng nhập Instagram bằng username / mail / uid | password | 2fa | proxy.
-         * Mã hóa mật khẩu chuẩn Meta #PWD_INSTAGRAM:4: (RSA + AES-256-GCM).
-         * Hỗ trợ tự động giải mã 2FA TOTP 6 số và xử lý Two-Factor Challenge.
-         */
-        /**
          * Đăng nhập Instagram chuẩn 100% INSTAGRAM APP REST API (Instagram Engine):
          * - Base URL: https://i.instagram.com/api/v1/accounts/login/
          * - Mã hóa mật khẩu chuẩn Meta #PWD_INSTAGRAM:4: (RSA + AES-256-GCM).
@@ -1624,112 +1622,6 @@ class InstagramApiClient(
                 }
             } catch (e: Exception) {
                 IgLoginResult(isSuccess = false, message = e.message ?: "Lỗi kết nối", rawResponse = "")
-            }
-
-            // 3. Nếu máy chủ trả về needs_upgrade (chặn phiên bản client), hoàn tất phiên an toàn
-            if (!primaryResult.isSuccess && primaryResult.rawResponse.contains("needs_upgrade")) {
-                var csrfToken = cookieStore["csrftoken"].orEmpty()
-                if (csrfToken.isBlank()) {
-                    csrfToken = java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 32)
-                    cookieStore["csrftoken"] = csrfToken
-                }
-
-                val fbFormBody = FormBody.Builder()
-                    .add("username", usernameInput.trim())
-                    .add("enc_password", encPassword)
-                    .add("queryParams", "{}")
-                    .add("optIntoOneTap", "false")
-                    .build()
-
-                val fbReq = Request.Builder()
-                    .url("https://www.instagram.com/api/v1/web/accounts/login/ajax/")
-                    .post(fbFormBody)
-                    .header("User-Agent", devProfile.userAgent)
-                    .header("x-ig-app-id", "1217981644879628")
-                    .header("x-csrftoken", csrfToken)
-                    .header("referer", "https://www.instagram.com/accounts/login/")
-                    .header("origin", "https://www.instagram.com")
-                    .header("x-requested-with", "XMLHttpRequest")
-                    .build()
-
-                try {
-                    val fbRes = client.newCall(fbReq).execute()
-                    val fbRaw = fbRes.body?.string().orEmpty()
-                    val fbJson = try { JSONObject(fbRaw) } catch (_: Exception) { null }
-
-                    if (fbJson?.optBoolean("authenticated", false) == true) {
-                        val userId = fbJson.optString("userId", "").orEmpty()
-                        val finalCookie = buildFinalCookie()
-                        val checkInfo = try { checkCookieIg(finalCookie, proxy) } catch (_: Exception) { CookieCheckResult(isLive = true) }
-                        val resolvedUsername = checkInfo.username.ifBlank { usernameInput.substringBefore("@") }
-
-                        return IgLoginResult(
-                            isSuccess = true,
-                            userId = userId.ifBlank { checkInfo.userId },
-                            username = resolvedUsername,
-                            fullName = checkInfo.fullName,
-                            cookie = finalCookie,
-                            avatarUrl = checkInfo.profilePicUrl,
-                            message = "Đăng nhập thành công",
-                            rawResponse = fbRaw
-                        )
-                    } else if (fbJson?.optBoolean("two_factor_required", false) == true) {
-                        val twoFactorInfo = fbJson.optJSONObject("two_factor_info")
-                        val twoFactorIdentifier = twoFactorInfo?.optString("two_factor_identifier").orEmpty()
-                        val secretClean = twoFaSecret?.trim().orEmpty()
-
-                        if (secretClean.isNotBlank()) {
-                            val otpCode = if (secretClean.length == 6 && secretClean.all { it.isDigit() }) {
-                                secretClean
-                            } else {
-                                TotpGenerator.generateTotp(secretClean)
-                            }
-
-                            if (otpCode.isNotBlank()) {
-                                val twoFaBody = FormBody.Builder()
-                                    .add("username", usernameInput.trim())
-                                    .add("verificationCode", otpCode)
-                                    .add("two_factor_identifier", twoFactorIdentifier)
-                                    .add("trust_this_device", "1")
-                                    .add("queryParams", "{}")
-                                    .build()
-
-                                val twoFaReq = Request.Builder()
-                                    .url("https://www.instagram.com/api/v1/web/accounts/login/ajax/two_factor/")
-                                    .post(twoFaBody)
-                                    .header("User-Agent", devProfile.userAgent)
-                                    .header("x-ig-app-id", "1217981644879628")
-                                    .header("x-csrftoken", cookieStore["csrftoken"] ?: csrfToken)
-                                    .header("referer", "https://www.instagram.com/accounts/login/two_factor")
-                                    .header("origin", "https://www.instagram.com")
-                                    .header("x-requested-with", "XMLHttpRequest")
-                                    .build()
-
-                                val twoFaRes = client.newCall(twoFaReq).execute()
-                                val twoFaRaw = twoFaRes.body?.string().orEmpty()
-                                val twoFaJson = try { JSONObject(twoFaRaw) } catch (_: Exception) { null }
-
-                                if (twoFaJson?.optBoolean("authenticated", false) == true) {
-                                    val userId = twoFaJson.optString("userId", "").orEmpty()
-                                    val finalCookie = buildFinalCookie()
-                                    val checkInfo = try { checkCookieIg(finalCookie, proxy) } catch (_: Exception) { CookieCheckResult(isLive = true) }
-                                    val resolvedUsername = checkInfo.username.ifBlank { usernameInput.substringBefore("@") }
-
-                                    return IgLoginResult(
-                                        isSuccess = true,
-                                        userId = userId.ifBlank { checkInfo.userId },
-                                        username = resolvedUsername,
-                                        fullName = checkInfo.fullName,
-                                        cookie = finalCookie,
-                                        avatarUrl = checkInfo.profilePicUrl,
-                                        message = "Xác thực 2FA thành công",
-                                        rawResponse = twoFaRaw
-                                    )
-                                }
-                            }
-                        }
-                    }
-                } catch (_: Exception) {}
             }
 
             return primaryResult
