@@ -180,9 +180,10 @@ class FacebookMediaEngine(
             return MediaResult(false, null, e.message, "")
         }
 
-        // 2. Gán photoId làm Avatar qua /{target}/picture
+        // 2. Gán photoId làm Avatar qua /{target}/picture (theo ProfileAvatarBiaEngine: param "photo_id")
         val setPicBody = FormBody.Builder()
             .add("access_token", token)
+            .add("photo_id", photoId)
             .add("photo", photoId)
             .add("picture", photoId)
             .build()
@@ -202,7 +203,27 @@ class FacebookMediaEngine(
             }
         } catch (_: Exception) {}
 
-        // Fallback: POST /{target} với picture=photoId
+        // Fallback 1: Trực tiếp upload multipart vào /{target}/picture
+        try {
+            val directPart = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("access_token", token)
+                .addFormDataPart("source", "avatar.jpg", fileBody)
+                .build()
+            val directReq = Request.Builder()
+                .url("$GRAPH_API_URL/$target/picture?access_token=$token")
+                .post(directPart)
+                .header("User-Agent", KATANA_USER_AGENT)
+                .header("Authorization", "OAuth $token")
+                .build()
+            val directRes = httpClient.newCall(directReq).execute()
+            val directStr = directRes.body?.string() ?: ""
+            if (directRes.isSuccessful && !directStr.contains("\"error\"")) {
+                return MediaResult(true, photoId, "Cập nhật ảnh đại diện thành công", directStr)
+            }
+        } catch (_: Exception) {}
+
+        // Fallback 2: POST /{target} với picture=photoId
         val setPicBody2 = FormBody.Builder()
             .add("access_token", token)
             .add("picture", photoId)
@@ -252,6 +273,7 @@ class FacebookMediaEngine(
             .setType(MultipartBody.FORM)
             .addFormDataPart("access_token", token)
             .addFormDataPart("published", "true")
+            .addFormDataPart("no_feed", "true")
             .addFormDataPart("source", "cover_${System.currentTimeMillis()}.jpg", fileBody)
             .build()
 
