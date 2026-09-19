@@ -479,7 +479,8 @@ class InstagramApiClient(
         }
 
         // ========================================================================
-        // GRAPHQL EXECUTIONS (CHỈ GỬI 1 REQUEST DUY NHẤT VỚI HEADERS CÓ SẴN)
+        // 100% INSTAGRAM APP REST API (KHÔNG LAI TẠP GRAPHQL / WEB)
+        // Lấy nguyên bản từ Instagram Engine (App Instagram 447 Android APK)
         // ========================================================================
 
         private fun executeFollow(
@@ -490,47 +491,35 @@ class InstagramApiClient(
         ): IgActionResult {
             if (targetId.isBlank()) return IgActionResult(false, "Lỗi Target ID")
             val client = buildOkHttpClient(proxyConfig, timeoutSec = 15L)
-            val av = if (session.actorId.isNotBlank() && session.actorId != "0") session.actorId else extractActorId(session.cookie)
 
-            val variables = JSONObject().apply {
-                put("target_user_id", targetId)
-                put("container_module", "profile")
-                put("nav_chain", "PolarisFeedRoot:feedPage:5:topnav-link,PolarisProfileRoot:profilePage:6:unexpected")
-            }
-
-            val formBuilder = FormBody.Builder()
-                .add("av", av)
-                .add("__d", "www")
-                .add("__user", "0")
-                .add("__a", "1")
-                .add("__req", "s")
-                .add("__hs", HS_VERSION)
-                .add("dpr", session.deviceProfile.dpr)
-                .add("__ccg", "GOOD")
-                .add("__rev", REV_VERSION)
-                .add("__comet_req", "7")
-                .add("fb_dtsg", session.fbDtsg)
-                .add("jazoest", session.jazoest)
-                .add("lsd", session.lsd)
-                .add("fb_api_caller_class", "RelayModern")
-                .add("fb_api_req_friendly_name", "usePolarisFollowMutation")
-                .add("server_timestamps", "true")
-                .add("doc_id", DOC_ID_FOLLOW)
-                .add("variables", variables.toString())
+            val formBody = FormBody.Builder()
+                .add("user_id", targetId)
+                .add("radio_type", "wifi-none")
+                .build()
 
             val reqBuilder = Request.Builder()
-                .url(NativeSecurity.getIgEndpointGraphql())
-                .post(formBuilder.build())
+                .url("https://i.instagram.com/api/v1/friendships/create/$targetId/")
+                .post(formBody)
+                .header("User-Agent", IG_APP_UA)
+                .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                .header("X-IG-Capabilities", IG_CAPABILITIES)
+                .header("Cookie", session.cookie)
 
-            session.baseHeaders.forEach { (k, v) -> reqBuilder.addHeader(k, v) }
-            reqBuilder.header("referer", if (profileUrl.isNotBlank()) profileUrl else "https://www.instagram.com/")
-            reqBuilder.header("x-fb-friendly-name", "usePolarisFollowMutation")
-            reqBuilder.header("x-fb-lsd", session.lsd)
+            val csrf = Regex("csrftoken=([^;]+)").find(session.cookie)?.groupValues?.get(1).orEmpty()
+            if (csrf.isNotBlank()) reqBuilder.header("X-CSRFToken", csrf)
 
             return try {
                 val res = client.newCall(reqBuilder.build()).execute()
                 val rawBody = res.body?.string().orEmpty()
-                parseGraphqlResult(rawBody, res.code)
+                val json = try { JSONObject(rawBody) } catch (_: Exception) { null }
+                val isOk = res.isSuccessful && (json?.optString("status") == "ok" || rawBody.contains("\"following\":true"))
+                if (isOk) {
+                    IgActionResult(true, "Theo dõi thành công", rawBody)
+                } else {
+                    val msg = json?.optString("message", "Lỗi gửi Follow") ?: "Lỗi gửi Follow"
+                    IgActionResult(false, msg, rawBody)
+                }
             } catch (e: Exception) {
                 IgActionResult(false, e.message ?: "Lỗi gửi Follow", "")
             }
@@ -544,51 +533,35 @@ class InstagramApiClient(
         ): IgActionResult {
             if (mediaId.isBlank()) return IgActionResult(false, "Lỗi Media ID")
             val client = buildOkHttpClient(proxyConfig, timeoutSec = 15L)
-            val av = if (session.actorId.isNotBlank() && session.actorId != "0") session.actorId else extractActorId(session.cookie)
 
-            val inputObj = JSONObject().apply {
-                put("actor_id", av)
-                put("client_mutation_id", Random.nextInt(1000000, 9999999).toString())
-                put("container_module", "single_post")
-                put("media_id", mediaId)
-            }
-            val variables = JSONObject().apply {
-                put("input", inputObj)
-            }
-
-            val formBuilder = FormBody.Builder()
-                .add("av", av)
-                .add("__d", "www")
-                .add("__user", "0")
-                .add("__a", "1")
-                .add("__req", "h")
-                .add("__hs", HS_VERSION)
-                .add("dpr", session.deviceProfile.dpr)
-                .add("__ccg", "GOOD")
-                .add("__rev", REV_VERSION)
-                .add("__comet_req", "7")
-                .add("fb_dtsg", session.fbDtsg)
-                .add("jazoest", session.jazoest)
-                .add("lsd", session.lsd)
-                .add("fb_api_caller_class", "RelayModern")
-                .add("fb_api_req_friendly_name", "usePolarisLikeMediaXIGLikeMutation")
-                .add("server_timestamps", "true")
-                .add("doc_id", DOC_ID_LIKE)
-                .add("variables", variables.toString())
+            val formBody = FormBody.Builder()
+                .add("media_id", mediaId)
+                .add("radio_type", "wifi-none")
+                .build()
 
             val reqBuilder = Request.Builder()
-                .url(NativeSecurity.getIgEndpointGraphql())
-                .post(formBuilder.build())
+                .url("https://i.instagram.com/api/v1/media/$mediaId/like/")
+                .post(formBody)
+                .header("User-Agent", IG_APP_UA)
+                .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                .header("X-IG-Capabilities", IG_CAPABILITIES)
+                .header("Cookie", session.cookie)
 
-            session.baseHeaders.forEach { (k, v) -> reqBuilder.addHeader(k, v) }
-            reqBuilder.header("referer", if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
-            reqBuilder.header("x-fb-friendly-name", "usePolarisLikeMediaXIGLikeMutation")
-            reqBuilder.header("x-fb-lsd", session.lsd)
+            val csrf = Regex("csrftoken=([^;]+)").find(session.cookie)?.groupValues?.get(1).orEmpty()
+            if (csrf.isNotBlank()) reqBuilder.header("X-CSRFToken", csrf)
 
             return try {
                 val res = client.newCall(reqBuilder.build()).execute()
                 val rawBody = res.body?.string().orEmpty()
-                parseGraphqlResult(rawBody, res.code)
+                val json = try { JSONObject(rawBody) } catch (_: Exception) { null }
+                val isOk = res.isSuccessful && json?.optString("status") == "ok"
+                if (isOk) {
+                    IgActionResult(true, "Thả tim thành công", rawBody)
+                } else {
+                    val msg = json?.optString("message", "Lỗi thả tim") ?: "Lỗi thả tim"
+                    IgActionResult(false, msg, rawBody)
+                }
             } catch (e: Exception) {
                 IgActionResult(false, e.message ?: "Lỗi gửi Tym", "")
             }
@@ -603,51 +576,35 @@ class InstagramApiClient(
         ): IgActionResult {
             if (mediaId.isBlank()) return IgActionResult(false, "Lỗi Media ID")
             val client = buildOkHttpClient(proxyConfig, timeoutSec = 15L)
-            val av = if (session.actorId.isNotBlank() && session.actorId != "0") session.actorId else extractActorId(session.cookie)
 
-            val inputObj = JSONObject().apply {
-                put("client_mutation_id", Random.nextInt(1000000, 9999999).toString())
-                put("actor_id", av)
-                put("comment_text", text)
-                put("media_id", mediaId)
-            }
-            val variables = JSONObject().apply {
-                put("input", inputObj)
-            }
-
-            val formBuilder = FormBody.Builder()
-                .add("av", av)
-                .add("__d", "www")
-                .add("__user", "0")
-                .add("__a", "1")
-                .add("__req", "u")
-                .add("__hs", HS_VERSION)
-                .add("dpr", session.deviceProfile.dpr)
-                .add("__ccg", "GOOD")
-                .add("__rev", REV_VERSION)
-                .add("__comet_req", "7")
-                .add("fb_dtsg", session.fbDtsg)
-                .add("jazoest", session.jazoest)
-                .add("lsd", session.lsd)
-                .add("fb_api_caller_class", "RelayModern")
-                .add("fb_api_req_friendly_name", "PolarisPostCommentInputRevampedMutation")
-                .add("server_timestamps", "true")
-                .add("doc_id", DOC_ID_COMMENT)
-                .add("variables", variables.toString())
+            val formBody = FormBody.Builder()
+                .add("comment_text", text)
+                .add("radio_type", "wifi-none")
+                .build()
 
             val reqBuilder = Request.Builder()
-                .url(NativeSecurity.getIgEndpointGraphql())
-                .post(formBuilder.build())
+                .url("https://i.instagram.com/api/v1/media/$mediaId/comment/")
+                .post(formBody)
+                .header("User-Agent", IG_APP_UA)
+                .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                .header("X-IG-Capabilities", IG_CAPABILITIES)
+                .header("Cookie", session.cookie)
 
-            session.baseHeaders.forEach { (k, v) -> reqBuilder.addHeader(k, v) }
-            reqBuilder.header("referer", if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
-            reqBuilder.header("x-fb-friendly-name", "PolarisPostCommentInputRevampedMutation")
-            reqBuilder.header("x-fb-lsd", session.lsd)
+            val csrf = Regex("csrftoken=([^;]+)").find(session.cookie)?.groupValues?.get(1).orEmpty()
+            if (csrf.isNotBlank()) reqBuilder.header("X-CSRFToken", csrf)
 
             return try {
                 val res = client.newCall(reqBuilder.build()).execute()
                 val rawBody = res.body?.string().orEmpty()
-                parseGraphqlResult(rawBody, res.code)
+                val json = try { JSONObject(rawBody) } catch (_: Exception) { null }
+                val isOk = res.isSuccessful && json?.optString("status") == "ok"
+                if (isOk) {
+                    IgActionResult(true, "Bình luận thành công", rawBody)
+                } else {
+                    val msg = json?.optString("message", "Lỗi gửi bình luận") ?: "Lỗi gửi bình luận"
+                    IgActionResult(false, msg, rawBody)
+                }
             } catch (e: Exception) {
                 IgActionResult(false, e.message ?: "Lỗi gửi CMT", "")
             }
@@ -692,8 +649,8 @@ class InstagramApiClient(
         }
 
         /**
-         * ĐỔI ẢNH ĐẠI DIỆN CHUẨN 100% THEO CURL INSTAGRAM WEB:
-         * Endpoint: POST https://www.instagram.com/api/v1/web/accounts/web_change_profile_picture/
+         * ĐỔI ẢNH ĐẠI DIỆN CHUẨN 100% THEO INSTAGRAM ENGINE (APP REST API):
+         * Endpoint: POST https://i.instagram.com/api/v1/accounts/change_profile_picture/
          */
         fun changeProfilePicture(
             imageBytes: ByteArray,
@@ -716,36 +673,31 @@ class InstagramApiClient(
                 .build()
 
             val reqBuilder = Request.Builder()
-                .url(NativeSecurity.getIgEndpointChangePic())
+                .url("https://i.instagram.com/api/v1/accounts/change_profile_picture/")
                 .post(requestBody)
+                .header("User-Agent", IG_APP_UA)
+                .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                .header("X-IG-Capabilities", IG_CAPABILITIES)
+                .header("Cookie", unquoted)
 
-            session.baseHeaders.forEach { (k, v) ->
-                if (!k.equals("content-type", ignoreCase = true)) {
-                    reqBuilder.addHeader(k, v)
-                }
-            }
-            reqBuilder.header("referer", "https://www.instagram.com/create/style/")
-            reqBuilder.header("origin", "https://www.instagram.com")
+            val csrf = Regex("csrftoken=([^;]+)").find(unquoted)?.groupValues?.get(1).orEmpty()
+            if (csrf.isNotBlank()) reqBuilder.header("X-CSRFToken", csrf)
 
             return try {
                 val res = client.newCall(reqBuilder.build()).execute()
                 val rawBody = res.body?.string().orEmpty()
                 val body = cleanJsonResponse(rawBody)
                 val json = try { JSONObject(body) } catch (_: Exception) { null }
-                val directUrl = json?.optString("profile_pic_url", "").orEmpty().ifBlank {
-                    json?.optJSONObject("user")?.optString("profile_pic_url", "").orEmpty().ifBlank {
+                val directUrl = json?.optJSONObject("user")?.optString("profile_pic_url", "").orEmpty().ifBlank {
+                    json?.optString("profile_pic_url", "").orEmpty().ifBlank {
                         json?.optString("profile_pic_url_hd", "").orEmpty()
                     }
                 }
                 if (directUrl.isNotBlank() && directUrl.startsWith("http")) {
                     session.profilePicUrl = directUrl
                     directUrl
-                } else if (res.isSuccessful ||
-                    json?.optBoolean("has_profile_pic", false) == true ||
-                    json?.optString("status") == "ok" ||
-                    json?.optBoolean("changed_profile") == true ||
-                    rawBody.contains("\"status\":\"ok\"")
-                ) {
+                } else if (res.isSuccessful || rawBody.contains("\"status\":\"ok\"")) {
                     val actorId = session.actorId.ifBlank { extractActorId(unquoted) }
                     var freshPic: String? = null
                     if (actorId.isNotBlank() && actorId != "0") {
@@ -770,11 +722,9 @@ class InstagramApiClient(
         }
 
         /**
-         * LẤY ẢNH ĐẠI DIỆN CHUẨN 100% THEO CURL INSTAGRAM:
-         * Đa tầng fallback:
-         * 1. HTML trang cá nhân (100% iOS Mobile Safari User-Agent, không bao giờ bị 429 rate limit)
-         * 2. web_profile_info (Mobile Web iOS Chuẩn)
-         * 3. get_profile_pic_props (Mobile Web Endpoint)
+         * LẤY ẢNH ĐẠI DIỆN CHUẨN 100% THEO INSTAGRAM ENGINE (APP REST API):
+         * 1. GET https://i.instagram.com/api/v1/users/{userId|username}/info/ (App API lấy HD Avatar)
+         * 2. HTML trang cá nhân & web fallback
          */
         fun fetchProfilePic(
             username: String,
@@ -786,6 +736,30 @@ class InstagramApiClient(
             val unquoted = normalizeToIosCookie(unquoteCookie(cookie))
             val session = getOrCreateSession(unquoted, proxyConfig = parseProxy(proxy))
             val client = buildOkHttpClient(parseProxy(proxy), timeoutSec = 15L)
+
+            // 1. App REST API chuẩn từ Instagram Engine
+            try {
+                val req = Request.Builder()
+                    .url("https://i.instagram.com/api/v1/users/$cleanUser/info/")
+                    .get()
+                    .header("User-Agent", IG_APP_UA)
+                    .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                    .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                    .header("X-IG-Capabilities", IG_CAPABILITIES)
+                    .header("Cookie", unquoted)
+                    .build()
+                val res = client.newCall(req).execute()
+                if (res.isSuccessful) {
+                    val body = res.body?.string().orEmpty()
+                    val json = try { JSONObject(body) } catch (_: Exception) { null }
+                    val user = json?.optJSONObject("user")
+                    val hdPic = user?.optJSONObject("hd_profile_pic_url_info")?.optString("url")
+                    val regPic = user?.optString("profile_pic_url")
+                    val pic = hdPic?.takeIf { it.isNotBlank() && it.startsWith("http") }
+                        ?: regPic?.takeIf { it.isNotBlank() && it.startsWith("http") }
+                    if (pic != null) return pic
+                }
+            } catch (_: Exception) {}
 
             // 1. Bóc tách trực tiếp từ HTML trang cá nhân (100% iOS Mobile Safari User-Agent, cực nhanh & chuẩn xác)
             try {
