@@ -18,6 +18,7 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import kotlin.random.Random
 import com.cayxu.app.util.NativeSecurity
+import com.cayxu.app.facebook.TotpGenerator
 
 /**
  * Client tương tác Instagram theo 100% LOGIC THỰC TẾ TỪ CURL INSTAGRAM WEB (không lai tạp logic cũ):
@@ -60,6 +61,18 @@ class InstagramApiClient(
 
     data class IgActionResult(
         val success: Boolean,
+        val message: String = "",
+        val rawResponse: String = ""
+    )
+
+    data class IgLoginResult(
+        val isSuccess: Boolean,
+        val userId: String = "",
+        val username: String = "",
+        val fullName: String = "",
+        val cookie: String = "",
+        val avatarUrl: String = "",
+        val isTwoFactorRequired: Boolean = false,
         val message: String = "",
         val rawResponse: String = ""
     )
@@ -1356,6 +1369,317 @@ class InstagramApiClient(
                     matchResult.value
                 }
             }
+        }
+
+        // IG App constants — lấy nguyên từ Instagram 447.0.0.55.81 APK
+        private const val IG_APP_UA =
+            "Instagram 447.0.0.55.81 Android (36/15; 480dpi; 1080x2340; samsung; SM-S928B; e3q; qcom; vi_VN; 385311890)"
+        private const val IG_APP_ID_PRIVATE = "567067343352427"
+        private const val IG_CAPABILITIES   = "3brTvw=="
+        private const val IG_CONN_TYPE      = "WIFI"
+
+        /**
+         * Lấy khóa mã hóa mật khẩu từ Instagram App Private API.
+         * Endpoint: POST i.instagram.com/api/v1/qe/sync/
+         * UA: Android App UA (không dùng web UA)
+         */
+        fun fetchPasswordEncryptionKey(client: OkHttpClient): Pair<Int, String>? {
+            val endpoints = listOf(
+                "https://i.instagram.com/api/v1/qe/sync/",
+                "https://i.instagram.com/api/v2/qe/sync/"
+            )
+            for (ep in endpoints) {
+                try {
+                    val req = Request.Builder()
+                        .url(ep)
+                        .post(FormBody.Builder().build())
+                        .header("User-Agent", IG_APP_UA)
+                        .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                        .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                        .header("X-IG-Capabilities", IG_CAPABILITIES)
+                        .build()
+                    client.newCall(req).execute().use { res ->
+                        val pubKey  = res.header("ig-set-password-encryption-pub-key")
+                        val keyIdStr = res.header("ig-set-password-encryption-key-id")
+                        if (!pubKey.isNullOrEmpty() && !keyIdStr.isNullOrEmpty()) {
+                            return Pair(keyIdStr.toInt(), pubKey)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            return null
+        }
+
+        /**
+         * Mã hóa mật khẩu theo chuẩn Meta Hybrid RSA + AES-256-GCM (#PWD_INSTAGRAM:4:).
+         * Đóng gói nhị phân: [1][key_id][12B IV][2B length][RSA Encrypted AES Key][16B Tag][Ciphertext]
+         */
+        fun encryptPassword(password: String, keyId: Int, publicKeyBase64OrPem: String): String {
+            val timestampSeconds = System.currentTimeMillis() / 1000L
+            val timestampStr = timestampSeconds.toString()
+
+            val random = java.security.SecureRandom()
+            val aesKeyBytes = ByteArray(32).also { random.nextBytes(it) }
+            val ivBytes = ByteArray(12).also { random.nextBytes(it) }
+
+            var pemText = publicKeyBase64OrPem.trim()
+            if (!pemText.contains("-----BEGIN")) {
+                try {
+                    val decodedBytes = android.util.Base64.decode(pemText, android.util.Base64.DEFAULT)
+                    val decodedStr = String(decodedBytes, Charsets.UTF_8)
+                    if (decodedStr.contains("-----BEGIN")) {
+                        pemText = decodedStr
+                    }
+                } catch (_: Exception) {}
+            }
+
+            val cleanKey = pemText
+                .replace("-----BEGIN PUBLIC KEY-----", "")
+                .replace("-----END PUBLIC KEY-----", "")
+                .replace("\r", "")
+                .replace("\n", "")
+                .trim()
+            val keyBytes = android.util.Base64.decode(cleanKey, android.util.Base64.DEFAULT)
+            val keySpec = java.security.spec.X509EncodedKeySpec(keyBytes)
+            val rsaPublicKey = java.security.KeyFactory.getInstance("RSA").generatePublic(keySpec)
+
+            val rsaCipher = javax.crypto.Cipher.getInstance("RSA/ECB/PKCS1Padding")
+            rsaCipher.init(javax.crypto.Cipher.ENCRYPT_MODE, rsaPublicKey)
+            val encryptedAesKey = rsaCipher.doFinal(aesKeyBytes)
+
+            val gcmCipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+            val secretKey = javax.crypto.spec.SecretKeySpec(aesKeyBytes, "AES")
+            val gcmSpec = javax.crypto.spec.GCMParameterSpec(128, ivBytes)
+            gcmCipher.init(javax.crypto.Cipher.ENCRYPT_MODE, secretKey, gcmSpec)
+            gcmCipher.updateAAD(timestampStr.toByteArray(Charsets.UTF_8))
+
+            val gcmCiphertextAndTag = gcmCipher.doFinal(password.toByteArray(Charsets.UTF_8))
+            val tagLength = 16
+            val ciphertextLength = gcmCiphertextAndTag.size - tagLength
+            val tagBytes = gcmCiphertextAndTag.copyOfRange(ciphertextLength, gcmCiphertextAndTag.size)
+            val ciphertextBytes = gcmCiphertextAndTag.copyOfRange(0, ciphertextLength)
+
+            val output = java.io.ByteArrayOutputStream()
+            output.write(1)
+            output.write(keyId)
+            output.write(ivBytes)
+            output.write(java.nio.ByteBuffer.allocate(2).order(java.nio.ByteOrder.LITTLE_ENDIAN).putShort(encryptedAesKey.size.toShort()).array())
+            output.write(encryptedAesKey)
+            output.write(tagBytes)
+            output.write(ciphertextBytes)
+
+            val b64Payload = android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
+            return "#PWD_INSTAGRAM:4:$timestampStr:$b64Payload"
+        }
+
+        /**
+         * Đăng nhập Instagram bằng username | password | 2fa (kèm hỗ trợ proxy).
+         * 100% Instagram App Private API — i.instagram.com/api/v1/accounts/login/
+         * UA: Android App UA (Instagram 447.0.0.55.81), không dùng web flow.
+         * Tự động sinh mã TOTP 6 số nếu có 2FA Secret.
+         */
+        fun loginWithCredentials(
+            usernameInput: String,
+            passwordRaw: String,
+            twoFaSecret: String? = null,
+            proxy: String? = null
+        ): IgLoginResult {
+            val proxyConfig = parseProxy(proxy)
+            val cookieStore = ConcurrentHashMap<String, String>()
+
+            val client = buildOkHttpClient(proxyConfig, timeoutSec = 30L).newBuilder()
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .cookieJar(object : CookieJar {
+                    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+                        for (c in cookies) cookieStore[c.name] = c.value
+                    }
+                    override fun loadForRequest(url: HttpUrl): List<Cookie> {
+                        return cookieStore.map { (name, value) ->
+                            Cookie.Builder().domain(url.host).name(name).value(value).build()
+                        }
+                    }
+                })
+                .build()
+
+            // Device fingerprint ổn định theo username (không random mỗi lần)
+            val seed     = usernameInput.hashCode().toLong().and(0xFFFFFFFFL)
+            val deviceId = "android-" + "%016x".format(seed * 6364136223846793005L + 1442695040888963407L).substring(0, 16)
+            val phoneId  = java.util.UUID.nameUUIDFromBytes("phone-$usernameInput".toByteArray()).toString()
+            val guid     = java.util.UUID.nameUUIDFromBytes("guid-$usernameInput".toByteArray()).toString()
+
+            // 1. Lấy khóa mã hóa mật khẩu từ Instagram App Private API
+            val keyInfo = fetchPasswordEncryptionKey(client)
+            val encPassword = if (keyInfo != null) {
+                try { encryptPassword(passwordRaw, keyInfo.first, keyInfo.second) }
+                catch (_: Exception) { "#PWD_INSTAGRAM:0:${System.currentTimeMillis() / 1000L}:$passwordRaw" }
+            } else {
+                "#PWD_INSTAGRAM:0:${System.currentTimeMillis() / 1000L}:$passwordRaw"
+            }
+
+            // 2. Gửi login — Instagram App Private API (i.instagram.com)
+            val formBody = FormBody.Builder()
+                .add("username", usernameInput.trim())
+                .add("enc_password", encPassword)
+                .add("device_id", deviceId)
+                .add("phone_id", phoneId)
+                .add("guid", guid)
+                .add("login_attempt_count", "0")
+                .build()
+
+            val loginRes = try {
+                client.newCall(
+                    Request.Builder()
+                        .url("https://i.instagram.com/api/v1/accounts/login/")
+                        .post(formBody)
+                        .header("User-Agent", IG_APP_UA)
+                        .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                        .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                        .header("X-IG-Capabilities", IG_CAPABILITIES)
+                        .build()
+                ).execute()
+            } catch (e: Exception) {
+                return IgLoginResult(isSuccess = false, message = "Lỗi kết nối mạng: ${e.message}")
+            }
+
+            val rawBody = loginRes.body?.string().orEmpty()
+            val json = try { JSONObject(rawBody) } catch (_: Exception) { null }
+
+            // Private API trả về "logged_in_user" khi thành công
+            val loggedInUser = json?.optJSONObject("logged_in_user")
+            val isTwoFactorRequired = json?.optBoolean("two_factor_required", false) == true
+
+            fun buildFinalCookie(): String {
+                val sb = StringBuilder()
+                cookieStore.forEach { (k, v) -> sb.append("$k=$v; ") }
+                return normalizeToIosCookie(sb.toString())
+            }
+
+            if (loggedInUser != null) {
+                val userId  = loggedInUser.optString("pk", "")
+                val uname   = loggedInUser.optString("username", usernameInput.substringBefore("@"))
+                val pUrl    = loggedInUser.optString("profile_pic_url", "")
+                val fullN   = loggedInUser.optString("full_name", "")
+                val finalCookie = buildFinalCookie()
+                val checkInfo = try { checkCookieIg(finalCookie, proxy) } catch (_: Exception) { CookieCheckResult(isLive = true) }
+                return IgLoginResult(
+                    isSuccess   = true,
+                    userId      = userId.ifBlank { checkInfo.userId },
+                    username    = checkInfo.username.ifBlank { uname },
+                    fullName    = checkInfo.fullName.ifBlank { fullN },
+                    cookie      = finalCookie,
+                    avatarUrl   = checkInfo.profilePicUrl.ifBlank { pUrl },
+                    message     = "Đăng nhập thành công",
+                    rawResponse = rawBody
+                )
+            }
+
+            if (isTwoFactorRequired) {
+                val twoFactorInfo = json?.optJSONObject("two_factor_info")
+                val twoFactorIdentifier = twoFactorInfo?.optString("two_factor_identifier").orEmpty()
+                val secretClean = twoFaSecret?.trim().orEmpty()
+
+                if (secretClean.isNotBlank()) {
+                    val otpCode = if (secretClean.length == 6 && secretClean.all { it.isDigit() }) {
+                        secretClean
+                    } else {
+                        com.cayxu.app.facebook.TotpGenerator.generateTotp(secretClean)
+                    }
+
+                    if (otpCode.isNotBlank()) {
+                        val twoFaBody = FormBody.Builder()
+                            .add("username", usernameInput.trim())
+                            .add("verification_code", otpCode)
+                            .add("two_factor_identifier", twoFactorIdentifier)
+                            .add("trust_this_device", "1")
+                            .add("device_id", deviceId)
+                            .add("guid", guid)
+                            .build()
+
+                        val twoFaRes = try {
+                            client.newCall(
+                                Request.Builder()
+                                    .url("https://i.instagram.com/api/v1/accounts/two_factor_login/")
+                                    .post(twoFaBody)
+                                    .header("User-Agent", IG_APP_UA)
+                                    .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                                    .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                                    .header("X-IG-Capabilities", IG_CAPABILITIES)
+                                    .build()
+                            ).execute()
+                        } catch (e: Exception) {
+                            return IgLoginResult(isSuccess = false, isTwoFactorRequired = true, message = "Lỗi kết nối khi gửi 2FA: ${e.message}")
+                        }
+
+                        val twoFaRaw  = twoFaRes.body?.string().orEmpty()
+                        val twoFaJson = try { JSONObject(twoFaRaw) } catch (_: Exception) { null }
+                        val twoFaUser = twoFaJson?.optJSONObject("logged_in_user")
+
+                        if (twoFaUser != null) {
+                            val userId = twoFaUser.optString("pk", "")
+                            val uname  = twoFaUser.optString("username", usernameInput.substringBefore("@"))
+                            val pUrl   = twoFaUser.optString("profile_pic_url", "")
+                            val fullN  = twoFaUser.optString("full_name", "")
+                            val finalCookie = buildFinalCookie()
+                            val checkInfo = try { checkCookieIg(finalCookie, proxy) } catch (_: Exception) { CookieCheckResult(isLive = true) }
+                            return IgLoginResult(
+                                isSuccess   = true,
+                                userId      = userId.ifBlank { checkInfo.userId },
+                                username    = checkInfo.username.ifBlank { uname },
+                                fullName    = checkInfo.fullName.ifBlank { fullN },
+                                cookie      = finalCookie,
+                                avatarUrl   = checkInfo.profilePicUrl.ifBlank { pUrl },
+                                message     = "Xác thực 2FA thành công",
+                                rawResponse = twoFaRaw
+                            )
+                        } else {
+                            return IgLoginResult(
+                                isSuccess = false,
+                                isTwoFactorRequired = true,
+                                message = "Lỗi 2FA: ${twoFaJson?.optString("message", "Mã 2FA không chính xác hoặc đã hết hạn")}",
+                                rawResponse = twoFaRaw
+                            )
+                        }
+                    }
+                }
+
+                return IgLoginResult(
+                    isSuccess = false,
+                    isTwoFactorRequired = true,
+                    message = "Tài khoản yêu cầu mã 2FA. Vui lòng cung cấp khóa 2FA Secret hoặc OTP 6 số!",
+                    rawResponse = rawBody
+                )
+            }
+
+            val errorMsg = json?.optString("message", "").orEmpty().ifBlank {
+                if (json?.has("user") == true && !json.optBoolean("user", true)) "Tài khoản không tồn tại"
+                else "Sai mật khẩu hoặc tài khoản bị giới hạn"
+            }
+            return IgLoginResult(isSuccess = false, message = errorMsg, rawResponse = rawBody)
+        }
+
+        /**
+         * Tự động re-login khi cookie bị hết hạn/văng phiên.
+         */
+        fun reloginIfExpired(account: com.cayxu.app.data.local.InstagramAccount, context: android.content.Context): Boolean {
+            if (account.password.isBlank()) return false
+            val loginRes = loginWithCredentials(
+                usernameInput = account.username,
+                passwordRaw = account.password,
+                twoFaSecret = account.twoFactor,
+                proxy = account.proxy
+            )
+            if (loginRes.isSuccess && loginRes.cookie.isNotBlank()) {
+                val updated = account.copy(
+                    cookie = loginRes.cookie,
+                    isLive = true,
+                    avatar = if (loginRes.avatarUrl.isNotBlank()) loginRes.avatarUrl else account.avatar,
+                    fullName = if (loginRes.fullName.isNotBlank()) loginRes.fullName else account.fullName
+                )
+                com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updated)
+                return true
+            }
+            return false
         }
     }
 }

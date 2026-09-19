@@ -17,7 +17,9 @@ data class InstagramAccount(
     val biography: String = "",
     val followersCount: Int = 0,
     val followingCount: Int = 0,
-    val postsCount: Int = 0
+    val postsCount: Int = 0,
+    val password: String = "",
+    val twoFactor: String = ""
 )
 
 object InstagramAccountsStore {
@@ -63,7 +65,9 @@ object InstagramAccountsStore {
                         biography = unescape(parts.getOrElse(10) { "" }),
                         followersCount = parts.getOrElse(11) { "0" }.toIntOrNull() ?: 0,
                         followingCount = parts.getOrElse(12) { "0" }.toIntOrNull() ?: 0,
-                        postsCount = parts.getOrElse(13) { "0" }.toIntOrNull() ?: 0
+                        postsCount = parts.getOrElse(13) { "0" }.toIntOrNull() ?: 0,
+                        password = parts.getOrElse(14) { "" },
+                        twoFactor = parts.getOrElse(15) { "" }
                     )
                 } catch (e: Exception) {
                     null
@@ -95,7 +99,9 @@ object InstagramAccountsStore {
                     userAgent = it.userAgent.trim(),
                     proxy = it.proxy.trim(),
                     fullName = it.fullName.trim(),
-                    biography = it.biography.trim()
+                    biography = it.biography.trim(),
+                    password = it.password.trim(),
+                    twoFactor = it.twoFactor.trim()
                 )
             }
             .filter { it.username.isNotEmpty() }
@@ -156,7 +162,9 @@ object InstagramAccountsStore {
                 acc.biography,
                 acc.followersCount.toString(),
                 acc.followingCount.toString(),
-                acc.postsCount.toString()
+                acc.postsCount.toString(),
+                acc.password,
+                acc.twoFactor
             ).joinToString(FIELD_SEPARATOR)
         }
         prefs(context).edit().putString(KEY_ACCOUNTS, raw).apply()
