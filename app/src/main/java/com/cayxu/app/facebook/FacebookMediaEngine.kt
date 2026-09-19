@@ -2,6 +2,8 @@ package com.cayxu.app.facebook
 
 import androidx.annotation.Keep
 import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -117,8 +119,8 @@ class FacebookMediaEngine(
         if (token.isEmpty()) return MediaResult(false, null, "Token required", "")
 
         val target = targetId ?: userId ?: "me"
-        val mediaType = MediaType.parse(mimeType)
-        val fileBody = RequestBody.create(mediaType, imageBytes)
+        val mediaType = mimeType.toMediaTypeOrNull()
+        val fileBody = imageBytes.toRequestBody(mediaType)
 
         val multipart = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
@@ -155,8 +157,8 @@ class FacebookMediaEngine(
         if (token.isEmpty()) return MediaResult(false, null, "Token required", "")
 
         val target = targetId ?: userId ?: "me"
-        val mediaType = MediaType.parse(mimeType)
-        val fileBody = RequestBody.create(mediaType, imageBytes)
+        val mediaType = mimeType.toMediaTypeOrNull()
+        val fileBody = imageBytes.toRequestBody(mediaType)
 
         val uploadBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
