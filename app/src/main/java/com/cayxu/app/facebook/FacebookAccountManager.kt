@@ -148,9 +148,9 @@ class FacebookAccountManager {
                     }
                     val finalCookie = if (cookieBuilder.isNotEmpty()) cookieBuilder.toString().trimEnd(' ', ';') else cookieStr
 
-                    // Lấy thêm thông tin chi tiết qua Graph API
                     var name = realUid
                     var avatarUrl = if (realUid.isNotBlank()) "$GRAPH_BASE_URL/$realUid/picture?type=large" else ""
+                    var coverUrl = ""
                     var email = ""
                     var pages = emptyList<FacebookPageItem>()
 
@@ -158,6 +158,7 @@ class FacebookAccountManager {
                         val details = fetchAccountDetailsWithToken(eaaaa, proxyStr)
                         if (details.name.isNotBlank()) name = details.name
                         if (details.avatar.isNotBlank()) avatarUrl = details.avatar
+                        if (details.cover.isNotBlank()) coverUrl = details.cover
                         if (details.email.isNotBlank()) email = details.email
                         if (details.pages.isNotEmpty()) pages = details.pages
                     } catch (_: Exception) {}
@@ -166,6 +167,7 @@ class FacebookAccountManager {
                         uid = realUid.ifBlank { "FB_${System.currentTimeMillis() % 1000000}" },
                         name = name.ifBlank { realUid },
                         avatar = avatarUrl,
+                        cover = coverUrl,
                         note = finalCookie,
                         bio = eaaaa,
                         email = email,
@@ -408,7 +410,9 @@ class FacebookAccountManager {
         var id = ""
         var name = ""
         var email = ""
-        val pageList = mutableListOf<FacebookPageItem>()
+        var avatarUrl = ""
+        var coverUrl = ""
+        var pageList = emptyList<FacebookPageItem>()
 
         try {
             client.newCall(request).execute().use { response ->
@@ -422,45 +426,32 @@ class FacebookAccountManager {
             }
         } catch (_: Exception) {}
 
-        // Lấy thêm danh sách Pages từ endpoint /me/accounts (như trong Python get_page_list)
+        // Lấy Avatar HD & Bìa từ FacebookMediaEngine
         try {
-            val accountsUrl = "$GRAPH_BASE_URL/me/accounts?access_token=$token"
-            val accountsReq = Request.Builder().url(accountsUrl).get().build()
-            client.newCall(accountsReq).execute().use { res ->
-                val resBody = res.body?.string() ?: ""
-                if (res.isSuccessful && !resBody.contains("\"error\"")) {
-                    val accJson = JSONObject(resBody)
-                    if (accJson.has("data")) {
-                        val arr = accJson.getJSONArray("data")
-                        for (i in 0 until arr.length()) {
-                            val p = arr.getJSONObject(i)
-                            val pageId = p.optString("id", "")
-                            if (pageList.none { it.pageId == pageId }) {
-                                val pageName = p.optString("name", "")
-                                val pageToken = p.optString("access_token", "")
-                                val pageAvatar = "$GRAPH_BASE_URL/$pageId/picture?type=large"
-                                pageList.add(
-                                    FacebookPageItem(
-                                        pageId = pageId,
-                                        pageName = pageName,
-                                        pageToken = pageToken,
-                                        avatar = pageAvatar,
-                                        isLive = true
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
+            val mediaEngine = FacebookMediaEngine(accessToken = token)
+            val media = mediaEngine.getProfileMedia(if (id.isNotBlank()) id else "me", token)
+            if (media != null) {
+                if (!media.avatarUrl.isNullOrBlank()) avatarUrl = media.avatarUrl
+                if (!media.coverUrl.isNullOrBlank()) coverUrl = media.coverUrl
+                if (!media.name.isNullOrBlank() && name.isBlank()) name = media.name
             }
         } catch (_: Exception) {}
 
-        val avatarUrl = if (id.isNotBlank()) "$GRAPH_BASE_URL/$id/picture?type=large" else ""
+        if (avatarUrl.isBlank() && id.isNotBlank()) {
+            avatarUrl = "$GRAPH_BASE_URL/$id/picture?type=large"
+        }
+
+        // Lấy danh sách Pages với UID 615 chuẩn từ FacebookPageEngine
+        try {
+            val pageEngine = FacebookPageEngine(accessToken = token)
+            pageList = pageEngine.getAdminedPages(token)
+        } catch (_: Exception) {}
 
         return FacebookAccount(
             uid = id.ifBlank { "Token" },
             name = name.ifBlank { id },
             avatar = avatarUrl,
+            cover = coverUrl,
             note = "",
             bio = token,
             email = email,

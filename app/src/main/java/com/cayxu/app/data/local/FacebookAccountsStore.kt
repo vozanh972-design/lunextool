@@ -17,7 +17,15 @@ data class FacebookPageItem(
     @SerializedName("isLive") val isLive: Boolean = true
 ) {
     val displayUid: String
-        get() = if (!additionalProfileId.isNullOrBlank()) additionalProfileId else pageId
+        get() = if (additionalProfileId.isNotBlank() && additionalProfileId.startsWith("615")) {
+            additionalProfileId
+        } else if (pageId.startsWith("615")) {
+            pageId
+        } else if (additionalProfileId.isNotBlank()) {
+            additionalProfileId
+        } else {
+            pageId
+        }
 }
 
 @Keep
@@ -30,6 +38,7 @@ data class FacebookAccount(
     @SerializedName("bio") val bio: String = "",       // Token
     @SerializedName("isLive") val isLive: Boolean = false,
     @SerializedName("avatar") val avatar: String = "",    // URL avatar
+    @SerializedName("cover") val cover: String = "",     // URL ảnh bìa
     @SerializedName("email") val email: String = "",
     @SerializedName("pages") val pages: List<FacebookPageItem> = emptyList(),
     @SerializedName("password") val password: String = ""
@@ -92,6 +101,7 @@ object FacebookAccountsStore {
                             bio = obj.optString("bio", ""),
                             isLive = obj.optBoolean("isLive", false),
                             avatar = obj.optString("avatar", ""),
+                            cover = obj.optString("cover", ""),
                             email = obj.optString("email", ""),
                             pages = pagesList,
                             password = obj.optString("password", "")
@@ -283,6 +293,7 @@ object FacebookAccountsStore {
                 obj.put("bio", acc.bio)
                 obj.put("isLive", acc.isLive)
                 obj.put("avatar", acc.avatar)
+                obj.put("cover", acc.cover)
                 obj.put("email", acc.email)
                 obj.put("password", acc.password)
 

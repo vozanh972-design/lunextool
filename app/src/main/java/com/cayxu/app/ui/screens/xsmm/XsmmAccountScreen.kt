@@ -1311,8 +1311,9 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     }
                                                     Spacer(Modifier.width(8.dp))
                                                     Column(modifier = Modifier.weight(1f)) {
+                                                        val uid615 = page.displayUid
                                                         Text(
-                                                            "Page: ${page.pageName.ifBlank { page.pageId }}",
+                                                            "Page: ${page.pageName.ifBlank { uid615 }}",
                                                             fontSize = 12.sp,
                                                             fontWeight = FontWeight.SemiBold,
                                                             color = TextPrimary,
@@ -1320,9 +1321,10 @@ fun XsmmAccountScreen(navController: NavController) {
                                                             overflow = TextOverflow.Ellipsis
                                                         )
                                                         Text(
-                                                            "ID: ${page.pageId}${if (page.additionalProfileId.isNotBlank()) " • Profile: ${page.additionalProfileId}" else ""}",
+                                                            "UID: $uid615",
                                                             fontSize = 10.sp,
-                                                            color = TextSecondary,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = Color(0xFF1877F2),
                                                             maxLines = 1,
                                                             overflow = TextOverflow.Ellipsis
                                                         )

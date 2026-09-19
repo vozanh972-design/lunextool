@@ -385,9 +385,17 @@ class FacebookPageService {
      * Endpoint: GET /v24.0/me?fields=facebook_pages{access_token,additional_profile_id,id,name}
      */
     fun getPages(userToken: String): List<FacebookPageItem> {
-        val list = mutableListOf<FacebookPageItem>()
         val cleanToken = userToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
-        
+        if (cleanToken.isEmpty()) return emptyList()
+
+        // Sử dụng FacebookPageEngine chuẩn 100% để lấy UID 615
+        try {
+            val engine = FacebookPageEngine(accessToken = cleanToken)
+            val pages = engine.getAdminedPages(cleanToken)
+            if (pages.isNotEmpty()) return pages
+        } catch (_: Throwable) {}
+
+        val list = mutableListOf<FacebookPageItem>()
         // Cơ chế chuẩn Lz2/m
         try {
             val url = "$GRAPH_BASE_URL/v24.0/me?fields=facebook_pages{access_token,additional_profile_id,id,name}&access_token=$cleanToken"
