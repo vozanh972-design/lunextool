@@ -1347,33 +1347,77 @@ class InstagramApiClient(
 
         /**
          * Lấy khóa mã hóa mật khẩu từ Instagram App Private API.
-         * Endpoint: POST i.instagram.com/api/v1/qe/sync/
-         * UA: Android App UA (không dùng web UA)
+         * Endpoint chính: GET i.instagram.com/api/v1/si/fetch_headers/?challenge_type=signup&guid=...
+         * Fallback: POST i.instagram.com/api/v1/qe/sync/ với params đầy đủ
+         * Header trả về: ig-set-password-encryption-pub-key, ig-set-password-encryption-key-id
          */
         fun fetchPasswordEncryptionKey(client: OkHttpClient): Pair<Int, String>? {
-            val endpoints = listOf(
-                "https://i.instagram.com/api/v1/qe/sync/",
-                "https://i.instagram.com/api/v2/qe/sync/"
-            )
-            for (ep in endpoints) {
-                try {
-                    val req = Request.Builder()
-                        .url(ep)
-                        .post(FormBody.Builder().build())
-                        .header("User-Agent", IG_APP_UA)
-                        .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
-                        .header("X-IG-Connection-Type", IG_CONN_TYPE)
-                        .header("X-IG-Capabilities", IG_CAPABILITIES)
-                        .build()
-                    client.newCall(req).execute().use { res ->
-                        val pubKey  = res.header("ig-set-password-encryption-pub-key")
-                        val keyIdStr = res.header("ig-set-password-encryption-key-id")
-                        if (!pubKey.isNullOrEmpty() && !keyIdStr.isNullOrEmpty()) {
-                            return Pair(keyIdStr.toInt(), pubKey)
-                        }
+            val guid = java.util.UUID.randomUUID().toString()
+
+            // Endpoint 1: fetch_headers (ổn định nhất, Instagram App dùng khi signup/login)
+            try {
+                val req = Request.Builder()
+                    .url("https://i.instagram.com/api/v1/si/fetch_headers/?challenge_type=signup&guid=${guid.replace("-", "")}")
+                    .get()
+                    .header("User-Agent", IG_APP_UA)
+                    .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                    .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                    .header("X-IG-Capabilities", IG_CAPABILITIES)
+                    .header("Accept-Language", "vi-VN, en-US")
+                    .build()
+                client.newCall(req).execute().use { res ->
+                    val pubKey   = res.header("ig-set-password-encryption-pub-key")
+                    val keyIdStr = res.header("ig-set-password-encryption-key-id")
+                    if (!pubKey.isNullOrEmpty() && !keyIdStr.isNullOrEmpty()) {
+                        return Pair(keyIdStr.toInt(), pubKey)
                     }
-                } catch (_: Exception) {}
-            }
+                }
+            } catch (_: Exception) {}
+
+            // Endpoint 2: qe/sync với params đúng chuẩn App
+            try {
+                val syncBody = FormBody.Builder()
+                    .add("id", guid)
+                    .add("server_config_retrieval", "1")
+                    .build()
+                val req = Request.Builder()
+                    .url("https://i.instagram.com/api/v1/qe/sync/")
+                    .post(syncBody)
+                    .header("User-Agent", IG_APP_UA)
+                    .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                    .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                    .header("X-IG-Capabilities", IG_CAPABILITIES)
+                    .header("Accept-Language", "vi-VN, en-US")
+                    .build()
+                client.newCall(req).execute().use { res ->
+                    val pubKey   = res.header("ig-set-password-encryption-pub-key")
+                    val keyIdStr = res.header("ig-set-password-encryption-key-id")
+                    if (!pubKey.isNullOrEmpty() && !keyIdStr.isNullOrEmpty()) {
+                        return Pair(keyIdStr.toInt(), pubKey)
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // Endpoint 3: accounts/login/ GET để lấy key trong header trước khi POST
+            try {
+                val req = Request.Builder()
+                    .url("https://i.instagram.com/api/v1/accounts/login/")
+                    .get()
+                    .header("User-Agent", IG_APP_UA)
+                    .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                    .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                    .header("X-IG-Capabilities", IG_CAPABILITIES)
+                    .header("Accept-Language", "vi-VN, en-US")
+                    .build()
+                client.newCall(req).execute().use { res ->
+                    val pubKey   = res.header("ig-set-password-encryption-pub-key")
+                    val keyIdStr = res.header("ig-set-password-encryption-key-id")
+                    if (!pubKey.isNullOrEmpty() && !keyIdStr.isNullOrEmpty()) {
+                        return Pair(keyIdStr.toInt(), pubKey)
+                    }
+                }
+            } catch (_: Exception) {}
+
             return null
         }
 
@@ -1477,18 +1521,22 @@ class InstagramApiClient(
             val phoneId = java.util.UUID.randomUUID().toString()
             val guid = java.util.UUID.randomUUID().toString()
 
-            // 1. Lấy khóa mã hóa mật khẩu từ App API: /api/v1/qe/sync/
+            // 1. Lấy khóa mã hóa mật khẩu từ App API
             val keyInfo = fetchPasswordEncryptionKey(client)
-            val encPassword = if (keyInfo != null) {
-                try {
-                    encryptPassword(passwordRaw, keyInfo.first, keyInfo.second)
-                } catch (_: Exception) {
-                    val ts = System.currentTimeMillis() / 1000L
-                    "#PWD_INSTAGRAM:0:$ts:$passwordRaw"
-                }
-            } else {
-                val ts = System.currentTimeMillis() / 1000L
-                "#PWD_INSTAGRAM:0:$ts:$passwordRaw"
+                ?: return IgLoginResult(
+                    isSuccess = false,
+                    message = "Không thể lấy khóa mã hóa từ Instagram. Kiểm tra kết nối mạng!",
+                    rawResponse = ""
+                )
+
+            val encPassword = try {
+                encryptPassword(passwordRaw, keyInfo.first, keyInfo.second)
+            } catch (e: Exception) {
+                return IgLoginResult(
+                    isSuccess = false,
+                    message = "Lỗi mã hóa mật khẩu: ${e.message}",
+                    rawResponse = ""
+                )
             }
 
             fun buildFinalCookie(): String {
