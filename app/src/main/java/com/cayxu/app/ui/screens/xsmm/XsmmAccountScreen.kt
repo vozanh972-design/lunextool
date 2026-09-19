@@ -118,6 +118,7 @@ fun XsmmAccountScreen(navController: NavController) {
                 .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
         )
     }
+    var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(selectedPlatform, showFacebookLoginSheet, showInstagramCookieSheet) {
         if (selectedPlatform == "facebook") {
@@ -200,7 +201,6 @@ fun XsmmAccountScreen(navController: NavController) {
             }
         }
     }
-    var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
     val runningIgAccounts = com.cayxu.app.automation.instagram.XsmmInstagramManager.runningAccounts
     val igStatusMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap
     val igSuccessCountMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.successCountMap
