@@ -1439,10 +1439,10 @@ class InstagramApiClient(
         }
 
         /**
-         * Đăng nhập Instagram — sử dụng web endpoint hoạt động thực tế.
-         * Endpoint /api/v1/accounts/login/ (App) bị Instagram block hoàn toàn cho mọi request tự động,
-         * trả về needs_upgrade bất kể version UA nào.
-         * Endpoint hoạt động: www.instagram.com/api/v1/web/accounts/login/ajax/
+         * Đăng nhập Instagram — 100% Instagram App REST API.
+         * Ưu tiên: CAA Bloks login → nếu fail → REST /accounts/login/
+         * Toàn bộ đều dùng i.instagram.com, KHÔNG dùng www.instagram.com.
+         * Hiển thị chính xác lỗi từ Instagram trả về.
          */
         fun loginWithCredentials(
             usernameInput: String,
@@ -1451,16 +1451,15 @@ class InstagramApiClient(
             proxy: String? = null
         ): IgLoginResult {
             val proxyConfig = parseProxy(proxy)
-            val cookieStore = ConcurrentHashMap<String, String>()
+            val username = usernameInput.trim()
 
+            val cookieStore = ConcurrentHashMap<String, String>()
             val client = buildOkHttpClient(proxyConfig, timeoutSec = 30L).newBuilder()
                 .followRedirects(true)
                 .followSslRedirects(true)
                 .cookieJar(object : CookieJar {
                     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-                        for (c in cookies) {
-                            cookieStore[c.name] = c.value
-                        }
+                        for (c in cookies) cookieStore[c.name] = c.value
                     }
                     override fun loadForRequest(url: HttpUrl): List<Cookie> {
                         return cookieStore.map { (name, value) ->
@@ -1470,17 +1469,7 @@ class InstagramApiClient(
                 })
                 .build()
 
-            // 1. Lấy cookie khởi tạo (csrftoken, mid, ig_did, datr) từ trang login
-            val sessionKey = usernameInput.trim()
-            val session = try {
-                getOrCreateSession(sessionKey, client = client, proxyConfig = proxyConfig)
-            } catch (e: Exception) {
-                return IgLoginResult(isSuccess = false, message = "Lỗi khởi tạo phiên: ${e.message}")
-            }
-            val baseHeaders = session.baseHeaders
-            val csrfToken = cookieStore["csrftoken"] ?: session.csrfToken
-
-            // 2. Lấy khóa mã hóa mật khẩu
+            // 1. Lấy khóa mã hóa mật khẩu từ i.instagram.com/api/v2/qe/sync/
             val keyInfo = fetchPasswordEncryptionKey(client)
             val encPassword = if (keyInfo != null) {
                 try {
@@ -1498,141 +1487,274 @@ class InstagramApiClient(
                 return normalizeToIosCookie(sb.toString())
             }
 
-            // 3. Đăng nhập qua web endpoint (endpoint duy nhất không bị block)
-            val formBody = FormBody.Builder()
-                .add("enc_password", encPassword)
-                .add("username", usernameInput.trim())
-                .add("queryParams", "{}")
-                .add("optIntoOneTap", "false")
-                .build()
+            // ─────────────────────────────────────────────────────────────────
+            // BƯỚC 2a: CAA Bloks Login (ưu tiên hàng đầu — đúng engine mới)
+            // ─────────────────────────────────────────────────────────────────
+            val waterfallId  = java.util.UUID.randomUUID().toString()
+            val familyDevId  = java.util.UUID.randomUUID().toString()
+            val deviceId     = "android-" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16)
 
-            val loginReqBuilder = Request.Builder()
-                .url("https://www.instagram.com/api/v1/web/accounts/login/ajax/")
-                .post(formBody)
-
-            baseHeaders.forEach { (k, v) -> loginReqBuilder.addHeader(k, v) }
-            loginReqBuilder.header("x-ig-app-id", "1217981644879628")
-            loginReqBuilder.header("x-csrftoken", csrfToken)
-            loginReqBuilder.header("referer", "https://www.instagram.com/accounts/login/")
-            loginReqBuilder.header("origin", "https://www.instagram.com")
-            loginReqBuilder.header("x-requested-with", "XMLHttpRequest")
-
-            val loginRes = try {
-                client.newCall(loginReqBuilder.build()).execute()
-            } catch (e: Exception) {
-                return IgLoginResult(isSuccess = false, message = "Lỗi kết nối mạng: ${e.message}")
+            val caaParams = JSONObject().apply {
+                put("client_input_params", JSONObject().apply {
+                    put("contact_point", username)
+                    put("password", encPassword)
+                    put("login_source", "Login")
+                    put("device_id", deviceId)
+                    put("family_device_id", familyDevId)
+                    put("waterfall_id", waterfallId)
+                    put("access_flow_version", "F2_FLOW")
+                    put("credential_type", "password")
+                    put("headers_flow_mode", "regular")
+                })
+                put("server_params", JSONObject().apply {
+                    put("server_login_source", "Login")
+                    put("credential_type", "password")
+                })
             }
 
-            val rawBody = loginRes.body?.string().orEmpty()
-            val json = try { JSONObject(rawBody) } catch (_: Exception) { null }
+            val caaBody = FormBody.Builder()
+                .add("params", caaParams.toString())
+                .add("bk_client_context", "{\"bk_client_context\":{}}")
+                .add("bloks_versioning_id", "45a55ce624fec64fefb3d8756c602dc8992c3a37b12d5930263f35c6e8e8ce4a")
+                .build()
 
-            val isAuthenticated = json?.optBoolean("authenticated", false) == true
-            val isTwoFactorRequired = json?.optBoolean("two_factor_required", false) == true
+            val caaReq = Request.Builder()
+                .url("$BASE_URL/bloks/async_action/com.bloks.www.bloks.caa.login.async.send_login_request/")
+                .post(caaBody)
+                .header("User-Agent", IG_APP_UA)
+                .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                .header("X-FB-Friendly-Name", "send_login_request")
+                .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                .header("X-IG-Capabilities", IG_CAPABILITIES)
+                .header("Accept-Language", "vi-VN, en-US")
+                .build()
 
-            if (isAuthenticated) {
-                val userId = json?.optString("userId", "").orEmpty()
+            val caaRaw = try {
+                client.newCall(caaReq).execute().use { it.body?.string() ?: "" }
+            } catch (_: Exception) { "" }
+
+            if (caaRaw.isNotBlank()) {
+                val sessionId = cookieStore["sessionid"]
+                val uid = Regex("""["'](?:user_id|pk|actor_id)["']\s*:\s*["']?(\d+)["']?""").find(caaRaw)?.groupValues?.get(1)
+                    ?: cookieStore["ds_user_id"] ?: ""
+
+                val caaCheckpoint = caaRaw.contains("checkpoint_required") || caaRaw.contains("checkpoint_url")
+                val caaTwoFactor  = caaRaw.contains("two_factor_required") || caaRaw.contains("two_factor_info")
+                val caaSuccess    = !sessionId.isNullOrEmpty() || uid.isNotEmpty()
+
+                if (caaSuccess && !caaCheckpoint && !caaTwoFactor) {
+                    val finalCookie = buildFinalCookie()
+                    val checkInfo = try { checkCookieIg(finalCookie, proxy) } catch (_: Exception) { CookieCheckResult(isLive = true) }
+                    return IgLoginResult(
+                        isSuccess = true,
+                        userId = uid.ifBlank { checkInfo.userId },
+                        username = checkInfo.username.ifBlank { username },
+                        fullName = checkInfo.fullName,
+                        cookie = finalCookie,
+                        avatarUrl = checkInfo.profilePicUrl,
+                        message = "Đăng nhập thành công",
+                        rawResponse = caaRaw
+                    )
+                }
+
+                if (caaCheckpoint) {
+                    // Trả về lỗi chính xác từ Instagram
+                    val errMsg = try {
+                        val j = JSONObject(caaRaw)
+                        j.optString("message", "").ifBlank {
+                            j.optJSONObject("challenge")?.optString("api_path", "") ?: ""
+                        }.ifBlank { "Tài khoản bị checkpoint. Vui lòng xác minh tại Instagram." }
+                    } catch (_: Exception) { "Tài khoản bị checkpoint. Vui lòng xác minh tại Instagram." }
+                    return IgLoginResult(isSuccess = false, message = errMsg, rawResponse = caaRaw)
+                }
+
+                if (caaTwoFactor) {
+                    val caaJson = try { JSONObject(caaRaw) } catch (_: Exception) { null }
+                    val twoFaInfo = caaJson?.optJSONObject("two_factor_info")
+                    val identifier = twoFaInfo?.optString("two_factor_identifier").orEmpty()
+                    val secretClean = twoFaSecret?.trim().orEmpty()
+
+                    if (secretClean.isNotBlank()) {
+                        val otpCode = if (secretClean.length == 6 && secretClean.all { it.isDigit() }) secretClean
+                                      else TotpGenerator.generateTotp(secretClean)
+
+                        if (otpCode.isNotBlank()) {
+                            val twoFaBody = FormBody.Builder()
+                                .add("username", username)
+                                .add("verification_code", otpCode)
+                                .add("two_factor_identifier", identifier)
+                                .add("trust_this_device", "1")
+                                .add("device_id", deviceId)
+                                .build()
+
+                            val twoFaReq = Request.Builder()
+                                .url("$BASE_URL/accounts/two_factor_login/")
+                                .post(twoFaBody)
+                                .header("User-Agent", IG_APP_UA)
+                                .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                                .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                                .header("X-IG-Capabilities", IG_CAPABILITIES)
+                                .build()
+
+                            val twoFaRaw = try {
+                                client.newCall(twoFaReq).execute().use { it.body?.string() ?: "" }
+                            } catch (e: Exception) {
+                                return IgLoginResult(isSuccess = false, isTwoFactorRequired = true,
+                                    message = "Lỗi kết nối 2FA: ${e.message}")
+                            }
+
+                            val twoFaJson = try { JSONObject(twoFaRaw) } catch (_: Exception) { null }
+                            val loggedIn2fa = twoFaJson?.optJSONObject("logged_in_user")
+                            if (loggedIn2fa != null) {
+                                val finalCookie = buildFinalCookie()
+                                val checkInfo = try { checkCookieIg(finalCookie, proxy) } catch (_: Exception) { CookieCheckResult(isLive = true) }
+                                return IgLoginResult(
+                                    isSuccess = true,
+                                    userId = loggedIn2fa.optString("pk", "").ifBlank { checkInfo.userId },
+                                    username = loggedIn2fa.optString("username", "").ifBlank { checkInfo.username }.ifBlank { username },
+                                    fullName = checkInfo.fullName,
+                                    cookie = finalCookie,
+                                    avatarUrl = loggedIn2fa.optString("profile_pic_url", "").ifBlank { checkInfo.profilePicUrl },
+                                    message = "Xác thực 2FA thành công",
+                                    rawResponse = twoFaRaw
+                                )
+                            }
+                            // Hiển thị lỗi chính xác từ Instagram
+                            val err2fa = twoFaJson?.optString("message", "").orEmpty()
+                                .ifBlank { "Mã 2FA không chính xác hoặc đã hết hạn" }
+                            return IgLoginResult(isSuccess = false, isTwoFactorRequired = true,
+                                message = err2fa, rawResponse = twoFaRaw)
+                        }
+                    }
+                    return IgLoginResult(isSuccess = false, isTwoFactorRequired = true,
+                        message = "Tài khoản yêu cầu mã 2FA. Vui lòng nhập 2FA Secret hoặc OTP 6 số!")
+                }
+            }
+
+            // ─────────────────────────────────────────────────────────────────
+            // BƯỚC 2b: REST Login fallback — i.instagram.com/api/v1/accounts/login/
+            // ─────────────────────────────────────────────────────────────────
+            val phoneId = java.util.UUID.randomUUID().toString()
+            val guid    = java.util.UUID.randomUUID().toString()
+
+            val restBody = FormBody.Builder()
+                .add("username", username)
+                .add("enc_password", encPassword)
+                .add("device_id", deviceId)
+                .add("phone_id", phoneId)
+                .add("guid", guid)
+                .add("login_attempt_count", "0")
+                .build()
+
+            val restReq = Request.Builder()
+                .url("$BASE_URL/accounts/login/")
+                .post(restBody)
+                .header("User-Agent", IG_APP_UA)
+                .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                .header("X-IG-Capabilities", IG_CAPABILITIES)
+                .header("Accept-Language", "vi-VN, en-US")
+                .build()
+
+            val restRaw: String
+            val restJson: JSONObject?
+            try {
+                val restRes = client.newCall(restReq).execute()
+                restRaw  = restRes.body?.string().orEmpty()
+                restJson = try { JSONObject(restRaw) } catch (_: Exception) { null }
+            } catch (e: Exception) {
+                return IgLoginResult(isSuccess = false, message = "Lỗi kết nối: ${e.message}")
+            }
+
+            val loggedInUser = restJson?.optJSONObject("logged_in_user")
+            val isTwoFactor  = restJson?.optBoolean("two_factor_required", false) == true
+
+            if (loggedInUser != null) {
                 val finalCookie = buildFinalCookie()
                 val checkInfo = try { checkCookieIg(finalCookie, proxy) } catch (_: Exception) { CookieCheckResult(isLive = true) }
-                val resolvedUsername = checkInfo.username.ifBlank { usernameInput.substringBefore("@") }
-
                 return IgLoginResult(
                     isSuccess = true,
-                    userId = userId.ifBlank { checkInfo.userId },
-                    username = resolvedUsername,
-                    fullName = checkInfo.fullName,
+                    userId = loggedInUser.optString("pk", "").ifBlank { checkInfo.userId },
+                    username = loggedInUser.optString("username", "").ifBlank { checkInfo.username }.ifBlank { username },
+                    fullName = loggedInUser.optString("full_name", "").ifBlank { checkInfo.fullName },
                     cookie = finalCookie,
-                    avatarUrl = checkInfo.profilePicUrl,
+                    avatarUrl = loggedInUser.optString("profile_pic_url", "").ifBlank { checkInfo.profilePicUrl },
                     message = "Đăng nhập thành công",
-                    rawResponse = rawBody
+                    rawResponse = restRaw
                 )
             }
 
-            if (isTwoFactorRequired) {
-                val twoFactorInfo = json?.optJSONObject("two_factor_info")
-                val twoFactorIdentifier = twoFactorInfo?.optString("two_factor_identifier").orEmpty()
+            if (isTwoFactor) {
+                val twoFaInfo   = restJson?.optJSONObject("two_factor_info")
+                val identifier  = twoFaInfo?.optString("two_factor_identifier").orEmpty()
                 val secretClean = twoFaSecret?.trim().orEmpty()
 
                 if (secretClean.isNotBlank()) {
-                    val otpCode = if (secretClean.length == 6 && secretClean.all { it.isDigit() }) {
-                        secretClean
-                    } else {
-                        TotpGenerator.generateTotp(secretClean)
-                    }
+                    val otpCode = if (secretClean.length == 6 && secretClean.all { it.isDigit() }) secretClean
+                                  else TotpGenerator.generateTotp(secretClean)
 
                     if (otpCode.isNotBlank()) {
                         val twoFaBody = FormBody.Builder()
-                            .add("username", usernameInput.trim())
-                            .add("verificationCode", otpCode)
-                            .add("two_factor_identifier", twoFactorIdentifier)
+                            .add("username", username)
+                            .add("verification_code", otpCode)
+                            .add("two_factor_identifier", identifier)
                             .add("trust_this_device", "1")
-                            .add("queryParams", "{}")
+                            .add("device_id", deviceId)
+                            .add("guid", guid)
                             .build()
 
                         val twoFaReq = Request.Builder()
-                            .url("https://www.instagram.com/api/v1/web/accounts/login/ajax/two_factor/")
+                            .url("$BASE_URL/accounts/two_factor_login/")
                             .post(twoFaBody)
+                            .header("User-Agent", IG_APP_UA)
+                            .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
+                            .header("X-IG-Connection-Type", IG_CONN_TYPE)
+                            .header("X-IG-Capabilities", IG_CAPABILITIES)
+                            .build()
 
-                        baseHeaders.forEach { (k, v) -> twoFaReq.addHeader(k, v) }
-                        twoFaReq.header("x-ig-app-id", "1217981644879628")
-                        twoFaReq.header("x-csrftoken", cookieStore["csrftoken"] ?: csrfToken)
-                        twoFaReq.header("referer", "https://www.instagram.com/accounts/login/two_factor")
-                        twoFaReq.header("origin", "https://www.instagram.com")
-                        twoFaReq.header("x-requested-with", "XMLHttpRequest")
-
-                        val twoFaRes = try {
-                            client.newCall(twoFaReq.build()).execute()
+                        val twoFaRaw = try {
+                            client.newCall(twoFaReq).execute().use { it.body?.string() ?: "" }
                         } catch (e: Exception) {
-                            return IgLoginResult(isSuccess = false, isTwoFactorRequired = true, message = "Lỗi kết nối khi gửi 2FA: ${e.message}")
+                            return IgLoginResult(isSuccess = false, isTwoFactorRequired = true,
+                                message = "Lỗi kết nối 2FA: ${e.message}")
                         }
 
-                        val twoFaRaw = twoFaRes.body?.string().orEmpty()
-                        val twoFaJson = try { JSONObject(twoFaRaw) } catch (_: Exception) { null }
-
-                        if (twoFaJson?.optBoolean("authenticated", false) == true) {
-                            val userId = twoFaJson.optString("userId", "").orEmpty()
+                        val twoFaJson   = try { JSONObject(twoFaRaw) } catch (_: Exception) { null }
+                        val loggedIn2fa = twoFaJson?.optJSONObject("logged_in_user")
+                        if (loggedIn2fa != null) {
                             val finalCookie = buildFinalCookie()
                             val checkInfo = try { checkCookieIg(finalCookie, proxy) } catch (_: Exception) { CookieCheckResult(isLive = true) }
-                            val resolvedUsername = checkInfo.username.ifBlank { usernameInput.substringBefore("@") }
-
                             return IgLoginResult(
                                 isSuccess = true,
-                                userId = userId.ifBlank { checkInfo.userId },
-                                username = resolvedUsername,
-                                fullName = checkInfo.fullName,
+                                userId = loggedIn2fa.optString("pk", "").ifBlank { checkInfo.userId },
+                                username = loggedIn2fa.optString("username", "").ifBlank { username },
+                                fullName = loggedIn2fa.optString("full_name", "").ifBlank { checkInfo.fullName },
                                 cookie = finalCookie,
-                                avatarUrl = checkInfo.profilePicUrl,
+                                avatarUrl = loggedIn2fa.optString("profile_pic_url", "").ifBlank { checkInfo.profilePicUrl },
                                 message = "Xác thực 2FA thành công",
                                 rawResponse = twoFaRaw
                             )
-                        } else {
-                            val msg2fa = twoFaJson?.optString("message", "Mã 2FA không chính xác hoặc đã hết hạn")
-                            return IgLoginResult(
-                                isSuccess = false,
-                                isTwoFactorRequired = true,
-                                message = "Lỗi 2FA: $msg2fa",
-                                rawResponse = twoFaRaw
-                            )
                         }
+                        // Hiển thị chính xác lỗi 2FA từ Instagram
+                        val err2fa = twoFaJson?.optString("message", "").orEmpty()
+                            .ifBlank { "Mã 2FA không chính xác hoặc đã hết hạn" }
+                        return IgLoginResult(isSuccess = false, isTwoFactorRequired = true,
+                            message = err2fa, rawResponse = twoFaRaw)
                     }
                 }
-
-                return IgLoginResult(
-                    isSuccess = false,
-                    isTwoFactorRequired = true,
-                    message = "Tài khoản yêu cầu mã 2FA. Vui lòng cung cấp khóa 2FA Secret hoặc OTP 6 số!",
-                    rawResponse = rawBody
-                )
+                return IgLoginResult(isSuccess = false, isTwoFactorRequired = true,
+                    message = "Tài khoản yêu cầu mã 2FA. Vui lòng nhập 2FA Secret hoặc OTP 6 số!")
             }
 
-            val errorMsg = json?.optString("message", "").orEmpty().ifBlank {
-                if (json?.optBoolean("user") == false) "Tài khoản không tồn tại"
+            // Hiển thị chính xác lỗi từ Instagram trả về
+            val igError = restJson?.optString("message", "").orEmpty().ifBlank {
+                restJson?.optString("error_type", "").orEmpty()
+            }.ifBlank {
+                if (restJson?.optBoolean("user") == false) "Tài khoản không tồn tại"
                 else "Sai mật khẩu hoặc tài khoản bị giới hạn"
             }
-            return IgLoginResult(isSuccess = false, message = errorMsg, rawResponse = rawBody)
+            return IgLoginResult(isSuccess = false, message = igError, rawResponse = restRaw)
         }
-
-
-
 
         /**
          * Tự động re-login khi cookie bị hết hạn/văng phiên.
