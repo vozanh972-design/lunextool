@@ -1112,7 +1112,7 @@ class InstagramApiClient(
             return s
         }
 
-        fun extractTokensFromHtml(html: String, fallbackLsd: String = DEFAULT_LSD, fallbackJazoest: String = DEFAULT_JAZOEST): Triple<String, String, String> {
+        fun extractTokensFromHtml(html: String, fallbackLsd: String = "", fallbackJazoest: String = ""): Triple<String, String, String> {
             var lsd = fallbackLsd
             var m = Pattern.compile("\"LSD\",\\[],\\{\"token\":\"([^\"]+)\"}").matcher(html)
             if (m.find()) {
