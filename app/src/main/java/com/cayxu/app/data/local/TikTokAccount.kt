@@ -11,10 +11,17 @@ enum class TikTokAccountStatus {
 }
 
 /** Loại TikTok mà tài khoản này được lấy về (ảnh hưởng cách tool tự động mở app). */
-enum class TikTokAppVariant(val packageName: String) {
-    STANDARD("com.ss.android.ugc.trill"),
-    LITE("com.zhiliaoapp.musically.go"),
-    STUDIO("com.ss.android.tt.creator")
+enum class TikTokAppVariant {
+    STANDARD,
+    LITE,
+    STUDIO;
+
+    val packageName: String
+        get() = when (this) {
+            STANDARD -> com.cayxu.app.util.NativeSecurity.getTtPkgStandardFirst()
+            LITE -> com.cayxu.app.util.NativeSecurity.getTtPkgLite()
+            STUDIO -> com.cayxu.app.util.NativeSecurity.getTtPkgStudio()
+        }
 }
 
 data class TikTokAccount(

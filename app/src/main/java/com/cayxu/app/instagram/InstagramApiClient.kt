@@ -17,6 +17,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import kotlin.random.Random
+import com.cayxu.app.util.NativeSecurity
 
 /**
  * Client tương tác Instagram theo 100% LOGIC THỰC TẾ TỪ CURL INSTAGRAM WEB (không lai tạp logic cũ):
@@ -183,17 +184,23 @@ class InstagramApiClient(
             if (!targetName.startsWith("IG_")) targetName else ""
         }
         var pic = check.profilePicUrl
-        if (pic.isBlank() && finalUsername.isNotBlank()) {
-            pic = fetchProfilePic(finalUsername, cookie, proxyConfig?.let { "${it.host}:${it.port}:${it.username.orEmpty()}:${it.password.orEmpty()}" }) ?: ""
+        val proxyStr = proxyConfig?.let { "${it.host}:${it.port}:${it.username.orEmpty()}:${it.password.orEmpty()}" }
+        if ((pic.isBlank() || !pic.startsWith("http")) && finalUsername.isNotBlank()) {
+            pic = fetchProfilePic(finalUsername, cookie, proxyStr) ?: ""
         }
-        if (pic.isNotBlank()) {
+        if ((pic.isBlank() || !pic.startsWith("http")) && check.userId.isNotBlank() && check.userId != "0") {
+            pic = fetchProfilePic(check.userId, cookie, proxyStr) ?: ""
+        }
+        if (pic.isNotBlank() && pic.startsWith("http")) {
             session.profilePicUrl = pic
         }
+        val finalPic = pic.takeIf { it.isNotBlank() && it.startsWith("http") }
+            ?: session.profilePicUrl.takeIf { it.isNotBlank() && it.startsWith("http") }
         return InstagramUserInfo(
             username = finalUsername,
             userId = check.userId.ifBlank { session.actorId },
             fullName = check.fullName,
-            profilePicUrl = pic.takeIf { it.isNotBlank() } ?: session.profilePicUrl.takeIf { it.isNotBlank() },
+            profilePicUrl = finalPic,
             biography = check.biography,
             followersCount = check.followersCount,
             followingCount = check.followingCount,
@@ -284,101 +291,98 @@ class InstagramApiClient(
     // ============================================================================
 
     companion object {
-        const val USER_AGENT_MOBILE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
-        const val SEC_CH_UA_MOBILE = "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\""
-        const val APP_ID_MOBILE = "1217981644879628"
-        const val ASBD_ID_MOBILE = "359341"
+        val USER_AGENT_MOBILE: String get() = NativeSecurity.getIgMobileUa()
+        val SEC_CH_UA_MOBILE: String get() = NativeSecurity.getIgSecChUa()
+        val APP_ID_MOBILE: String get() = NativeSecurity.getIgAppId()
+        val ASBD_ID_MOBILE: String get() = NativeSecurity.getIgAsbdId()
 
-        const val HS_VERSION = "20715.HYP:instagram_web_pkg.2.1...0"
-        const val REV_VERSION = "1047943561"
+        val HS_VERSION: String get() = NativeSecurity.getIgHsVersion()
+        val REV_VERSION: String get() = NativeSecurity.getIgRevVersion()
 
-        const val USER_AGENT_WIN = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        const val SEC_CH_UA_120 = "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\""
-        const val APP_ID_WIN = "936619743392459"
-        const val ASBD_ID_WIN = "129477"
+        val DOC_ID_FOLLOW: String get() = NativeSecurity.getIgDocIdFollow()
+        val DOC_ID_LIKE: String get() = NativeSecurity.getIgDocIdLike()
+        val DOC_ID_COMMENT: String get() = NativeSecurity.getIgDocIdComment()
+        val DOC_ID_PROFILE_PAGE: String get() = NativeSecurity.getIgDocIdProfilePage()
+        val DOC_ID_PROFILE_POSTS: String get() = NativeSecurity.getIgDocIdProfilePosts()
 
-        const val DOC_ID_FOLLOW = "26508036048874888"
-        const val DOC_ID_LIKE = "27182485238052618"
-        const val DOC_ID_COMMENT = "27261905640092552"
-        const val DOC_ID_PROFILE_PAGE = "28036671149327607"
-        const val DOC_ID_PROFILE_POSTS = "28821682214127849"
-
-        const val DEFAULT_LSD = "8evCqFXFXIMbNmJjHja_w2"
-        const val DEFAULT_JAZOEST = "26442"
-        const val DEFAULT_FB_DTSG = "NAfxQRlPFDjbxq7Ftw5Jjxiq8rVkhsvercRO3W0cT_5y0xq0GGG-QyA:17843683195144578:1789655385"
+        val DEFAULT_LSD: String get() = NativeSecurity.getIgDefaultLsd()
+        val DEFAULT_JAZOEST: String get() = NativeSecurity.getIgDefaultJazoest()
+        val DEFAULT_FB_DTSG: String get() = NativeSecurity.getIgDefaultFbDtsg()
 
         // ========================================================================
         // DEVICE FINGERPRINT ENGINE: 100% iOS User-Agents (iPhone)
-        // Dễ code, dễ fix, đảm bảo chuẩn tuyệt đối Client Hints và không bị lệch Platform
+        // 100% chuẩn Web Instagram, không lai tạp Desktop hay Android
         // ========================================================================
-        private val DEVICE_PROFILES = listOf(
-            DeviceProfile(
-                userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1",
-                secChUa = "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"",
-                secChUaMobile = "?1",
-                secChUaModel = "\"iPhone\"",
-                secChUaPlatform = "\"iOS\"",
-                secChUaPlatformVersion = "\"18.5\"",
-                appId = APP_ID_MOBILE,
-                asbdId = ASBD_ID_MOBILE,
-                dpr = "3"
-            ),
-            DeviceProfile(
-                userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3.1 Mobile/15E148 Safari/604.1",
-                secChUa = "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"",
-                secChUaMobile = "?1",
-                secChUaModel = "\"iPhone\"",
-                secChUaPlatform = "\"iOS\"",
-                secChUaPlatformVersion = "\"18.3.1\"",
-                appId = APP_ID_MOBILE,
-                asbdId = ASBD_ID_MOBILE,
-                dpr = "3"
-            ),
-            DeviceProfile(
-                userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1",
-                secChUa = "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"",
-                secChUaMobile = "?1",
-                secChUaModel = "\"iPhone\"",
-                secChUaPlatform = "\"iOS\"",
-                secChUaPlatformVersion = "\"18.2\"",
-                appId = APP_ID_MOBILE,
-                asbdId = ASBD_ID_MOBILE,
-                dpr = "3"
-            ),
-            DeviceProfile(
-                userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1",
-                secChUa = "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"",
-                secChUaMobile = "?1",
-                secChUaModel = "\"iPhone\"",
-                secChUaPlatform = "\"iOS\"",
-                secChUaPlatformVersion = "\"18.1\"",
-                appId = APP_ID_MOBILE,
-                asbdId = ASBD_ID_MOBILE,
-                dpr = "3"
-            ),
-            DeviceProfile(
-                userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6.1 Mobile/15E148 Safari/604.1",
-                secChUa = "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"",
-                secChUaMobile = "?1",
-                secChUaModel = "\"iPhone\"",
-                secChUaPlatform = "\"iOS\"",
-                secChUaPlatformVersion = "\"17.6.1\"",
-                appId = APP_ID_MOBILE,
-                asbdId = ASBD_ID_MOBILE,
-                dpr = "3"
-            ),
-            DeviceProfile(
-                userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
-                secChUa = "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"",
-                secChUaMobile = "?1",
-                secChUaModel = "\"iPhone\"",
-                secChUaPlatform = "\"iOS\"",
-                secChUaPlatformVersion = "\"17.5\"",
-                appId = APP_ID_MOBILE,
-                asbdId = ASBD_ID_MOBILE,
-                dpr = "3"
+        private val DEVICE_PROFILES by lazy {
+            listOf(
+                DeviceProfile(
+                    userAgent = NativeSecurity.getIgMobileUa(),
+                    secChUa = NativeSecurity.getIgSecChUa(),
+                    secChUaMobile = "?1",
+                    secChUaModel = "\"iPhone\"",
+                    secChUaPlatform = "\"iOS\"",
+                    secChUaPlatformVersion = "\"18.5\"",
+                    appId = NativeSecurity.getIgAppId(),
+                    asbdId = NativeSecurity.getIgAsbdId(),
+                    dpr = "3"
+                ),
+                DeviceProfile(
+                    userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3.1 Mobile/15E148 Safari/604.1",
+                    secChUa = NativeSecurity.getIgSecChUa(),
+                    secChUaMobile = "?1",
+                    secChUaModel = "\"iPhone\"",
+                    secChUaPlatform = "\"iOS\"",
+                    secChUaPlatformVersion = "\"18.3.1\"",
+                    appId = NativeSecurity.getIgAppId(),
+                    asbdId = NativeSecurity.getIgAsbdId(),
+                    dpr = "3"
+                ),
+                DeviceProfile(
+                    userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1",
+                    secChUa = NativeSecurity.getIgSecChUa(),
+                    secChUaMobile = "?1",
+                    secChUaModel = "\"iPhone\"",
+                    secChUaPlatform = "\"iOS\"",
+                    secChUaPlatformVersion = "\"18.2\"",
+                    appId = NativeSecurity.getIgAppId(),
+                    asbdId = NativeSecurity.getIgAsbdId(),
+                    dpr = "3"
+                ),
+                DeviceProfile(
+                    userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1",
+                    secChUa = NativeSecurity.getIgSecChUa(),
+                    secChUaMobile = "?1",
+                    secChUaModel = "\"iPhone\"",
+                    secChUaPlatform = "\"iOS\"",
+                    secChUaPlatformVersion = "\"18.1\"",
+                    appId = NativeSecurity.getIgAppId(),
+                    asbdId = NativeSecurity.getIgAsbdId(),
+                    dpr = "3"
+                ),
+                DeviceProfile(
+                    userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6.1 Mobile/15E148 Safari/604.1",
+                    secChUa = NativeSecurity.getIgSecChUa(),
+                    secChUaMobile = "?1",
+                    secChUaModel = "\"iPhone\"",
+                    secChUaPlatform = "\"iOS\"",
+                    secChUaPlatformVersion = "\"17.6.1\"",
+                    appId = NativeSecurity.getIgAppId(),
+                    asbdId = NativeSecurity.getIgAsbdId(),
+                    dpr = "3"
+                ),
+                DeviceProfile(
+                    userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+                    secChUa = NativeSecurity.getIgSecChUa(),
+                    secChUaMobile = "?1",
+                    secChUaModel = "\"iPhone\"",
+                    secChUaPlatform = "\"iOS\"",
+                    secChUaPlatformVersion = "\"17.5\"",
+                    appId = NativeSecurity.getIgAppId(),
+                    asbdId = NativeSecurity.getIgAsbdId(),
+                    dpr = "3"
+                )
             )
-        )
+        }
 
         /**
          * Ánh xạ cố định cấu hình thiết bị iOS theo UID/Key tài khoản:
@@ -500,7 +504,7 @@ class InstagramApiClient(
                 .add("variables", variables.toString())
 
             val reqBuilder = Request.Builder()
-                .url("https://www.instagram.com/api/graphql")
+                .url(NativeSecurity.getIgEndpointGraphql())
                 .post(formBuilder.build())
 
             session.baseHeaders.forEach { (k, v) -> reqBuilder.addHeader(k, v) }
@@ -558,7 +562,7 @@ class InstagramApiClient(
                 .add("variables", variables.toString())
 
             val reqBuilder = Request.Builder()
-                .url("https://www.instagram.com/api/graphql")
+                .url(NativeSecurity.getIgEndpointGraphql())
                 .post(formBuilder.build())
 
             session.baseHeaders.forEach { (k, v) -> reqBuilder.addHeader(k, v) }
@@ -617,7 +621,7 @@ class InstagramApiClient(
                 .add("variables", variables.toString())
 
             val reqBuilder = Request.Builder()
-                .url("https://www.instagram.com/api/graphql")
+                .url(NativeSecurity.getIgEndpointGraphql())
                 .post(formBuilder.build())
 
             session.baseHeaders.forEach { (k, v) -> reqBuilder.addHeader(k, v) }
@@ -691,13 +695,13 @@ class InstagramApiClient(
                 .setType(MultipartBody.FORM)
                 .addFormDataPart(
                     "profile_pic",
-                    "profile_pic.jpg",
+                    "profilepic.jpg",
                     imageBytes.toRequestBody(mediaType)
                 )
                 .build()
 
             val reqBuilder = Request.Builder()
-                .url("https://www.instagram.com/api/v1/web/accounts/web_change_profile_picture/")
+                .url(NativeSecurity.getIgEndpointChangePic())
                 .post(requestBody)
 
             session.baseHeaders.forEach { (k, v) ->
@@ -710,16 +714,40 @@ class InstagramApiClient(
 
             return try {
                 val res = client.newCall(reqBuilder.build()).execute()
-                val body = cleanJsonResponse(res.body?.string().orEmpty())
+                val rawBody = res.body?.string().orEmpty()
+                val body = cleanJsonResponse(rawBody)
                 val json = try { JSONObject(body) } catch (_: Exception) { null }
-                val newUrl = json?.optString("profile_pic_url", "")
-                    ?: json?.optJSONObject("user")?.optString("profile_pic_url", "")
-                    ?: ""
-                if (newUrl.isNotBlank()) {
-                    session.profilePicUrl = newUrl
-                    newUrl
-                } else if (json?.optBoolean("has_profile_pic", false) == true) {
-                    "has_pic"
+                val directUrl = json?.optString("profile_pic_url", "").orEmpty().ifBlank {
+                    json?.optJSONObject("user")?.optString("profile_pic_url", "").orEmpty().ifBlank {
+                        json?.optString("profile_pic_url_hd", "").orEmpty()
+                    }
+                }
+                if (directUrl.isNotBlank() && directUrl.startsWith("http")) {
+                    session.profilePicUrl = directUrl
+                    directUrl
+                } else if (res.isSuccessful ||
+                    json?.optBoolean("has_profile_pic", false) == true ||
+                    json?.optString("status") == "ok" ||
+                    json?.optBoolean("changed_profile") == true ||
+                    rawBody.contains("\"status\":\"ok\"")
+                ) {
+                    val actorId = session.actorId.ifBlank { extractActorId(unquoted) }
+                    var freshPic: String? = null
+                    if (actorId.isNotBlank() && actorId != "0") {
+                        freshPic = fetchProfilePic(actorId, unquoted, proxy)
+                    }
+                    if (freshPic.isNullOrBlank() || !freshPic.startsWith("http")) {
+                        val check = checkCookieIg(unquoted, proxy)
+                        if (check.username.isNotBlank()) {
+                            freshPic = fetchProfilePic(check.username, unquoted, proxy)
+                        }
+                    }
+                    if (freshPic?.startsWith("http") == true) {
+                        session.profilePicUrl = freshPic
+                        freshPic
+                    } else {
+                        session.profilePicUrl.takeIf { it.startsWith("http") }
+                    }
                 } else null
             } catch (e: Exception) {
                 null
@@ -727,41 +755,100 @@ class InstagramApiClient(
         }
 
         /**
-         * LẤY ẢNH ĐẠI DIỆN CHUẨN 100% THEO CURL INSTAGRAM WEB:
-         * Endpoint: GET https://www.instagram.com/api/v1/web/get_profile_pic_props/<username>/
+         * LẤY ẢNH ĐẠI DIỆN CHUẨN 100% THEO CURL INSTAGRAM:
+         * Đa tầng fallback (web_profile_info -> get_profile_pic_props -> i.instagram.com -> web HTML)
          */
         fun fetchProfilePic(
             username: String,
             cookie: String,
             proxy: String? = null
         ): String? {
-            if (username.isBlank()) return null
+            val cleanUser = username.trim().removePrefix("@")
+            if (cleanUser.isBlank()) return null
             val unquoted = unquoteCookie(cookie)
             val session = getOrCreateSession(unquoted, proxyConfig = parseProxy(proxy))
             val client = buildOkHttpClient(parseProxy(proxy), timeoutSec = 15L)
 
-            val reqBuilder = Request.Builder()
-                .url("https://www.instagram.com/api/v1/web/get_profile_pic_props/$username/")
-                .get()
-
-            session.baseHeaders.forEach { (k, v) ->
-                if (!k.equals("content-type", ignoreCase = true)) {
-                    reqBuilder.addHeader(k, v)
+            // 1. web_profile_info (Mobile Web iOS Chuẩn)
+            try {
+                val req = Request.Builder()
+                    .url("${NativeSecurity.getIgEndpointWebProfileInfo()}?username=$cleanUser")
+                    .get()
+                    .header("accept", "*/*")
+                    .header("cookie", unquoted)
+                    .header("user-agent", session.deviceProfile.userAgent)
+                    .header("x-ig-app-id", session.deviceProfile.appId)
+                    .header("x-asbd-id", session.deviceProfile.asbdId)
+                    .header("sec-ch-ua", session.deviceProfile.secChUa)
+                    .header("sec-ch-ua-mobile", session.deviceProfile.secChUaMobile)
+                    .header("sec-ch-ua-platform", session.deviceProfile.secChUaPlatform)
+                    .header("x-requested-with", "XMLHttpRequest")
+                    .header("referer", "https://www.instagram.com/$cleanUser/")
+                    .build()
+                val res = client.newCall(req).execute()
+                if (res.isSuccessful) {
+                    val body = cleanJsonResponse(res.body?.string().orEmpty())
+                    val json = try { JSONObject(body) } catch (_: Exception) { null }
+                    val userObj = json?.optJSONObject("data")?.optJSONObject("user")
+                    val pic = userObj?.optString("profile_pic_url_hd").orEmpty().ifBlank {
+                        userObj?.optString("profile_pic_url").orEmpty()
+                    }
+                    if (pic.isNotBlank() && pic.startsWith("http")) {
+                        return pic
+                    }
                 }
-            }
-            reqBuilder.header("referer", "https://www.instagram.com/$username/")
+            } catch (_: Exception) {}
 
-            return try {
+            // 2. get_profile_pic_props (Mobile Web Endpoint)
+            try {
+                val reqBuilder = Request.Builder()
+                    .url("${NativeSecurity.getIgEndpointProfileProps()}$cleanUser/")
+                    .get()
+                session.baseHeaders.forEach { (k, v) ->
+                    if (!k.equals("content-type", ignoreCase = true)) {
+                        reqBuilder.addHeader(k, v)
+                    }
+                }
+                reqBuilder.header("referer", "https://www.instagram.com/$cleanUser/")
                 val res = client.newCall(reqBuilder.build()).execute()
                 val body = cleanJsonResponse(res.body?.string().orEmpty())
                 val json = try { JSONObject(body) } catch (_: Exception) { null }
                 val pic = json?.optString("profile_pic_url").orEmpty().ifBlank {
-                    json?.optJSONObject("user")?.optString("profile_pic_url").orEmpty()
+                    json?.optString("profile_pic_url_hd").orEmpty().ifBlank {
+                        json?.optJSONObject("user")?.optString("profile_pic_url").orEmpty().ifBlank {
+                            json?.optJSONObject("user")?.optString("profile_pic_url_hd").orEmpty().ifBlank {
+                                json?.optString("header_profile_pic").orEmpty()
+                            }
+                        }
+                    }
                 }
-                pic.takeIf { it.isNotBlank() }
-            } catch (_: Exception) {
-                null
-            }
+                if (pic.isNotBlank() && pic.startsWith("http")) {
+                    return pic
+                }
+            } catch (_: Exception) {}
+
+            // 3. HTML fallback regex (100% iOS Mobile Safari User-Agent)
+            try {
+                val req = Request.Builder()
+                    .url("https://www.instagram.com/$cleanUser/")
+                    .get()
+                    .header("user-agent", session.deviceProfile.userAgent)
+                    .header("cookie", unquoted)
+                    .build()
+                val html = client.newCall(req).execute().body?.string().orEmpty()
+                var m = Pattern.compile("""profile_pic_url(?:_hd)?["']?\s*:\s*["']([^"']+)["']""").matcher(html)
+                if (m.find()) {
+                    val found = m.group(1).replace("\\/", "/")
+                    if (found.startsWith("http")) return found
+                }
+                m = Pattern.compile("""<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']""").matcher(html)
+                if (m.find()) {
+                    val found = m.group(1).replace("&amp;", "&")
+                    if (found.startsWith("http")) return found
+                }
+            } catch (_: Exception) {}
+
+            return null
         }
 
         /**
@@ -808,7 +895,7 @@ class InstagramApiClient(
                         .add("variables", variables.toString())
 
                     val reqBuilder = Request.Builder()
-                        .url("https://www.instagram.com/api/graphql")
+                        .url(NativeSecurity.getIgEndpointGraphql())
                         .post(formBuilder.build())
 
                     session.baseHeaders.forEach { (k, v) -> reqBuilder.addHeader(k, v) }
@@ -861,7 +948,7 @@ class InstagramApiClient(
 
             // 2. Fallback: web_form_data (chính thống của Instagram edit profile)
             try {
-                val url = "https://www.instagram.com/api/v1/accounts/edit/web_form_data/"
+                val url = NativeSecurity.getIgEndpointFormData()
                 val requestBuilder = Request.Builder().url(url).get()
                 session.baseHeaders.forEach { (k, v) ->
                     if (!k.equals("content-type", ignoreCase = true)) {
@@ -895,10 +982,13 @@ class InstagramApiClient(
                     var pic = formData?.optString("profile_pic_url").orEmpty().ifBlank {
                         formData?.optString("profile_picture").orEmpty()
                     }
-                    if (pic.isBlank()) {
+                    if (pic.isBlank() || !pic.startsWith("http")) {
                         pic = fetchProfilePic(username, unquoted, proxy) ?: session.profilePicUrl
                     }
-                    if (pic.isNotBlank()) {
+                    if ((pic.isBlank() || !pic.startsWith("http")) && actorId.isNotBlank() && actorId != "0") {
+                        pic = fetchProfilePic(actorId, unquoted, proxy) ?: session.profilePicUrl
+                    }
+                    if (pic.isNotBlank() && pic.startsWith("http")) {
                         session.profilePicUrl = pic
                     }
                     return CookieCheckResult(

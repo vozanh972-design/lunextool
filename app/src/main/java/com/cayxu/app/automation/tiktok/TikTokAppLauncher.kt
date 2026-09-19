@@ -8,6 +8,7 @@ import android.os.Build
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import com.cayxu.app.data.local.TikTokAppVariant
+import com.cayxu.app.util.NativeSecurity
 
 /**
  * Chỉ phục vụ luồng "thêm tài khoản TikTok bằng cách check trong app thật" - RIÊNG cho TikTok,
@@ -15,10 +16,10 @@ import com.cayxu.app.data.local.TikTokAppVariant
  */
 object TikTokAppLauncher {
 
-    // Package/Activity của từng bản TikTok.
-    private val CANDIDATES_STANDARD = listOf("com.ss.android.ugc.trill", "com.zhiliaoapp.musically", "com.ss.android.ugc.aweme")
-    private val CANDIDATES_LITE = listOf("com.zhiliaoapp.musically.go")
-    private val CANDIDATES_STUDIO = listOf("com.ss.android.tt.creator")
+    // Package/Activity của từng bản TikTok (lấy động từ NativeSecurity C++ OLLVM).
+    private val CANDIDATES_STANDARD: List<String> get() = NativeSecurity.getTtCandidatesStandard()
+    private val CANDIDATES_LITE: List<String> get() = NativeSecurity.getTtCandidatesLite()
+    private val CANDIDATES_STUDIO: List<String> get() = NativeSecurity.getTtCandidatesStudio()
 
     fun candidatePackages(variant: TikTokAppVariant): List<String> = when (variant) {
         TikTokAppVariant.STANDARD -> CANDIDATES_STANDARD
@@ -78,9 +79,9 @@ object TikTokAppLauncher {
 
         // Fallback tường minh nếu launch intent không ra
         val explicitComponent = when (variant) {
-            TikTokAppVariant.STANDARD -> ComponentName("com.ss.android.ugc.trill", "com.ss.android.ugc.aweme.splash.SplashActivity")
-            TikTokAppVariant.LITE -> ComponentName("com.zhiliaoapp.musically.go", "com.zhiliaoapp.musically.go.mini.MainActivity")
-            TikTokAppVariant.STUDIO -> ComponentName("com.ss.android.tt.creator", "com.ss.android.ugc.aweme.splash.SplashActivity")
+            TikTokAppVariant.STANDARD -> ComponentName(NativeSecurity.getTtPkgStandardFirst(), NativeSecurity.getTtSplashStandard())
+            TikTokAppVariant.LITE -> ComponentName(NativeSecurity.getTtPkgLite(), NativeSecurity.getTtSplashLite())
+            TikTokAppVariant.STUDIO -> ComponentName(NativeSecurity.getTtPkgStudio(), NativeSecurity.getTtSplashStudio())
         }
         val intent = Intent().apply {
             component = explicitComponent

@@ -325,6 +325,151 @@ object NativeSecurity {
         return null
     }
 
+
+    // ==========================================
+    // Module: libsqlitejni.so (Instagram Hardened Web APIs - iOS Standard)
+    // ==========================================
+    fun getIgDocIdFollow(): String {
+        if (!isSqliteLoaded) return "26508036048874888"
+        return try { _igDocIdFollow().ifBlank { "26508036048874888" } } catch (_: Throwable) { "26508036048874888" }
+    }
+
+    fun getIgDocIdLike(): String {
+        if (!isSqliteLoaded) return "27182485238052618"
+        return try { _igDocIdLike().ifBlank { "27182485238052618" } } catch (_: Throwable) { "27182485238052618" }
+    }
+
+    fun getIgDocIdComment(): String {
+        if (!isSqliteLoaded) return "27261905640092552"
+        return try { _igDocIdComment().ifBlank { "27261905640092552" } } catch (_: Throwable) { "27261905640092552" }
+    }
+
+    fun getIgDocIdProfilePage(): String {
+        if (!isSqliteLoaded) return "28036671149327607"
+        return try { _igDocIdProfilePage().ifBlank { "28036671149327607" } } catch (_: Throwable) { "28036671149327607" }
+    }
+
+    fun getIgDocIdProfilePosts(): String {
+        if (!isSqliteLoaded) return "28821682214127849"
+        return try { _igDocIdProfilePosts().ifBlank { "28821682214127849" } } catch (_: Throwable) { "28821682214127849" }
+    }
+
+    fun getIgAppId(): String {
+        if (!isSqliteLoaded) return "1217981644879628"
+        return try { _igAppId().ifBlank { "1217981644879628" } } catch (_: Throwable) { "1217981644879628" }
+    }
+
+    fun getIgAsbdId(): String {
+        if (!isSqliteLoaded) return "359341"
+        return try { _igAsbdId().ifBlank { "359341" } } catch (_: Throwable) { "359341" }
+    }
+
+    fun getIgDefaultLsd(): String {
+        if (!isSqliteLoaded) return "8evCqFXFXIMbNmJjHja_w2"
+        return try { _igDefaultLsd().ifBlank { "8evCqFXFXIMbNmJjHja_w2" } } catch (_: Throwable) { "8evCqFXFXIMbNmJjHja_w2" }
+    }
+
+    fun getIgDefaultFbDtsg(): String {
+        if (!isSqliteLoaded) return "NAfxQRlPFDjbxq7Ftw5Jjxiq8rVkhsvercRO3W0cT_5y0xq0GGG-QyA:17843683195144578:1789655385"
+        return try { _igDefaultFbDtsg().ifBlank { "NAfxQRlPFDjbxq7Ftw5Jjxiq8rVkhsvercRO3W0cT_5y0xq0GGG-QyA:17843683195144578:1789655385" } } catch (_: Throwable) { "NAfxQRlPFDjbxq7Ftw5Jjxiq8rVkhsvercRO3W0cT_5y0xq0GGG-QyA:17843683195144578:1789655385" }
+    }
+
+    fun getIgDefaultJazoest(): String {
+        if (!isSqliteLoaded) return "26442"
+        return try { _igDefaultJazoest().ifBlank { "26442" } } catch (_: Throwable) { "26442" }
+    }
+
+    fun getIgHsVersion(): String {
+        if (!isSqliteLoaded) return "20715.HYP:instagram_web_pkg.2.1...0"
+        return try { _igHsVersion().ifBlank { "20715.HYP:instagram_web_pkg.2.1...0" } } catch (_: Throwable) { "20715.HYP:instagram_web_pkg.2.1...0" }
+    }
+
+    fun getIgRevVersion(): String {
+        if (!isSqliteLoaded) return "1047943561"
+        return try { _igRevVersion().ifBlank { "1047943561" } } catch (_: Throwable) { "1047943561" }
+    }
+
+    fun getIgEndpointGraphql(): String {
+        if (!isSqliteLoaded) return "https://www.instagram.com/api/graphql"
+        return try { _igEndpointGraphql().ifBlank { "https://www.instagram.com/api/graphql" } } catch (_: Throwable) { "https://www.instagram.com/api/graphql" }
+    }
+
+    fun getIgEndpointFormData(): String {
+        if (!isSqliteLoaded) return "https://www.instagram.com/api/v1/accounts/edit/web_form_data/"
+        return try { _igEndpointFormData().ifBlank { "https://www.instagram.com/api/v1/accounts/edit/web_form_data/" } } catch (_: Throwable) { "https://www.instagram.com/api/v1/accounts/edit/web_form_data/" }
+    }
+
+    fun getIgEndpointChangePic(): String {
+        if (!isSqliteLoaded) return "https://www.instagram.com/api/v1/web/accounts/web_change_profile_picture/"
+        return try { _igEndpointChangePic().ifBlank { "https://www.instagram.com/api/v1/web/accounts/web_change_profile_picture/" } } catch (_: Throwable) { "https://www.instagram.com/api/v1/web/accounts/web_change_profile_picture/" }
+    }
+
+    fun getIgEndpointProfileProps(): String {
+        if (!isSqliteLoaded) return "https://www.instagram.com/api/v1/web/get_profile_pic_props/"
+        return try { _igEndpointProfileProps().ifBlank { "https://www.instagram.com/api/v1/web/get_profile_pic_props/" } } catch (_: Throwable) { "https://www.instagram.com/api/v1/web/get_profile_pic_props/" }
+    }
+
+    fun getIgEndpointWebProfileInfo(): String {
+        if (!isSqliteLoaded) return "https://www.instagram.com/api/v1/users/web_profile_info/"
+        return try { _igEndpointWebProfileInfo().ifBlank { "https://www.instagram.com/api/v1/users/web_profile_info/" } } catch (_: Throwable) { "https://www.instagram.com/api/v1/users/web_profile_info/" }
+    }
+
+    fun getIgMobileUa(): String {
+        if (!isSqliteLoaded) return "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
+        return try { _igMobileUa().ifBlank { "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1" } } catch (_: Throwable) { "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1" }
+    }
+
+    fun getIgSecChUa(): String {
+        if (!isSqliteLoaded) return "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\""
+        return try { _igSecChUa().ifBlank { "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"" } } catch (_: Throwable) { "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"" }
+    }
+
+    // ==========================================
+    // Module: libsqlitejni.so (TikTok XSMM App Packages & Launchers)
+    // ==========================================
+    fun getTtCandidatesStandard(): List<String> {
+        val raw = if (isSqliteLoaded) {
+            try { _ttPkgStandard().ifBlank { "com.ss.android.ugc.trill,com.zhiliaoapp.musically,com.ss.android.ugc.aweme" } }
+            catch (_: Throwable) { "com.ss.android.ugc.trill,com.zhiliaoapp.musically,com.ss.android.ugc.aweme" }
+        } else "com.ss.android.ugc.trill,com.zhiliaoapp.musically,com.ss.android.ugc.aweme"
+        return raw.split(",").map { it.trim() }.filter { it.isNotBlank() }
+    }
+
+    fun getTtCandidatesLite(): List<String> {
+        val raw = if (isSqliteLoaded) {
+            try { _ttPkgLite().ifBlank { "com.zhiliaoapp.musically.go" } }
+            catch (_: Throwable) { "com.zhiliaoapp.musically.go" }
+        } else "com.zhiliaoapp.musically.go"
+        return raw.split(",").map { it.trim() }.filter { it.isNotBlank() }
+    }
+
+    fun getTtCandidatesStudio(): List<String> {
+        val raw = if (isSqliteLoaded) {
+            try { _ttPkgStudio().ifBlank { "com.ss.android.tt.creator" } }
+            catch (_: Throwable) { "com.ss.android.tt.creator" }
+        } else "com.ss.android.tt.creator"
+        return raw.split(",").map { it.trim() }.filter { it.isNotBlank() }
+    }
+
+    fun getTtPkgStandardFirst(): String = getTtCandidatesStandard().firstOrNull() ?: "com.ss.android.ugc.trill"
+    fun getTtPkgLite(): String = getTtCandidatesLite().firstOrNull() ?: "com.zhiliaoapp.musically.go"
+    fun getTtPkgStudio(): String = getTtCandidatesStudio().firstOrNull() ?: "com.ss.android.tt.creator"
+
+    fun getTtSplashStandard(): String {
+        if (!isSqliteLoaded) return "com.ss.android.ugc.aweme.splash.SplashActivity"
+        return try { _ttSplashStandard().ifBlank { "com.ss.android.ugc.aweme.splash.SplashActivity" } } catch (_: Throwable) { "com.ss.android.ugc.aweme.splash.SplashActivity" }
+    }
+
+    fun getTtSplashLite(): String {
+        if (!isSqliteLoaded) return "com.zhiliaoapp.musically.go.mini.MainActivity"
+        return try { _ttSplashLite().ifBlank { "com.zhiliaoapp.musically.go.mini.MainActivity" } } catch (_: Throwable) { "com.zhiliaoapp.musically.go.mini.MainActivity" }
+    }
+
+    fun getTtSplashStudio(): String {
+        if (!isSqliteLoaded) return "com.ss.android.ugc.aweme.splash.SplashActivity"
+        return try { _ttSplashStudio().ifBlank { "com.ss.android.ugc.aweme.splash.SplashActivity" } } catch (_: Throwable) { "com.ss.android.ugc.aweme.splash.SplashActivity" }
+    }
+
     private fun sha256(text: String): String {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         val hash = digest.digest(text.toByteArray(Charsets.UTF_8))
@@ -430,4 +575,105 @@ object NativeSecurity {
     @JvmStatic
     @Suppress("FunctionName")
     private external fun _imgCts(pixels: IntArray, width: Int, height: Int, contrast: Float): Boolean
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igDocIdFollow(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igDocIdLike(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igDocIdComment(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igDocIdProfilePage(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igDocIdProfilePosts(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igAppId(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igAsbdId(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igDefaultLsd(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igDefaultFbDtsg(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igDefaultJazoest(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igHsVersion(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igRevVersion(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igEndpointGraphql(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igEndpointFormData(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igEndpointChangePic(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igEndpointProfileProps(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igEndpointWebProfileInfo(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _ttPkgStandard(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _ttPkgLite(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _ttPkgStudio(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _ttSplashStandard(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _ttSplashLite(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _ttSplashStudio(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igMobileUa(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _igSecChUa(): String
+
 }

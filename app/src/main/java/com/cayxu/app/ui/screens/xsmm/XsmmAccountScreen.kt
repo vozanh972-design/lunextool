@@ -158,6 +158,48 @@ fun XsmmAccountScreen(navController: NavController) {
             }
         }
     }
+
+    LaunchedEffect(selectedPlatform, instagramAccounts.size) {
+        if (selectedPlatform == "instagram") {
+            val needCheck = instagramAccounts.mapNotNull { username ->
+                val acc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, username)
+                if (acc != null && (acc.avatar.isBlank() || !acc.avatar.startsWith("http") || acc.fullName.isBlank()) && acc.cookie.isNotBlank()) acc else null
+            }
+            if (needCheck.isNotEmpty()) {
+                scope.launch(Dispatchers.IO) {
+                    var hasUpdates = false
+                    needCheck.forEach { acc ->
+                        try {
+                            val client = com.cayxu.app.instagram.InstagramApiClient(
+                                cookie = acc.cookie,
+                                proxyConfig = com.cayxu.app.instagram.InstagramApiClient.parseProxy(acc.proxy)
+                            )
+                            val info = client.fetchAccountDetails(acc.username)
+                            val freshPic = info.profilePicUrl?.takeIf { it.startsWith("http") }
+                            if (freshPic != null || info.fullName.isNotBlank()) {
+                                val updated = acc.copy(
+                                    fullName = info.fullName.ifBlank { acc.fullName },
+                                    avatar = freshPic ?: acc.avatar,
+                                    followersCount = if (info.followersCount > 0) info.followersCount else acc.followersCount,
+                                    followingCount = if (info.followingCount > 0) info.followingCount else acc.followingCount,
+                                    postsCount = if (info.postsCount > 0) info.postsCount else acc.postsCount,
+                                    isLive = info.isLive
+                                )
+                                com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updated)
+                                hasUpdates = true
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    if (hasUpdates) {
+                        withContext(Dispatchers.Main) {
+                            avatarVersion = System.currentTimeMillis()
+                            instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+                        }
+                    }
+                }
+            }
+        }
+    }
     var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
     val runningIgAccounts = com.cayxu.app.automation.instagram.XsmmInstagramManager.runningAccounts
     val igStatusMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap
@@ -203,24 +245,33 @@ fun XsmmAccountScreen(navController: NavController) {
                     withContext(Dispatchers.Main) {
                         android.widget.Toast.makeText(context, "Đang đổi ảnh đại diện Instagram...", android.widget.Toast.LENGTH_SHORT).show()
                     }
-                    val client = com.cayxu.app.instagram.InstagramApiClient(cookie = acc.cookie)
+                    val client = com.cayxu.app.instagram.InstagramApiClient(
+                        cookie = acc.cookie,
+                        proxyConfig = com.cayxu.app.instagram.InstagramApiClient.parseProxy(acc.proxy)
+                    )
                     val newPicUrl = client.changeProfilePicture(bytes)
                     val freshDetails = try {
                         client.fetchAccountDetails(acc.username)
                     } catch (_: Exception) { null }
-                    val finalAvatar = newPicUrl ?: freshDetails?.profilePicUrl ?: acc.avatar
+                    val finalAvatar = (if (newPicUrl?.startsWith("http") == true) newPicUrl else null)
+                        ?: freshDetails?.profilePicUrl?.takeIf { it.startsWith("http") }
+                        ?: acc.avatar
                     val updatedAcc = acc.copy(
                         avatar = finalAvatar,
-                        fullName = freshDetails?.fullName ?: acc.fullName,
-                        followersCount = freshDetails?.followersCount ?: acc.followersCount,
-                        followingCount = freshDetails?.followingCount ?: acc.followingCount,
-                        postsCount = freshDetails?.postsCount ?: acc.postsCount
+                        fullName = freshDetails?.fullName?.ifBlank { acc.fullName } ?: acc.fullName,
+                        followersCount = freshDetails?.followersCount?.takeIf { it > 0 } ?: acc.followersCount,
+                        followingCount = freshDetails?.followingCount?.takeIf { it > 0 } ?: acc.followingCount,
+                        postsCount = freshDetails?.postsCount?.takeIf { it > 0 } ?: acc.postsCount
                     )
                     com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updatedAcc)
                     withContext(Dispatchers.Main) {
                         avatarVersion = System.currentTimeMillis()
                         instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
-                        android.widget.Toast.makeText(context, "Đổi avatar Instagram thành công!", android.widget.Toast.LENGTH_SHORT).show()
+                        if (newPicUrl != null || freshDetails?.profilePicUrl?.startsWith("http") == true) {
+                            android.widget.Toast.makeText(context, "Đổi avatar Instagram thành công!", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            android.widget.Toast.makeText(context, "Đã gửi yêu cầu đổi avatar Instagram", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                         isUploadingAvatar = false
                     }
                 } catch (e: Exception) {
@@ -1310,12 +1361,13 @@ fun XsmmAccountScreen(navController: NavController) {
                                 com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanIg)
                             }
                             val avatarModel = remember(igAcc?.avatar, avatarVersion) {
-                                if (igAcc?.avatar.isNullOrBlank()) null
+                                val av = igAcc?.avatar?.trim().orEmpty()
+                                if (av.isBlank() || !av.startsWith("http")) null
                                 else coil.request.ImageRequest.Builder(context)
-                                    .data(igAcc?.avatar)
+                                    .data(av)
                                     .crossfade(true)
-                                    .memoryCacheKey("${igAcc?.avatar}_$avatarVersion")
-                                    .diskCacheKey("${igAcc?.avatar}_$avatarVersion")
+                                    .memoryCacheKey("${av}_$avatarVersion")
+                                    .diskCacheKey("${av}_$avatarVersion")
                                     .build()
                             }
                             Card(
@@ -1362,7 +1414,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 },
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            if (!igAcc?.avatar.isNullOrBlank()) {
+                                            if (avatarModel != null) {
                                                 AsyncImage(
                                                     model = avatarModel,
                                                     contentDescription = "Avatar",
@@ -1532,7 +1584,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                             username = finalUsername,
                                                             userId = info.userId.ifBlank { acc.userId },
                                                             fullName = info.fullName.ifBlank { acc.fullName },
-                                                            avatar = info.profilePicUrl ?: acc.avatar,
+                                                            avatar = info.profilePicUrl?.takeIf { it.startsWith("http") } ?: acc.avatar,
                                                             fbDtsg = info.fbDtsg ?: acc.fbDtsg,
                                                             lsd = info.lsd ?: acc.lsd,
                                                             biography = info.biography.ifBlank { acc.biography },

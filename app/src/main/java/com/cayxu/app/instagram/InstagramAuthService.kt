@@ -7,6 +7,7 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
+import com.cayxu.app.util.NativeSecurity
 
 /**
  * Logic đăng nhập, xác thực và quản lý phiên Instagram được trích xuất từ APK (slunexAUTO / MToolMax).
@@ -23,9 +24,9 @@ class InstagramAuthService {
         const val BASE_URL = "https://www.instagram.com"
         const val API_BASE_URL = "https://i.instagram.com"
         
-        // App ID và ID định danh client chuẩn của Instagram Web
-        const val IG_APP_ID = "936619743392459"
-        const val ASBD_ID = "198387"
+        // App ID và ID định danh client chuẩn của Instagram Web (lấy động từ NativeSecurity C++)
+        val IG_APP_ID: String get() = NativeSecurity.getIgAppId()
+        val ASBD_ID: String get() = NativeSecurity.getIgAsbdId()
         const val IG_AJAX_VERSION = "1006309104"
         const val GRAPHQL_DOC_ID_LIKE = "9595477160535898"
         const val GRAPHQL_DOC_ID_PROFILE = "24644030398570558"
