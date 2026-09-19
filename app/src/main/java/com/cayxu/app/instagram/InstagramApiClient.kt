@@ -305,15 +305,20 @@ class InstagramApiClient(
     // ============================================================================
 
     companion object {
+        const val BASE_URL = "https://i.instagram.com/api/v1"
+        const val IG_APP_ID_PRIVATE = "567067343352427"
+        const val IG_CAPABILITIES = "3brTvw=="
+        const val IG_CONN_TYPE = "WIFI"
+        const val IG_APP_UA = "Instagram 447.0.0.55.81 Android (36/15; 480dpi; 1080x2340; samsung; SM-S928B; e3q; qcom; vi_VN; 385311890)"
+
+        const val APP_ID = IG_APP_ID_PRIVATE
+        const val CONNECTION_TYPE = IG_CONN_TYPE
+        const val CAPABILITIES = IG_CAPABILITIES
+
         val USER_AGENT_MOBILE: String get() = IG_APP_UA
         val SEC_CH_UA_MOBILE: String get() = ""
         val APP_ID_MOBILE: String get() = IG_APP_ID_PRIVATE
         val ASBD_ID_MOBILE: String get() = ""
-
-        const val BASE_URL = "https://i.instagram.com/api/v1"
-        const val APP_ID = IG_APP_ID_PRIVATE
-        const val CONNECTION_TYPE = IG_CONN_TYPE
-        const val CAPABILITIES = IG_CAPABILITIES
 
         // ========================================================================
         // DEVICE FINGERPRINT ENGINE: 100% Android App Instagram 447
@@ -429,9 +434,9 @@ class InstagramApiClient(
             val csrf = extractCsrfToken(normalized)
             val profile = getDeviceProfileFor(sessionKey, userAgentHint)
 
-            val fbDtsg = initialFbDtsg?.takeIf { it.isNotBlank() } ?: DEFAULT_FB_DTSG
-            val lsd = initialLsd?.takeIf { it.isNotBlank() } ?: DEFAULT_LSD
-            val jazoest = DEFAULT_JAZOEST
+            val fbDtsg = initialFbDtsg?.takeIf { it.isNotBlank() } ?: ""
+            val lsd = initialLsd?.takeIf { it.isNotBlank() } ?: ""
+            val jazoest = ""
 
             // Xây dựng bộ baseHeaders chuẩn 100% Instagram App REST API
             val headers = mutableMapOf(
@@ -1338,12 +1343,7 @@ class InstagramApiClient(
             }
         }
 
-        // IG App constants — lấy nguyên từ Instagram 447.0.0.55.81 APK
-        private const val IG_APP_UA =
-            "Instagram 447.0.0.55.81 Android (36/15; 480dpi; 1080x2340; samsung; SM-S928B; e3q; qcom; vi_VN; 385311890)"
-        private const val IG_APP_ID_PRIVATE = "567067343352427"
-        private const val IG_CAPABILITIES   = "3brTvw=="
-        private const val IG_CONN_TYPE      = "WIFI"
+
 
         /**
          * Lấy khóa mã hóa mật khẩu từ Instagram App Private API.
