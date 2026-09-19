@@ -268,41 +268,58 @@ class FacebookMediaEngine(
         val mediaType = mimeType.toMediaTypeOrNull()
         val fileBody = imageBytes.toRequestBody(mediaType)
 
-        // 1. Upload ảnh bìa lên Graph API /{target}/photos
-        val uploadBody = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("access_token", token)
-            .addFormDataPart("published", "true")
-            .addFormDataPart("no_feed", "true")
-            .addFormDataPart("source", "cover_${System.currentTimeMillis()}.jpg", fileBody)
-            .build()
+        // 1. Upload ảnh bìa lên Graph API /{target}/photos (với fallback 'me')
+        // Lưu ý: Param no_feed trong multipart photos thường bị Meta báo lỗi "An unknown error has occurred."
+        // Chuẩn Facebook API chỉ nhận published=true/false hoặc không truyền no_feed ở tầng photos upload
+        fun doUploadPhoto(endpointTarget: String): Pair<String, String> {
+            val uploadBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("access_token", token)
+                .addFormDataPart("published", "true")
+                .addFormDataPart("source", "cover_${System.currentTimeMillis()}.jpg", fileBody)
+                .build()
 
-        val uploadReq = Request.Builder()
-            .url("$GRAPH_API_URL/$target/photos?access_token=$token")
-            .post(uploadBody)
-            .header("User-Agent", KATANA_USER_AGENT)
-            .header("Authorization", "OAuth $token")
-            .build()
+            val uploadReq = Request.Builder()
+                .url("$GRAPH_API_URL/$endpointTarget/photos?access_token=$token")
+                .post(uploadBody)
+                .header("User-Agent", KATANA_USER_AGENT)
+                .header("Authorization", "OAuth $token")
+                .build()
 
-        val photoId: String
-        try {
-            val uploadRes = httpClient.newCall(uploadReq).execute()
-            val uploadRespStr = uploadRes.body?.string() ?: ""
-            val json = try { JSONObject(uploadRespStr) } catch (_: Exception) { null }
-            photoId = json?.optString("id", "") ?: ""
-            if (photoId.isEmpty()) {
-                val errMsg = json?.optJSONObject("error")?.optString("message") ?: uploadRespStr
-                return MediaResult(false, null, "Lỗi tải ảnh bìa lên: $errMsg", uploadRespStr)
+            return try {
+                httpClient.newCall(uploadReq).execute().use { res ->
+                    val body = res.body?.string() ?: ""
+                    val json = try { JSONObject(body) } catch (_: Exception) { null }
+                    val id = json?.optString("id", "") ?: ""
+                    val err = json?.optJSONObject("error")?.optString("message") ?: body
+                    Pair(id, err)
+                }
+            } catch (e: Exception) {
+                Pair("", e.message ?: "Network error")
             }
-        } catch (e: Exception) {
-            return MediaResult(false, null, e.message, "")
         }
 
-        // 2. Gán photoId làm Cover qua POST /{target}
+        val uploadResult = doUploadPhoto(target)
+        var photoId = uploadResult.first
+        var errMsg = uploadResult.second
+        // Fallback upload với "me" nếu targetId (như 615...) bị Meta từ chối upload ảnh cá nhân
+        if (photoId.isEmpty() && target != "me") {
+            val fallbackUpload = doUploadPhoto("me")
+            if (fallbackUpload.first.isNotEmpty()) {
+                photoId = fallbackUpload.first
+            } else {
+                errMsg = fallbackUpload.second
+            }
+        }
+
+        if (photoId.isEmpty()) {
+            return MediaResult(false, null, "Lỗi tải ảnh bìa lên: $errMsg", errMsg)
+        }
+
+        // 2. Gán photoId làm Cover qua POST /{target} (và fallback "me")
         val res1 = updateCoverPhotoWithPhotoId(photoId, target, tokenParam = token)
         if (res1.isSuccess) return res1
 
-        // Nếu target đang là numeric UID mà bị lỗi thì thử gọi trực tiếp với "me"
         if (target != "me") {
             val res2 = updateCoverPhotoWithPhotoId(photoId, "me", tokenParam = token)
             if (res2.isSuccess) return res2

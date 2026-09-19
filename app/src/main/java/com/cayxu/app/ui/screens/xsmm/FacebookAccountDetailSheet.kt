@@ -60,6 +60,40 @@ fun FacebookAccountDetailSheet(
     var isUploadingAvatar by remember { mutableStateOf(false) }
     var isUploadingCover by remember { mutableStateOf(false) }
 
+    // Tự động load cover photo và avatar HD khi mở Sheet nếu có token
+    androidx.compose.runtime.LaunchedEffect(account.uid, account.bio) {
+        val token = account.bio.ifBlank { "" }
+        if (token.isNotBlank()) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val proxyParts = account.phone.ifBlank { null }?.split(":")
+                    val proxyHost = proxyParts?.getOrNull(0)
+                    val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+                    val mediaEngine = FacebookMediaEngine(
+                        accessToken = token,
+                        proxyHost = proxyHost,
+                        proxyPort = proxyPort
+                    )
+                    val mediaInfo = mediaEngine.getProfileMedia(account.uid, tokenParam = token)
+                    if (mediaInfo != null) {
+                        val fetchedCover = mediaInfo.coverUrl.orEmpty()
+                        val fetchedAvatar = mediaInfo.avatarUrl.orEmpty()
+                        withContext(Dispatchers.Main) {
+                            if (fetchedCover.isNotBlank() && fetchedCover != currentCover) {
+                                currentCover = fetchedCover
+                            }
+                            if (fetchedAvatar.isNotBlank() && currentAvatar.isBlank()) {
+                                currentAvatar = fetchedAvatar
+                            }
+                            val updatedAcc = account.copy(avatar = currentAvatar, cover = currentCover)
+                            FacebookAccountsStore.updateAccount(context, updatedAcc)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
     // Launcher chọn ảnh đại diện (Avatar) qua 100% Graph API (Token)
     val pickAvatarLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
