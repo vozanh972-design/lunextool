@@ -65,9 +65,10 @@ fun FacebookAccountDetailSheet(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val token = account.bio.ifBlank { "" }
-            if (token.isBlank()) {
-                Toast.makeText(context, "Tài khoản không có Token để đổi Avatar", Toast.LENGTH_SHORT).show()
+            val token = account.bio.ifBlank { null }
+            val cookie = account.note.ifBlank { null }
+            if (token.isNullOrBlank() && cookie.isNullOrBlank()) {
+                Toast.makeText(context, "Tài khoản cần có Token hoặc Cookie để đổi Avatar", Toast.LENGTH_SHORT).show()
                 return@rememberLauncherForActivityResult
             }
 
@@ -87,16 +88,31 @@ fun FacebookAccountDetailSheet(
                         Toast.makeText(context, "Đang tải lên Avatar mới...", Toast.LENGTH_SHORT).show()
                     }
 
-                    val mediaEngine = FacebookMediaEngine(accessToken = token)
-                    val result = mediaEngine.updateAvatar(imageBytes = bytes, targetId = account.uid, tokenParam = token)
+                    val proxyParts = account.phone.ifBlank { null }?.split(":")
+                    val proxyHost = proxyParts?.getOrNull(0)
+                    val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+
+                    val mediaEngine = FacebookMediaEngine(
+                        accessToken = token,
+                        cookieStr = cookie,
+                        proxyHost = proxyHost,
+                        proxyPort = proxyPort
+                    )
+                    val result = mediaEngine.updateAvatar(
+                        imageBytes = bytes,
+                        targetId = account.uid,
+                        tokenParam = token,
+                        cookieParam = cookie
+                    )
 
                     withContext(Dispatchers.Main) {
                         isUploadingAvatar = false
                         if (result.isSuccess) {
                             Toast.makeText(context, "Đổi Avatar thành công!", Toast.LENGTH_SHORT).show()
                             // Lấy lại URL avatar mới
-                            val updatedMedia = mediaEngine.getProfileMedia(account.uid, token)
-                            val newAvatarUrl = updatedMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/${account.uid}/picture?type=large"
+                            val updatedMedia = mediaEngine.getProfileMedia(account.uid, tokenParam = token, cookieParam = cookie)
+                            val rawAvatar = updatedMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/${account.uid}/picture?type=large"
+                            val newAvatarUrl = if (rawAvatar.contains("?")) "$rawAvatar&t=${System.currentTimeMillis()}" else "$rawAvatar?t=${System.currentTimeMillis()}"
                             currentAvatar = newAvatarUrl
                             val updatedAcc = account.copy(avatar = newAvatarUrl, cover = currentCover)
                             FacebookAccountsStore.updateAccount(context, updatedAcc)
@@ -119,9 +135,10 @@ fun FacebookAccountDetailSheet(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val token = account.bio.ifBlank { "" }
-            if (token.isBlank()) {
-                Toast.makeText(context, "Tài khoản không có Token để đổi Ảnh Bìa", Toast.LENGTH_SHORT).show()
+            val token = account.bio.ifBlank { null }
+            val cookie = account.note.ifBlank { null }
+            if (token.isNullOrBlank() && cookie.isNullOrBlank()) {
+                Toast.makeText(context, "Tài khoản cần có Token hoặc Cookie để đổi Ảnh Bìa", Toast.LENGTH_SHORT).show()
                 return@rememberLauncherForActivityResult
             }
 
@@ -141,16 +158,31 @@ fun FacebookAccountDetailSheet(
                         Toast.makeText(context, "Đang tải lên Ảnh Bìa mới...", Toast.LENGTH_SHORT).show()
                     }
 
-                    val mediaEngine = FacebookMediaEngine(accessToken = token)
-                    val result = mediaEngine.updateCoverPhoto(imageBytes = bytes, targetId = account.uid, tokenParam = token)
+                    val proxyParts = account.phone.ifBlank { null }?.split(":")
+                    val proxyHost = proxyParts?.getOrNull(0)
+                    val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+
+                    val mediaEngine = FacebookMediaEngine(
+                        accessToken = token,
+                        cookieStr = cookie,
+                        proxyHost = proxyHost,
+                        proxyPort = proxyPort
+                    )
+                    val result = mediaEngine.updateCoverPhoto(
+                        imageBytes = bytes,
+                        targetId = account.uid,
+                        tokenParam = token,
+                        cookieParam = cookie
+                    )
 
                     withContext(Dispatchers.Main) {
                         isUploadingCover = false
                         if (result.isSuccess) {
                             Toast.makeText(context, "Đổi Ảnh Bìa thành công!", Toast.LENGTH_SHORT).show()
-                            val updatedMedia = mediaEngine.getProfileMedia(account.uid, token)
-                            val newCoverUrl = updatedMedia?.coverUrl.orEmpty()
-                            if (newCoverUrl.isNotBlank()) {
+                            val updatedMedia = mediaEngine.getProfileMedia(account.uid, tokenParam = token, cookieParam = cookie)
+                            val rawCover = updatedMedia?.coverUrl.orEmpty()
+                            if (rawCover.isNotBlank()) {
+                                val newCoverUrl = if (rawCover.contains("?")) "$rawCover&t=${System.currentTimeMillis()}" else "$rawCover?t=${System.currentTimeMillis()}"
                                 currentCover = newCoverUrl
                             }
                             val updatedAcc = account.copy(avatar = currentAvatar, cover = currentCover)

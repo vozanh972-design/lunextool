@@ -312,21 +312,43 @@ fun XsmmAccountScreen(navController: NavController) {
                     withContext(Dispatchers.Main) {
                         android.widget.Toast.makeText(context, "Đang đổi ảnh đại diện Facebook...", android.widget.Toast.LENGTH_SHORT).show()
                     }
-                    val fbManager = com.cayxu.app.facebook.FacebookAccountManager()
                     val token = acc.bio.ifBlank { null }
-                    var newPicUrl: String? = null
-                    if (!token.isNullOrBlank()) {
-                        newPicUrl = fbManager.changeProfilePicture(token, bytes, acc.phone.ifBlank { null })
-                    }
-                    val fallbackPic = "https://graph.facebook.com/v19.0/$uid/picture?type=large"
-                    val finalAvatar = newPicUrl ?: fallbackPic
-                    val updatedAcc = acc.copy(avatar = finalAvatar)
-                    com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updatedAcc)
-                    withContext(Dispatchers.Main) {
-                        avatarVersion = System.currentTimeMillis()
-                        facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
-                        android.widget.Toast.makeText(context, "Đổi avatar Facebook thành công!", android.widget.Toast.LENGTH_SHORT).show()
-                        isUploadingAvatar = false
+                    val cookie = acc.note.ifBlank { null }
+                    val proxy = acc.phone.ifBlank { null }
+                    val proxyParts = proxy?.split(":")
+                    val proxyHost = proxyParts?.getOrNull(0)
+                    val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+
+                    val mediaEngine = com.cayxu.app.facebook.FacebookMediaEngine(
+                        accessToken = token,
+                        cookieStr = cookie,
+                        proxyHost = proxyHost,
+                        proxyPort = proxyPort
+                    )
+                    val result = mediaEngine.updateAvatar(
+                        imageBytes = bytes,
+                        targetId = acc.uid,
+                        tokenParam = token,
+                        cookieParam = cookie
+                    )
+
+                    if (result.isSuccess) {
+                        val updatedMedia = mediaEngine.getProfileMedia(acc.uid, tokenParam = token, cookieParam = cookie)
+                        val rawAvatar = updatedMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/${acc.uid}/picture?type=large"
+                        val finalAvatar = if (rawAvatar.contains("?")) "$rawAvatar&t=${System.currentTimeMillis()}" else "$rawAvatar?t=${System.currentTimeMillis()}"
+                        val updatedAcc = acc.copy(avatar = finalAvatar)
+                        com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updatedAcc)
+                        withContext(Dispatchers.Main) {
+                            avatarVersion = System.currentTimeMillis()
+                            facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+                            android.widget.Toast.makeText(context, "Đổi avatar Facebook thành công!", android.widget.Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Lỗi đổi avatar: ${result.message}", android.widget.Toast.LENGTH_LONG).show()
+                            isUploadingAvatar = false
+                        }
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {

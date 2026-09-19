@@ -485,40 +485,37 @@ class FacebookAccountManager {
     }
 
     /**
-     * Đổi avatar Facebook qua Graph API /me/photos hoặc Cookie Web
+     * Đổi avatar Facebook qua FacebookMediaEngine (hỗ trợ Cookie Web và Graph API)
      */
     @Throws(Exception::class)
-    fun changeProfilePicture(token: String, imageBytes: ByteArray, proxyStr: String? = null): String? {
-        val client = if (!proxyStr.isNullOrEmpty()) buildProxiedClient(proxyStr) else httpClient
-        val mediaType = "image/jpeg".toMediaTypeOrNull()
-        val reqBody = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("access_token", token)
-            .addFormDataPart("published", "true")
-            .addFormDataPart(
-                "source",
-                "avatar_${System.currentTimeMillis()}.jpg",
-                imageBytes.toRequestBody(mediaType)
-            )
-            .build()
+    fun changeProfilePicture(
+        token: String?,
+        imageBytes: ByteArray,
+        proxyStr: String? = null,
+        cookieStr: String? = null,
+        uid: String? = null
+    ): String? {
+        val proxyParts = proxyStr?.split(":")
+        val proxyHost = proxyParts?.getOrNull(0)
+        val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
 
-        val request = Request.Builder()
-            .url("$GRAPH_BASE_URL/me/photos")
-            .post(reqBody)
-            .build()
-
-        return try {
-            client.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val json = JSONObject(body)
-                val photoId = json.optString("id", "")
-                if (photoId.isNotBlank()) {
-                    "$GRAPH_BASE_URL/$photoId/picture?type=large&access_token=$token"
-                } else null
-            }
-        } catch (_: Exception) {
-            null
+        val mediaEngine = FacebookMediaEngine(
+            accessToken = token,
+            cookieStr = cookieStr,
+            proxyHost = proxyHost,
+            proxyPort = proxyPort
+        )
+        val result = mediaEngine.updateAvatar(
+            imageBytes = imageBytes,
+            targetId = uid,
+            tokenParam = token,
+            cookieParam = cookieStr
+        )
+        if (result.isSuccess) {
+            val media = mediaEngine.getProfileMedia(uid, tokenParam = token, cookieParam = cookieStr)
+            return media?.avatarUrl ?: "$GRAPH_BASE_URL/${uid ?: "me"}/picture?type=large"
         }
+        return null
     }
 
     private fun unescapeUnicode(str: String): String {
