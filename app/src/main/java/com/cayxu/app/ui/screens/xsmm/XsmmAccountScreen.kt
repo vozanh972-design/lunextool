@@ -570,17 +570,14 @@ fun XsmmAccountScreen(navController: NavController) {
                     val fbUids = mutableSetOf<String>()
                     result.accounts.forEach { acc ->
                         if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
+                        // Chỉ dùng account_id (ID thật XSMM trả về) để match
+                        // KHÔNG extract từ link_account vì link_account chứa link gốc ta gửi lên
+                        // có thể không khớp với account_id thật của XSMM
                         val uid = acc.accountId.trim()
-                        val linkUid = Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(acc.linkAccount)?.groupValues?.getOrNull(1)?.trim() ?: ""
                         if (uid.isNotBlank()) {
                             fbUids.add(uid)
-                            accMap[uid] = acc.accountId.ifBlank { uid }
+                            accMap[uid] = uid
                             if (acc.id.isNotBlank()) internalMap[uid] = acc.id
-                        }
-                        if (linkUid.isNotBlank()) {
-                            fbUids.add(linkUid)
-                            accMap[linkUid] = acc.accountId.ifBlank { linkUid }
-                            if (acc.id.isNotBlank()) internalMap[linkUid] = acc.id
                         }
                     }
                     linkedFbUids = fbUids
@@ -723,17 +720,12 @@ fun XsmmAccountScreen(navController: NavController) {
                                             val internalMap = mutableMapOf<String, String>()
                                             accRes.accounts.forEach { acc ->
                                                 if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
+                                                // Chỉ dùng account_id - KHÔNG extract từ link_account
                                                 val uid = acc.accountId.trim()
-                                                val linkUid = Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(acc.linkAccount)?.groupValues?.getOrNull(1)?.trim() ?: ""
                                                 if (uid.isNotBlank()) {
                                                     fbUids.add(uid)
-                                                    accMap[uid] = acc.accountId.ifBlank { uid }
+                                                    accMap[uid] = uid
                                                     if (acc.id.isNotBlank()) internalMap[uid] = acc.id
-                                                }
-                                                if (linkUid.isNotBlank()) {
-                                                    fbUids.add(linkUid)
-                                                    accMap[linkUid] = acc.accountId.ifBlank { linkUid }
-                                                    if (acc.id.isNotBlank()) internalMap[linkUid] = acc.id
                                                 }
                                             }
                                             linkedFbUids = fbUids
@@ -1412,17 +1404,12 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                 val internalMap = mutableMapOf<String, String>()
                                                                 syncRes.accounts.forEach { a ->
                                                                     if (!a.type.equals("facebook", ignoreCase = true)) return@forEach
+                                                                    // Chỉ dùng account_id - KHÔNG extract từ link_account
                                                                     val u = a.accountId.trim()
-                                                                    val lu = Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(a.linkAccount)?.groupValues?.getOrNull(1)?.trim() ?: ""
                                                                     if (u.isNotBlank()) {
                                                                         fbUids.add(u)
-                                                                        accMap[u] = a.accountId.ifBlank { u }
+                                                                        accMap[u] = u
                                                                         if (a.id.isNotBlank()) internalMap[u] = a.id
-                                                                    }
-                                                                    if (lu.isNotBlank()) {
-                                                                        fbUids.add(lu)
-                                                                        accMap[lu] = a.accountId.ifBlank { lu }
-                                                                        if (a.id.isNotBlank()) internalMap[lu] = a.id
                                                                     }
                                                                 }
                                                                 linkedFbUids = fbUids
