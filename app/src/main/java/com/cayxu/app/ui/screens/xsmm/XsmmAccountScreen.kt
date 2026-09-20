@@ -570,9 +570,8 @@ fun XsmmAccountScreen(navController: NavController) {
                     val fbUids = mutableSetOf<String>()
                     result.accounts.forEach { acc ->
                         if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
-                        // Chỉ dùng account_id (ID thật XSMM trả về) để match
-                        // KHÔNG extract từ link_account vì link_account chứa link gốc ta gửi lên
-                        // có thể không khớp với account_id thật của XSMM
+                        // Chỉ tính acc ACTIVE (is_active=true) - bỏ qua acc chờ duyệt/bị từ chối
+                        if (!acc.isActive) return@forEach
                         val uid = acc.accountId.trim()
                         if (uid.isNotBlank()) {
                             fbUids.add(uid)
@@ -720,7 +719,8 @@ fun XsmmAccountScreen(navController: NavController) {
                                             val internalMap = mutableMapOf<String, String>()
                                             accRes.accounts.forEach { acc ->
                                                 if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
-                                                // Chỉ dùng account_id - KHÔNG extract từ link_account
+                                                // Chỉ tính acc ACTIVE (is_active=true)
+                                                if (!acc.isActive) return@forEach
                                                 val uid = acc.accountId.trim()
                                                 if (uid.isNotBlank()) {
                                                     fbUids.add(uid)
@@ -1404,7 +1404,8 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                 val internalMap = mutableMapOf<String, String>()
                                                                 syncRes.accounts.forEach { a ->
                                                                     if (!a.type.equals("facebook", ignoreCase = true)) return@forEach
-                                                                    // Chỉ dùng account_id - KHÔNG extract từ link_account
+                                                                    // Chỉ tính acc ACTIVE (is_active=true)
+                                                                    if (!a.isActive) return@forEach
                                                                     val u = a.accountId.trim()
                                                                     if (u.isNotBlank()) {
                                                                         fbUids.add(u)
