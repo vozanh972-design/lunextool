@@ -35,13 +35,26 @@ object XsmmAccountsRepository {
     }
 
     private fun readError(errorBody: String?, fallback: String): String {
-        val message = errorBody?.let { text ->
-            runCatching {
-                JsonParser.parseString(text).asJsonObject
-                    .get("error")?.takeIf { it.isJsonPrimitive }?.asString
-            }.getOrNull()
-        }
-        return message ?: fallback
+        if (errorBody.isNullOrBlank()) return fallback
+        return runCatching {
+            val jsonElement = JsonParser.parseString(errorBody)
+            if (jsonElement.isJsonObject) {
+                val obj = jsonElement.asJsonObject
+                val err = obj.get("error")
+                if (err != null && err.isJsonPrimitive) return@runCatching err.asString
+                if (err != null && err.isJsonObject) {
+                    val subMsg = err.asJsonObject.get("message")?.takeIf { it.isJsonPrimitive }?.asString
+                    if (!subMsg.isNullOrBlank()) return@runCatching subMsg
+                }
+                val msg = obj.get("message")?.takeIf { it.isJsonPrimitive }?.asString
+                if (!msg.isNullOrBlank()) return@runCatching msg
+                val detail = obj.get("detail")?.takeIf { it.isJsonPrimitive }?.asString
+                if (!detail.isNullOrBlank()) return@runCatching detail
+                val m = obj.get("msg")?.takeIf { it.isJsonPrimitive }?.asString
+                if (!m.isNullOrBlank()) return@runCatching m
+            }
+            errorBody.take(150)
+        }.getOrNull() ?: fallback
     }
 
     private fun parseAccount(obj: JsonObject): XsmmAccount = XsmmAccount(
@@ -73,9 +86,12 @@ object XsmmAccountsRepository {
             val accounts = accountsArray?.mapNotNull { el ->
                 if (el.isJsonObject) parseAccount(el.asJsonObject) else null
             }.orEmpty()
+            val filteredAccounts = if (!accountType.isNullOrBlank()) {
+                accounts.filter { it.type.equals(accountType, ignoreCase = true) }
+            } else accounts
             val totalPages = json?.get("total_pages")?.takeIf { it.isJsonPrimitive }?.asInt ?: 1
 
-            XsmmAccountsResult.Success(accounts, totalPages)
+            XsmmAccountsResult.Success(filteredAccounts, totalPages)
         } catch (e: Exception) {
             XsmmAccountsResult.Error(e.message ?: "Lỗi kết nối mạng")
         }
@@ -186,14 +202,17 @@ object XsmmAccountsRepository {
         if (cleanUid.isBlank()) return false
         val result = getAccounts(rawToken, accountType = "facebook", search = cleanUid)
         val accounts = (result as? XsmmAccountsResult.Success)?.accounts.orEmpty()
+            .filter { it.type.equals("facebook", ignoreCase = true) }
         return accounts.any { acc ->
             acc.accountId == cleanUid || acc.linkAccount.contains(cleanUid)
         }
     }
 
     /**
-     * Thêm tài khoản Facebook mới vào XSMM theo UID hoặc link_account
+     * Thêm tài khoản Facebook mới vào XSMM theo UID hoặc link_account.
      * Body: {"type": "facebook", "link_account": "https://facebook.com/username"}
+     * TUYỆT ĐỐI KHÔNG thêm ảo: chỉ trả Success khi XSMM trả về account có id/account_id hợp lệ,
+     * hoặc nick thực sự xuất hiện trong danh sách accounts của XSMM sau khi gọi.
      */
     suspend fun addFacebookAccount(
         rawToken: String,
@@ -203,10 +222,11 @@ object XsmmAccountsRepository {
         val cleanUid = uid.trim()
         if (cleanUid.isBlank()) return XsmmAddAccountResult.Error("Thiếu UID Facebook để thêm")
 
-        val targetLink = if (!linkAccount.isNullOrBlank()) {
-            linkAccount.trim()
-        } else {
-            "https://www.facebook.com/profile.php?id=$cleanUid"
+        val targetLink = when {
+            !linkAccount.isNullOrBlank() -> linkAccount.trim()
+            cleanUid.startsWith("http://", ignoreCase = true) || cleanUid.startsWith("https://", ignoreCase = true) -> cleanUid
+            cleanUid.contains("facebook.com") -> "https://$cleanUid"
+            else -> "https://facebook.com/$cleanUid"
         }
 
         val body = JsonObject().apply {
@@ -219,26 +239,53 @@ object XsmmAccountsRepository {
             if (!response.isSuccessful) {
                 return XsmmAddAccountResult.Error(readError(response.errorBody()?.string(), "Lỗi thêm tài khoản Facebook (mã HTTP: ${response.code()})"))
             }
-            val json = response.body()
-            val errorField = json?.get("error")?.takeIf { it.isJsonPrimitive }?.asString
+            val json = response.body() ?: return XsmmAddAccountResult.Error("Phản hồi rỗng từ máy chủ XSMM")
+
+            // Kiểm tra lỗi rõ ràng từ server trả về
+            val errorField = json.get("error")?.takeIf { it.isJsonPrimitive }?.asString
             if (!errorField.isNullOrBlank()) return XsmmAddAccountResult.Error(errorField)
 
-            val accountObj = json?.takeIf { it.has("id") || it.has("account_id") }
-                ?: json?.get("account")?.takeIf { it.isJsonObject }?.asJsonObject
+            val isFailedStatus = (json.get("status")?.takeIf { it.isJsonPrimitive }?.asString == "error" ||
+                json.get("status")?.takeIf { it.isJsonPrimitive }?.asString == "fail" ||
+                json.get("success")?.takeIf { it.isJsonPrimitive }?.asBoolean == false)
+            val statusMsg = (json.get("message")?.takeIf { it.isJsonPrimitive }?.asString
+                ?: json.get("msg")?.takeIf { it.isJsonPrimitive }?.asString)
+            if (isFailedStatus && !statusMsg.isNullOrBlank()) {
+                return XsmmAddAccountResult.Error(statusMsg)
+            }
 
-            if (accountObj != null) {
+            val accountObj = when {
+                json.has("id") && json.get("id").isJsonPrimitive && json.get("id").asString.isNotBlank() -> json
+                json.has("account_id") && json.get("account_id").isJsonPrimitive && json.get("account_id").asString.isNotBlank() -> json
+                json.get("account")?.isJsonObject == true -> json.getAsJsonObject("account")
+                json.get("data")?.isJsonObject == true -> json.getAsJsonObject("data")
+                else -> null
+            }
+
+            val validId = accountObj?.get("id")?.takeIf { it.isJsonPrimitive }?.asString?.isNotBlank() == true ||
+                accountObj?.get("account_id")?.takeIf { it.isJsonPrimitive }?.asString?.isNotBlank() == true
+
+            if (accountObj != null && validId) {
                 XsmmAddAccountResult.Success(parseAccount(accountObj))
             } else {
-                XsmmAddAccountResult.Success(
-                    XsmmAccount(
-                        id = "",
-                        type = "facebook",
-                        accountId = cleanUid,
-                        name = cleanUid,
-                        linkAccount = targetLink,
-                        isActive = true
-                    )
-                )
+                // Kiểm tra lại danh sách thực tế từ XSMM để xác thực chắc chắn
+                val verifyRes = getAccounts(rawToken, accountType = "facebook", search = cleanUid)
+                if (verifyRes is XsmmAccountsResult.Success) {
+                    val found = verifyRes.accounts.firstOrNull { acc ->
+                        acc.type.equals("facebook", ignoreCase = true) &&
+                            (acc.accountId == cleanUid || acc.linkAccount.contains(cleanUid))
+                    }
+                    if (found != null) {
+                        return XsmmAddAccountResult.Success(found)
+                    }
+                }
+
+                val failureReason = statusMsg
+                    ?: json.get("message")?.takeIf { it.isJsonPrimitive }?.asString
+                    ?: json.get("msg")?.takeIf { it.isJsonPrimitive }?.asString
+                    ?: json.get("detail")?.takeIf { it.isJsonPrimitive }?.asString
+                    ?: "XSMM không trả về thông tin tài khoản hợp lệ"
+                XsmmAddAccountResult.Error(failureReason)
             }
         } catch (e: Exception) {
             XsmmAddAccountResult.Error(e.message ?: "Lỗi kết nối mạng")

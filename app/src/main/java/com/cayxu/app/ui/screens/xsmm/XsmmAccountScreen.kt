@@ -569,6 +569,7 @@ fun XsmmAccountScreen(navController: NavController) {
                 if (selectedPlatform == "facebook") {
                     val fbUids = mutableSetOf<String>()
                     result.accounts.forEach { acc ->
+                        if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
                         val uid = acc.accountId.ifBlank {
                             Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(acc.linkAccount)?.groupValues?.getOrNull(1) ?: ""
                         }.trim()
@@ -596,7 +597,12 @@ fun XsmmAccountScreen(navController: NavController) {
                     }.toSet()
                 }
             }
-            is XsmmAccountsResult.Error -> Unit
+            is XsmmAccountsResult.Error -> {
+                if (selectedPlatform == "facebook") {
+                    linkedFbUids = emptySet()
+                }
+            }
+        }
         }
         isCheckingLinked = false
     }
@@ -650,6 +656,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     val accMap = mutableMapOf<String, String>()
                                     val internalMap = mutableMapOf<String, String>()
                                     accRes.accounts.forEach { acc ->
+                                        if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
                                         val uid = acc.accountId.ifBlank {
                                             Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(acc.linkAccount)?.groupValues?.getOrNull(1) ?: ""
                                         }.trim()
@@ -662,6 +669,8 @@ fun XsmmAccountScreen(navController: NavController) {
                                     linkedFbUids = fbUids
                                     XsmmAccountStore.saveAccountIdMap(context, accMap)
                                     XsmmAccountStore.saveInternalIdMap(context, internalMap)
+                                } else {
+                                    linkedFbUids = emptySet()
                                 }
                             }
                             isRefreshing = false
@@ -1283,7 +1292,8 @@ fun XsmmAccountScreen(navController: NavController) {
                                                             scope.launch {
                                                                 when (val res = XsmmAccountsRepository.addFacebookAccount(token, account.uid)) {
                                                                     is XsmmAddAccountResult.Success -> {
-                                                                        linkedFbUids = linkedFbUids + account.uid
+                                                                        val realUid = res.account.accountId.ifBlank { account.uid }
+                                                                        linkedFbUids = linkedFbUids + account.uid + realUid
                                                                         android.widget.Toast.makeText(context, "Đã thêm Facebook [${account.name.ifBlank { account.uid }}] vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
                                                                     }
                                                                     is XsmmAddAccountResult.Error -> {
@@ -1331,6 +1341,20 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                 isLive = true
                                                             )
                                                             com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
+                                                            val xsmmToken = XsmmAccountStore.getToken(context)
+                                                            if (!xsmmToken.isNullOrBlank()) {
+                                                                val syncRes = XsmmAccountsRepository.getAccounts(xsmmToken, accountType = "facebook")
+                                                                if (syncRes is XsmmAccountsResult.Success) {
+                                                                    val fbUids = syncRes.accounts.filter { it.type.equals("facebook", ignoreCase = true) }.mapNotNull { a ->
+                                                                        a.accountId.ifBlank {
+                                                                            Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(a.linkAccount)?.groupValues?.getOrNull(1)
+                                                                        }?.trim()?.takeIf { it.isNotBlank() }
+                                                                    }.toSet()
+                                                                    withContext(Dispatchers.Main) {
+                                                                        linkedFbUids = fbUids
+                                                                    }
+                                                                }
+                                                            }
                                                             withContext(Dispatchers.Main) {
                                                                 avatarVersion = System.currentTimeMillis()
                                                                 facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
@@ -1356,6 +1380,20 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                     isLive = true
                                                                 )
                                                                 com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
+                                                                val xsmmToken = XsmmAccountStore.getToken(context)
+                                                                if (!xsmmToken.isNullOrBlank()) {
+                                                                    val syncRes = XsmmAccountsRepository.getAccounts(xsmmToken, accountType = "facebook")
+                                                                    if (syncRes is XsmmAccountsResult.Success) {
+                                                                        val fbUids = syncRes.accounts.filter { it.type.equals("facebook", ignoreCase = true) }.mapNotNull { a ->
+                                                                            a.accountId.ifBlank {
+                                                                                Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(a.linkAccount)?.groupValues?.getOrNull(1)
+                                                                            }?.trim()?.takeIf { it.isNotBlank() }
+                                                                        }.toSet()
+                                                                        withContext(Dispatchers.Main) {
+                                                                            linkedFbUids = fbUids
+                                                                        }
+                                                                    }
+                                                                }
                                                                 withContext(Dispatchers.Main) {
                                                                     avatarVersion = System.currentTimeMillis()
                                                                     facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context)
@@ -1692,18 +1730,22 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                             android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
                                                                             return@clickable
                                                                         }
-                                                                        addingFbUids = addingFbUids + pageTargetUid
+                                                                         addingFbUids = addingFbUids + pageTargetUid + page.pageId
                                                                         scope.launch {
                                                                             when (val res = XsmmAccountsRepository.addFacebookAccount(token, pageTargetUid)) {
                                                                                 is XsmmAddAccountResult.Success -> {
-                                                                                    linkedFbUids = linkedFbUids + pageTargetUid + page.pageId + pageDisplayUid
+                                                                                    val realUid = res.account.accountId.ifBlank { pageTargetUid }
+                                                                                    linkedFbUids = linkedFbUids + pageTargetUid + realUid
+                                                                                    if (page.pageId.isNotBlank()) {
+                                                                                        linkedFbUids = linkedFbUids + page.pageId
+                                                                                    }
                                                                                     android.widget.Toast.makeText(context, "Đã thêm Page [${page.pageName.ifBlank { pageTargetUid }}] vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
                                                                                 }
                                                                                 is XsmmAddAccountResult.Error -> {
                                                                                     android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
                                                                                 }
                                                                             }
-                                                                            addingFbUids = addingFbUids - pageTargetUid
+                                                                            addingFbUids = addingFbUids - pageTargetUid - page.pageId
                                                                         }
                                                                     }
                                                                     .padding(horizontal = 6.dp, vertical = 2.dp)
