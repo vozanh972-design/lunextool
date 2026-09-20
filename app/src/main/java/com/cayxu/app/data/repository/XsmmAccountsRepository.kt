@@ -200,12 +200,13 @@ object XsmmAccountsRepository {
     suspend fun isFacebookAccountLinked(rawToken: String, uid: String): Boolean {
         val cleanUid = uid.trim()
         if (cleanUid.isBlank()) return false
+        // Dùng search=uid để lọc server-side (giống website XSMM)
         val result = getAccounts(rawToken, accountType = "facebook", search = cleanUid)
         val accounts = (result as? XsmmAccountsResult.Success)?.accounts.orEmpty()
             .filter { it.type.equals("facebook", ignoreCase = true) }
-        return accounts.any { acc ->
-            acc.accountId == cleanUid || acc.linkAccount.contains(cleanUid)
-        }
+        // Chỉ check account_id - API docs: account_id là Facebook UID
+        // KHÔNG check link_account vì link_account là URL gốc gửi lên, không phải UID thật
+        return accounts.any { acc -> acc.accountId.trim() == cleanUid }
     }
 
     /**
