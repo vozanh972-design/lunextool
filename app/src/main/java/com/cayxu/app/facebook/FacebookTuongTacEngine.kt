@@ -18,10 +18,13 @@ class FacebookTuongTacEngine(
 ) {
 
     companion object {
-        // Không hardcode URL/UA — lấy từ FbVault (native XOR hoặc inline fallback)
-        private fun graphApi() = FbVault.graphApiUrl()
-        private fun graphql()  = FbVault.graphqlUrl()
-        private fun ua()       = FbVault.userAgent()
+        // Lazy cache: gọi FbVault 1 lần, tái sử dụng cho mọi request
+        private val GRAPH_API by lazy { FbVault.graphApiUrl() }
+        private val GRAPHQL   by lazy { FbVault.graphqlUrl()  }
+        private val UA        by lazy { FbVault.userAgent()   }
+        private fun graphApi() = GRAPH_API
+        private fun graphql()  = GRAPHQL
+        private fun ua()       = UA
 
         /**
          * Tự động trích xuất ID (Post ID, UID, Page ID, Feedback ID) từ URL link nếu server trả về dạng link

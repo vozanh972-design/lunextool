@@ -16,10 +16,14 @@ import java.util.concurrent.TimeUnit
 ) {
 
     companion object {
-        // Không dùng const string — lấy từ FbVault (native XOR hoặc inline fallback)
-        private fun graphApi() = FbVault.graphApiUrl()
-        private fun graphql()  = FbVault.graphqlUrl()
-        private fun ua()       = FbVault.userAgent()
+        // Lazy cache: gọi FbVault 1 lần, tái sử dụng cho mọi request
+        private val GRAPH_API by lazy { FbVault.graphApiUrl() }
+        private val GRAPHQL   by lazy { FbVault.graphqlUrl()  }
+        private val UA        by lazy { FbVault.userAgent()   }
+        private fun graphApi() = GRAPH_API
+        private fun graphql()  = GRAPHQL
+        private fun ua()       = UA
+
     }
 
     @Keep enum class ReactionType(val value: String, val graphqlCode: Int) {
