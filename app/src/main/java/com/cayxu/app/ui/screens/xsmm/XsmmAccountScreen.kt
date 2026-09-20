@@ -276,6 +276,8 @@ fun XsmmAccountScreen(navController: NavController) {
                 }
             }
         }
+    }
+
     LaunchedEffect(selectedPlatform, facebookAccounts.size) {
         if (selectedPlatform == "facebook") {
             // Tự động kiểm tra và phục hồi tên/avatar thật của nick Profile mẹ nếu trước đó bị ghi đè nhầm tên Page

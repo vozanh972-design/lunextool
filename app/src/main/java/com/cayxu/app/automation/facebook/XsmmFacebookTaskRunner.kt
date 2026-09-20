@@ -486,5 +486,4 @@ object XsmmFacebookTaskRunner {
 
         return FbTaskResult(false, fallbackErrMsg ?: "Lỗi thực hiện tương tác Facebook")
     }
-    }
 }

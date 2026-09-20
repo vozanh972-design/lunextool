@@ -145,6 +145,11 @@ object FacebookAccountsStore {
     }
 
     @Synchronized
+    fun getAccount(context: Context, uid: String): FacebookAccount? {
+        return getAccounts(context).firstOrNull { it.uid == uid }
+    }
+
+    @Synchronized
     fun addAccount(context: Context, account: FacebookAccount) {
         addAccounts(context, listOf(account))
     }
