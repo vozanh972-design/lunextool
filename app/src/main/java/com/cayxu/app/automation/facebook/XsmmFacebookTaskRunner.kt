@@ -152,14 +152,53 @@ object XsmmFacebookTaskRunner {
 
         notify("Kiểm tra nick Facebook...")
         val mgr = FacebookAccountManager()
-        if (fbToken.isNotBlank()) {
-            try {
-                val details = mgr.fetchAccountDetailsWithToken(fbToken, account.phone.ifBlank { null })
-                if (details.name.isNotBlank()) {
-                    val updated = account.copy(name = details.name, avatar = details.avatar.ifBlank { account.avatar }, isLive = true)
-                    FacebookAccountsStore.addAccount(context, updated)
-                }
-            } catch (_: Exception) {}
+        if (matchedPage != null) {
+            // ĐANG CHẠY PAGE/PROFILE+: Tuyệt đối KHÔNG gán tên/avatar của Page lên tài khoản mẹ!
+            // Tự động khôi phục lại tên tài khoản mẹ nếu trước đó từng bị gán nhầm tên Page
+            if (account.name.equals(matchedPage.pageName, ignoreCase = true) && account.note.contains("c_user=")) {
+                try {
+                    val direct = mgr.getTokenFromCookie(account.note, account.phone.ifBlank { null })
+                    if (direct != null && direct.name.isNotBlank() && !direct.name.equals(matchedPage.pageName, ignoreCase = true)) {
+                        val fixedAcc = account.copy(name = direct.name, avatar = direct.avatar.ifBlank { account.avatar }, isLive = true)
+                        FacebookAccountsStore.addAccount(context, fixedAcc)
+                    }
+                } catch (_: Exception) {}
+            }
+
+            // Cập nhật thông tin của riêng Page đó nếu cần
+            if (fbToken.isNotBlank()) {
+                try {
+                    val details = mgr.fetchAccountDetailsWithToken(fbToken, account.phone.ifBlank { null })
+                    if (details.name.isNotBlank()) {
+                        val currentAcc = FacebookAccountsStore.getAccount(context, account.uid) ?: account
+                        val updatedPages = currentAcc.pages.map { p ->
+                            if (p.pageId == matchedPage.pageId || 
+                                (matchedPage.additionalProfileId.isNotBlank() && p.additionalProfileId == matchedPage.additionalProfileId)) {
+                                p.copy(
+                                    pageName = details.name,
+                                    avatar = details.avatar.ifBlank { p.avatar }
+                                )
+                            } else {
+                                p
+                            }
+                        }
+                        val updated = currentAcc.copy(pages = updatedPages, isLive = true)
+                        FacebookAccountsStore.addAccount(context, updated)
+                    }
+                } catch (_: Exception) {}
+            }
+        } else {
+            // ĐANG CHẠY CHÍNH TÀI KHOẢN MẸ (PROFILE)
+            if (fbToken.isNotBlank()) {
+                try {
+                    val details = mgr.fetchAccountDetailsWithToken(fbToken, account.phone.ifBlank { null })
+                    if (details.name.isNotBlank()) {
+                        val currentAcc = FacebookAccountsStore.getAccount(context, account.uid) ?: account
+                        val updated = currentAcc.copy(name = details.name, avatar = details.avatar.ifBlank { currentAcc.avatar }, isLive = true)
+                        FacebookAccountsStore.addAccount(context, updated)
+                    }
+                } catch (_: Exception) {}
+            }
         }
 
         // Đồng bộ và tự động thêm nick lên XSMM nếu chưa có, đồng thời set làm nick chạy mặc định

@@ -276,7 +276,40 @@ fun XsmmAccountScreen(navController: NavController) {
                 }
             }
         }
+    LaunchedEffect(selectedPlatform, facebookAccounts.size) {
+        if (selectedPlatform == "facebook") {
+            // Tự động kiểm tra và phục hồi tên/avatar thật của nick Profile mẹ nếu trước đó bị ghi đè nhầm tên Page
+            val needRestoreProfile = facebookAccounts.filter { acc ->
+                acc.pages.isNotEmpty() && acc.pages.any { p -> p.pageName.isNotBlank() && p.pageName.equals(acc.name, ignoreCase = true) } && acc.note.contains("c_user=")
+            }
+            if (needRestoreProfile.isNotEmpty()) {
+                scope.launch(Dispatchers.IO) {
+                    val mgr = com.cayxu.app.facebook.FacebookAccountManager()
+                    var hasUpdates = false
+                    needRestoreProfile.forEach { acc ->
+                        try {
+                            val direct = mgr.getTokenFromCookie(acc.note, acc.phone.ifBlank { null })
+                            if (direct != null && direct.name.isNotBlank() && !acc.pages.any { p -> p.pageName.equals(direct.name, ignoreCase = true) }) {
+                                val restored = acc.copy(
+                                    name = direct.name,
+                                    avatar = direct.avatar.ifBlank { acc.avatar },
+                                    isLive = true
+                                )
+                                com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, restored)
+                                hasUpdates = true
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    if (hasUpdates) {
+                        withContext(Dispatchers.Main) {
+                            facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+                        }
+                    }
+                }
+            }
+        }
     }
+
     val runningIgAccounts = com.cayxu.app.automation.instagram.XsmmInstagramManager.runningAccounts
     val igStatusMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap
     val igSuccessCountMap = com.cayxu.app.automation.instagram.XsmmInstagramManager.successCountMap
@@ -1355,25 +1388,15 @@ fun XsmmAccountScreen(navController: NavController) {
                                             onClick = {
                                                 scope.launch(Dispatchers.IO) {
                                                     val mgr = com.cayxu.app.facebook.FacebookAccountManager()
-                                                    val token = account.bio.ifBlank { null }
                                                     try {
-                                                        if (!token.isNullOrBlank()) {
-                                                            val details = mgr.fetchAccountDetailsWithToken(token, account.phone.ifBlank { null })
-                                                            val updated = account.copy(
-                                                                name = details.name.ifBlank { account.name },
-                                                                avatar = details.avatar.ifBlank { account.avatar },
-                                                                email = details.email,
-                                                                pages = details.pages,
-                                                                isLive = true
-                                                            )
-                                                            com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
-                                                        } else if (account.note.contains("c_user=")) {
+                                                        if (account.note.contains("c_user=")) {
                                                             val directAcc = mgr.getTokenFromCookie(account.note, account.phone.ifBlank { null })
                                                             if (directAcc != null && directAcc.isLive) {
                                                                 val updated = account.copy(
                                                                     name = directAcc.name.ifBlank { account.name },
                                                                     avatar = directAcc.avatar.ifBlank { account.avatar },
-                                                                    bio = directAcc.bio,
+                                                                    bio = directAcc.bio.ifBlank { account.bio },
+                                                                    pages = directAcc.pages.ifEmpty { account.pages },
                                                                     isLive = true
                                                                 )
                                                                 com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
@@ -1382,8 +1405,21 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                 com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
                                                             }
                                                         } else {
-                                                            val updated = account.copy(isLive = false)
-                                                            com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
+                                                            val token = account.bio.ifBlank { null }
+                                                            if (!token.isNullOrBlank()) {
+                                                                val details = mgr.fetchAccountDetailsWithToken(token, account.phone.ifBlank { null })
+                                                                val updated = account.copy(
+                                                                    name = details.name.ifBlank { account.name },
+                                                                    avatar = details.avatar.ifBlank { account.avatar },
+                                                                    email = details.email,
+                                                                    pages = details.pages.ifEmpty { account.pages },
+                                                                    isLive = true
+                                                                )
+                                                                com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
+                                                            } else {
+                                                                val updated = account.copy(isLive = false)
+                                                                com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
+                                                            }
                                                         }
                                                     } catch (_: Exception) {
                                                         val updated = account.copy(isLive = false)
