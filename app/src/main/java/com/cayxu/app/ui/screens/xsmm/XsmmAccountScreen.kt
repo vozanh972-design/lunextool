@@ -1207,92 +1207,109 @@ fun XsmmAccountScreen(navController: NavController) {
                                             }
 
                                             Spacer(Modifier.height(2.dp))
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text(
-                                                    "UID: ${account.uid}",
-                                                    color = TextSecondary,
-                                                    fontSize = 12.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
+                                            Text(
+                                                "UID: ${account.uid}",
+                                                color = TextSecondary,
+                                                fontSize = 12.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
 
-                                                // Trạng thái kiểm tra trên XSMM / Nút Thêm vào XSMM
-                                                val isFbLinked = account.uid in linkedFbUids
-                                                val isFbAdding = account.uid in addingFbUids
+                                            Spacer(Modifier.height(4.dp))
+                                            // Trạng thái kiểm tra trên XSMM / Nút Thêm vào XSMM nằm ngang hàng riêng
+                                            val isFbLinked = account.uid in linkedFbUids
+                                            val isFbAdding = account.uid in addingFbUids
 
-                                                if (isFbAdding) {
+                                            if (isFbAdding) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(Color(0xFF1877F2).copy(alpha = 0.08f))
+                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                                ) {
                                                     CircularProgressIndicator(
                                                         color = Color(0xFF1877F2),
                                                         strokeWidth = 2.dp,
-                                                        modifier = Modifier.size(13.dp)
+                                                        modifier = Modifier.size(12.dp)
                                                     )
-                                                } else if (isFbLinked) {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier
-                                                            .clip(RoundedCornerShape(6.dp))
-                                                            .background(Color(0xFF16A34A).copy(alpha = 0.12f))
-                                                            .padding(horizontal = 5.dp, vertical = 1.dp)
-                                                    ) {
-                                                        Icon(
-                                                            Icons.Filled.Check,
-                                                            contentDescription = null,
-                                                            tint = Color(0xFF16A34A),
-                                                            modifier = Modifier.size(11.dp)
-                                                        )
-                                                        Spacer(Modifier.width(2.dp))
-                                                        Text(
-                                                            "XSMM",
-                                                            color = Color(0xFF16A34A),
-                                                            fontSize = 10.sp,
-                                                            fontWeight = FontWeight.Bold
-                                                        )
-                                                    }
-                                                } else {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier
-                                                            .clip(RoundedCornerShape(6.dp))
-                                                            .background(Color(0xFF1877F2).copy(alpha = 0.12f))
-                                                            .clickable {
-                                                                val token = XsmmAccountStore.getToken(context)
-                                                                if (token.isNullOrBlank()) {
-                                                                    android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
-                                                                    return@clickable
-                                                                }
-                                                                addingFbUids = addingFbUids + account.uid
-                                                                scope.launch {
-                                                                    when (val res = XsmmAccountsRepository.addFacebookAccount(token, account.uid)) {
-                                                                        is XsmmAddAccountResult.Success -> {
-                                                                            linkedFbUids = linkedFbUids + account.uid
-                                                                            android.widget.Toast.makeText(context, "Đã thêm Facebook [${account.name.ifBlank { account.uid }}] vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
-                                                                        }
-                                                                        is XsmmAddAccountResult.Error -> {
-                                                                            android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
-                                                                        }
-                                                                    }
-                                                                    addingFbUids = addingFbUids - account.uid
-                                                                }
+                                                    Spacer(Modifier.width(5.dp))
+                                                    Text(
+                                                        "Đang thêm...",
+                                                        color = Color(0xFF1877F2),
+                                                        fontSize = 10.5.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        maxLines = 1,
+                                                        softWrap = false
+                                                    )
+                                                }
+                                            } else if (isFbLinked) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(Color(0xFF16A34A).copy(alpha = 0.12f))
+                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Filled.Check,
+                                                        contentDescription = null,
+                                                        tint = Color(0xFF16A34A),
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(
+                                                        "Đã liên kết XSMM",
+                                                        color = Color(0xFF16A34A),
+                                                        fontSize = 10.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        softWrap = false
+                                                    )
+                                                }
+                                            } else {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(Color(0xFF1877F2).copy(alpha = 0.12f))
+                                                        .clickable {
+                                                            val token = XsmmAccountStore.getToken(context)
+                                                            if (token.isNullOrBlank()) {
+                                                                android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                                return@clickable
                                                             }
-                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    ) {
-                                                        Icon(
-                                                            Icons.Filled.Add,
-                                                            contentDescription = null,
-                                                            tint = Color(0xFF1877F2),
-                                                            modifier = Modifier.size(11.dp)
-                                                        )
-                                                        Spacer(Modifier.width(2.dp))
-                                                        Text(
-                                                            "Thêm XSMM",
-                                                            color = Color(0xFF1877F2),
-                                                            fontSize = 10.sp,
-                                                            fontWeight = FontWeight.Bold
-                                                        )
-                                                    }
+                                                            addingFbUids = addingFbUids + account.uid
+                                                            scope.launch {
+                                                                when (val res = XsmmAccountsRepository.addFacebookAccount(token, account.uid)) {
+                                                                    is XsmmAddAccountResult.Success -> {
+                                                                        linkedFbUids = linkedFbUids + account.uid
+                                                                        android.widget.Toast.makeText(context, "Đã thêm Facebook [${account.name.ifBlank { account.uid }}] vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                                    }
+                                                                    is XsmmAddAccountResult.Error -> {
+                                                                        android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
+                                                                    }
+                                                                }
+                                                                addingFbUids = addingFbUids - account.uid
+                                                            }
+                                                        }
+                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Filled.Add,
+                                                        contentDescription = null,
+                                                        tint = Color(0xFF1877F2),
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(
+                                                        "Thêm vào XSMM",
+                                                        color = Color(0xFF1877F2),
+                                                        fontSize = 10.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        softWrap = false
+                                                    )
                                                 }
                                             }
                                         }
@@ -1607,6 +1624,106 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                 maxLines = 1,
                                                                 overflow = TextOverflow.Ellipsis
                                                             )
+                                                        }
+
+                                                        Spacer(Modifier.height(3.dp))
+
+                                                        // Áp dụng trạng thái kiểm tra & thêm XSMM cho cả Page
+                                                        val pageTargetUid = if (pageDisplayUid.startsWith("615")) pageDisplayUid else page.pageId
+                                                        val isPageLinked = pageTargetUid in linkedFbUids || page.pageId in linkedFbUids || (pageDisplayUid.isNotBlank() && pageDisplayUid in linkedFbUids)
+                                                        val isPageAdding = pageTargetUid in addingFbUids || page.pageId in addingFbUids
+
+                                                        if (isPageAdding) {
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                modifier = Modifier
+                                                                    .clip(RoundedCornerShape(5.dp))
+                                                                    .background(Color(0xFF1877F2).copy(alpha = 0.08f))
+                                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            ) {
+                                                                CircularProgressIndicator(
+                                                                    color = Color(0xFF1877F2),
+                                                                    strokeWidth = 1.5.dp,
+                                                                    modifier = Modifier.size(11.dp)
+                                                                )
+                                                                Spacer(Modifier.width(4.dp))
+                                                                Text(
+                                                                    "Đang thêm...",
+                                                                    color = Color(0xFF1877F2),
+                                                                    fontSize = 9.5.sp,
+                                                                    fontWeight = FontWeight.Medium,
+                                                                    maxLines = 1,
+                                                                    softWrap = false
+                                                                )
+                                                            }
+                                                        } else if (isPageLinked) {
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                modifier = Modifier
+                                                                    .clip(RoundedCornerShape(5.dp))
+                                                                    .background(Color(0xFF16A34A).copy(alpha = 0.12f))
+                                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            ) {
+                                                                Icon(
+                                                                    Icons.Filled.Check,
+                                                                    contentDescription = null,
+                                                                    tint = Color(0xFF16A34A),
+                                                                    modifier = Modifier.size(11.dp)
+                                                                )
+                                                                Spacer(Modifier.width(3.dp))
+                                                                Text(
+                                                                    "Đã liên kết XSMM",
+                                                                    color = Color(0xFF16A34A),
+                                                                    fontSize = 9.5.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    maxLines = 1,
+                                                                    softWrap = false
+                                                                )
+                                                            }
+                                                        } else {
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                modifier = Modifier
+                                                                    .clip(RoundedCornerShape(5.dp))
+                                                                    .background(Color(0xFF1877F2).copy(alpha = 0.12f))
+                                                                    .clickable {
+                                                                        val token = XsmmAccountStore.getToken(context)
+                                                                        if (token.isNullOrBlank()) {
+                                                                            android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                                            return@clickable
+                                                                        }
+                                                                        addingFbUids = addingFbUids + pageTargetUid
+                                                                        scope.launch {
+                                                                            when (val res = XsmmAccountsRepository.addFacebookAccount(token, pageTargetUid)) {
+                                                                                is XsmmAddAccountResult.Success -> {
+                                                                                    linkedFbUids = linkedFbUids + pageTargetUid + page.pageId + pageDisplayUid
+                                                                                    android.widget.Toast.makeText(context, "Đã thêm Page [${page.pageName.ifBlank { pageTargetUid }}] vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                                                }
+                                                                                is XsmmAddAccountResult.Error -> {
+                                                                                    android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
+                                                                                }
+                                                                            }
+                                                                            addingFbUids = addingFbUids - pageTargetUid
+                                                                        }
+                                                                    }
+                                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            ) {
+                                                                Icon(
+                                                                    Icons.Filled.Add,
+                                                                    contentDescription = null,
+                                                                    tint = Color(0xFF1877F2),
+                                                                    modifier = Modifier.size(11.dp)
+                                                                )
+                                                                Spacer(Modifier.width(3.dp))
+                                                                Text(
+                                                                    "Thêm vào XSMM",
+                                                                    color = Color(0xFF1877F2),
+                                                                    fontSize = 9.5.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    maxLines = 1,
+                                                                    softWrap = false
+                                                                )
+                                                            }
                                                         }
                                                     }
 

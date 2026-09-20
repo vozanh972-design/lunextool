@@ -86,6 +86,12 @@ object XsmmFacebookTaskRunner {
 
         val allFb = FacebookAccountsStore.getAccounts(context)
         val account = allFb.firstOrNull { it.uid.trim().lowercase() == cleanUid }
+            ?: allFb.firstOrNull { acc ->
+                acc.pages.any { p ->
+                    p.pageId.trim().lowercase() == cleanUid ||
+                    p.displayUid.trim().lowercase() == cleanUid
+                }
+            }
         if (account == null) {
             val msg = "[$cleanUid] Không tìm thấy tài khoản Facebook"
             onStatusUpdate?.invoke(msg)
@@ -93,7 +99,11 @@ object XsmmFacebookTaskRunner {
             return RunResult(0, 1, 0, msg)
         }
 
-        var fbToken = account.bio.trim()
+        val matchedPage = account.pages.firstOrNull { p ->
+            p.pageId.trim().lowercase() == cleanUid ||
+            p.displayUid.trim().lowercase() == cleanUid
+        }
+        var fbToken = (matchedPage?.pageToken?.takeIf { it.isNotBlank() } ?: account.bio.trim()).orEmpty()
         if (fbToken.isBlank() && account.note.contains("c_user=")) {
             try {
                 val mgr = FacebookAccountManager()
