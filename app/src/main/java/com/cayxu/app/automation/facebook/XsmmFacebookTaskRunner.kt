@@ -229,35 +229,35 @@ object XsmmFacebookTaskRunner {
 
         // Đồng bộ và tự động thêm nick lên XSMM nếu chưa có, đồng thời set làm nick chạy mặc định
         try {
-            notify("Kiểm tra nick trên XSMM...")
+            notify("Kiểm tra nick [$targetUidForXsmm] trên XSMM...")
             var internalId = XsmmAccountStore.getInternalIdMap(context)[targetUidForXsmm].orEmpty()
-            if (internalId.isBlank() && cleanUid != targetUidForXsmm) {
-                internalId = XsmmAccountStore.getInternalIdMap(context)[cleanUid].orEmpty()
-            }
+
+            // Luôn kiểm tra trực tiếp trên XSMM nếu chưa có internalId chính xác của targetUidForXsmm
             if (internalId.isBlank()) {
                 val syncRes = XsmmAccountsRepository.getAccounts(token, "facebook", search = targetUidForXsmm)
                 val xsmmAccounts = (syncRes as? XsmmAccountsResult.Success)?.accounts.orEmpty()
                 val matchedAcc = xsmmAccounts.firstOrNull { acc ->
-                    acc.accountId == targetUidForXsmm || acc.linkAccount.contains(targetUidForXsmm) ||
-                    (cleanUid.isNotBlank() && (acc.accountId == cleanUid || acc.linkAccount.contains(cleanUid)))
+                    acc.accountId.trim() == targetUidForXsmm || acc.linkAccount.contains(targetUidForXsmm)
                 }
+
                 if (matchedAcc == null) {
                     notify("Đang thêm nick [$targetUidForXsmm] lên XSMM...")
                     val addRes = XsmmAccountsRepository.addFacebookAccount(token, targetUidForXsmm)
                     if (addRes is com.cayxu.app.data.repository.XsmmAddAccountResult.Success) {
                         internalId = addRes.account.id
-                        notify("Đã thêm nick lên XSMM thành công")
+                        notify("Đã thêm nick [$targetUidForXsmm] lên XSMM")
                         delay(1000L)
                     } else if (addRes is com.cayxu.app.data.repository.XsmmAddAccountResult.Error) {
                         notify("Thêm XSMM: ${addRes.message}")
+                        onErrorDetail?.invoke(targetUidForXsmm, "Lỗi thêm nick [$targetUidForXsmm] lên XSMM: ${addRes.message}")
                         delay(1500L)
                     }
                 } else {
                     internalId = matchedAcc.id
-                    notify("Nick đã liên kết trên XSMM")
+                    notify("Nick [$targetUidForXsmm] đã liên kết trên XSMM")
                 }
             } else {
-                notify("Nick đã liên kết trên XSMM")
+                notify("Nick [$targetUidForXsmm] đã liên kết trên XSMM")
             }
 
             // Đặt tài khoản này làm mặc định (Active) trên XSMM trước khi nhận nhiệm vụ
@@ -266,12 +266,13 @@ object XsmmFacebookTaskRunner {
                 XsmmAccountsRepository.setActiveAccount(token, internalId)
                 val internalMap = XsmmAccountStore.getInternalIdMap(context).toMutableMap()
                 internalMap[targetUidForXsmm] = internalId
-                internalMap[cleanUid] = internalId
                 XsmmAccountStore.saveInternalIdMap(context, internalMap)
+                delay(800L)
             }
         } catch (e: Exception) {
             notify("Lỗi kiểm tra XSMM: ${e.message}")
         }
+
 
         val pendingBatchTaskIds = mutableListOf<String>()
         val activeTaskTypes = config.effectiveTaskTypes()
