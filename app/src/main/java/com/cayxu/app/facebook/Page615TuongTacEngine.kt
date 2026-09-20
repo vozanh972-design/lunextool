@@ -1,4 +1,4 @@
-﻿package com.cayxu.app.facebook
+package com.cayxu.app.facebook
 
 import androidx.annotation.Keep
 import okhttp3.*
@@ -120,8 +120,46 @@ class Page615TuongTacEngine(
         return if (body.isNotBlank()) body.take(300) else "Lỗi thực hiện tương tác Facebook"
     }
 
+    private fun postGraphQL(
+        params: Map<String, String>,
+        friendlyName: String,
+        actionName: String,
+        targetId: String? = null,
+        overrideToken: String? = null
+    ): InteractionResult {
+        val token = (overrideToken ?: pageToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        val formBuilder = FormBody.Builder()
+        params.forEach { (k, v) -> formBuilder.add(k, v) }
+        if (token.isNotEmpty()) {
+            formBuilder.add("access_token", token)
+        }
+
+        val reqBuilder = Request.Builder()
+            .url(GRAPHQL_URL)
+            .post(formBuilder.build())
+            .header("User-Agent", KATANA_USER_AGENT)
+            .header("X-FB-Friendly-Name", friendlyName)
+            .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+
+        if (token.isNotEmpty()) {
+            reqBuilder.header("Authorization", "OAuth $token")
+        }
+
+        return try {
+            httpClient.newCall(reqBuilder.build()).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val isOk = res.isSuccessful && !body.contains("\"errors\":")
+                val errMsg = if (isOk) "Success" else parseErrorMessage(body)
+                InteractionResult(isOk, targetId ?: "", actionName, null, errMsg, body)
+            }
+        } catch (e: Exception) {
+            InteractionResult(false, targetId ?: "", actionName, null, "Lỗi kết nối mạng: ${e.message}", "")
+        }
+    }
+
     /**
      * Thả cảm xúc vào bài viết / comment dưới danh nghĩa Page
+     * Tự động ưu tiên GraphQL UFIFeedbackReactMutation để tránh lỗi (#12) singular statuses API is deprecated của REST
      */
     fun reactPost(
         postId: String,
@@ -132,6 +170,43 @@ class Page615TuongTacEngine(
         val token = getCleanToken(overrideToken)
         if (token.isEmpty()) return InteractionResult(false, cleanPostId, "REACT", null, "Page token required", "")
 
+        val actor = pageId615 ?: ""
+
+        // 1. Thử GraphQL UFIFeedbackReactMutation (chuẩn app Katana, bypass 100% lỗi (#12) singular statuses API is deprecated)
+        val variables = JSONObject().apply {
+            put("client_mutation_id", UUID.randomUUID().toString())
+            if (actor.isNotBlank()) {
+                put("actor_id", actor)
+            }
+            put("feedback_id", cleanPostId)
+            put("feedback_reaction", reactionType.graphqlCode)
+        }
+        val gqlRes = postGraphQL(
+            params = mapOf(
+                "doc_id" to "5411782298894101",
+                "variables" to JSONObject().put("input", variables).toString()
+            ),
+            friendlyName = "UFIFeedbackReactMutation",
+            actionName = "REACT_${reactionType.value}",
+            targetId = cleanPostId,
+            overrideToken = token
+        )
+        if (gqlRes.isSuccess) return gqlRes
+
+        // 2. Thử doc_id voice Page (4715426135182900)
+        val voiceRes = postGraphQL(
+            params = mapOf(
+                "doc_id" to "4715426135182900",
+                "variables" to JSONObject().put("input", variables).toString()
+            ),
+            friendlyName = "UFIFeedbackReactMutation",
+            actionName = "REACT_VOICE_${reactionType.value}",
+            targetId = cleanPostId,
+            overrideToken = token
+        )
+        if (voiceRes.isSuccess) return voiceRes
+
+        // 3. Fallback sang Graph API REST nếu các GraphQL mutation trên chưa khớp
         val formBody = FormBody.Builder()
             .add("type", reactionType.value)
             .add("access_token", token)
@@ -147,10 +222,20 @@ class Page615TuongTacEngine(
             httpClient.newCall(request).execute().use { res ->
                 val body = res.body?.string() ?: ""
                 val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
-                InteractionResult(isOk, cleanPostId, "REACT_${reactionType.value}", null, if (isOk) "Success" else parseErrorMessage(body), body)
+                if (isOk) {
+                    InteractionResult(true, cleanPostId, "REACT_${reactionType.value}", null, "Success", body)
+                } else {
+                    val errMsg = parseErrorMessage(body)
+                    val finalMsg = if (errMsg.contains("singular statuses API is deprecated", ignoreCase = true) && !gqlRes.message.isNullOrBlank()) {
+                        gqlRes.message
+                    } else {
+                        errMsg
+                    }
+                    InteractionResult(false, cleanPostId, "REACT_${reactionType.value}", null, finalMsg, body)
+                }
             }
         } catch (e: Exception) {
-            InteractionResult(false, cleanPostId, "REACT", null, e.message ?: "Lỗi kết nối mạng", "")
+            gqlRes
         }
     }
 
@@ -233,10 +318,53 @@ class Page615TuongTacEngine(
                 val json = try { JSONObject(body) } catch (_: Exception) { null }
                 val commentId = json?.optString("id", null)
                 val isOk = res.isSuccessful && !commentId.isNullOrEmpty()
-                InteractionResult(isOk, cleanPostId, "COMMENT", commentId, if (isOk) "Success" else parseErrorMessage(body), body)
+                if (isOk) {
+                    InteractionResult(true, cleanPostId, "COMMENT", commentId, "Success", body)
+                } else {
+                    // Fallback sang GraphQL CommentCreateMutation nếu Graph API REST bị lỗi
+                    val actor = pageId615 ?: ""
+                    val commentInput = JSONObject().apply {
+                        put("client_mutation_id", UUID.randomUUID().toString())
+                        if (actor.isNotBlank()) {
+                            put("actor_id", actor)
+                        }
+                        put("feedback_id", cleanPostId)
+                        put("message", JSONObject().put("text", message))
+                    }
+                    val gqlCmt = postGraphQL(
+                        params = mapOf(
+                            "doc_id" to "6739921102758190",
+                            "variables" to JSONObject().put("input", commentInput).toString()
+                        ),
+                        friendlyName = "CommentCreateMutation",
+                        actionName = "COMMENT",
+                        targetId = cleanPostId,
+                        overrideToken = token
+                    )
+                    if (gqlCmt.isSuccess) gqlCmt else InteractionResult(false, cleanPostId, "COMMENT", null, parseErrorMessage(body), body)
+                }
             }
         } catch (e: Exception) {
-            InteractionResult(false, cleanPostId, "COMMENT", null, e.message ?: "Lỗi kết nối mạng", "")
+            val actor = pageId615 ?: ""
+            val commentInput = JSONObject().apply {
+                put("client_mutation_id", UUID.randomUUID().toString())
+                if (actor.isNotBlank()) {
+                    put("actor_id", actor)
+                }
+                put("feedback_id", cleanPostId)
+                put("message", JSONObject().put("text", message))
+            }
+            val gqlCmt = postGraphQL(
+                params = mapOf(
+                    "doc_id" to "6739921102758190",
+                    "variables" to JSONObject().put("input", commentInput).toString()
+                ),
+                friendlyName = "CommentCreateMutation",
+                actionName = "COMMENT",
+                targetId = cleanPostId,
+                overrideToken = token
+            )
+            if (gqlCmt.isSuccess) gqlCmt else InteractionResult(false, cleanPostId, "COMMENT", null, e.message ?: "Lỗi kết nối mạng", "")
         }
     }
 
