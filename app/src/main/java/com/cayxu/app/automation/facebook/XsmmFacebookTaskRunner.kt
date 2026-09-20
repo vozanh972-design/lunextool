@@ -118,6 +118,24 @@ object XsmmFacebookTaskRunner {
         }
 
         var fbToken = (matchedPage?.pageToken?.takeIf { it.isNotBlank() } ?: account.bio.trim()).orEmpty()
+        if (matchedPage != null && (matchedPage.pageToken.isBlank() || fbToken.isBlank())) {
+            try {
+                val service = com.cayxu.app.facebook.FacebookPageService(context)
+                val refreshedPages = service.getPagesForAccount(account)
+                val refreshedMatched = refreshedPages.firstOrNull { p ->
+                    p.pageId == matchedPage.pageId || (p.additionalProfileId.isNotBlank() && p.additionalProfileId == matchedPage.additionalProfileId)
+                }
+                if (refreshedMatched != null && refreshedMatched.pageToken.isNotBlank()) {
+                    fbToken = refreshedMatched.pageToken
+                    val currentStored = FacebookAccountsStore.getAccount(context, account.uid) ?: account
+                    val updatedPages = currentStored.pages.map { p ->
+                        if (p.pageId == refreshedMatched.pageId) p.copy(pageToken = refreshedMatched.pageToken) else p
+                    }
+                    val updatedAcc = currentStored.copy(pages = updatedPages)
+                    FacebookAccountsStore.addAccount(context, updatedAcc)
+                }
+            } catch (_: Exception) {}
+        }
         if (fbToken.isBlank() && account.note.contains("c_user=")) {
             try {
                 val mgr = FacebookAccountManager()
@@ -306,7 +324,9 @@ object XsmmFacebookTaskRunner {
                                 token = fbToken,
                                 cookie = account.note,
                                 proxyStr = account.phone.ifBlank { null },
-                                uid = targetUidForXsmm
+                                uid = targetUidForXsmm,
+                                isPage = (matchedPage != null),
+                                pageId615 = if (matchedPage != null) targetUidForXsmm else null
                             )
 
                             // Delay mô phỏng thời gian thao tác
@@ -393,7 +413,9 @@ object XsmmFacebookTaskRunner {
         token: String,
         cookie: String,
         proxyStr: String?,
-        uid: String? = null
+        uid: String? = null,
+        isPage: Boolean = false,
+        pageId615: String? = null
     ): FbTaskResult {
         if (targetId.isBlank()) return FbTaskResult(false, "Thiếu ID đối tượng (targetId trống)")
         val cleanToken = token.removePrefix("OAuth ").removePrefix("Bearer ").trim()
@@ -403,6 +425,59 @@ object XsmmFacebookTaskRunner {
         val proxyHost = proxyParts?.getOrNull(0)
         val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
 
+        // =========================================================================
+        // 1. NẾU LÀ TÀI KHOẢN PAGE (PROFILE+ / 615):
+        // SỬ DỤNG FULL LOGIC TƯƠNG TÁC TỪ Page615TuongTacEngine (Graph API v21.0)
+        // =========================================================================
+        if (isPage) {
+            val pageEngine = com.cayxu.app.facebook.Page615TuongTacEngine(
+                pageToken = cleanToken,
+                pageId615 = pageId615 ?: uid,
+                proxyHost = proxyHost,
+                proxyPort = proxyPort
+            )
+            val lower = taskType.lowercase()
+            val res = when {
+                lower.contains("comment") -> {
+                    pageEngine.commentPost(targetId, comment.ifBlank { "❤️❤️❤️" })
+                }
+                lower.contains("follow") || lower.contains("sub") -> {
+                    pageEngine.followTarget(targetId)
+                }
+                lower.contains("page") -> {
+                    pageEngine.likeOtherPage(targetId)
+                }
+                lower.contains("group") || lower.contains("member") || lower.contains("join") -> {
+                    pageEngine.joinGroup(targetId)
+                }
+                lower.contains("review") || lower.contains("danhgia") -> {
+                    pageEngine.reviewOtherPage(targetId, reviewText = comment.ifBlank { "Rất tuyệt vời!" }, recommendationType = "positive")
+                }
+                lower.contains("like") || lower.contains("love") || lower.contains("care") ||
+                lower.contains("haha") || lower.contains("wow") || lower.contains("sad") || lower.contains("angry") || lower.contains("tym") -> {
+                    val reaction = when {
+                        lower.contains("love") || lower.contains("tym") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LOVE
+                        lower.contains("care") || lower.contains("thuongthuong") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.CARE
+                        lower.contains("haha") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.HAHA
+                        lower.contains("wow") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.WOW
+                        lower.contains("sad") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.SAD
+                        lower.contains("angry") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.ANGRY
+                        else -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE
+                    }
+                    pageEngine.reactPost(targetId, reaction)
+                }
+                else -> {
+                    pageEngine.reactPost(targetId, com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE)
+                }
+            }
+            val msg = if (res.isSuccess) "Thành công" else (res.message ?: res.rawResponse)
+            return FbTaskResult(res.isSuccess, msg)
+        }
+
+        // =========================================================================
+        // 2. NẾU LÀ TÀI KHOẢN PROFILE CÁ NHÂN MẸ:
+        // GIỮ NGUYÊN 100% LOGIC TRƯỚC ĐÓ CỦA FacebookTuongTacEngine
+        // =========================================================================
         val engine = com.cayxu.app.facebook.FacebookTuongTacEngine(
             accessToken = cleanToken,
             userId = uid,
@@ -419,7 +494,12 @@ object XsmmFacebookTaskRunner {
                 engine.follow(targetId)
             }
             lower.contains("page") -> {
-                engine.likePage(targetId)
+                val r = engine.likePage(targetId)
+                if (!r.isSuccess && targetId.startsWith("615")) {
+                    engine.follow(targetId)
+                } else {
+                    r
+                }
             }
             lower.contains("group") || lower.contains("member") || lower.contains("join") -> {
                 engine.joinGroup(targetId)
@@ -451,6 +531,11 @@ object XsmmFacebookTaskRunner {
         var fallbackErrMsg = result.message
         try {
             when {
+                lower.contains("page") -> {
+                    val fRes = engine.follow(targetId)
+                    if (fRes.isSuccess) return FbTaskResult(true, "Thành công")
+                    fallbackErrMsg = fRes.message ?: fallbackErrMsg
+                }
                 lower.contains("like") -> {
                     val url = "https://graph.facebook.com/v21.0/$targetId/likes?access_token=$cleanToken"
                     val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
