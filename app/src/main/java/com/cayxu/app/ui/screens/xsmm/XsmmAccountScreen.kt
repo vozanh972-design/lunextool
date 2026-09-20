@@ -481,9 +481,24 @@ fun XsmmAccountScreen(navController: NavController) {
 
     if (selectedErrorDetailAccount != null) {
         val targetUser = selectedErrorDetailAccount ?: ""
-        val detail = igErrorDetailMap[targetUser] ?: igStatusMap[targetUser] ?: "Không có thông tin lỗi chi tiết."
+        val detail = fbErrorDetailMap[targetUser]
+            ?: igErrorDetailMap[targetUser]
+            ?: fbStatusMap[targetUser]
+            ?: igStatusMap[targetUser]
+            ?: "Không có thông tin lỗi chi tiết."
+        val displayName = remember(targetUser, facebookAccounts, instagramAccounts) {
+            val fb = facebookAccounts.firstOrNull { it.uid.equals(targetUser, ignoreCase = true) }
+            if (fb != null) return@remember fb.name.ifBlank { targetUser }
+            val page = facebookAccounts.flatMap { it.pages }.firstOrNull {
+                it.pageId.equals(targetUser, ignoreCase = true) ||
+                it.displayUid.equals(targetUser, ignoreCase = true) ||
+                it.additionalProfileId.equals(targetUser, ignoreCase = true)
+            }
+            if (page != null) return@remember "Page: ${page.pageName.ifBlank { targetUser }}"
+            targetUser
+        }
         ErrorDetailBottomSheet(
-            accountName = targetUser,
+            accountName = displayName,
             errorMessage = detail,
             onDismiss = { selectedErrorDetailAccount = null }
         )
@@ -1527,6 +1542,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     val fbStatus = fbStatusMap[account.uid]
                                     val fbSuccess = fbSuccessCountMap[account.uid] ?: 0
                                     val fbErrors = fbErrorCountMap[account.uid] ?: 0
+                                    val fbErrDetail = fbErrorDetailMap[account.uid]
                                     if (!fbStatus.isNullOrBlank() || fbSuccess > 0 || fbErrors > 0) {
                                         Spacer(Modifier.height(6.dp))
                                         Row(
@@ -1542,14 +1558,38 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier.weight(1f)
                                             )
-                                            if (fbSuccess > 0 || fbErrors > 0) {
+                                            if (fbSuccess > 0 || fbErrors > 0 || !fbErrDetail.isNullOrBlank()) {
                                                 Spacer(Modifier.width(6.dp))
-                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
                                                     if (fbSuccess > 0) {
                                                         Text("+$fbSuccess", color = Color(0xFF16A34A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                     }
                                                     if (fbErrors > 0) {
                                                         Text("-$fbErrors", color = DangerRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                    if (fbErrors > 0 || !fbErrDetail.isNullOrBlank()) {
+                                                        IconButton(
+                                                            onClick = { selectedErrorDetailAccount = account.uid },
+                                                            modifier = Modifier.size(24.dp)
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(20.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(DangerRed.copy(alpha = 0.15f)),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Filled.Warning,
+                                                                    contentDescription = "Xem chi tiết lỗi",
+                                                                    tint = DangerRed,
+                                                                    modifier = Modifier.size(12.dp)
+                                                                )
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1899,7 +1939,12 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         ?: (if (pageDisplayUid.isNotBlank()) fbErrorCountMap[pageDisplayUid] else null)
                                                         ?: 0
 
-                                                    if (isPageRunning || !pageStatus.isNullOrBlank() || pageSuccess > 0 || pageErrors > 0) {
+                                                    val pageErrorDetail = fbErrorDetailMap[effectivePageUid]
+                                                        ?: fbErrorDetailMap[page.pageId]
+                                                        ?: fbErrorDetailMap[page.additionalProfileId]
+                                                        ?: (if (pageDisplayUid.isNotBlank()) fbErrorDetailMap[pageDisplayUid] else null)
+
+                                                    if (isPageRunning || !pageStatus.isNullOrBlank() || pageSuccess > 0 || pageErrors > 0 || !pageErrorDetail.isNullOrBlank()) {
                                                         Spacer(Modifier.height(5.dp))
                                                         Row(
                                                             modifier = Modifier
@@ -1930,14 +1975,38 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                     overflow = TextOverflow.Ellipsis
                                                                 )
                                                             }
-                                                            if (pageSuccess > 0 || pageErrors > 0) {
+                                                            if (pageSuccess > 0 || pageErrors > 0 || !pageErrorDetail.isNullOrBlank()) {
                                                                 Spacer(Modifier.width(6.dp))
-                                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                                Row(
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                                ) {
                                                                     if (pageSuccess > 0) {
                                                                         Text("+$pageSuccess", color = Color(0xFF16A34A), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                                                                     }
                                                                     if (pageErrors > 0) {
                                                                         Text("-$pageErrors", color = DangerRed, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                                    }
+                                                                    if (pageErrors > 0 || !pageErrorDetail.isNullOrBlank()) {
+                                                                        IconButton(
+                                                                            onClick = { selectedErrorDetailAccount = effectivePageUid },
+                                                                            modifier = Modifier.size(22.dp)
+                                                                        ) {
+                                                                            Box(
+                                                                                modifier = Modifier
+                                                                                    .size(18.dp)
+                                                                                    .clip(CircleShape)
+                                                                                    .background(DangerRed.copy(alpha = 0.15f)),
+                                                                                contentAlignment = Alignment.Center
+                                                                            ) {
+                                                                                Icon(
+                                                                                    imageVector = Icons.Filled.Warning,
+                                                                                    contentDescription = "Xem chi tiết lỗi Page",
+                                                                                    tint = DangerRed,
+                                                                                    modifier = Modifier.size(11.dp)
+                                                                                )
+                                                                            }
+                                                                        }
                                                                     }
                                                                 }
                                                             }
@@ -3211,7 +3280,7 @@ private fun ErrorDetailBottomSheet(
 
             Spacer(Modifier.height(16.dp))
 
-            Text("Nguyên nhân Instagram trả về:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Text("Chi tiết nguyên nhân phản hồi:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Spacer(Modifier.height(8.dp))
 
             // Nội dung chi tiết lỗi

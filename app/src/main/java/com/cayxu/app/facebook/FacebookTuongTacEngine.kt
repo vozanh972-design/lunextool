@@ -115,11 +115,35 @@ class FacebookTuongTacEngine(
             httpClient.newCall(reqBuilder.build()).execute().use { res ->
                 val body = res.body?.string() ?: ""
                 val isOk = res.isSuccessful && !body.contains("\"errors\":")
-                EngineResult(isOk, actionName, targetId, if (isOk) "Success" else body, body)
+                val errMsg = if (isOk) "Success" else parseErrorMessage(body)
+                EngineResult(isOk, actionName, targetId, errMsg, body)
             }
         } catch (e: Exception) {
-            EngineResult(false, actionName, targetId, e.message, "")
+            EngineResult(false, actionName, targetId, "Lỗi kết nối mạng: ${e.message}", "")
         }
+    }
+
+    private fun parseErrorMessage(body: String): String {
+        try {
+            val json = JSONObject(body)
+            if (json.has("errors")) {
+                val errs = json.optJSONArray("errors")
+                if (errs != null && errs.length() > 0) {
+                    val first = errs.optJSONObject(0)
+                    val msg = first?.optString("message")
+                    val summary = first?.optString("summary")
+                    if (!msg.isNullOrBlank()) return if (!summary.isNullOrBlank()) "$summary: $msg" else msg
+                }
+            }
+            if (json.has("error")) {
+                val err = json.optJSONObject("error")
+                val msg = err?.optString("message")
+                if (!msg.isNullOrBlank()) return msg
+                val errStr = json.optString("error")
+                if (errStr.isNotBlank()) return errStr
+            }
+        } catch (_: Exception) {}
+        return if (body.isNotBlank()) body.take(300) else "Phản hồi lỗi không xác định từ Facebook"
     }
 
     /**

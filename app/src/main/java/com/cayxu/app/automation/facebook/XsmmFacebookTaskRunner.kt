@@ -265,6 +265,9 @@ object XsmmFacebookTaskRunner {
             when (taskResult) {
                 is XsmmTasks2Result.Error -> {
                     noTaskConsecutiveCount++
+                    val xsmmDetail = "Lỗi lấy nhiệm vụ từ XSMM:\n• Server phản hồi: ${taskResult.message}"
+                    onErrorDetail?.invoke(cleanUid, xsmmDetail)
+                    if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, xsmmDetail)
                     notify("Hết nhiệm vụ (${taskResult.message}). Chờ ${config.fetchTaskIntervalSeconds}s...")
                     if (config.stopAfterNoTaskCount > 0 && noTaskConsecutiveCount >= config.stopAfterNoTaskCount) {
                         notify("Hết nhiệm vụ liên tiếp $noTaskConsecutiveCount lần. Dừng.")
@@ -296,7 +299,7 @@ object XsmmFacebookTaskRunner {
 
                             notify("$pos Đang làm: $shortTarget")
 
-                            val success = executeFacebookTask(
+                            val taskRes = executeFacebookTask(
                                 taskType = task.type.ifBlank { config.taskType },
                                 targetId = target,
                                 comment = task.comment,
@@ -311,7 +314,7 @@ object XsmmFacebookTaskRunner {
                                 delay(config.doTaskDurationSeconds * 1000L)
                             }
 
-                            if (success) {
+                            if (taskRes.isSuccess) {
                                 consecutiveErrors = 0
                                 pendingBatchTaskIds.add(task.id)
                                 totalCompleted++
@@ -320,7 +323,15 @@ object XsmmFacebookTaskRunner {
                                 consecutiveErrors++
                                 totalErrors++
                                 notify("$pos Lỗi tác vụ ($consecutiveErrors/${config.failJobCountToSwitchAccount})")
-                                onErrorDetail?.invoke(cleanUid, "Lỗi thực hiện job Facebook: $shortTarget")
+                                val detailMsg = buildString {
+                                    append("Nhiệm vụ: ${task.type.ifBlank { config.taskType }}\n")
+                                    append("Target: $target\n")
+                                    append("Lỗi từ Facebook: ${taskRes.message ?: "Thao tác không thành công"}")
+                                }
+                                onErrorDetail?.invoke(cleanUid, detailMsg)
+                                if (cleanUid != targetUidForXsmm) {
+                                    onErrorDetail?.invoke(targetUidForXsmm, detailMsg)
+                                }
                                 if (config.failJobCountToSwitchAccount > 0 && consecutiveErrors >= config.failJobCountToSwitchAccount) {
                                     notify("Nick $cleanUid lỗi liên tiếp $consecutiveErrors job. Dừng.")
                                     break
@@ -356,6 +367,9 @@ object XsmmFacebookTaskRunner {
                                     }
                                 } else {
                                     notify("Nhận xu: ${compRes.message}")
+                                    val compErr = "Lỗi nhận xu từ XSMM:\n• Server phản hồi: ${compRes.message}"
+                                    onErrorDetail?.invoke(cleanUid, compErr)
+                                    if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, compErr)
                                 }
                                 pendingBatchTaskIds.clear()
                             }
@@ -370,6 +384,8 @@ object XsmmFacebookTaskRunner {
         return RunResult(totalCompleted, totalErrors, totalEarnedPoints, summary)
     }
 
+    data class FbTaskResult(val isSuccess: Boolean, val message: String? = null)
+
     private fun executeFacebookTask(
         taskType: String,
         targetId: String,
@@ -378,9 +394,10 @@ object XsmmFacebookTaskRunner {
         cookie: String,
         proxyStr: String?,
         uid: String? = null
-    ): Boolean {
-        if (targetId.isBlank()) return false
+    ): FbTaskResult {
+        if (targetId.isBlank()) return FbTaskResult(false, "Thiếu ID đối tượng (targetId trống)")
         val cleanToken = token.removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        if (cleanToken.isBlank()) return FbTaskResult(false, "Token Facebook trống hoặc chưa được cấp quyền")
 
         val proxyParts = proxyStr?.split(":")
         val proxyHost = proxyParts?.getOrNull(0)
@@ -428,31 +445,46 @@ object XsmmFacebookTaskRunner {
             }
         }
 
-        if (result.isSuccess) return true
+        if (result.isSuccess) return FbTaskResult(true, "Thành công")
 
         // Fallback sang Graph API v21.0 nếu GraphQL mutation gặp lỗi
-        return try {
+        var fallbackErrMsg = result.message
+        try {
             when {
                 lower.contains("like") -> {
                     val url = "https://graph.facebook.com/v21.0/$targetId/likes?access_token=$cleanToken"
                     val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
-                    httpClient.newCall(req).execute().use { it.isSuccessful }
+                    httpClient.newCall(req).execute().use { res ->
+                        if (res.isSuccessful) return FbTaskResult(true, "Thành công")
+                        val b = res.body?.string().orEmpty()
+                        if (b.isNotBlank()) fallbackErrMsg = b
+                    }
                 }
                 lower.contains("follow") || lower.contains("sub") -> {
                     val url = "https://graph.facebook.com/v21.0/$targetId/subscribers?access_token=$cleanToken"
                     val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
-                    httpClient.newCall(req).execute().use { it.isSuccessful }
+                    httpClient.newCall(req).execute().use { res ->
+                        if (res.isSuccessful) return FbTaskResult(true, "Thành công")
+                        val b = res.body?.string().orEmpty()
+                        if (b.isNotBlank()) fallbackErrMsg = b
+                    }
                 }
                 lower.contains("comment") -> {
                     val url = "https://graph.facebook.com/v21.0/$targetId/comments?access_token=$cleanToken"
                     val form = FormBody.Builder().add("message", comment.ifBlank { "❤️❤️" }).build()
                     val req = Request.Builder().url(url).post(form).build()
-                    httpClient.newCall(req).execute().use { it.isSuccessful }
+                    httpClient.newCall(req).execute().use { res ->
+                        if (res.isSuccessful) return FbTaskResult(true, "Thành công")
+                        val b = res.body?.string().orEmpty()
+                        if (b.isNotBlank()) fallbackErrMsg = b
+                    }
                 }
-                else -> false
             }
-        } catch (_: Exception) {
-            false
+        } catch (e: Exception) {
+            fallbackErrMsg = e.message ?: fallbackErrMsg
         }
+
+        return FbTaskResult(false, fallbackErrMsg ?: "Lỗi thực hiện tương tác Facebook")
+    }
     }
 }
