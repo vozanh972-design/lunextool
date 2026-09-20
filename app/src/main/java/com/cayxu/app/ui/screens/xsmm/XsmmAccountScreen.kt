@@ -1312,7 +1312,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                             scope.launch {
                                                                 when (val res = XsmmAccountsRepository.addFacebookAccount(token, account.uid)) {
                                                                     is XsmmAddAccountResult.Success -> {
-                                                                        android.widget.Toast.makeText(context, "Đã thêm Facebook [${account.name.ifBlank { account.uid }}] vào XSMM, đang đồng bộ...", android.widget.Toast.SHORT).show()
+                                                                        android.widget.Toast.makeText(context, "Đã thêm Facebook [${account.name.ifBlank { account.uid }}] vào XSMM, đang đồng bộ...", android.widget.Toast.LENGTH_SHORT).show()
                                                                         linkedSyncTrigger = System.currentTimeMillis()
                                                                     }
                                                                     is XsmmAddAccountResult.Error -> {
@@ -1731,7 +1731,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                         scope.launch {
                                                                             when (val res = XsmmAccountsRepository.addFacebookAccount(token, targetToAdd)) {
                                                                                 is XsmmAddAccountResult.Success -> {
-                                                                                    android.widget.Toast.makeText(context, "Đã thêm Page [${page.pageName.ifBlank { targetToAdd }}] vào XSMM, đang đồng bộ...", android.widget.Toast.SHORT).show()
+                                                                                    android.widget.Toast.makeText(context, "Đã thêm Page [${page.pageName.ifBlank { targetToAdd }}] vào XSMM, đang đồng bộ...", android.widget.Toast.LENGTH_SHORT).show()
                                                                                     linkedSyncTrigger = System.currentTimeMillis()
                                                                                 }
                                                                                 is XsmmAddAccountResult.Error -> {
