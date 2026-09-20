@@ -23,6 +23,13 @@ sealed class XsmmAddAccountResult {
     data class Error(val message: String) : XsmmAddAccountResult()
 }
 
+data class XsmmSyncAccountResult(
+    val isSuccess: Boolean,
+    val uid: String,
+    val internalId: String,
+    val message: String
+)
+
 /**
  * Gọi THẬT các API "GET/POST /api/taskapi/accounts" của XSMM - lấy danh sách acc đã thêm
  * (để biết acc TikTok nào ĐÃ có trên XSMM, tự ẩn nút "Thêm"), và thêm acc mới (bấm "Thêm").
@@ -60,6 +67,7 @@ object XsmmAccountsRepository {
     private fun parseAccount(obj: JsonObject): XsmmAccount {
         val rawAccId = obj.get("account_id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
         val rawId = obj.get("id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+            .ifBlank { obj.get("_id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty() }
         val finalAccountId = rawAccId.ifBlank { rawId }
         return XsmmAccount(
             id = rawId,
@@ -102,19 +110,101 @@ object XsmmAccountsRepository {
         }
     }
 
-    /** Tìm kiếm tài khoản Facebook trên XSMM theo UID (dùng endpoint search của API accounts2).
-     *  Trả về [XsmmAccount] nếu tìm thấy, hoặc null nếu không tồn tại trên XSMM. */
-    suspend fun searchFacebookAccount(rawToken: String, uid: String): XsmmAccount? {
-        val cleanUid = uid.trim()
-        if (cleanUid.isBlank()) return null
-        val result = getAccounts(rawToken, accountType = "facebook", search = cleanUid)
-        val accounts = (result as? XsmmAccountsResult.Success)?.accounts.orEmpty()
-        return accounts.firstOrNull { it.accountId.trim() == cleanUid }
+    /** Lấy toàn bộ danh sách tài khoản của [accountType] trên XSMM, tự động duyệt tất cả các trang. */
+    suspend fun getAllAccounts(rawToken: String, accountType: String? = null): List<XsmmAccount> {
+        val allList = mutableListOf<XsmmAccount>()
+        var currentPage = 1
+        var totalPages = 1
+        while (currentPage <= totalPages && currentPage <= 20) {
+            val res = getAccounts(rawToken, accountType = accountType, page = currentPage)
+            if (res is XsmmAccountsResult.Success) {
+                allList.addAll(res.accounts)
+                totalPages = res.totalPages.coerceAtLeast(1)
+                currentPage++
+            } else {
+                break
+            }
+        }
+        return allList
     }
 
-    /** Kiểm tra nhanh 1 UID Facebook (acc chính hoặc Page) đã có trên XSMM chưa qua search. */
-    suspend fun isFacebookUidLinked(rawToken: String, uid: String): Boolean {
-        return searchFacebookAccount(rawToken, uid) != null
+    /** Lấy toàn bộ danh sách tài khoản Facebook từ XSMM (GET /api/taskapi/accounts?account_type=facebook), tự động duyệt tất cả các trang. */
+    suspend fun getFacebookAccounts(rawToken: String): List<XsmmAccount> {
+        return getAllAccounts(rawToken, accountType = "facebook")
+    }
+
+    /**
+     * Đồng bộ và kích hoạt nick Facebook theo đúng 4 API chuẩn của XSMM:
+     * 1. GET /api/taskapi/accounts/active -> nếu đúng UID đang active thì dùng luôn.
+     * 2. GET /api/taskapi/accounts?account_type=facebook -> lấy danh sách tài khoản theo trang.
+     * 3. Nếu đã có trong danh sách -> PUT /api/taskapi/accounts/{id}/set-active để đặt làm nick chạy.
+     * 4. Nếu chưa có -> POST /api/taskapi/accounts (active: true) để thêm và đặt làm nick chạy luôn.
+     */
+    suspend fun syncAndActivateFacebookAccount(rawToken: String, targetUid: String): XsmmSyncAccountResult {
+        val cleanUid = targetUid.trim()
+        if (cleanUid.isBlank()) return XsmmSyncAccountResult(false, "", "", "UID Facebook trống")
+
+        // 1. Kiểm tra tài khoản đang active trên XSMM (GET /api/taskapi/accounts/active)
+        val currentActive = getActiveAccount(rawToken)
+        if (currentActive != null && (currentActive.accountId.trim() == cleanUid || currentActive.linkAccount.contains(cleanUid))) {
+            return XsmmSyncAccountResult(
+                isSuccess = true,
+                uid = currentActive.accountId.ifBlank { cleanUid },
+                internalId = currentActive.id,
+                message = "Đang active trên XSMM"
+            )
+        }
+
+        // 2. Lấy danh sách tài khoản Facebook từ XSMM (GET /api/taskapi/accounts?account_type=facebook)
+        val allFbAccounts = getFacebookAccounts(rawToken)
+        val matchedAcc = allFbAccounts.firstOrNull {
+            it.accountId.trim() == cleanUid || it.linkAccount.contains(cleanUid)
+        }
+
+        if (matchedAcc != null) {
+            // 3. Đã có trong danh sách -> PUT /api/taskapi/accounts/{id}/set-active
+            val setOk = setActiveAccount(rawToken, matchedAcc.id)
+            return XsmmSyncAccountResult(
+                isSuccess = setOk,
+                uid = matchedAcc.accountId.ifBlank { cleanUid },
+                internalId = matchedAcc.id,
+                message = if (setOk) "Đã kích hoạt nick làm mặc định" else "Lỗi kích hoạt nick trên XSMM"
+            )
+        } else {
+            // 4. Chưa có trong danh sách -> POST /api/taskapi/accounts kèm "active": true
+            val addRes = addFacebookAccount(rawToken, cleanUid, setActive = true)
+            return when (addRes) {
+                is XsmmAddAccountResult.Success -> {
+                    XsmmSyncAccountResult(
+                        isSuccess = true,
+                        uid = addRes.account.accountId.ifBlank { cleanUid },
+                        internalId = addRes.account.id,
+                        message = "Đã thêm và kích hoạt nick mới trên XSMM"
+                    )
+                }
+                is XsmmAddAccountResult.Error -> {
+                    // Nếu lỗi báo đã tồn tại, quét lại danh sách để lấy id và kích hoạt
+                    val reloaded = getFacebookAccounts(rawToken)
+                    val found = reloaded.firstOrNull { it.accountId.trim() == cleanUid || it.linkAccount.contains(cleanUid) }
+                    if (found != null) {
+                        val setOk = setActiveAccount(rawToken, found.id)
+                        XsmmSyncAccountResult(
+                            isSuccess = setOk,
+                            uid = found.accountId.ifBlank { cleanUid },
+                            internalId = found.id,
+                            message = if (setOk) "Đã kích hoạt nick làm mặc định" else "Lỗi kích hoạt nick trên XSMM"
+                        )
+                    } else {
+                        XsmmSyncAccountResult(
+                            isSuccess = false,
+                            uid = cleanUid,
+                            internalId = "",
+                            message = addRes.message
+                        )
+                    }
+                }
+            }
+        }
     }
 
     /** Kiểm tra 1 @handle TikTok đã có trong danh sách acc XSMM chưa (dùng search để lọc
@@ -215,36 +305,18 @@ object XsmmAccountsRepository {
     }
 
     /**
-     * Kiểm tra tài khoản Facebook (theo UID) đã có trên XSMM chưa.
-     */
-    suspend fun isFacebookAccountLinked(rawToken: String, uid: String): Boolean {
-        val cleanUid = uid.trim()
-        if (cleanUid.isBlank()) return false
-        // Dùng search=uid để lọc server-side (giống website XSMM)
-        val result = getAccounts(rawToken, accountType = "facebook", search = cleanUid)
-        val accounts = (result as? XsmmAccountsResult.Success)?.accounts.orEmpty()
-            .filter { it.type.equals("facebook", ignoreCase = true) }
-        // Chỉ check account_id - API docs: account_id là Facebook UID
-        // KHÔNG check link_account vì link_account là URL gốc gửi lên, không phải UID thật
-        return accounts.any { acc -> acc.accountId.trim() == cleanUid }
-    }
-
-    /**
      * Thêm tài khoản Facebook mới vào XSMM theo UID hoặc link_account.
-     * Body: {"type": "facebook", "link_account": "https://facebook.com/username"}
-     * TUYỆT ĐỐI KHÔNG thêm ảo: chỉ trả Success khi XSMM trả về account có id/account_id hợp lệ,
-     * hoặc nick thực sự xuất hiện trong danh sách accounts của XSMM sau khi gọi.
+     * Body: {"type": "facebook", "link_account": "https://facebook.com/username", "active": true}
      */
     suspend fun addFacebookAccount(
         rawToken: String,
         uid: String,
-        linkAccount: String? = null
+        linkAccount: String? = null,
+        setActive: Boolean = true
     ): XsmmAddAccountResult {
         val cleanUid = uid.trim()
         if (cleanUid.isBlank()) return XsmmAddAccountResult.Error("Thiếu UID Facebook để thêm")
 
-        // API docs: link_account phải là URL dạng https://facebook.com/username
-        // Với numeric UID → dùng profile.php?id=
         val targetUrl = if (cleanUid.all { it.isDigit() }) {
             "https://www.facebook.com/profile.php?id=$cleanUid"
         } else {
@@ -256,6 +328,7 @@ object XsmmAccountsRepository {
         val body = JsonObject().apply {
             addProperty("type", "facebook")
             addProperty("link_account", targetUrl)
+            addProperty("active", setActive)
         }
 
         return try {
@@ -286,7 +359,25 @@ object XsmmAccountsRepository {
         }
     }
 
-    /** Đặt 1 acc (theo id) làm "nick chạy". */
+    /** Lấy tài khoản đang active trên XSMM (GET /api/taskapi/accounts/active). */
+    suspend fun getActiveAccount(rawToken: String): XsmmAccount? {
+        return try {
+            val response = XsmmRetrofitClient.api.getActiveAccount(authHeader(rawToken))
+            if (response.isSuccessful) {
+                val json = response.body() ?: return null
+                val accObj = if (json.has("account") && json.get("account").isJsonObject) {
+                    json.getAsJsonObject("account")
+                } else json
+                if (accObj.has("id") || accObj.has("account_id") || accObj.has("_id")) {
+                    parseAccount(accObj)
+                } else null
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Đặt 1 acc (theo id nội bộ trên XSMM) làm "nick chạy" (PUT /api/taskapi/accounts/{id}/set-active). */
     suspend fun setActiveAccount(rawToken: String, accountId: String): Boolean {
         return try {
             val response = XsmmRetrofitClient.api.setActiveAccount(authHeader(rawToken), accountId)

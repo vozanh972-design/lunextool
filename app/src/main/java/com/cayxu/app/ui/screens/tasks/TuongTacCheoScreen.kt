@@ -79,24 +79,39 @@ fun TuongTacCheoScreen(navController: NavController) {
     if (showAddTtcSheet) {
         AddTtcBottomSheet(
             onDismiss = { showAddTtcSheet = false },
-            onLogin = { lines, mode, proxyValue ->
+            onLogin = { lines, isToken, isProxy ->
                 var addedCount = 0
                 lines.forEach { line ->
                     val trimmed = line.trim()
                     if (trimmed.isNotBlank()) {
-                        val parts = trimmed.split("|")
-                        val token = parts[0].trim()
-                        val proxy = if (parts.size > 1) parts[1].trim() else proxyValue.trim()
+                        val token: String
+                        val proxy: String
+                        if (isToken && isProxy) {
+                            val parts = trimmed.split("|")
+                            token = parts.getOrNull(0)?.trim().orEmpty()
+                            proxy = parts.getOrNull(1)?.trim().orEmpty()
+                        } else if (isToken) {
+                            val parts = trimmed.split("|")
+                            token = parts.getOrNull(0)?.trim().orEmpty()
+                            proxy = if (parts.size > 1) parts[1].trim() else ""
+                        } else {
+                            token = ""
+                            proxy = trimmed
+                        }
+
                         val username = when {
                             token.contains("c_user=") -> token.substringAfter("c_user=").substringBefore(";")
                             token.length > 12 -> "TTC_${token.take(8)}"
-                            else -> token
+                            proxy.isNotBlank() -> "TTC_${proxy.substringBefore(":").takeLast(6)}"
+                            else -> token.ifBlank { "TTC_${System.currentTimeMillis() % 10000}" }
                         }
+
                         TtcAccountsStore.addAccount(
                             context,
                             TtcAccount(
                                 username = username,
                                 token = token,
+                                proxy = proxy,
                                 isLive = true
                             )
                         )
@@ -342,7 +357,7 @@ private fun TtcAccountsTabContent(
                     colors = CheckboxDefaults.colors(checkedColor = TtcPink)
                 )
                 Text(
-                    "Tất cả (${selectedUsernames.size}/${accounts.size})",
+                    "Tất cả",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = TextPrimary
@@ -450,9 +465,17 @@ private fun TtcAccountsTabContent(
                                     )
                                     if (acc.token.isNotBlank()) {
                                         Text(
-                                            text = " • Token đã lưu",
+                                            text = " • Token",
                                             fontSize = 11.sp,
                                             color = TextSecondary
+                                        )
+                                    }
+                                    if (acc.proxy.isNotBlank()) {
+                                        Text(
+                                            text = " • Proxy",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF0284C7),
+                                            fontWeight = FontWeight.Medium
                                         )
                                     }
                                 }
@@ -645,12 +668,12 @@ private fun FbAccountsTabContent(
 @Composable
 private fun AddTtcBottomSheet(
     onDismiss: () -> Unit,
-    onLogin: (lines: List<String>, mode: String, proxy: String) -> Unit
+    onLogin: (lines: List<String>, isToken: Boolean, isProxy: Boolean) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var selectedOption by remember { mutableStateOf("token") } // "token" hoặc "proxy"
-    var tokenInputText by remember { mutableStateOf("") }
-    var proxyInputText by remember { mutableStateOf("") }
+    var isTokenSelected by remember { mutableStateOf(true) }
+    var isProxySelected by remember { mutableStateOf(false) }
+    var inputText by remember { mutableStateOf("") }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -673,66 +696,77 @@ private fun AddTtcBottomSheet(
                 color = TextPrimary
             )
 
-            // 2 ô để chọn: Token và Proxy
+            // 2 ô để chọn: Token và Proxy (chọn được 1 hoặc cả 2)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Ô chọn Token
                 FilterChip(
-                    selected = selectedOption == "token",
-                    onClick = { selectedOption = "token" },
+                    selected = isTokenSelected,
+                    onClick = {
+                        if (isTokenSelected && !isProxySelected) return@FilterChip
+                        isTokenSelected = !isTokenSelected
+                    },
+                    leadingIcon = if (isTokenSelected) {
+                        { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                    } else null,
                     label = { Text("Token", fontWeight = FontWeight.SemiBold) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = TtcPink.copy(alpha = 0.15f),
-                        selectedLabelColor = TtcPink
+                        selectedLabelColor = TtcPink,
+                        selectedLeadingIconColor = TtcPink
                     ),
                     modifier = Modifier.weight(1f)
                 )
 
                 // Ô chọn Proxy
                 FilterChip(
-                    selected = selectedOption == "proxy",
-                    onClick = { selectedOption = "proxy" },
-                    label = { Text("Proxy (Tùy chọn)", fontWeight = FontWeight.SemiBold) },
+                    selected = isProxySelected,
+                    onClick = {
+                        if (!isTokenSelected && isProxySelected) return@FilterChip
+                        isProxySelected = !isProxySelected
+                    },
+                    leadingIcon = if (isProxySelected) {
+                        { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                    } else null,
+                    label = { Text("Proxy", fontWeight = FontWeight.SemiBold) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = TtcPink.copy(alpha = 0.15f),
-                        selectedLabelColor = TtcPink
+                        selectedLabelColor = TtcPink,
+                        selectedLeadingIconColor = TtcPink
                     ),
                     modifier = Modifier.weight(1f)
                 )
             }
 
-            // Nếu chọn Proxy thì hiện ô nhập Proxy chung
-            if (selectedOption == "proxy") {
-                OutlinedTextField(
-                    value = proxyInputText,
-                    onValueChange = { proxyInputText = it },
-                    label = { Text("Proxy (ip:port hoặc ip:port:user:pass)", fontSize = 12.sp) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = TtcPink,
-                        cursorColor = TtcPink
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+            // Hướng dẫn định dạng & placeholder theo lựa chọn
+            val formatLabel = when {
+                isTokenSelected && isProxySelected -> "Dán danh sách (định dạng token|proxy - mỗi dòng 1 acc):"
+                isTokenSelected -> "Dán danh sách token (mỗi dòng 1 tài khoản):"
+                else -> "Dán danh sách proxy (mỗi dòng 1 proxy):"
+            }
+            val placeholderText = when {
+                isTokenSelected && isProxySelected -> "Dán token|proxy tại đây...\ntoken_1|1.2.3.4:8080\ntoken_2|1.2.3.4:8080:user:pass"
+                isTokenSelected -> "Dán token tại đây...\ntoken_acc_1\ntoken_acc_2\ntoken_acc_3"
+                else -> "Dán proxy tại đây...\n1.2.3.4:8080\n1.2.3.4:8080:user:pass"
             }
 
-            // Bảng để dán token - mỗi dòng 1 acc
+            // Bảng để dán token / proxy
             Column {
                 Text(
-                    "Dán danh sách token (mỗi dòng 1 tài khoản):",
+                    formatLabel,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = TextPrimary
                 )
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
-                    value = tokenInputText,
-                    onValueChange = { tokenInputText = it },
+                    value = inputText,
+                    onValueChange = { inputText = it },
                     placeholder = {
                         Text(
-                            "Dán token tại đây...\ntoken_acc_1\ntoken_acc_2\ntoken_acc_3",
+                            placeholderText,
                             fontSize = 12.sp,
                             color = TextSecondary
                         )
@@ -764,15 +798,15 @@ private fun AddTtcBottomSheet(
 
                 Button(
                     onClick = {
-                        val lines = tokenInputText.split("\n").map { it.trim() }.filter { it.isNotBlank() }
+                        val lines = inputText.split("\n").map { it.trim() }.filter { it.isNotBlank() }
                         if (lines.isEmpty()) {
                             return@Button
                         }
-                        onLogin(lines, selectedOption, proxyInputText)
+                        onLogin(lines, isTokenSelected, isProxySelected)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = TtcPink),
                     shape = RoundedCornerShape(10.dp),
-                    enabled = tokenInputText.isNotBlank(),
+                    enabled = inputText.isNotBlank(),
                     modifier = Modifier
                         .weight(1f)
                         .height(46.dp)

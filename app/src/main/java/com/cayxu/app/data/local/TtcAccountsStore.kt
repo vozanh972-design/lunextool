@@ -10,6 +10,7 @@ import org.json.JSONObject
 data class TtcAccount(
     val username: String = "",
     val token: String = "",
+    val proxy: String = "",
     val coins: Long = 0L,
     val isLive: Boolean = true
 )
@@ -32,6 +33,7 @@ object TtcAccountsStore {
                     TtcAccount(
                         username = obj.optString("username", ""),
                         token = obj.optString("token", ""),
+                        proxy = obj.optString("proxy", ""),
                         coins = obj.optLong("coins", 0L),
                         isLive = obj.optBoolean("isLive", true)
                     )
@@ -47,6 +49,7 @@ object TtcAccountsStore {
             val obj = JSONObject().apply {
                 put("username", acc.username)
                 put("token", acc.token)
+                put("proxy", acc.proxy)
                 put("coins", acc.coins)
                 put("isLive", acc.isLive)
             }

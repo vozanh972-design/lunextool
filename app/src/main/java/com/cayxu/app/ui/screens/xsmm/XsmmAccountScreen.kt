@@ -617,33 +617,26 @@ fun XsmmAccountScreen(navController: NavController) {
         val token = XsmmAccountStore.getToken(context) ?: return@LaunchedEffect
         isCheckingLinked = true
         if (selectedPlatform == "facebook") {
-            when (val result = XsmmAccountsRepository.getAccounts(token, accountType = "facebook")) {
-                is XsmmAccountsResult.Success -> {
-                    val xsmmUids = result.accounts
-                        .map { it.accountId.trim() }
-                        .filter { it.isNotBlank() }
-                        .toSet()
-                    linkedFbUids = xsmmUids
+            val allFbOnXsmm = XsmmAccountsRepository.getFacebookAccounts(token)
+            val xsmmUids = allFbOnXsmm
+                .map { it.accountId.trim() }
+                .filter { it.isNotBlank() }
+                .toSet()
+            linkedFbUids = xsmmUids
 
-                    val accMap = result.accounts
-                        .filter { it.accountId.isNotBlank() }
-                        .associate { it.accountId.trim() to it.accountId.trim() }
-                    val internalMap = result.accounts
-                        .filter { it.accountId.isNotBlank() && it.id.isNotBlank() }
-                        .associate { it.accountId.trim() to it.id.trim() }
-                    XsmmAccountStore.saveAccountIdMap(context, accMap)
-                    XsmmAccountStore.saveInternalIdMap(context, internalMap)
-                }
-                is XsmmAccountsResult.Error -> {
-                    linkedFbUids = emptySet()
-                }
-            }
+            val accMap = allFbOnXsmm
+                .filter { it.accountId.isNotBlank() }
+                .associate { it.accountId.trim() to it.accountId.trim() }
+            val internalMap = allFbOnXsmm
+                .filter { it.accountId.isNotBlank() && it.id.isNotBlank() }
+                .associate { it.accountId.trim() to it.id.trim() }
+            XsmmAccountStore.saveAccountIdMap(context, accMap)
+            XsmmAccountStore.saveInternalIdMap(context, internalMap)
         } else {
-            when (val result = XsmmAccountsRepository.getAccounts(token, accountType = selectedPlatform)) {
-                is XsmmAccountsResult.Success -> {
-                    val accMap = mutableMapOf<String, String>()
-                    val internalMap = mutableMapOf<String, String>()
-                    result.accounts.forEach { acc ->
+            val allPlatformOnXsmm = XsmmAccountsRepository.getAllAccounts(token, accountType = selectedPlatform)
+            val accMap = mutableMapOf<String, String>()
+            val internalMap = mutableMapOf<String, String>()
+            allPlatformOnXsmm.forEach { acc ->
                         val handle = acc.linkAccount.substringAfterLast("@").trim('/').lowercase()
                         if (handle.isNotBlank()) {
                             if (!acc.accountId.isNullOrBlank()) accMap[handle] = acc.accountId
@@ -1443,9 +1436,10 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
                                                     }
 
-                                                    // Kiểm tra thực tế tài khoản này và các Page của nó qua search API của XSMM
+                                                    // Kiểm tra thực tế tài khoản này và các Page của nó qua danh sách toàn bộ acc XSMM
                                                     val xsmmToken = XsmmAccountStore.getToken(context)
                                                     if (!xsmmToken.isNullOrBlank()) {
+                                                        val allFbOnXsmm = XsmmAccountsRepository.getFacebookAccounts(xsmmToken)
                                                         val targetUids = mutableListOf(account.uid.trim())
                                                         account.pages.forEach { p ->
                                                             val pUid = p.additionalProfileId.ifBlank { p.pageId }.trim()
@@ -1457,7 +1451,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         val newlyUnlinked = mutableSetOf<String>()
 
                                                         targetUids.forEach { u ->
-                                                            val matched = XsmmAccountsRepository.searchFacebookAccount(xsmmToken, u)
+                                                            val matched = allFbOnXsmm.firstOrNull { it.accountId.trim() == u || it.linkAccount.contains(u) }
                                                             if (matched != null) {
                                                                 newlyLinked.add(u)
                                                                 accMap[u] = matched.accountId.trim()
