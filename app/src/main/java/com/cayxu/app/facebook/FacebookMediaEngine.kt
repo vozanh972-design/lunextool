@@ -293,7 +293,7 @@ class FacebookMediaEngine(
             val directStr = directRes.body?.string() ?: ""
             if (directRes.isSuccessful && !directStr.contains("\"error\"")) {
                 val directJson = try { JSONObject(directStr) } catch (_: Exception) { null }
-                val dId = directJson?.optString("id", photoId).ifBlank { photoId }
+                val dId = directJson?.optString("id", photoId).orEmpty().ifBlank { photoId }
                 return MediaResult(true, dId, "Cập nhật ảnh đại diện thành công", directStr)
             }
         } catch (_: Exception) {}
