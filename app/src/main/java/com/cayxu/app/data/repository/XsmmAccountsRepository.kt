@@ -347,12 +347,13 @@ object XsmmAccountsRepository {
             val errorField = json.get("error")?.takeIf { it.isJsonPrimitive }?.asString
             if (!errorField.isNullOrBlank()) return XsmmAddAccountResult.Error(errorField)
 
-            // API docs: thành công trả full account object - parse luôn
-            val account = parseAccount(json)
-            if (account.id.isBlank() || account.accountId.isBlank()) {
-                return XsmmAddAccountResult.Error("Server không trả về tài khoản hợp lệ")
-            }
-            XsmmAddAccountResult.Success(account)
+            // API docs: thành công trả full account object hoặc bọc trong account
+            val accountObj = json.takeIf { it.has("id") || it.has("account_id") }
+                ?: json.get("account")?.takeIf { it.isJsonObject }?.asJsonObject
+                ?: json
+            val account = parseAccount(accountObj)
+            val finalAccount = if (account.accountId.isBlank()) account.copy(accountId = cleanUid) else account
+            XsmmAddAccountResult.Success(finalAccount)
 
         } catch (e: Exception) {
             XsmmAddAccountResult.Error(e.message ?: "Lỗi kết nối mạng")
