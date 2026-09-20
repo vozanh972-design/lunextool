@@ -23,8 +23,8 @@ interface XsmmApiService {
     @GET("api/taskapi/user")
     suspend fun getUser(@Header("Authorization") authorization: String): Response<JsonObject>
 
-    /** Lấy danh sách tài khoản (Task API chuẩn: GET /api/taskapi/accounts) */
-    @GET("api/taskapi/accounts")
+    /** Lấy danh sách tài khoản (GET /api/accounts) */
+    @GET("api/accounts")
     suspend fun getAccounts(
         @Header("Authorization") authorization: String,
         @Query("search") search: String? = null,
@@ -33,18 +33,18 @@ interface XsmmApiService {
     ): Response<JsonObject>
 
     /** Lấy tài khoản đang được đặt làm "nick chạy" (active). */
-    @GET("api/taskapi/accounts/active")
+    @GET("api/accounts/active")
     suspend fun getActiveAccount(@Header("Authorization") authorization: String): Response<JsonObject>
 
-    /** Thêm tài khoản mới (Task API chuẩn: POST /api/taskapi/accounts) */
-    @POST("api/taskapi/accounts")
+    /** Thêm tài khoản mới (POST /api/accounts) */
+    @POST("api/accounts")
     suspend fun addAccount(
         @Header("Authorization") authorization: String,
         @Body body: JsonObject
     ): Response<JsonObject>
 
-    /** Đặt 1 tài khoản đã có làm "nick chạy". */
-    @PUT("api/taskapi/accounts/{id}/set-active")
+    /** Đặt 1 tài khoản đã có làm "nick chạy" (PUT /api/accounts/{id}/set-active). */
+    @PUT("api/accounts/{id}/set-active")
     suspend fun setActiveAccount(
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
