@@ -739,8 +739,18 @@ fun XsmmAccountScreen(navController: NavController) {
                                             linkedFbUids = fbUids
                                             XsmmAccountStore.saveAccountIdMap(context, accMap)
                                             XsmmAccountStore.saveInternalIdMap(context, internalMap)
+                                            // Toast debug: hiện số lượng + UID từ XSMM
+                                            val msg = if (accRes.accounts.isEmpty()) {
+                                                "XSMM: 0 Facebook acc → sẽ hiện nút Thêm"
+                                            } else {
+                                                val uids = accRes.accounts.joinToString("\n") { "accId='${it.accountId}' link='${it.linkAccount.take(40)}'" }
+                                                "XSMM có ${accRes.accounts.size} FB acc:\n$uids"
+                                            }
+                                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
                                         } else {
                                             linkedFbUids = emptySet()
+                                            val errMsg = (accRes as? XsmmAccountsResult.Error)?.message ?: "Lỗi không rõ"
+                                            android.widget.Toast.makeText(context, "XSMM lỗi: $errMsg", android.widget.Toast.LENGTH_LONG).show()
                                         }
                                     }
                                     isRefreshing = false
