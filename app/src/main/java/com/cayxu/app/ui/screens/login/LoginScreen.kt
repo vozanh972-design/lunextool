@@ -11,6 +11,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -82,6 +85,147 @@ fun LoginScreen(
         uiState.errorMessage?.let {
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
         }
+    }
+
+    // Nếu đang tự động kiểm tra key khi mở app -> hiển thị màn hình animated loading/success/error
+    if (uiState.autoVerifyStatus != AutoVerifyStatus.IDLE) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(32.dp)
+            ) {
+                // Logo ứng dụng
+                Image(
+                    painter = painterResource(R.drawable.ic_app_logo),
+                    contentDescription = "AutoLunex Logo",
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "AUTOLUNEX",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    color = textPrimary
+                )
+
+                Spacer(Modifier.height(48.dp))
+
+                // Hiệu ứng animated loading / checkmark / cross
+                AnimatedContent(
+                    targetState = uiState.autoVerifyStatus,
+                    label = "VerifyStatusAnim"
+                ) { status ->
+                    when (status) {
+                        AutoVerifyStatus.CHECKING -> {
+                            Box(
+                                modifier = Modifier.size(64.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = cobalt600,
+                                    strokeWidth = 3.5.dp,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                            }
+                        }
+                        AutoVerifyStatus.SUCCESS -> {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF10B981).copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF10B981)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = "Success",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            }
+                        }
+                        AutoVerifyStatus.ERROR -> {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFEF4444).copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFEF4444)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "Error",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            }
+                        }
+                        AutoVerifyStatus.IDLE -> {}
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                // Tiêu đề & mô tả trạng thái mượt mà
+                val titleText = when (uiState.autoVerifyStatus) {
+                    AutoVerifyStatus.CHECKING -> if (isEnglish) "Verifying activation key..." else "Đang kiểm tra key kích hoạt..."
+                    AutoVerifyStatus.SUCCESS -> if (isEnglish) "Key verified successfully!" else "Đã xác minh key thành công!"
+                    AutoVerifyStatus.ERROR -> if (isEnglish) "Verification failed" else "Xác minh key thất bại"
+                    AutoVerifyStatus.IDLE -> ""
+                }
+                val subtitleText = when (uiState.autoVerifyStatus) {
+                    AutoVerifyStatus.CHECKING -> if (isEnglish) "Please wait a moment" else "Vui lòng chờ trong giây lát"
+                    AutoVerifyStatus.SUCCESS -> if (isEnglish) "Entering application..." else "Đang vào ứng dụng..."
+                    AutoVerifyStatus.ERROR -> uiState.errorMessage ?: (if (isEnglish) "Invalid or expired key" else "Key không hợp lệ hoặc đã hết hạn")
+                    AutoVerifyStatus.IDLE -> ""
+                }
+
+                Text(
+                    text = titleText,
+                    fontSize = 16.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = when (uiState.autoVerifyStatus) {
+                        AutoVerifyStatus.SUCCESS -> Color(0xFF10B981)
+                        AutoVerifyStatus.ERROR -> Color(0xFFEF4444)
+                        else -> textPrimary
+                    },
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = subtitleText,
+                    fontSize = 13.sp,
+                    color = textSecondary,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        return
     }
 
     Box(

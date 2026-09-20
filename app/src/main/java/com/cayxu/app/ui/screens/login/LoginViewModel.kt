@@ -12,11 +12,19 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+enum class AutoVerifyStatus {
+    IDLE,
+    CHECKING,
+    SUCCESS,
+    ERROR
+}
+
 data class LoginUiState(
     val keyInput: String = "",
     val isLoading: Boolean = false,
+    val autoVerifyStatus: AutoVerifyStatus = AutoVerifyStatus.IDLE,
     // true khi đang tự động kiểm tra key đã lưu lúc mở app (splash check)
-    val isCheckingSavedKey: Boolean = true,
+    val isCheckingSavedKey: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -36,9 +44,10 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
     private fun checkSavedKey() {
         val savedKey = securePrefs.getKey()
         if (savedKey.isNullOrBlank()) {
-            _uiState.value = _uiState.value.copy(isCheckingSavedKey = false)
+            _uiState.value = _uiState.value.copy(autoVerifyStatus = AutoVerifyStatus.IDLE, isCheckingSavedKey = false)
             return
         }
+        _uiState.value = _uiState.value.copy(autoVerifyStatus = AutoVerifyStatus.CHECKING, isCheckingSavedKey = true)
         viewModelScope.launch {
             val deviceId = DeviceUtils.getAndroidId(getApplication())
             when (val result = repository.verifyKey(savedKey, deviceId)) {
@@ -49,13 +58,20 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                     result.data.buyer?.username?.let { if (it.isNotBlank()) securePrefs.saveBuyerUsername(it) }
                     result.data.packageName?.let { securePrefs.savePackageName(it) }
                     result.data.expiresAt?.let { securePrefs.saveExpiresAt(it) }
-                    _uiState.value = _uiState.value.copy(isCheckingSavedKey = false)
+                    _uiState.value = _uiState.value.copy(autoVerifyStatus = AutoVerifyStatus.SUCCESS)
+                    kotlinx.coroutines.delay(800L) // Hiệu ứng dấu tích xanh mượt mà
                     _pendingAutoLoginSuccess = true
+                    _uiState.value = _uiState.value.copy(autoVerifyStatus = AutoVerifyStatus.IDLE, isCheckingSavedKey = false)
                 }
                 is AuthResult.ApiError, is AuthResult.NetworkError -> {
                     // Key không còn hợp lệ -> xoá và quay về Login
                     securePrefs.clearKey()
-                    _uiState.value = _uiState.value.copy(isCheckingSavedKey = false)
+                    _uiState.value = _uiState.value.copy(
+                        autoVerifyStatus = AutoVerifyStatus.ERROR,
+                        errorMessage = if (result is AuthResult.ApiError) result.message else "Lỗi kết nối khi xác thực key"
+                    )
+                    kotlinx.coroutines.delay(1000L) // Hiệu ứng dấu X đỏ mượt mà
+                    _uiState.value = _uiState.value.copy(autoVerifyStatus = AutoVerifyStatus.IDLE, isCheckingSavedKey = false)
                 }
             }
         }

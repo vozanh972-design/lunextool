@@ -89,7 +89,8 @@ object XsmmFacebookTaskRunner {
             ?: allFb.firstOrNull { acc ->
                 acc.pages.any { p ->
                     p.pageId.trim().lowercase() == cleanUid ||
-                    p.displayUid.trim().lowercase() == cleanUid
+                    p.displayUid.trim().lowercase() == cleanUid ||
+                    p.additionalProfileId.trim().lowercase() == cleanUid
                 }
             }
         if (account == null) {
@@ -101,8 +102,21 @@ object XsmmFacebookTaskRunner {
 
         val matchedPage = account.pages.firstOrNull { p ->
             p.pageId.trim().lowercase() == cleanUid ||
-            p.displayUid.trim().lowercase() == cleanUid
+            p.displayUid.trim().lowercase() == cleanUid ||
+            p.additionalProfileId.trim().lowercase() == cleanUid
         }
+
+        // Ưu tiên lấy UID thật (615...) của Page khi làm việc với XSMM API
+        val targetUidForXsmm = if (matchedPage != null) {
+            (matchedPage.additionalProfileId.takeIf { it.isNotBlank() && it.startsWith("615") }
+                ?: matchedPage.displayUid.takeIf { it.isNotBlank() && it.startsWith("615") }
+                ?: matchedPage.additionalProfileId.takeIf { it.isNotBlank() }
+                ?: matchedPage.displayUid.takeIf { it.isNotBlank() }
+                ?: cleanUid).trim()
+        } else {
+            cleanUid
+        }
+
         var fbToken = (matchedPage?.pageToken?.takeIf { it.isNotBlank() } ?: account.bio.trim()).orEmpty()
         if (fbToken.isBlank() && account.note.contains("c_user=")) {
             try {
@@ -151,16 +165,20 @@ object XsmmFacebookTaskRunner {
         // Đồng bộ và tự động thêm nick lên XSMM nếu chưa có, đồng thời set làm nick chạy mặc định
         try {
             notify("Kiểm tra nick trên XSMM...")
-            var internalId = XsmmAccountStore.getInternalIdMap(context)[cleanUid].orEmpty()
+            var internalId = XsmmAccountStore.getInternalIdMap(context)[targetUidForXsmm].orEmpty()
+            if (internalId.isBlank() && cleanUid != targetUidForXsmm) {
+                internalId = XsmmAccountStore.getInternalIdMap(context)[cleanUid].orEmpty()
+            }
             if (internalId.isBlank()) {
-                val syncRes = XsmmAccountsRepository.getAccounts(token, "facebook", search = cleanUid)
+                val syncRes = XsmmAccountsRepository.getAccounts(token, "facebook", search = targetUidForXsmm)
                 val xsmmAccounts = (syncRes as? XsmmAccountsResult.Success)?.accounts.orEmpty()
                 val matchedAcc = xsmmAccounts.firstOrNull { acc ->
-                    acc.accountId == cleanUid || acc.linkAccount.contains(cleanUid)
+                    acc.accountId == targetUidForXsmm || acc.linkAccount.contains(targetUidForXsmm) ||
+                    (cleanUid.isNotBlank() && (acc.accountId == cleanUid || acc.linkAccount.contains(cleanUid)))
                 }
                 if (matchedAcc == null) {
-                    notify("Đang thêm nick lên XSMM...")
-                    val addRes = XsmmAccountsRepository.addFacebookAccount(token, cleanUid)
+                    notify("Đang thêm nick [$targetUidForXsmm] lên XSMM...")
+                    val addRes = XsmmAccountsRepository.addFacebookAccount(token, targetUidForXsmm)
                     if (addRes is com.cayxu.app.data.repository.XsmmAddAccountResult.Success) {
                         internalId = addRes.account.id
                         notify("Đã thêm nick lên XSMM thành công")
@@ -179,9 +197,10 @@ object XsmmFacebookTaskRunner {
 
             // Đặt tài khoản này làm mặc định (Active) trên XSMM trước khi nhận nhiệm vụ
             if (internalId.isNotBlank()) {
-                notify("Đặt nick làm mặc định trên XSMM...")
+                notify("Đặt làm nick mặc định trên XSMM...")
                 XsmmAccountsRepository.setActiveAccount(token, internalId)
                 val internalMap = XsmmAccountStore.getInternalIdMap(context).toMutableMap()
+                internalMap[targetUidForXsmm] = internalId
                 internalMap[cleanUid] = internalId
                 XsmmAccountStore.saveInternalIdMap(context, internalMap)
             }
@@ -201,8 +220,8 @@ object XsmmFacebookTaskRunner {
                 break
             }
 
-            notify("Lấy nhiệm vụ Facebook...")
-            val taskResult = XsmmTasksRepository.getTasks2(token, config.taskType, cleanUid)
+            notify("Lấy nhiệm vụ Facebook (${config.taskType})...")
+            val taskResult = XsmmTasksRepository.getTasks2(token, config.taskType, targetUidForXsmm)
 
             when (taskResult) {
                 is XsmmTasks2Result.Error -> {
@@ -245,7 +264,7 @@ object XsmmFacebookTaskRunner {
                                 token = fbToken,
                                 cookie = account.note,
                                 proxyStr = account.phone.ifBlank { null },
-                                uid = cleanUid
+                                uid = targetUidForXsmm
                             )
 
                             // Delay mô phỏng thời gian thao tác
@@ -278,7 +297,7 @@ object XsmmFacebookTaskRunner {
                                     token,
                                     task.type.ifBlank { config.taskType },
                                     pendingBatchTaskIds.toList(),
-                                    cleanUid
+                                    targetUidForXsmm
                                 )
 
                                 val pts = if (compRes.points > 0) compRes.points else 0

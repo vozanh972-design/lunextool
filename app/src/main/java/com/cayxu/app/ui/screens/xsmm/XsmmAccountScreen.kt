@@ -1574,221 +1574,337 @@ fun XsmmAccountScreen(navController: NavController) {
                                         Spacer(Modifier.height(4.dp))
                                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             account.pages.forEach { page ->
-                                                Row(
+                                                Column(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .clip(RoundedCornerShape(10.dp))
                                                         .background(Color(0xFFF8FAFC))
                                                         .border(0.8.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
-                                                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
+                                                        .padding(horizontal = 8.dp, vertical = 6.dp)
                                                 ) {
-                                                    // 1. Dấu tích chọn (Checkbox) của Page như Profile
                                                     val pageDisplayUid = livePageUids[page.pageId] ?: page.displayUid
-                                                    val pageKey = if (pageDisplayUid.startsWith("615")) pageDisplayUid else page.pageId
-                                                    val isPageChecked = pageKey in selectedForRunUids || (pageDisplayUid.isNotBlank() && pageDisplayUid in selectedForRunUids)
-                                                    Checkbox(
-                                                        checked = isPageChecked,
-                                                        onCheckedChange = { checked ->
-                                                            val primaryKey = if (pageDisplayUid.startsWith("615")) pageDisplayUid else page.pageId
-                                                            selectedForRunUids = if (checked) {
-                                                                selectedForRunUids + primaryKey
-                                                            } else {
-                                                                selectedForRunUids - primaryKey - page.pageId - pageDisplayUid
-                                                            }
-                                                        },
-                                                        colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2)),
-                                                        modifier = Modifier.size(22.dp)
-                                                    )
-                                                    Spacer(Modifier.width(8.dp))
+                                                    val effectivePageUid = (page.additionalProfileId.takeIf { it.isNotBlank() && it.startsWith("615") }
+                                                        ?: pageDisplayUid.takeIf { it.isNotBlank() && it.startsWith("615") }
+                                                        ?: page.additionalProfileId.takeIf { it.isNotBlank() }
+                                                        ?: pageDisplayUid.takeIf { it.isNotBlank() }
+                                                        ?: page.pageId).trim()
 
-                                                    // 2. Avatar của Page
-                                                    val avatarToDisplay = livePageAvatars[page.pageId] ?: (
-                                                        if (page.avatar.isNotBlank() && !page.avatar.contains("silhouette") && !page.avatar.endsWith(".gif") && !page.avatar.contains(page.displayUid)) page.avatar
-                                                        else "https://graph.facebook.com/v21.0/${page.pageId}/picture?type=large"
-                                                    )
-                                                    if (avatarToDisplay.isNotBlank()) {
-                                                        AsyncImage(
-                                                            model = avatarToDisplay,
-                                                            contentDescription = "Page Avatar",
-                                                            contentScale = ContentScale.Crop,
-                                                            modifier = Modifier
-                                                                .size(28.dp)
-                                                                .clip(CircleShape)
-                                                        )
-                                                    } else {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .size(28.dp)
-                                                                .clip(CircleShape)
-                                                                .background(Color(0xFF1877F2).copy(alpha = 0.15f)),
-                                                            contentAlignment = Alignment.Center
-                                                        ) {
-                                                            Icon(
-                                                                Icons.Filled.Flag,
-                                                                contentDescription = null,
-                                                                tint = Color(0xFF1877F2),
-                                                                modifier = Modifier.size(15.dp)
-                                                            )
-                                                        }
+                                                    val isPageRunning = runningFbAccounts.any {
+                                                        it.equals(effectivePageUid, ignoreCase = true) ||
+                                                        it.equals(page.pageId, ignoreCase = true) ||
+                                                        (page.additionalProfileId.isNotBlank() && it.equals(page.additionalProfileId, ignoreCase = true)) ||
+                                                        (pageDisplayUid.isNotBlank() && it.equals(pageDisplayUid, ignoreCase = true))
                                                     }
-                                                    Spacer(Modifier.width(8.dp))
 
-                                                    // 3. Tên Page và ép hiển thị UID thật (615), không hiển thị ID page
-                                                    Column(modifier = Modifier.weight(1f)) {
-                                                        val uid615 = pageDisplayUid
-                                                        Text(
-                                                            "Page: ${page.pageName.ifBlank { uid615.ifBlank { page.pageId } }}",
-                                                            fontSize = 12.sp,
-                                                            fontWeight = FontWeight.SemiBold,
-                                                            color = TextPrimary,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis
+                                                    val isPageChecked = effectivePageUid in selectedForRunUids ||
+                                                        page.pageId in selectedForRunUids ||
+                                                        (page.additionalProfileId.isNotBlank() && page.additionalProfileId in selectedForRunUids) ||
+                                                        (pageDisplayUid.isNotBlank() && pageDisplayUid in selectedForRunUids)
+
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        // 1. Dấu tích chọn (Checkbox) của Page như Profile
+                                                        Checkbox(
+                                                            checked = isPageChecked,
+                                                            onCheckedChange = { checked ->
+                                                                selectedForRunUids = if (checked) {
+                                                                    selectedForRunUids + effectivePageUid
+                                                                } else {
+                                                                    selectedForRunUids - effectivePageUid - page.pageId - page.additionalProfileId - pageDisplayUid
+                                                                }
+                                                            },
+                                                            colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2)),
+                                                            modifier = Modifier.size(22.dp)
                                                         )
-                                                        if (uid615.isNotBlank()) {
-                                                            Text(
-                                                                "UID: $uid615",
-                                                                fontSize = 10.sp,
-                                                                fontWeight = FontWeight.Medium,
-                                                                color = Color(0xFF1877F2),
-                                                                maxLines = 1,
-                                                                overflow = TextOverflow.Ellipsis
+                                                        Spacer(Modifier.width(8.dp))
+
+                                                        // 2. Avatar của Page
+                                                        val avatarToDisplay = livePageAvatars[page.pageId] ?: (
+                                                            if (page.avatar.isNotBlank() && !page.avatar.contains("silhouette") && !page.avatar.endsWith(".gif") && !page.avatar.contains(page.displayUid)) page.avatar
+                                                            else "https://graph.facebook.com/v21.0/${page.pageId}/picture?type=large"
+                                                        )
+                                                        if (avatarToDisplay.isNotBlank()) {
+                                                            AsyncImage(
+                                                                model = avatarToDisplay,
+                                                                contentDescription = "Page Avatar",
+                                                                contentScale = ContentScale.Crop,
+                                                                modifier = Modifier
+                                                                    .size(28.dp)
+                                                                    .clip(CircleShape)
                                                             )
                                                         } else {
-                                                            Text(
-                                                                "UID: Đang quét UID 615...",
-                                                                fontSize = 10.sp,
-                                                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                                                                color = TextSecondary,
-                                                                maxLines = 1,
-                                                                overflow = TextOverflow.Ellipsis
-                                                            )
-                                                        }
-
-                                                        Spacer(Modifier.height(3.dp))
-
-                                                         // Trạng thái liên kết Page: chỉ so sánh UID Page với danh sách account_id từ XSMM
-                                                         val pageUid = page.additionalProfileId.ifBlank { page.pageId }.trim()
-                                                         val isPageLinked = pageUid.isNotBlank() && pageUid in linkedFbUids
-                                                         val isPageAdding = pageUid.isNotBlank() && pageUid in addingFbUids
-
-                                                        if (isPageAdding) {
-                                                            Row(
-                                                                verticalAlignment = Alignment.CenterVertically,
+                                                            Box(
                                                                 modifier = Modifier
-                                                                    .clip(RoundedCornerShape(5.dp))
-                                                                    .background(Color(0xFF1877F2).copy(alpha = 0.08f))
-                                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                            ) {
-                                                                CircularProgressIndicator(
-                                                                    color = Color(0xFF1877F2),
-                                                                    strokeWidth = 1.5.dp,
-                                                                    modifier = Modifier.size(11.dp)
-                                                                )
-                                                                Spacer(Modifier.width(4.dp))
-                                                                Text(
-                                                                    "Đang thêm...",
-                                                                    color = Color(0xFF1877F2),
-                                                                    fontSize = 9.5.sp,
-                                                                    fontWeight = FontWeight.Medium,
-                                                                    maxLines = 1,
-                                                                    softWrap = false
-                                                                )
-                                                            }
-                                                        } else if (isPageLinked) {
-                                                            Row(
-                                                                verticalAlignment = Alignment.CenterVertically,
-                                                                modifier = Modifier
-                                                                    .clip(RoundedCornerShape(5.dp))
-                                                                    .background(Color(0xFF16A34A).copy(alpha = 0.12f))
-                                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                    .size(28.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(Color(0xFF1877F2).copy(alpha = 0.15f)),
+                                                                contentAlignment = Alignment.Center
                                                             ) {
                                                                 Icon(
-                                                                    Icons.Filled.Check,
-                                                                    contentDescription = null,
-                                                                    tint = Color(0xFF16A34A),
-                                                                    modifier = Modifier.size(11.dp)
-                                                                )
-                                                                Spacer(Modifier.width(3.dp))
-                                                                Text(
-                                                                    "Đã liên kết XSMM",
-                                                                    color = Color(0xFF16A34A),
-                                                                    fontSize = 9.5.sp,
-                                                                    fontWeight = FontWeight.Bold,
-                                                                    maxLines = 1,
-                                                                    softWrap = false
-                                                                )
-                                                            }
-                                                        } else {
-                                                            Row(
-                                                                verticalAlignment = Alignment.CenterVertically,
-                                                                modifier = Modifier
-                                                                    .clip(RoundedCornerShape(5.dp))
-                                                                    .background(Color(0xFF1877F2).copy(alpha = 0.12f))
-                                                                    .clickable {
-                                                                        val token = XsmmAccountStore.getToken(context)
-                                                                        if (token.isNullOrBlank()) {
-                                                                            android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
-                                                                            return@clickable
-                                                                        }
-                                                                        val targetToAdd = pageUid
-                                                                        if (targetToAdd.isBlank()) {
-                                                                            android.widget.Toast.makeText(context, "Chưa xác định được UID của Page", android.widget.Toast.LENGTH_SHORT).show()
-                                                                            return@clickable
-                                                                        }
-                                                                        addingFbUids = addingFbUids + targetToAdd
-                                                                        scope.launch {
-                                                                            when (val res = XsmmAccountsRepository.addFacebookAccount(token, targetToAdd)) {
-                                                                                is XsmmAddAccountResult.Success -> {
-                                                                                    android.widget.Toast.makeText(context, "Đã thêm Page [${page.pageName.ifBlank { targetToAdd }}] vào XSMM, đang đồng bộ...", android.widget.Toast.LENGTH_SHORT).show()
-                                                                                    linkedSyncTrigger = System.currentTimeMillis()
-                                                                                }
-                                                                                is XsmmAddAccountResult.Error -> {
-                                                                                    android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
-                                                                                }
-                                                                            }
-                                                                            addingFbUids = addingFbUids - targetToAdd
-                                                                        }
-                                                                    }
-                                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                            ) {
-                                                                Icon(
-                                                                    Icons.Filled.Add,
+                                                                    Icons.Filled.Flag,
                                                                     contentDescription = null,
                                                                     tint = Color(0xFF1877F2),
-                                                                    modifier = Modifier.size(11.dp)
+                                                                    modifier = Modifier.size(15.dp)
                                                                 )
-                                                                Spacer(Modifier.width(3.dp))
+                                                            }
+                                                        }
+                                                        Spacer(Modifier.width(8.dp))
+
+                                                        // 3. Tên Page và ép hiển thị UID thật (615), không hiển thị ID page
+                                                        Column(modifier = Modifier.weight(1f)) {
+                                                            val uid615 = effectivePageUid
+                                                            Text(
+                                                                "Page: ${page.pageName.ifBlank { uid615.ifBlank { page.pageId } }}",
+                                                                fontSize = 12.sp,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                color = TextPrimary,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                            if (uid615.isNotBlank()) {
                                                                 Text(
-                                                                    "Thêm vào XSMM",
-                                                                    color = Color(0xFF1877F2),
-                                                                    fontSize = 9.5.sp,
-                                                                    fontWeight = FontWeight.Bold,
+                                                                    "UID: $uid615",
+                                                                    fontSize = 10.sp,
+                                                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                                                    color = TextSecondary,
                                                                     maxLines = 1,
-                                                                    softWrap = false
+                                                                    overflow = TextOverflow.Ellipsis
                                                                 )
+                                                            }
+
+                                                            Spacer(Modifier.height(3.dp))
+
+                                                             // Trạng thái liên kết Page: chỉ so sánh UID Page với danh sách account_id từ XSMM
+                                                             val pageUid = effectivePageUid
+                                                             val isPageLinked = pageUid.isNotBlank() && pageUid in linkedFbUids
+                                                             val isPageAdding = pageUid.isNotBlank() && pageUid in addingFbUids
+
+                                                            if (isPageAdding) {
+                                                                Row(
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    modifier = Modifier
+                                                                        .clip(RoundedCornerShape(5.dp))
+                                                                        .background(Color(0xFF1877F2).copy(alpha = 0.08f))
+                                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                ) {
+                                                                    CircularProgressIndicator(
+                                                                        color = Color(0xFF1877F2),
+                                                                        strokeWidth = 1.5.dp,
+                                                                        modifier = Modifier.size(11.dp)
+                                                                    )
+                                                                    Spacer(Modifier.width(4.dp))
+                                                                    Text(
+                                                                        "Đang thêm...",
+                                                                        color = Color(0xFF1877F2),
+                                                                        fontSize = 9.5.sp,
+                                                                        fontWeight = FontWeight.Medium,
+                                                                        maxLines = 1,
+                                                                        softWrap = false
+                                                                    )
+                                                                }
+                                                            } else if (isPageLinked) {
+                                                                Row(
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    modifier = Modifier
+                                                                        .clip(RoundedCornerShape(5.dp))
+                                                                        .background(Color(0xFF16A34A).copy(alpha = 0.12f))
+                                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                ) {
+                                                                    Icon(
+                                                                        Icons.Filled.Check,
+                                                                        contentDescription = null,
+                                                                        tint = Color(0xFF16A34A),
+                                                                        modifier = Modifier.size(11.dp)
+                                                                    )
+                                                                    Spacer(Modifier.width(3.dp))
+                                                                    Text(
+                                                                        "Đã liên kết XSMM",
+                                                                        color = Color(0xFF16A34A),
+                                                                        fontSize = 9.5.sp,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        maxLines = 1,
+                                                                        softWrap = false
+                                                                    )
+                                                                }
+                                                            } else {
+                                                                Row(
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    modifier = Modifier
+                                                                        .clip(RoundedCornerShape(5.dp))
+                                                                        .background(Color(0xFF1877F2).copy(alpha = 0.12f))
+                                                                        .clickable {
+                                                                            val token = XsmmAccountStore.getToken(context)
+                                                                            if (token.isNullOrBlank()) {
+                                                                                android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                                                return@clickable
+                                                                            }
+                                                                            val targetToAdd = pageUid
+                                                                            if (targetToAdd.isBlank()) {
+                                                                                android.widget.Toast.makeText(context, "Chưa xác định được UID của Page", android.widget.Toast.LENGTH_SHORT).show()
+                                                                                return@clickable
+                                                                            }
+                                                                            addingFbUids = addingFbUids + targetToAdd
+                                                                            scope.launch {
+                                                                                when (val res = XsmmAccountsRepository.addFacebookAccount(token, targetToAdd)) {
+                                                                                    is XsmmAddAccountResult.Success -> {
+                                                                                        android.widget.Toast.makeText(context, "Đã thêm Page [${page.pageName.ifBlank { targetToAdd }}] vào XSMM, đang đồng bộ...", android.widget.Toast.LENGTH_SHORT).show()
+                                                                                        linkedSyncTrigger = System.currentTimeMillis()
+                                                                                    }
+                                                                                    is XsmmAddAccountResult.Error -> {
+                                                                                        android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
+                                                                                    }
+                                                                                }
+                                                                                addingFbUids = addingFbUids - targetToAdd
+                                                                            }
+                                                                        }
+                                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                ) {
+                                                                    Icon(
+                                                                        Icons.Filled.Add,
+                                                                        contentDescription = null,
+                                                                        tint = Color(0xFF1877F2),
+                                                                        modifier = Modifier.size(11.dp)
+                                                                    )
+                                                                    Spacer(Modifier.width(3.dp))
+                                                                    Text(
+                                                                        "Thêm vào XSMM",
+                                                                        color = Color(0xFF1877F2),
+                                                                        fontSize = 9.5.sp,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        maxLines = 1,
+                                                                        softWrap = false
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+
+                                                        // 4. Dấu chấm than xanh (i) xem info và đổi avatar bìa của page
+                                                        IconButton(
+                                                            onClick = { selectedFbDetailPage = Pair(account, page) },
+                                                            modifier = Modifier.size(28.dp)
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(26.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Icon(
+                                                                    Icons.Filled.Info,
+                                                                    contentDescription = "Xem thông tin và đổi avatar bìa của Page",
+                                                                    tint = Color(0xFF1877F2),
+                                                                    modifier = Modifier.size(16.dp)
+                                                                )
+                                                            }
+                                                        }
+
+                                                        Spacer(Modifier.width(4.dp))
+
+                                                        // 5. Nút Play / Stop riêng cho Page
+                                                        IconButton(
+                                                            onClick = {
+                                                                if (isPageRunning) {
+                                                                    com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(effectivePageUid)
+                                                                    com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(page.pageId)
+                                                                    if (page.additionalProfileId.isNotBlank()) com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(page.additionalProfileId)
+                                                                    if (pageDisplayUid.isNotBlank()) com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(pageDisplayUid)
+                                                                    android.widget.Toast.makeText(context, "Đã dừng chạy Page: ${page.pageName.ifBlank { effectivePageUid }}", android.widget.Toast.LENGTH_SHORT).show()
+                                                                } else {
+                                                                    com.cayxu.app.automation.facebook.XsmmFacebookManager.start(context, effectivePageUid)
+                                                                    android.widget.Toast.makeText(context, "Bắt đầu chạy Page: ${page.pageName.ifBlank { effectivePageUid }}", android.widget.Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            },
+                                                            modifier = Modifier.size(28.dp)
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(26.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(if (isPageRunning) DangerRed else Color(0xFF1877F2)),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                if (isPageRunning) {
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .size(9.dp)
+                                                                            .clip(RoundedCornerShape(2.dp))
+                                                                            .background(Color.White)
+                                                                    )
+                                                                } else {
+                                                                    Icon(
+                                                                        imageVector = Icons.Filled.PlayArrow,
+                                                                        contentDescription = "Chạy Page",
+                                                                        tint = Color.White,
+                                                                        modifier = Modifier.size(15.dp)
+                                                                    )
+                                                                }
                                                             }
                                                         }
                                                     }
 
-                                                    // 4. Dấu chấm than xanh (i) xem info và đổi avatar bìa của page
-                                                    IconButton(
-                                                        onClick = { selectedFbDetailPage = Pair(account, page) },
-                                                        modifier = Modifier.size(28.dp)
-                                                    ) {
-                                                        Box(
+                                                    // 6. Trạng thái chạy & tiến độ nhận nhiệm vụ của Page (Live status)
+                                                    val pageStatus = fbStatusMap[effectivePageUid]
+                                                        ?: fbStatusMap[page.pageId]
+                                                        ?: fbStatusMap[page.additionalProfileId]
+                                                        ?: (if (pageDisplayUid.isNotBlank()) fbStatusMap[pageDisplayUid] else null)
+
+                                                    val pageSuccess = fbSuccessCountMap[effectivePageUid]
+                                                        ?: fbSuccessCountMap[page.pageId]
+                                                        ?: fbSuccessCountMap[page.additionalProfileId]
+                                                        ?: (if (pageDisplayUid.isNotBlank()) fbSuccessCountMap[pageDisplayUid] else null)
+                                                        ?: 0
+
+                                                    val pageErrors = fbErrorCountMap[effectivePageUid]
+                                                        ?: fbErrorCountMap[page.pageId]
+                                                        ?: fbErrorCountMap[page.additionalProfileId]
+                                                        ?: (if (pageDisplayUid.isNotBlank()) fbErrorCountMap[pageDisplayUid] else null)
+                                                        ?: 0
+
+                                                    if (isPageRunning || !pageStatus.isNullOrBlank() || pageSuccess > 0 || pageErrors > 0) {
+                                                        Spacer(Modifier.height(5.dp))
+                                                        Row(
                                                             modifier = Modifier
-                                                                .size(26.dp)
-                                                                .clip(CircleShape)
-                                                                .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
-                                                            contentAlignment = Alignment.Center
+                                                                .fillMaxWidth()
+                                                                .clip(RoundedCornerShape(6.dp))
+                                                                .background(if (isPageRunning) Color(0xFF1877F2).copy(alpha = 0.08f) else Color(0xFFE2E8F0).copy(alpha = 0.4f))
+                                                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.SpaceBetween
                                                         ) {
-                                                            Icon(
-                                                                Icons.Filled.Info,
-                                                                contentDescription = "Xem thông tin và đổi avatar bìa của Page",
-                                                                tint = Color(0xFF1877F2),
-                                                                modifier = Modifier.size(16.dp)
-                                                            )
+                                                            Row(
+                                                                modifier = Modifier.weight(1f),
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                if (isPageRunning) {
+                                                                    CircularProgressIndicator(
+                                                                        color = Color(0xFF1877F2),
+                                                                        strokeWidth = 1.6.dp,
+                                                                        modifier = Modifier.size(10.dp)
+                                                                    )
+                                                                    Spacer(Modifier.width(5.dp))
+                                                                }
+                                                                Text(
+                                                                    text = pageStatus ?: if (isPageRunning) "Đang chạy..." else "Sẵn sàng",
+                                                                    fontSize = 10.5.sp,
+                                                                    color = if (isPageRunning) Color(0xFF1877F2) else TextSecondary,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                            }
+                                                            if (pageSuccess > 0 || pageErrors > 0) {
+                                                                Spacer(Modifier.width(6.dp))
+                                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                                    if (pageSuccess > 0) {
+                                                                        Text("+$pageSuccess", color = Color(0xFF16A34A), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                                    }
+                                                                    if (pageErrors > 0) {
+                                                                        Text("-$pageErrors", color = DangerRed, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                                    }
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -2373,7 +2489,11 @@ fun XsmmAccountScreen(navController: NavController) {
                 facebookAccounts.flatMap { acc ->
                     listOf(acc.uid) + acc.pages.map { p ->
                         val u = livePageUids[p.pageId] ?: p.displayUid
-                        if (u.startsWith("615")) u else p.pageId
+                        (p.additionalProfileId.takeIf { it.isNotBlank() && it.startsWith("615") }
+                            ?: u.takeIf { it.isNotBlank() && it.startsWith("615") }
+                            ?: p.additionalProfileId.takeIf { it.isNotBlank() }
+                            ?: u.takeIf { it.isNotBlank() }
+                            ?: p.pageId).trim()
                     }
                 }.toSet()
             }
