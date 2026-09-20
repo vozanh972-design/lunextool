@@ -603,7 +603,6 @@ fun XsmmAccountScreen(navController: NavController) {
                 }
             }
         }
-        }
         isCheckingLinked = false
     }
 
