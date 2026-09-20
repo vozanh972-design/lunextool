@@ -570,10 +570,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     val fbUids = mutableSetOf<String>()
                     result.accounts.forEach { acc ->
                         if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
-                        // Bỏ qua acc rác: không active VÀ không có tên thật
-                        // Acc "Đủ điều kiện" có is_active=false nhưng có tên thật → giữ lại
-                        val hasRealName = acc.name.isNotBlank() && acc.name != acc.accountId
-                        if (!acc.isActive && !hasRealName) return@forEach
+                        // API docs: GET response không có is_active, chỉ dùng account_id để match
                         val uid = acc.accountId.trim()
                         if (uid.isNotBlank()) {
                             fbUids.add(uid)
@@ -721,8 +718,6 @@ fun XsmmAccountScreen(navController: NavController) {
                                             val internalMap = mutableMapOf<String, String>()
                                             accRes.accounts.forEach { acc ->
                                                 if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
-                                                val hasRealName = acc.name.isNotBlank() && acc.name != acc.accountId
-                                                if (!acc.isActive && !hasRealName) return@forEach
                                                 val uid = acc.accountId.trim()
                                                 if (uid.isNotBlank()) {
                                                     fbUids.add(uid)
@@ -1406,8 +1401,6 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                 val internalMap = mutableMapOf<String, String>()
                                                                 syncRes.accounts.forEach { a ->
                                                                     if (!a.type.equals("facebook", ignoreCase = true)) return@forEach
-                                                                    val hasRealName = a.name.isNotBlank() && a.name != a.accountId
-                                                                    if (!a.isActive && !hasRealName) return@forEach
                                                                     val u = a.accountId.trim()
                                                                     if (u.isNotBlank()) {
                                                                         fbUids.add(u)

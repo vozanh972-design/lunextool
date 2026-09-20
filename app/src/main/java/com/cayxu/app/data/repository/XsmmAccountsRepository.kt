@@ -222,59 +222,41 @@ object XsmmAccountsRepository {
         val cleanUid = uid.trim()
         if (cleanUid.isBlank()) return XsmmAddAccountResult.Error("Thiếu UID Facebook để thêm")
 
-        // Gửi thẳng UID số (hoặc link nếu không phải số)
-        val targetValue = if (cleanUid.all { it.isDigit() }) {
-            cleanUid
+        // API docs: link_account phải là URL dạng https://facebook.com/username
+        // Với numeric UID → dùng profile.php?id=
+        val targetUrl = if (cleanUid.all { it.isDigit() }) {
+            "https://www.facebook.com/profile.php?id=$cleanUid"
         } else {
-            val rawLink = linkAccount?.trim().takeIf { !it.isNullOrBlank() } ?: cleanUid
-            if (rawLink.startsWith("http", ignoreCase = true)) rawLink
-            else "https://www.facebook.com/$rawLink"
+            val raw = linkAccount?.trim().takeIf { !it.isNullOrBlank() } ?: cleanUid
+            if (raw.startsWith("http", ignoreCase = true)) raw
+            else "https://www.facebook.com/$raw"
         }
 
         val body = JsonObject().apply {
             addProperty("type", "facebook")
-            addProperty("link_account", targetValue)
+            addProperty("link_account", targetUrl)
         }
 
         return try {
             val response = XsmmRetrofitClient.api.addAccount(authHeader(rawToken), body)
 
-            // HTTP lỗi → lấy message từ error body và trả về
+            // HTTP lỗi → đọc error body
             if (!response.isSuccessful) {
-                val errMsg = readError(response.errorBody()?.string(), "Lỗi ${response.code()}")
-                return XsmmAddAccountResult.Error(errMsg)
+                return XsmmAddAccountResult.Error(
+                    readError(response.errorBody()?.string(), "Lỗi ${response.code()}")
+                )
             }
 
             val json = response.body() ?: return XsmmAddAccountResult.Error("Phản hồi rỗng từ XSMM")
 
-            // Đọc message/error từ response - hiện thẳng lên UI
-            val msgStr = json.get("message")?.takeIf { it.isJsonPrimitive }?.asString
-                ?: json.get("msg")?.takeIf { it.isJsonPrimitive }?.asString
+            // API docs: lỗi trả {"error": "Chi tiết lỗi"}
             val errorField = json.get("error")?.takeIf { it.isJsonPrimitive }?.asString
-            val statusStr = json.get("status")?.takeIf { it.isJsonPrimitive }?.asString
-            val successBool = json.get("success")?.takeIf { it.isJsonPrimitive }?.asBoolean
+            if (!errorField.isNullOrBlank()) return XsmmAddAccountResult.Error(errorField)
 
-            // Nếu XSMM trả lỗi rõ ràng → Error với đúng message đó
-            val isError = !errorField.isNullOrBlank()
-                || statusStr == "error" || statusStr == "fail"
-                || successBool == false
-            if (isError) {
-                val reason = errorField?.takeIf { it.isNotBlank() }
-                    ?: msgStr?.takeIf { it.isNotBlank() }
-                    ?: "Thêm tài khoản thất bại"
-                return XsmmAddAccountResult.Error(reason)
-            }
+            // API docs: thành công trả full account object - parse luôn
+            val account = parseAccount(json)
+            XsmmAddAccountResult.Success(account)
 
-            // XSMM không trả lỗi → coi là thành công, dùng message của XSMM
-            val builtAccount = XsmmAccount(
-                id = cleanUid,
-                type = "facebook",
-                accountId = cleanUid,
-                name = msgStr ?: cleanUid,
-                linkAccount = targetValue,
-                isActive = true
-            )
-            XsmmAddAccountResult.Success(builtAccount)
         } catch (e: Exception) {
             XsmmAddAccountResult.Error(e.message ?: "Lỗi kết nối mạng")
         }
