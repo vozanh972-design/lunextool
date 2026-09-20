@@ -37,11 +37,12 @@ object XsmmAccountStore {
         prefs(context).edit().putLong(KEY_POINTS, points).apply()
     }
 
-    /** Lưu map: handle (lowercase) -> account_id (uid trên XSMM dùng cho tasks2) */
+    /** Lưu map: handle (lowercase) -> account_id (uid trên XSMM dùng cho tasks2) - Ghi đè toàn bộ, không merge */
     fun saveAccountIdMap(context: Context, map: Map<String, String>) {
-        val existing = getAccountIdMap(context).toMutableMap()
-        existing.putAll(map)
-        prefs(context).edit().putString(KEY_ACCOUNTS_MAP, gson.toJson(existing)).apply()
+        prefs(context).edit()
+            .remove(KEY_ACCOUNTS_MAP)
+            .putString(KEY_ACCOUNTS_MAP, gson.toJson(map))
+            .apply()
     }
 
     fun getAccountIdForHandle(context: Context, handle: String): String? {
@@ -57,11 +58,12 @@ object XsmmAccountStore {
         }.getOrDefault(emptyMap())
     }
 
-    /** Lưu map: handle -> id nội bộ XSMM (dùng cho set-active) */
+    /** Lưu map: handle -> id nội bộ XSMM (dùng cho set-active) - Ghi đè toàn bộ, không merge */
     fun saveInternalIdMap(context: Context, map: Map<String, String>) {
-        val existing = getInternalIdMap(context).toMutableMap()
-        existing.putAll(map)
-        prefs(context).edit().putString(KEY_INTERNAL_IDS_MAP, gson.toJson(existing)).apply()
+        prefs(context).edit()
+            .remove(KEY_INTERNAL_IDS_MAP)
+            .putString(KEY_INTERNAL_IDS_MAP, gson.toJson(map))
+            .apply()
     }
 
     fun getInternalIdForHandle(context: Context, handle: String): String? {

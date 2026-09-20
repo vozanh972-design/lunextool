@@ -100,6 +100,7 @@ fun XsmmAccountScreen(navController: NavController) {
     var linkedHandles by remember { mutableStateOf<Set<String>>(emptySet()) }
     var linkedFbUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     var addingFbUids by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var linkedSyncTrigger by remember { mutableStateOf(0L) }
     var isCheckingLinked by remember { mutableStateOf(false) }
     var addingUid by remember { mutableStateOf<String?>(null) }
     var selectedAccountUid by remember(selectedPlatform, selectedVariant) { mutableStateOf<String?>(null) }
@@ -550,7 +551,7 @@ fun XsmmAccountScreen(navController: NavController) {
         )
     }
 
-    LaunchedEffect(selectedPlatform, selectedVariant) {
+    LaunchedEffect(selectedPlatform, selectedVariant, linkedSyncTrigger) {
         if (selectedPlatform == "facebook") {
             facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
         } else if (selectedPlatform == "instagram") {
@@ -1311,13 +1312,10 @@ fun XsmmAccountScreen(navController: NavController) {
                                                             scope.launch {
                                                                 when (val res = XsmmAccountsRepository.addFacebookAccount(token, account.uid)) {
                                                                     is XsmmAddAccountResult.Success -> {
-                                                                        // Thêm UID vào linkedFbUids ngay - không cần gọi thêm API
-                                                                        val realUid = res.account.accountId.ifBlank { account.uid }
-                                                                        linkedFbUids = linkedFbUids + account.uid + realUid
-                                                                        android.widget.Toast.makeText(context, "Đã thêm Facebook [${account.name.ifBlank { account.uid }}] vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                                        android.widget.Toast.makeText(context, "Đã thêm Facebook [${account.name.ifBlank { account.uid }}] vào XSMM, đang đồng bộ...", android.widget.Toast.SHORT).show()
+                                                                        linkedSyncTrigger = System.currentTimeMillis()
                                                                     }
                                                                     is XsmmAddAccountResult.Error -> {
-                                                                        linkedFbUids = linkedFbUids - account.uid
                                                                         android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
                                                                     }
                                                                 }
@@ -1733,12 +1731,10 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                         scope.launch {
                                                                             when (val res = XsmmAccountsRepository.addFacebookAccount(token, targetToAdd)) {
                                                                                 is XsmmAddAccountResult.Success -> {
-                                                                                    val realUid = res.account.accountId.ifBlank { targetToAdd }
-                                                                                    linkedFbUids = linkedFbUids + targetToAdd + realUid
-                                                                                    android.widget.Toast.makeText(context, "Đã thêm Page [${page.pageName.ifBlank { targetToAdd }}] vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                                                    android.widget.Toast.makeText(context, "Đã thêm Page [${page.pageName.ifBlank { targetToAdd }}] vào XSMM, đang đồng bộ...", android.widget.Toast.SHORT).show()
+                                                                                    linkedSyncTrigger = System.currentTimeMillis()
                                                                                 }
                                                                                 is XsmmAddAccountResult.Error -> {
-                                                                                    linkedFbUids = linkedFbUids - targetToAdd
                                                                                     android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
                                                                                 }
                                                                             }

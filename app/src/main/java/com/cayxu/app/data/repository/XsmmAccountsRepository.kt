@@ -256,6 +256,9 @@ object XsmmAccountsRepository {
 
             // API docs: thành công trả full account object - parse luôn
             val account = parseAccount(json)
+            if (account.id.isBlank() || account.accountId.isBlank()) {
+                return XsmmAddAccountResult.Error("Server không trả về tài khoản hợp lệ")
+            }
             XsmmAddAccountResult.Success(account)
 
         } catch (e: Exception) {
