@@ -36,10 +36,14 @@ import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.data.local.TtcAccount
 import com.cayxu.app.data.local.TtcAccountsStore
+import com.cayxu.app.tuongtaccheo.TuongTacCheoApiClient
 import com.cayxu.app.ui.theme.AppBackground
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val TtcPink = Color(0xFFEC4899)
 private val FbBlue = Color(0xFF1877F2)
@@ -57,6 +61,7 @@ private val FbBlue = Color(0xFF1877F2)
 @Composable
 fun TuongTacCheoScreen(navController: NavController) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     // Tab đang chọn: 0 = Acc TTC, 1 = Facebook
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -81,47 +86,87 @@ fun TuongTacCheoScreen(navController: NavController) {
         AddTtcBottomSheet(
             onDismiss = { showAddTtcSheet = false },
             onLogin = { lines, isToken, isProxy ->
-                var addedCount = 0
-                lines.forEach { line ->
-                    val trimmed = line.trim()
-                    if (trimmed.isNotBlank()) {
-                        val token: String
-                        val proxy: String
-                        if (isToken && isProxy) {
-                            val parts = trimmed.split("|")
-                            token = parts.getOrNull(0)?.trim().orEmpty()
-                            proxy = parts.getOrNull(1)?.trim().orEmpty()
-                        } else if (isToken) {
-                            val parts = trimmed.split("|")
-                            token = parts.getOrNull(0)?.trim().orEmpty()
-                            proxy = if (parts.size > 1) parts[1].trim() else ""
-                        } else {
-                            token = ""
-                            proxy = trimmed
-                        }
+                var successCount = 0
+                var failCount = 0
+                withContext(Dispatchers.IO) {
+                    lines.forEach { line ->
+                        val trimmed = line.trim()
+                        if (trimmed.isNotBlank()) {
+                            val token: String
+                            val proxy: String
+                            if (isToken && isProxy) {
+                                val parts = trimmed.split("|")
+                                token = parts.getOrNull(0)?.trim().orEmpty()
+                                proxy = parts.getOrNull(1)?.trim().orEmpty()
+                            } else if (isToken) {
+                                val parts = trimmed.split("|")
+                                token = parts.getOrNull(0)?.trim().orEmpty()
+                                proxy = if (parts.size > 1) parts[1].trim() else ""
+                            } else {
+                                token = ""
+                                proxy = trimmed
+                            }
 
-                        val username = when {
-                            token.contains("c_user=") -> token.substringAfter("c_user=").substringBefore(";")
-                            token.length > 12 -> "TTC_${token.take(8)}"
-                            proxy.isNotBlank() -> "TTC_${proxy.substringBefore(":").takeLast(6)}"
-                            else -> token.ifBlank { "TTC_${System.currentTimeMillis() % 10000}" }
+                            if (token.isNotBlank()) {
+                                try {
+                                    val client = TuongTacCheoApiClient(
+                                        proxyStr = proxy.ifBlank { null }
+                                    )
+                                    val loggedAcc = client.loginWithToken(token)
+                                    TtcAccountsStore.addAccount(
+                                        context,
+                                        TtcAccount(
+                                            username = loggedAcc.username,
+                                            token = token,
+                                            cookie = loggedAcc.cookie.orEmpty(),
+                                            proxy = proxy,
+                                            coins = loggedAcc.sodu,
+                                            isLive = true
+                                        )
+                                    )
+                                    successCount++
+                                } catch (e: Exception) {
+                                    failCount++
+                                    val fallbackUser = if (token.length > 12) "TTC_${token.take(8)}" else token
+                                    TtcAccountsStore.addAccount(
+                                        context,
+                                        TtcAccount(
+                                            username = fallbackUser,
+                                            token = token,
+                                            cookie = "",
+                                            proxy = proxy,
+                                            coins = 0L,
+                                            isLive = false
+                                        )
+                                    )
+                                }
+                            } else if (proxy.isNotBlank()) {
+                                val fallbackUser = "Proxy_${proxy.substringBefore(":").takeLast(6)}"
+                                TtcAccountsStore.addAccount(
+                                    context,
+                                    TtcAccount(
+                                        username = fallbackUser,
+                                        token = "",
+                                        cookie = "",
+                                        proxy = proxy,
+                                        coins = 0L,
+                                        isLive = true
+                                    )
+                                )
+                                successCount++
+                            }
                         }
-
-                        TtcAccountsStore.addAccount(
-                            context,
-                            TtcAccount(
-                                username = username,
-                                token = token,
-                                proxy = proxy,
-                                isLive = true
-                            )
-                        )
-                        addedCount++
                     }
                 }
-                reloadData()
-                showAddTtcSheet = false
-                Toast.makeText(context, "Đã thêm $addedCount tài khoản TTC", Toast.LENGTH_SHORT).show()
+                withContext(Dispatchers.Main) {
+                    reloadData()
+                    showAddTtcSheet = false
+                    if (failCount > 0) {
+                        Toast.makeText(context, "TTC: $successCount thành công, $failCount thất bại", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Đã đăng nhập thành công $successCount tài khoản TTC", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         )
     }
@@ -152,7 +197,31 @@ fun TuongTacCheoScreen(navController: NavController) {
                 color = TextPrimary,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(onClick = { reloadData() }) {
+            IconButton(onClick = {
+                reloadData()
+                scope.launch(Dispatchers.IO) {
+                    val accs = TtcAccountsStore.getAccounts(context)
+                    var updated = false
+                    accs.forEach { acc ->
+                        if (acc.token.isNotBlank()) {
+                            try {
+                                val client = TuongTacCheoApiClient(proxyStr = acc.proxy.ifBlank { null })
+                                val res = client.loginWithToken(acc.token)
+                                if (res.sodu != acc.coins || res.username != acc.username) {
+                                    TtcAccountsStore.addAccount(
+                                        context,
+                                        acc.copy(username = res.username, coins = res.sodu, isLive = true)
+                                    )
+                                    updated = true
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
+                    if (updated) {
+                        withContext(Dispatchers.Main) { reloadData() }
+                    }
+                }
+            }) {
                 Icon(Icons.Filled.Refresh, contentDescription = "Tải lại", tint = TextSecondary)
             }
         }
@@ -669,12 +738,14 @@ private fun FbAccountsTabContent(
 @Composable
 private fun AddTtcBottomSheet(
     onDismiss: () -> Unit,
-    onLogin: (lines: List<String>, isToken: Boolean, isProxy: Boolean) -> Unit
+    onLogin: suspend (lines: List<String>, isToken: Boolean, isProxy: Boolean) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
     var isTokenSelected by remember { mutableStateOf(true) }
     var isProxySelected by remember { mutableStateOf(false) }
     var inputText by remember { mutableStateOf("") }
+    var isLoggingIn by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -800,19 +871,36 @@ private fun AddTtcBottomSheet(
                 Button(
                     onClick = {
                         val lines = inputText.split("\n").map { it.trim() }.filter { it.isNotBlank() }
-                        if (lines.isEmpty()) {
+                        if (lines.isEmpty() || isLoggingIn) {
                             return@Button
                         }
-                        onLogin(lines, isTokenSelected, isProxySelected)
+                        isLoggingIn = true
+                        scope.launch {
+                            try {
+                                onLogin(lines, isTokenSelected, isProxySelected)
+                            } finally {
+                                isLoggingIn = false
+                            }
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = TtcPink),
                     shape = RoundedCornerShape(10.dp),
-                    enabled = inputText.isNotBlank(),
+                    enabled = inputText.isNotBlank() && !isLoggingIn,
                     modifier = Modifier
                         .weight(1f)
                         .height(46.dp)
                 ) {
-                    Text("Đăng nhập", fontWeight = FontWeight.Bold)
+                    if (isLoggingIn) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Đang xử lý...", fontWeight = FontWeight.Bold)
+                    } else {
+                        Text("Đăng nhập", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

@@ -175,6 +175,9 @@ object XsmmAccountsRepository {
             val addRes = addFacebookAccount(rawToken, cleanUid, setActive = true)
             return when (addRes) {
                 is XsmmAddAccountResult.Success -> {
+                    if (addRes.account.id.isNotBlank()) {
+                        setActiveAccount(rawToken, addRes.account.id)
+                    }
                     XsmmSyncAccountResult(
                         isSuccess = true,
                         uid = addRes.account.accountId.ifBlank { cleanUid },
@@ -379,11 +382,22 @@ object XsmmAccountsRepository {
     }
 
     /** Đặt 1 acc (theo id nội bộ trên XSMM) làm "nick chạy" (PUT /api/taskapi/accounts/{id}/set-active). */
-    suspend fun setActiveAccount(rawToken: String, accountId: String): Boolean {
-        return try {
-            val response = XsmmRetrofitClient.api.setActiveAccount(authHeader(rawToken), accountId)
-            response.isSuccessful
-        } catch (e: Exception) {
+    suspend fun setActiveAccount(rawToken: String, accountId: String): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (accountId.isBlank()) return@withContext false
+        try {
+            val response = XsmmRetrofitClient.api.setActiveAccount(authHeader(rawToken), accountId, JsonObject())
+            if (response.isSuccessful) return@withContext true
+        } catch (_: Exception) {}
+
+        // Fallback trực tiếp bằng OkHttp
+        try {
+            val req = okhttp3.Request.Builder()
+                .url("https://xsmm.net/api/taskapi/accounts/$accountId/set-active")
+                .header("Authorization", authHeader(rawToken))
+                .put(okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), "{}"))
+                .build()
+            XsmmRetrofitClient.okHttpClient.newCall(req).execute().use { it.isSuccessful }
+        } catch (_: Exception) {
             false
         }
     }

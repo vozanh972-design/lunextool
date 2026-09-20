@@ -285,16 +285,27 @@ object XsmmFacebookTaskRunner {
             val currentTaskLabel = getTaskName(currentActiveTaskType)
 
             notify("Lấy nhiệm vụ Facebook ($currentTaskLabel)...")
-            val taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, xsmmUidToRun)
+            var taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, xsmmUidToRun)
+
+            if (taskResult is XsmmTasks2Result.Error && taskResult.message.contains("cần thêm tài khoản", ignoreCase = true)) {
+                notify("Kích hoạt lại nick [$xsmmUidToRun] trên XSMM...")
+                if (internalId.isNotBlank()) {
+                    XsmmAccountsRepository.setActiveAccount(token, internalId)
+                }
+                val reSync = XsmmAccountsRepository.syncAndActivateFacebookAccount(token, targetUidForXsmm)
+                val newInternalId = reSync.internalId.ifBlank { internalId }
+                if (newInternalId.isNotBlank()) {
+                    XsmmAccountsRepository.setActiveAccount(token, newInternalId)
+                }
+                delay(1200L)
+                taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, xsmmUidToRun)
+            }
 
             val (isNoTask, errorMsg) = when (taskResult) {
                 is XsmmTasks2Result.Error -> {
                     val xsmmDetail = "Lỗi lấy nhiệm vụ từ XSMM:\n• Server phản hồi: ${taskResult.message}"
                     onErrorDetail?.invoke(cleanUid, xsmmDetail)
                     if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, xsmmDetail)
-                    if (taskResult.message.contains("cần thêm tài khoản", ignoreCase = true) && internalId.isNotBlank()) {
-                        XsmmAccountsRepository.setActiveAccount(token, internalId)
-                    }
                     Pair(true, taskResult.message)
                 }
                 is XsmmTasks2Result.Success -> {

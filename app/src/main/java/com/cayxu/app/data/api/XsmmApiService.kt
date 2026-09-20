@@ -47,7 +47,8 @@ interface XsmmApiService {
     @PUT("api/taskapi/accounts/{id}/set-active")
     suspend fun setActiveAccount(
         @Header("Authorization") authorization: String,
-        @Path("id") id: String
+        @Path("id") id: String,
+        @Body body: JsonObject = JsonObject()
     ): Response<JsonObject>
 
     /** Lấy danh sách nhiệm vụ khả dụng (tasks2 - có type, uid, typejob).
