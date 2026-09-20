@@ -626,74 +626,16 @@ fun XsmmAccountScreen(navController: NavController) {
 
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = { navController.popBackStack() }, modifier = Modifier.size(32.dp)) {
                 Icon(Icons.Filled.ArrowBack, contentDescription = "Quay lại", tint = TextPrimary)
             }
-            Spacer(Modifier.width(6.dp))
-            Text("XSMM", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary, modifier = Modifier.weight(1f))
-            IconButton(
-                onClick = {
-                    isRefreshing = true
-                    val token = XsmmAccountStore.getToken(context)
-                    if (token.isNullOrBlank()) {
-                        isRefreshing = false
-                    } else {
-                        scope.launch {
-                            when (val result = XsmmAuthRepository.fetchUser(token)) {
-                                is XsmmLoginResult.Success -> {
-                                    XsmmSession.login(context, token, result.info.username, result.info.points)
-                                }
-                                is XsmmLoginResult.Error -> Unit
-                            }
-                            if (selectedPlatform == "facebook") {
-                                val accRes = XsmmAccountsRepository.getAccounts(token, accountType = "facebook")
-                                if (accRes is XsmmAccountsResult.Success) {
-                                    val fbUids = mutableSetOf<String>()
-                                    val accMap = mutableMapOf<String, String>()
-                                    val internalMap = mutableMapOf<String, String>()
-                                    accRes.accounts.forEach { acc ->
-                                        if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
-                                        val uid = acc.accountId.ifBlank {
-                                            Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(acc.linkAccount)?.groupValues?.getOrNull(1) ?: ""
-                                        }.trim()
-                                        if (uid.isNotBlank()) {
-                                            fbUids.add(uid)
-                                            accMap[uid] = acc.accountId.ifBlank { uid }
-                                            if (acc.id.isNotBlank()) internalMap[uid] = acc.id
-                                        }
-                                    }
-                                    linkedFbUids = fbUids
-                                    XsmmAccountStore.saveAccountIdMap(context, accMap)
-                                    XsmmAccountStore.saveInternalIdMap(context, internalMap)
-                                } else {
-                                    linkedFbUids = emptySet()
-                                }
-                            }
-                            isRefreshing = false
-                        }
-                    }
-                },
-                enabled = !isRefreshing
-            ) {
-                if (isRefreshing) {
-                    CircularProgressIndicator(color = XsmmAccentEnd, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                } else {
-                    Icon(Icons.Filled.Refresh, contentDescription = "Làm mới", tint = XsmmAccentEnd)
-                }
-            }
-            IconButton(
-                onClick = {
-                    XsmmSession.logout(context)
-                    navController.navigate(Routes.XSMM_LOGIN) {
-                        popUpTo(Routes.XSMM_ACCOUNT) { inclusive = true }
-                    }
-                }
-            ) {
-                Icon(Icons.Filled.ExitToApp, contentDescription = "Đăng xuất", tint = DangerRed)
-            }
+            Spacer(Modifier.width(8.dp))
+            Text("XSMM", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         }
 
         Column(
@@ -703,43 +645,119 @@ fun XsmmAccountScreen(navController: NavController) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            // ---- Thẻ số dư ----
+            // ---- Thẻ tài khoản XSMM gọn gàng ----
             Card(
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = CardWhite),
+                border = androidx.compose.foundation.BorderStroke(1.dp, TextSecondary.copy(alpha = 0.15f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Brush.linearGradient(listOf(XsmmAccentStart, XsmmAccentEnd)))
-                        .padding(20.dp)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier.size(36.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    val initial = (username.trim().firstOrNull()?.uppercaseChar() ?: 'X').toString()
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF1877F2)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = initial,
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = username.ifBlank { "XSMM User" },
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        val formattedPoints = try {
+                            java.text.NumberFormat.getInstance(java.util.Locale("vi", "VN")).format(points)
+                        } catch (_: Exception) {
+                            points.toString()
+                        }
+                        Text(
+                            text = "$formattedPoints xu",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF1877F2)
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            isRefreshing = true
+                            val token = XsmmAccountStore.getToken(context)
+                            if (token.isNullOrBlank()) {
+                                isRefreshing = false
+                            } else {
+                                scope.launch {
+                                    when (val result = XsmmAuthRepository.fetchUser(token)) {
+                                        is XsmmLoginResult.Success -> {
+                                            XsmmSession.login(context, token, result.info.username, result.info.points)
+                                        }
+                                        is XsmmLoginResult.Error -> Unit
+                                    }
+                                    if (selectedPlatform == "facebook") {
+                                        val accRes = XsmmAccountsRepository.getAccounts(token, accountType = "facebook")
+                                        if (accRes is XsmmAccountsResult.Success) {
+                                            val fbUids = mutableSetOf<String>()
+                                            val accMap = mutableMapOf<String, String>()
+                                            val internalMap = mutableMapOf<String, String>()
+                                            accRes.accounts.forEach { acc ->
+                                                if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
+                                                val uid = acc.accountId.ifBlank {
+                                                    Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(acc.linkAccount)?.groupValues?.getOrNull(1) ?: ""
+                                                }.trim()
+                                                if (uid.isNotBlank()) {
+                                                    fbUids.add(uid)
+                                                    accMap[uid] = acc.accountId.ifBlank { uid }
+                                                    if (acc.id.isNotBlank()) internalMap[uid] = acc.id
+                                                }
+                                            }
+                                            linkedFbUids = fbUids
+                                            XsmmAccountStore.saveAccountIdMap(context, accMap)
+                                            XsmmAccountStore.saveInternalIdMap(context, internalMap)
+                                        } else {
+                                            linkedFbUids = emptySet()
+                                        }
+                                    }
+                                    isRefreshing = false
+                                }
                             }
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                username.ifBlank { "Đang tải..." },
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                        },
+                        enabled = !isRefreshing,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        if (isRefreshing) {
+                            CircularProgressIndicator(color = XsmmAccentEnd, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                        } else {
+                            Icon(Icons.Filled.Refresh, contentDescription = "Làm mới", tint = XsmmAccentEnd, modifier = Modifier.size(20.dp))
                         }
-                        Spacer(Modifier.height(18.dp))
-                        Text("Số dư", color = Color(0xFFDCFCE7), fontSize = 13.sp)
-                        Spacer(Modifier.height(4.dp))
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            Text("$points", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.width(6.dp))
-                            Text("điểm", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 5.dp))
-                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            XsmmSession.logout(context)
+                            navController.navigate(Routes.XSMM_LOGIN) {
+                                popUpTo(Routes.XSMM_ACCOUNT) { inclusive = true }
+                            }
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.Filled.ExitToApp, contentDescription = "Đăng xuất", tint = DangerRed, modifier = Modifier.size(20.dp))
                     }
                 }
             }
