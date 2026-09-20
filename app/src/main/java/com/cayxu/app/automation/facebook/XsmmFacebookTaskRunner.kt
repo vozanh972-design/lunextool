@@ -319,7 +319,11 @@ object XsmmFacebookTaskRunner {
                             if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) break
                             if (config.stopAfterCompletedCount > 0 && totalCompleted >= config.stopAfterCompletedCount) break
 
-                            val target = task.targetId.ifBlank { task.idorlink }.ifBlank { task.targetUrl }
+                            val target = if (task.idorlink.contains("_")) {
+                                task.idorlink
+                            } else {
+                                task.targetId.ifBlank { task.idorlink }.ifBlank { task.targetUrl }
+                            }
                             val shortTarget = if (target.length > 20) target.take(17) + "..." else target
                             val pos = "[${idx + 1}/${taskResult.tasks.size}]"
 
