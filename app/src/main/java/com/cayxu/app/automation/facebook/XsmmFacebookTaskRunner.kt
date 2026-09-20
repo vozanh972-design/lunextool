@@ -370,10 +370,16 @@ object XsmmFacebookTaskRunner {
                                 }
                             }
 
+                            // follow → gom đủ 10 rồi mới nhận xu
+                            // comment / like (cảm xúc) / các loại khác → nhận xu ngay sau mỗi job
+                            val currentTaskType = (task.type.ifBlank { config.taskType }).lowercase()
+                            val isFollowTask = currentTaskType.contains("follow") || currentTaskType.contains("sub")
+                            val batchLimit = if (isFollowTask) 10 else 1
                             val isLast = (idx == taskResult.tasks.size - 1)
-                            if (pendingBatchTaskIds.size >= 10 || (isLast && pendingBatchTaskIds.isNotEmpty())) {
+                            if (pendingBatchTaskIds.size >= batchLimit || (isLast && pendingBatchTaskIds.isNotEmpty())) {
                                 val bSize = pendingBatchTaskIds.size
-                                notify("Gửi nhận xu $bSize job...")
+                                if (isFollowTask) notify("Gửi nhận xu $bSize job follow...")
+                                else notify("Gửi nhận xu job...")
 
                                 val compRes = XsmmTasksRepository.completeTasks2(
                                     token,
