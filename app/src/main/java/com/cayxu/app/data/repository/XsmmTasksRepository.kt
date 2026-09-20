@@ -216,12 +216,6 @@ object XsmmTasksRepository {
             val body = response.body() ?: return XsmmTasks2Result.Error("Không có dữ liệu trả về")
             if (body.isJsonObject) {
                 val errorMsg = body.asJsonObject.get("error")?.takeIf { it.isJsonPrimitive }?.asString
-                if (errorMsg != null && errorMsg.contains("cần thêm tài khoản", ignoreCase = true)) {
-                    val fallback = fetchFallbackTasks(rawToken, type, typejob)
-                    if (fallback != null) {
-                        return XsmmTasks2Result.Success(fallback)
-                    }
-                }
                 return XsmmTasks2Result.Error(errorMsg ?: "Lỗi từ XSMM: $body")
             }
             if (!body.isJsonArray) {
@@ -317,10 +311,6 @@ object XsmmTasksRepository {
                     statusCode == 200
 
                 if (!errorMsg.isNullOrBlank() && !isSuccessFlag && json.get("points") == null) {
-                    if (errorMsg.contains("cần thêm tài khoản", ignoreCase = true)) {
-                        val fallbackRes = completeFallbackTasks(rawToken, type, taskIds, cookieCheck)
-                        if (fallbackRes != null) return fallbackRes
-                    }
                     return XsmmCompleteTask2Result(false, errorMsg, 0, null, 0, 0, false)
                 }
 
@@ -375,109 +365,5 @@ object XsmmTasksRepository {
 
         val errText = lastException?.message ?: "Đã thử lại nhiều lần nhưng không thành công"
         return XsmmCompleteTask2Result(false, errText, 0, null, 0, 0, false)
-    }
-
-    private fun fetchFallbackTasks(rawToken: String, type: String, typejob: String?): List<XsmmTask2>? {
-        val urls = listOf(
-            "https://xsmm.net/api/taskapi/tasks?type=$type&typejob=${typejob ?: "normal,better,best"}",
-            "https://xsmm.net/api/tasks?type=$type&typejob=${typejob ?: "normal,better,best"}"
-        )
-        for (url in urls) {
-            try {
-                val req = okhttp3.Request.Builder()
-                    .url(url)
-                    .header("Authorization", auth(rawToken))
-                    .get()
-                    .build()
-                XsmmRetrofitClient.okHttpClient.newCall(req).execute().use { res ->
-                    if (!res.isSuccessful) return@use null
-                    val str = res.body?.string().orEmpty()
-                    if (str.trim().startsWith("[")) {
-                        val arr = JsonParser.parseString(str).asJsonArray
-                        val list = arr.mapNotNull { el ->
-                            if (!el.isJsonObject) return@mapNotNull null
-                            val obj = el.asJsonObject
-                            XsmmTask2(
-                                id = obj.get("id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                                type = obj.get("type")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                                targetUrl = obj.get("target_url")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                                targetId = obj.get("target_id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                                idorlink = obj.get("idorlink")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                                points = obj.get("points")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                                comment = obj.get("comment")?.takeIf { it.isJsonPrimitive }?.asString ?: "❤️❤️❤️"
-                            )
-                        }
-                        if (list.isNotEmpty()) return list
-                    } else if (str.trim().startsWith("{")) {
-                        val obj = JsonParser.parseString(str).asJsonObject
-                        if (obj.has("tasks") && obj.get("tasks").isJsonArray) {
-                            val arr = obj.getAsJsonArray("tasks")
-                            val list = arr.mapNotNull { el ->
-                                if (!el.isJsonObject) return@mapNotNull null
-                                val o = el.asJsonObject
-                                XsmmTask2(
-                                    id = o.get("id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                                    type = o.get("type")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                                    targetUrl = o.get("target_url")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                                    targetId = o.get("target_id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                                    idorlink = o.get("idorlink")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                                    points = o.get("points")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                                    comment = o.get("comment")?.takeIf { it.isJsonPrimitive }?.asString ?: "❤️❤️❤️"
-                                )
-                            }
-                            if (list.isNotEmpty()) return list
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-        return null
-    }
-
-    private fun completeFallbackTasks(
-        rawToken: String,
-        type: String,
-        taskIds: List<String>,
-        cookieCheck: String?
-    ): XsmmCompleteTask2Result? {
-        val urls = listOf(
-            "https://xsmm.net/api/taskapi/tasks/complete",
-            "https://xsmm.net/api/tasks/complete"
-        )
-        val body = JsonObject().apply {
-            addProperty("type", type)
-            val arr = JsonArray()
-            taskIds.forEach { arr.add(it) }
-            add("task_id", arr)
-            if (!cookieCheck.isNullOrBlank()) {
-                addProperty("cookie_check", cookieCheck)
-            }
-        }
-        val mediaType = "application/json".toMediaTypeOrNull()
-        for (url in urls) {
-            try {
-                val req = okhttp3.Request.Builder()
-                    .url(url)
-                    .header("Authorization", auth(rawToken))
-                    .post(okhttp3.RequestBody.create(mediaType, body.toString()))
-                    .build()
-                XsmmRetrofitClient.okHttpClient.newCall(req).execute().use { res ->
-                    if (!res.isSuccessful) return@use null
-                    val bodyStr = res.body?.string().orEmpty()
-                    val json = runCatching { JsonParser.parseString(bodyStr).asJsonObject }.getOrNull() ?: return@use null
-                    val points = json.get("points")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
-                    val msg = json.get("message")?.takeIf { it.isJsonPrimitive }?.asString ?: "Hoàn thành nhận xu"
-                    return XsmmCompleteTask2Result(
-                        success = true,
-                        message = msg,
-                        points = points,
-                        totalPoints = json.get("total_points")?.takeIf { it.isJsonPrimitive }?.asLong,
-                        successCount = taskIds.size,
-                        countdown = json.get("countdown")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
-                    )
-                }
-            } catch (_: Exception) {}
-        }
-        return null
     }
 }
