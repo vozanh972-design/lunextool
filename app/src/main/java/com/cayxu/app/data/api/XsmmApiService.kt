@@ -23,17 +23,8 @@ interface XsmmApiService {
     @GET("api/taskapi/user")
     suspend fun getUser(@Header("Authorization") authorization: String): Response<JsonObject>
 
-    /** Lấy danh sách tài khoản theo API web XSMM (/api/accounts) */
-    @GET("api/accounts")
-    suspend fun getAccountsWeb(
-        @Header("Authorization") authorization: String,
-        @Query("search") search: String? = null,
-        @Query("page") page: Int? = 1,
-        @Query("account_type") accountType: String? = "facebook"
-    ): Response<JsonObject>
-
-    /** Lấy danh sách tài khoản (accounts2) */
-    @GET("api/taskapi/accounts2")
+    /** Lấy danh sách tài khoản (Task API chuẩn: GET /api/taskapi/accounts) */
+    @GET("api/taskapi/accounts")
     suspend fun getAccounts(
         @Header("Authorization") authorization: String,
         @Query("search") search: String? = null,
@@ -45,8 +36,8 @@ interface XsmmApiService {
     @GET("api/taskapi/accounts/active")
     suspend fun getActiveAccount(@Header("Authorization") authorization: String): Response<JsonObject>
 
-    /** Thêm tài khoản mới (accounts2) Body: {"type": "facebook"|"tiktok", "link_account": "..."} */
-    @POST("api/taskapi/accounts2")
+    /** Thêm tài khoản mới (Task API chuẩn: POST /api/taskapi/accounts) */
+    @POST("api/taskapi/accounts")
     suspend fun addAccount(
         @Header("Authorization") authorization: String,
         @Body body: JsonObject

@@ -79,12 +79,7 @@ object XsmmAccountsRepository {
         page: Int? = null
     ): XsmmAccountsResult {
         return try {
-            // Với Facebook: gọi thẳng API web /api/accounts theo đúng web XSMM
-            val response = if (accountType.equals("facebook", ignoreCase = true)) {
-                XsmmRetrofitClient.api.getAccountsWeb(authHeader(rawToken), search, page ?: 1, "facebook")
-            } else {
-                XsmmRetrofitClient.api.getAccounts(authHeader(rawToken), search, page, accountType)
-            }
+            val response = XsmmRetrofitClient.api.getAccounts(authHeader(rawToken), search, page, accountType)
             if (!response.isSuccessful) {
                 return XsmmAccountsResult.Error(readError(response.errorBody()?.string(), "Lỗi lấy danh sách (mã HTTP: ${response.code()})"))
             }
