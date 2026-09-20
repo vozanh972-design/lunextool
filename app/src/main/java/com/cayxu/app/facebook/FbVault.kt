@@ -5,22 +5,18 @@ import androidx.annotation.Keep
 /**
  * FbVault — Cung cấp các chuỗi nhạy cảm của Facebook engine.
  *
- * Ưu tiên lấy từ native .so (fb-vault) — toàn bộ chuỗi được XOR-encode,
- * không có plain text trong .rodata của .so.
+ * Ưu tiên lấy từ native .so (fb-vault):
+ *   - C++ dùng constexpr XOR 0x5C encode tại compile-time
+ *   - .rodata của .so chỉ chứa XOR bytes, không có plain text
  *
- * Nếu native load lỗi → tự động fallback sang inline decode trong DEX
- * để đảm bảo logic chạy bình thường không bao giờ crash.
+ * Fallback (khi .so load lỗi) → string split tại runtime, đảm bảo đúng.
  */
 @Keep
 object FbVault {
 
     private val nativeOk: Boolean by lazy {
-        try {
-            System.loadLibrary("fb-vault")
-            true
-        } catch (_: Throwable) {
-            false
-        }
+        try { System.loadLibrary("fb-vault"); true }
+        catch (_: Throwable) { false }
     }
 
     // ── JNI declarations ─────────────────────────────────────────────────
@@ -40,39 +36,48 @@ object FbVault {
     @Keep private external fun nativeFieldVariables(): String
     @Keep private external fun nativeFieldDocId(): String
 
-    // ── Inline fallback decode (XOR 0x5C trong DEX, không có plain text) ─
-    private fun d(v: IntArray): String = String(v.map { (it xor 0x5C).toChar() }.toCharArray())
+    // ── Fallback: string parts nối lại tại runtime ────────────────────────
+    // Tránh 1 constant string duy nhất trong constant pool DEX
+    // Đảm bảo 100% đúng — không phụ thuộc vào tính toán thủ công
 
-    private fun fbk_graphApi()   = d(intArrayOf(0x34,0x3c,0x3e,0x3f,0x08,0x35,0x35,0x2e,0x30,0x32,0x27,0x3f,0x2a,0x38,0x3c,0x32,0x2e,0x27,0x37,0x27,0x2e,0x34,0x3c,0x35,0x35,0x35,0x2e,0x29,0x21,0x0e,0x13,0x0d))
-    private fun fbk_graphql()    = d(intArrayOf(0x34,0x3c,0x3e,0x3f,0x08,0x35,0x35,0x2e,0x30,0x32,0x27,0x3f,0x2a,0x38,0x3c,0x32,0x2e,0x27,0x37,0x27,0x2e,0x34,0x3c,0x35,0x35,0x35,0x2e,0x3b,0x32,0x27,0x3f,0x2a,0x36,0x3d))
-    private fun fbk_ua()         = d(intArrayOf(0x65,0x1a,0x1e,0x1d,0x15,0x72,0x1e,0x1a,0x78,0x1d,0x17,0x1e,0x1d,0x15,0x72,0x6d,0x14,0x1c,0x74,0x35,0x32,0x3a,0x35,0x32,0x3e,0x3d,0x6b,0x1e,0x1a,0x1e,0x15,0x72,0x46,0x14,0x1b,0x14,0x65,0x18,0x1b,0x14,0x68,0x14,0x68,0x1f,0x68,0x1e,0x61,0x74,0x3d,0x35,0x32,0x64,0x3a,0x3b,0x3f,0x38,0x66,0x35,0x30,0x38,0x33,0x65,0x1e,0x1a,0x1e,0x15,0x72,0x6e,0x78,0x14,0x1e,0x1b,0x1a,0x3d,0x65,0x35,0x78,0x32,0x72,0x3a,0x35,0x32,0x3a,0x35,0x32,0x3a,0x3b,0x32,0x3a,0x3c,0x3a,0x6e,0x17,0x3b,0x32,0x74,0x1e,0x1a,0x1e,0x15,0x72,0x4d,0x27,0x19,0x15,0x79,0x27,0x15,0x72,0x33,0x3b,0x66,0x3a,0x35,0x32,0x6e,0x1b,0x3b,0x3f,0x3f,0x65,0x1e,0x1a,0x42,0x15,0x72,0x1f,0x27,0x31,0x08,0x17,0x27,0x3d,0x65,0x1e,0x1a,0x42,0x15,0x72,0x1f,0x27,0x31,0x08,0x17,0x27,0x3d,0x65,0x1e,0x1a,0x50,0x15,0x72,0x37,0x3c,0x35,0x74,0x29,0x27,0x38,0x32,0x37,0x3c,0x3c,0x3a,0x74,0x35,0x27,0x3f,0x2e,0x25,0x27,0x15,0x65,0x1e,0x1a,0x48,0x15,0x72,0x6f,0x31,0x6a,0x1f,0x14,0x1c,0x38,0x1a,0x65,0x1e,0x1a,0x4f,0x15,0x72,0x35,0x34,0x6b,0x36,0x3c,0x3d,0x6b,0x35,0x3b,0x65,0x1e,0x1a,0x42,0x50,0x15,0x72,0x6d,0x38,0x6a,0x33,0x14,0x6d,0x65,0x1e,0x1a,0x43,0x15,0x72,0x36,0x34))
-    private fun fbk_docPage()    = d(intArrayOf(0x7b,0x7d,0x69,0x7f,0x7e,0x7a,0x68,0x69,0x7d,0x7f,0x69,0x7e,0x7a,0x74,0x74,0x74))
-    private fun fbk_docProfile() = d(intArrayOf(0x69,0x7e,0x69,0x69,0x7d,0x7e,0x7a,0x7a,0x75,0x74,0x7e,0x7f,0x7e,0x69,0x74,0x69))
-    private fun fbk_reactions()  = d(intArrayOf(0x13,0x2e,0x3b,0x27,0x2e,0x3f,0x3b,0x3c,0x25,0x38))
-    private fun fbk_comments()   = d(intArrayOf(0x13,0x3f,0x3c,0x31,0x31,0x2e,0x25,0x3f,0x39))
-    private fun fbk_subs()       = d(intArrayOf(0x13,0x2f,0x37,0x36,0x38,0x37,0x2e,0x32,0x36,0x2e,0x32,0x38))
-    private fun fbk_likes()      = d(intArrayOf(0x13,0x34,0x35,0x3a,0x2e,0x38))
-    private fun fbk_accTok()     = d(intArrayOf(0x3d,0x3f,0x3f,0x2e,0x38,0x38,0x13,0x28,0x3c,0x3a,0x2e,0x25))
-    private fun fbk_msg()        = d(intArrayOf(0x31,0x2e,0x38,0x38,0x27,0x30,0x2e))
-    private fun fbk_attId()      = d(intArrayOf(0x3d,0x28,0x28,0x27,0x37,0x34,0x31,0x2e,0x25,0x28,0x13,0x3b,0x35))
-    private fun fbk_type()       = d(intArrayOf(0x28,0x3c,0x37,0x2e))
-    private fun fbk_vars()       = d(intArrayOf(0x2a,0x27,0x32,0x3b,0x27,0x36,0x3d,0x2e,0x38))
-    private fun fbk_docId()      = d(intArrayOf(0x38,0x3c,0x37,0x13,0x3b,0x35))
+    private fun fbk_graphApi()    = "htt" + "ps://" + "graph.face" + "book.com/v21.0"
+    private fun fbk_graphql()     = "htt" + "ps://" + "graph.face" + "book.com/gra" + "phql"
+    private fun fbk_ua()          = "[FBA" + "N/FB4A;FBA" + "V/548.1.0.51.64;FBB" + "V/47461892" +
+                                    "9;FBDM/{density=3.0,width=1080,height=2340}" +
+                                    ";FBLC/vi_VN;FBRV/0;FBCR/Viettel;FBMF/sam" +
+                                    "sung;FBBD/samsung;FBPN/com.face" +
+                                    "book.katana;FBDV/SM-S928B;FBSV/14;" +
+                                    "FBOP/1;FBCA/arm64-v8a;]"
+    private fun fbk_docPage()     = "471542" + "6135182900"
+    private fun fbk_docProfile()  = "541178" + "2298894101"
+    private fun fbk_reactions()   = "/" + "reac" + "tions"
+    private fun fbk_comments()    = "/" + "com" + "ments"
+    private fun fbk_subs()        = "/" + "sub" + "scribers"
+    private fun fbk_likes()       = "/" + "li" + "kes"
+    private fun fbk_accTok()      = "acc" + "ess_" + "token"
+    private fun fbk_msg()         = "mes" + "sage"
+    private fun fbk_attId()       = "att" + "achment_id"
+    private fun fbk_type()        = "ty" + "pe"
+    private fun fbk_vars()        = "vari" + "ables"
+    private fun fbk_docId()       = "doc" + "_id"
 
-    // ── Public API (native preferred, fallback to inline) ─────────────────
-    fun graphApiUrl()      = if (nativeOk) try { nativeGraphApiUrl()       } catch (_: Throwable) { fbk_graphApi()    } else fbk_graphApi()
-    fun graphqlUrl()       = if (nativeOk) try { nativeGraphqlUrl()        } catch (_: Throwable) { fbk_graphql()     } else fbk_graphql()
-    fun userAgent()        = if (nativeOk) try { nativeUserAgent()         } catch (_: Throwable) { fbk_ua()          } else fbk_ua()
-    fun docIdPageReact()   = if (nativeOk) try { nativeDocIdPageReact()    } catch (_: Throwable) { fbk_docPage()     } else fbk_docPage()
-    fun docIdProfileReact()= if (nativeOk) try { nativeDocIdProfileReact() } catch (_: Throwable) { fbk_docProfile()  } else fbk_docProfile()
-    fun pathReactions()    = if (nativeOk) try { nativePathReactions()     } catch (_: Throwable) { fbk_reactions()   } else fbk_reactions()
-    fun pathComments()     = if (nativeOk) try { nativePathComments()      } catch (_: Throwable) { fbk_comments()    } else fbk_comments()
-    fun pathSubscribers()  = if (nativeOk) try { nativePathSubscribers()   } catch (_: Throwable) { fbk_subs()        } else fbk_subs()
-    fun pathLikes()        = if (nativeOk) try { nativePathLikes()         } catch (_: Throwable) { fbk_likes()       } else fbk_likes()
-    fun fieldAccessToken() = if (nativeOk) try { nativeFieldAccessToken()  } catch (_: Throwable) { fbk_accTok()      } else fbk_accTok()
-    fun fieldMessage()     = if (nativeOk) try { nativeFieldMessage()      } catch (_: Throwable) { fbk_msg()         } else fbk_msg()
-    fun fieldAttachmentId()= if (nativeOk) try { nativeFieldAttachmentId() } catch (_: Throwable) { fbk_attId()       } else fbk_attId()
-    fun fieldType()        = if (nativeOk) try { nativeFieldType()         } catch (_: Throwable) { fbk_type()        } else fbk_type()
-    fun fieldVariables()   = if (nativeOk) try { nativeFieldVariables()    } catch (_: Throwable) { fbk_vars()        } else fbk_vars()
-    fun fieldDocId()       = if (nativeOk) try { nativeFieldDocId()        } catch (_: Throwable) { fbk_docId()       } else fbk_docId()
+    // ── Public API ────────────────────────────────────────────────────────
+    private inline fun get(native: () -> String, fallback: () -> String) =
+        if (nativeOk) try { native() } catch (_: Throwable) { fallback() } else fallback()
+
+    fun graphApiUrl()       = get({ nativeGraphApiUrl()        }, { fbk_graphApi()   })
+    fun graphqlUrl()        = get({ nativeGraphqlUrl()         }, { fbk_graphql()    })
+    fun userAgent()         = get({ nativeUserAgent()          }, { fbk_ua()         })
+    fun docIdPageReact()    = get({ nativeDocIdPageReact()     }, { fbk_docPage()    })
+    fun docIdProfileReact() = get({ nativeDocIdProfileReact()  }, { fbk_docProfile() })
+    fun pathReactions()     = get({ nativePathReactions()      }, { fbk_reactions()  })
+    fun pathComments()      = get({ nativePathComments()       }, { fbk_comments()   })
+    fun pathSubscribers()   = get({ nativePathSubscribers()    }, { fbk_subs()       })
+    fun pathLikes()         = get({ nativePathLikes()          }, { fbk_likes()      })
+    fun fieldAccessToken()  = get({ nativeFieldAccessToken()   }, { fbk_accTok()     })
+    fun fieldMessage()      = get({ nativeFieldMessage()       }, { fbk_msg()        })
+    fun fieldAttachmentId() = get({ nativeFieldAttachmentId()  }, { fbk_attId()      })
+    fun fieldType()         = get({ nativeFieldType()          }, { fbk_type()       })
+    fun fieldVariables()    = get({ nativeFieldVariables()     }, { fbk_vars()       })
+    fun fieldDocId()        = get({ nativeFieldDocId()         }, { fbk_docId()      })
 }
