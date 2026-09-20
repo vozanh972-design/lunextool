@@ -255,9 +255,30 @@ object XsmmAccountsRepository {
             if (isExplicitFail && !msgStr.isNullOrBlank()) {
                 return XsmmAddAccountResult.Error(msgStr)
             }
+            // Kiểm tra message chứa từ khóa thất bại (XSMM có thể trả HTTP 200 kèm lỗi)
+            val failKeywords = listOf("không thành công", "thất bại", "lỗi", "không hợp lệ", "báo admin", "failed", "error", "invalid")
+            if (!msgStr.isNullOrBlank() && failKeywords.any { msgStr.contains(it, ignoreCase = true) }) {
+                return XsmmAddAccountResult.Error(msgStr)
+            }
 
-            // HTTP 200 + không có lỗi = thành công (XSMM trả "Thêm tài khoản thành công!" không kèm id)
-            // Tự dựng object thành công từ dữ liệu gửi lên
+            // Verify: gọi getAccounts sau khi thêm để xác nhận acc thực sự tồn tại & active
+            val verifyRes = getAccounts(rawToken, accountType = "facebook")
+            if (verifyRes is XsmmAccountsResult.Success) {
+                val found = verifyRes.accounts.firstOrNull { acc ->
+                    acc.type.equals("facebook", ignoreCase = true) &&
+                    acc.isActive &&
+                    acc.accountId.trim() == cleanUid
+                }
+                if (found != null) {
+                    return XsmmAddAccountResult.Success(found)
+                }
+                // Acc không active hoặc không tìm thấy → thực ra thêm thất bại
+                val failReason = msgStr?.takeIf { it.isNotBlank() }
+                    ?: "Tài khoản không đạt yêu cầu chất lượng của XSMM (không active)"
+                return XsmmAddAccountResult.Error(failReason)
+            }
+
+            // getAccounts lỗi mạng → dùng response hiện tại
             val accountObj = json.takeIf { it.has("id") && it.get("id").isJsonPrimitive && it.get("id").asString.isNotBlank() }
                 ?: json.get("account")?.takeIf { it.isJsonObject }?.asJsonObject
                 ?: json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
@@ -271,7 +292,7 @@ object XsmmAccountsRepository {
                     accountId = cleanUid,
                     name = cleanUid,
                     linkAccount = targetValue,
-                    isActive = false
+                    isActive = true
                 )
             }
             XsmmAddAccountResult.Success(builtAccount)
