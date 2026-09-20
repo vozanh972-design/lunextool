@@ -120,19 +120,27 @@ object XsmmFacebookTaskRunner {
         var fbToken = (matchedPage?.pageToken?.takeIf { it.isNotBlank() } ?: account.bio.trim()).orEmpty()
         if (matchedPage != null && (matchedPage.pageToken.isBlank() || fbToken.isBlank())) {
             try {
-                val service = com.cayxu.app.facebook.FacebookPageService(context)
-                val refreshedPages = service.getPagesForAccount(account)
-                val refreshedMatched = refreshedPages.firstOrNull { p ->
-                    p.pageId == matchedPage.pageId || (p.additionalProfileId.isNotBlank() && p.additionalProfileId == matchedPage.additionalProfileId)
+                val parentToken = account.bio.takeIf { it.isNotBlank() } ?: run {
+                    if (account.note.contains("c_user=")) {
+                        val mgr = FacebookAccountManager()
+                        mgr.getTokenFromCookie(account.note, account.phone.ifBlank { null })?.bio.orEmpty()
+                    } else ""
                 }
-                if (refreshedMatched != null && refreshedMatched.pageToken.isNotBlank()) {
-                    fbToken = refreshedMatched.pageToken
-                    val currentStored = FacebookAccountsStore.getAccount(context, account.uid) ?: account
-                    val updatedPages = currentStored.pages.map { p ->
-                        if (p.pageId == refreshedMatched.pageId) p.copy(pageToken = refreshedMatched.pageToken) else p
+                if (parentToken.isNotBlank()) {
+                    val service = com.cayxu.app.facebook.FacebookPageService()
+                    val refreshedPages = service.getPages(parentToken)
+                    val refreshedMatched = refreshedPages.firstOrNull { p ->
+                        p.pageId == matchedPage.pageId || (p.additionalProfileId.isNotBlank() && p.additionalProfileId == matchedPage.additionalProfileId)
                     }
-                    val updatedAcc = currentStored.copy(pages = updatedPages)
-                    FacebookAccountsStore.addAccount(context, updatedAcc)
+                    if (refreshedMatched != null && refreshedMatched.pageToken.isNotBlank()) {
+                        fbToken = refreshedMatched.pageToken
+                        val currentStored = FacebookAccountsStore.getAccount(context, account.uid) ?: account
+                        val updatedPages = currentStored.pages.map { p ->
+                            if (p.pageId == refreshedMatched.pageId) p.copy(pageToken = refreshedMatched.pageToken) else p
+                        }
+                        val updatedAcc = currentStored.copy(pages = updatedPages)
+                        FacebookAccountsStore.addAccount(context, updatedAcc)
+                    }
                 }
             } catch (_: Exception) {}
         }
