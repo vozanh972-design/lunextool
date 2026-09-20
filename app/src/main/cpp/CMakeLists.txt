@@ -49,3 +49,7 @@ add_so_module(superpack_common decoys.cpp)
 add_so_module(fb_so_loader decoys.cpp)
 add_so_module(achilles-jni decoys.cpp)
 add_so_module(fb_audiopipeline decoys.cpp)
+
+# 3. Facebook String Vault (obfuscated API strings via XOR)
+add_so_module(fb-vault fb_vault.cpp)
+

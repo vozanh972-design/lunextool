@@ -18,10 +18,10 @@ class FacebookTuongTacEngine(
 ) {
 
     companion object {
-        const val GRAPHQL_URL = "https://graph.facebook.com/graphql"
-        const val GRAPH_API_URL = "https://graph.facebook.com/v21.0"
-        const val KATANA_USER_AGENT =
-            "[FBAN/FB4A;FBAV/548.1.0.51.64;FBBV/474618929;FBDM/{density=3.0,width=1080,height=2340};FBLC/vi_VN;FBRV/0;FBCR/Viettel;FBMF/samsung;FBBD/samsung;FBPN/com.facebook.katana;FBDV/SM-S928B;FBSV/14;FBOP/1;FBCA/arm64-v8a;]"
+        // Không hardcode URL/UA — lấy từ FbVault (native XOR hoặc inline fallback)
+        private fun graphApi() = FbVault.graphApiUrl()
+        private fun graphql()  = FbVault.graphqlUrl()
+        private fun ua()       = FbVault.userAgent()
 
         /**
          * Tự động trích xuất ID (Post ID, UID, Page ID, Feedback ID) từ URL link nếu server trả về dạng link
@@ -94,16 +94,17 @@ class FacebookTuongTacEngine(
 
     private fun postGraphQL(params: Map<String, String>, friendlyName: String, actionName: String, targetId: String? = null): EngineResult {
         val token = (accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        val fat = FbVault.fieldAccessToken()
         val formBuilder = FormBody.Builder()
         params.forEach { (k, v) -> formBuilder.add(k, v) }
         if (token.isNotEmpty()) {
-            formBuilder.add("access_token", token)
+            formBuilder.add(fat, token)
         }
 
         val reqBuilder = Request.Builder()
-            .url(GRAPHQL_URL)
+            .url(graphql())
             .post(formBuilder.build())
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .header("X-FB-Friendly-Name", friendlyName)
             .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
 
@@ -122,6 +123,7 @@ class FacebookTuongTacEngine(
             EngineResult(false, actionName, targetId, "Lỗi kết nối mạng: ${e.message}", "")
         }
     }
+
 
     private fun parseErrorMessage(body: String): String {
         try {
@@ -160,9 +162,11 @@ class FacebookTuongTacEngine(
                 put("parent_comment_id", replyToCommentId)
             }
         }
+        val fdi = FbVault.fieldDocId()
+        val fv  = FbVault.fieldVariables()
         val params = mapOf(
-            "doc_id" to "6739921102758190",
-            "variables" to JSONObject().put("input", input).toString()
+            fdi to "6739921102758190",
+            fv  to JSONObject().put("input", input).toString()
         )
         return postGraphQL(params, "CommentCreateMutation", "COMMENT", cleanId)
     }
@@ -178,12 +182,15 @@ class FacebookTuongTacEngine(
             put("feedback_id", cleanId)
             put("feedback_reaction", reaction.code)
         }
+        val fdi = FbVault.fieldDocId()
+        val fv  = FbVault.fieldVariables()
         val params = mapOf(
-            "doc_id" to "5411782298894101",
-            "variables" to JSONObject().put("input", input).toString()
+            fdi to FbVault.docIdProfileReact(),
+            fv  to JSONObject().put("input", input).toString()
         )
         return postGraphQL(params, "UFIFeedbackReactMutation", "REACT_${reaction.name}", cleanId)
     }
+
 
     /**
      * 3. Theo dõi UID (doc_id 4268153066598920)
@@ -196,10 +203,8 @@ class FacebookTuongTacEngine(
             put("subscribee_id", cleanId)
             put("subscribe_location", "PROFILE")
         }
-        val params = mapOf(
-            "doc_id" to "4268153066598920",
-            "variables" to JSONObject().put("input", input).toString()
-        )
+        val fdi = FbVault.fieldDocId(); val fv = FbVault.fieldVariables()
+        val params = mapOf(fdi to "4268153066598920", fv to JSONObject().put("input", input).toString())
         return postGraphQL(params, "ActorSubscribeCoreMutation", "FOLLOW", cleanId)
     }
 
@@ -213,10 +218,8 @@ class FacebookTuongTacEngine(
             put("actor_id", userId ?: "")
             put("page_id", cleanId)
         }
-        val params = mapOf(
-            "doc_id" to "3628174981029411",
-            "variables" to JSONObject().put("input", input).toString()
-        )
+        val fdi = FbVault.fieldDocId(); val fv = FbVault.fieldVariables()
+        val params = mapOf(fdi to "3628174981029411", fv to JSONObject().put("input", input).toString())
         return postGraphQL(params, "PageLikeMutation", "LIKE_PAGE", cleanId)
     }
 
@@ -231,10 +234,8 @@ class FacebookTuongTacEngine(
             put("group_id", cleanId)
             put("source", "group_mall")
         }
-        val params = mapOf(
-            "doc_id" to "4981273901928471",
-            "variables" to JSONObject().put("input", input).toString()
-        )
+        val fdi = FbVault.fieldDocId(); val fv = FbVault.fieldVariables()
+        val params = mapOf(fdi to "4981273901928471", fv to JSONObject().put("input", input).toString())
         return postGraphQL(params, "GroupJoinMutation", "JOIN_GROUP", cleanId)
     }
 
@@ -250,10 +251,8 @@ class FacebookTuongTacEngine(
             put("recommendation_type", if (isPositive) "POSITIVE" else "NEGATIVE")
             put("review_text", JSONObject().put("text", reviewText))
         }
-        val params = mapOf(
-            "doc_id" to "5892019284719201",
-            "variables" to JSONObject().put("input", input).toString()
-        )
+        val fdi = FbVault.fieldDocId(); val fv = FbVault.fieldVariables()
+        val params = mapOf(fdi to "5892019284719201", fv to JSONObject().put("input", input).toString())
         return postGraphQL(params, "PageRecommendationCreateMutation", "REVIEW_PAGE", cleanId)
     }
 
@@ -262,11 +261,11 @@ class FacebookTuongTacEngine(
      */
     fun editComment(commentId: String, newText: String): EngineResult {
         val token = (accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
-        val formBody = FormBody.Builder().add("message", newText).build()
+        val formBody = FormBody.Builder().add(FbVault.fieldMessage(), newText).build()
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$commentId")
+            .url("${graphApi()}/$commentId")
             .post(formBody)
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .header("Authorization", "OAuth $token")
             .build()
 
@@ -286,9 +285,9 @@ class FacebookTuongTacEngine(
     fun deleteComment(commentId: String): EngineResult {
         val token = (accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$commentId")
+            .url("${graphApi()}/$commentId")
             .delete()
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .header("Authorization", "OAuth $token")
             .build()
 
@@ -307,3 +306,4 @@ class FacebookTuongTacEngine(
     fun commentPost(postId: String, messageText: String): EngineResult = comment(postId, messageText)
     fun followUser(targetUserId: String): EngineResult = follow(targetUserId)
 }
+

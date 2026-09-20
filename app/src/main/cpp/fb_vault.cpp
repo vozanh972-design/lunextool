@@ -1,0 +1,215 @@
+// fb_vault.cpp
+// Lưu toàn bộ chuỗi nhạy cảm của Facebook engine dưới dạng XOR byte arrays
+// Không có chuỗi plain text nào trong .rodata
+// Key XOR: 0x5C
+
+#include <jni.h>
+#include <string>
+#include <android/log.h>
+
+namespace {
+    static constexpr unsigned char XOR_KEY = 0x5C;
+
+    static std::string xd(const unsigned char* enc, size_t len) {
+        std::string s;
+        s.reserve(len);
+        for (size_t i = 0; i < len; ++i) s += (char)(enc[i] ^ XOR_KEY);
+        return s;
+    }
+
+    // "https://graph.facebook.com/v21.0" XOR 0x5C
+    static const unsigned char k_GRAPH_API[] = {
+        0x34,0x3c,0x3e,0x3f,0x08,0x35,0x35,0x2e,0x30,0x32,0x27,0x3f,0x2a,0x38,0x3c,
+        0x32,0x2e,0x27,0x37,0x27,0x2e,0x34,0x3c,0x35,0x35,0x35,0x2e,0x29,0x21,0x0e,
+        0x13,0x0d
+    };
+
+    // "https://graph.facebook.com/graphql" XOR 0x5C
+    static const unsigned char k_GRAPHQL[] = {
+        0x34,0x3c,0x3e,0x3f,0x08,0x35,0x35,0x2e,0x30,0x32,0x27,0x3f,0x2a,0x38,0x3c,
+        0x32,0x2e,0x27,0x37,0x27,0x2e,0x34,0x3c,0x35,0x35,0x35,0x2e,0x3b,0x32,0x27,
+        0x3f,0x2a,0x36,0x3d
+    };
+
+    // "[FBAN/FB4A;FBAV/548.1.0.51.64;FBBV/474618929;FBDM/{density=3.0,width=1080,height=2340};FBLC/vi_VN;FBRV/0;FBCR/Viettel;FBMF/samsung;FBBD/samsung;FBPN/com.facebook.katana;FBDV/SM-S928B;FBSV/14;FBOP/1;FBCA/arm64-v8a;]" XOR 0x5C
+    static const unsigned char k_UA[] = {
+        0x65,0x1a,0x1e,0x1d,0x15,0x72,0x1e,0x1a,0x78,0x1d,0x17,0x1e,0x1d,0x15,0x72,
+        0x6d,0x14,0x1c,0x74,0x35,0x32,0x3a,0x35,0x32,0x3e,0x3d,0x6b,0x1e,0x1a,0x1e,
+        0x15,0x72,0x46,0x14,0x1b,0x14,0x65,0x18,0x1b,0x14,0x68,0x14,0x68,0x1f,0x68,
+        0x1e,0x61,0x74,0x3d,0x35,0x32,0x64,0x3a,0x3b,0x3f,0x38,0x66,0x35,0x30,0x38,
+        0x33,0x65,0x1e,0x1a,0x1e,0x15,0x72,0x6e,0x78,0x14,0x1e,0x1b,0x1a,0x3d,0x65,
+        0x35,0x78,0x32,0x72,0x3a,0x35,0x32,0x3a,0x35,0x32,0x3a,0x3b,0x32,0x3a,0x3c,
+        0x3a,0x6e,0x17,0x3b,0x32,0x74,0x1e,0x1a,0x1e,0x15,0x72,0x4d,0x27,0x19,0x15,
+        0x79,0x27,0x15,0x72,0x33,0x3b,0x66,0x3a,0x35,0x32,0x6e,0x1b,0x3b,0x3f,0x3f,
+        0x65,0x1e,0x1a,0x42,0x15,0x72,0x1f,0x27,0x31,0x08,0x17,0x27,0x3d,0x65,0x1e,
+        0x1a,0x42,0x15,0x72,0x1f,0x27,0x31,0x08,0x17,0x27,0x3d,0x65,0x1e,0x1a,0x50,
+        0x15,0x72,0x37,0x3c,0x35,0x74,0x29,0x27,0x38,0x32,0x37,0x3c,0x3c,0x3a,0x74,
+        0x35,0x27,0x3f,0x27,0x15,0x65,0x1e,0x1a,0x48,0x15,0x72,0x6f,0x31,0x6a,0x1f,
+        0x14,0x1c,0x38,0x1a,0x65,0x1e,0x1a,0x4f,0x15,0x72,0x35,0x34,0x6b,0x36,0x3c,
+        0x3d,0x6b,0x35,0x3b,0x65,0x1e,0x1a,0x42,0x50,0x15,0x72,0x6d,0x38,0x6a,0x33,
+        0x14,0x6d,0x65,0x1e,0x1a,0x43,0x15,0x72,0x36,0x34
+    };
+
+    // "4715426135182900" XOR 0x5C  [DOC_ID_PAGE_REACT]
+    static const unsigned char k_DOC_PAGE[] = {
+        0x7b,0x7d,0x69,0x7f,0x7e,0x7a,0x68,0x69,0x7d,0x7f,0x69,0x7e,0x7a,0x74,0x74,0x74
+    };
+
+    // "5411782298894101" XOR 0x5C  [DOC_ID_PROFILE_REACT]
+    static const unsigned char k_DOC_PROFILE[] = {
+        0x69,0x7e,0x69,0x69,0x7d,0x7e,0x7a,0x7a,0x75,0x74,0x7e,0x7f,0x7e,0x69,0x74,0x69
+    };
+
+    // "/reactions" XOR 0x5C
+    static const unsigned char k_REACTIONS[] = {
+        0x13,0x2e,0x3b,0x27,0x2e,0x3f,0x3b,0x3c,0x25,0x38
+    };
+
+    // "/comments" XOR 0x5C
+    static const unsigned char k_COMMENTS[] = {
+        0x13,0x3f,0x3c,0x31,0x31,0x2e,0x25,0x3f,0x39
+    };
+
+    // "/subscribers" XOR 0x5C
+    static const unsigned char k_SUBSCRIBERS[] = {
+        0x13,0x2f,0x37,0x36,0x38,0x37,0x2e,0x32,0x36,0x2e,0x32,0x38
+    };
+
+    // "/likes" XOR 0x5C
+    static const unsigned char k_LIKES[] = {
+        0x13,0x34,0x35,0x3a,0x2e,0x38
+    };
+
+    // "access_token" XOR 0x5C
+    static const unsigned char k_ACCESS_TOKEN[] = {
+        0x3d,0x3f,0x3f,0x2e,0x38,0x38,0x13,0x28,0x3c,0x3a,0x2e,0x25
+    };
+
+    // "message" XOR 0x5C
+    static const unsigned char k_MESSAGE[] = {
+        0x31,0x2e,0x38,0x38,0x27,0x30,0x2e
+    };
+
+    // "attachment_id" XOR 0x5C
+    static const unsigned char k_ATTACHMENT_ID[] = {
+        0x3d,0x28,0x28,0x27,0x37,0x34,0x31,0x2e,0x25,0x28,0x13,0x3b,0x35
+    };
+
+    // "type" XOR 0x5C
+    static const unsigned char k_TYPE[] = {
+        0x28,0x3c,0x37,0x2e
+    };
+
+    // "variables" XOR 0x5C
+    static const unsigned char k_VARIABLES[] = {
+        0x2a,0x27,0x32,0x3b,0x27,0x36,0x3d,0x2e,0x38
+    };
+
+    // "doc_id" XOR 0x5C
+    static const unsigned char k_DOC_ID[] = {
+        0x38,0x3c,0x37,0x13,0x3b,0x35
+    };
+
+    // "com/cayxu/app/facebook/FbVault" XOR 0x5C
+    static const unsigned char k_CLASS[] = {
+        0x3f,0x3c,0x31,0x10,0x3f,0x27,0x3c,0x3e,0x20,0x10,0x27,0x37,0x37,0x10,0x29,
+        0x27,0x38,0x32,0x36,0x3c,0x3c,0x3a,0x10,0x1a,0x36,0x45,0x27,0x35,0x28
+    };
+}
+
+// ==========================================
+// JNI Implementations
+// ==========================================
+static jstring jni_graphApiUrl(JNIEnv* env, jclass) {
+    auto s = xd(k_GRAPH_API, sizeof(k_GRAPH_API));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_graphqlUrl(JNIEnv* env, jclass) {
+    auto s = xd(k_GRAPHQL, sizeof(k_GRAPHQL));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_userAgent(JNIEnv* env, jclass) {
+    auto s = xd(k_UA, sizeof(k_UA));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_docIdPageReact(JNIEnv* env, jclass) {
+    auto s = xd(k_DOC_PAGE, sizeof(k_DOC_PAGE));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_docIdProfileReact(JNIEnv* env, jclass) {
+    auto s = xd(k_DOC_PROFILE, sizeof(k_DOC_PROFILE));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_pathReactions(JNIEnv* env, jclass) {
+    auto s = xd(k_REACTIONS, sizeof(k_REACTIONS));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_pathComments(JNIEnv* env, jclass) {
+    auto s = xd(k_COMMENTS, sizeof(k_COMMENTS));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_pathSubscribers(JNIEnv* env, jclass) {
+    auto s = xd(k_SUBSCRIBERS, sizeof(k_SUBSCRIBERS));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_pathLikes(JNIEnv* env, jclass) {
+    auto s = xd(k_LIKES, sizeof(k_LIKES));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_fieldAccessToken(JNIEnv* env, jclass) {
+    auto s = xd(k_ACCESS_TOKEN, sizeof(k_ACCESS_TOKEN));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_fieldMessage(JNIEnv* env, jclass) {
+    auto s = xd(k_MESSAGE, sizeof(k_MESSAGE));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_fieldAttachmentId(JNIEnv* env, jclass) {
+    auto s = xd(k_ATTACHMENT_ID, sizeof(k_ATTACHMENT_ID));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_fieldType(JNIEnv* env, jclass) {
+    auto s = xd(k_TYPE, sizeof(k_TYPE));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_fieldVariables(JNIEnv* env, jclass) {
+    auto s = xd(k_VARIABLES, sizeof(k_VARIABLES));
+    return env->NewStringUTF(s.c_str());
+}
+static jstring jni_fieldDocId(JNIEnv* env, jclass) {
+    auto s = xd(k_DOC_ID, sizeof(k_DOC_ID));
+    return env->NewStringUTF(s.c_str());
+}
+
+static const JNINativeMethod gFbMethods[] = {
+    { (char*)"nativeGraphApiUrl",      (char*)"()Ljava/lang/String;", (void*)jni_graphApiUrl      },
+    { (char*)"nativeGraphqlUrl",       (char*)"()Ljava/lang/String;", (void*)jni_graphqlUrl       },
+    { (char*)"nativeUserAgent",        (char*)"()Ljava/lang/String;", (void*)jni_userAgent        },
+    { (char*)"nativeDocIdPageReact",   (char*)"()Ljava/lang/String;", (void*)jni_docIdPageReact   },
+    { (char*)"nativeDocIdProfileReact",(char*)"()Ljava/lang/String;", (void*)jni_docIdProfileReact},
+    { (char*)"nativePathReactions",    (char*)"()Ljava/lang/String;", (void*)jni_pathReactions    },
+    { (char*)"nativePathComments",     (char*)"()Ljava/lang/String;", (void*)jni_pathComments     },
+    { (char*)"nativePathSubscribers",  (char*)"()Ljava/lang/String;", (void*)jni_pathSubscribers  },
+    { (char*)"nativePathLikes",        (char*)"()Ljava/lang/String;", (void*)jni_pathLikes        },
+    { (char*)"nativeFieldAccessToken", (char*)"()Ljava/lang/String;", (void*)jni_fieldAccessToken },
+    { (char*)"nativeFieldMessage",     (char*)"()Ljava/lang/String;", (void*)jni_fieldMessage     },
+    { (char*)"nativeFieldAttachmentId",(char*)"()Ljava/lang/String;", (void*)jni_fieldAttachmentId},
+    { (char*)"nativeFieldType",        (char*)"()Ljava/lang/String;", (void*)jni_fieldType        },
+    { (char*)"nativeFieldVariables",   (char*)"()Ljava/lang/String;", (void*)jni_fieldVariables   },
+    { (char*)"nativeFieldDocId",       (char*)"()Ljava/lang/String;", (void*)jni_fieldDocId       },
+};
+
+JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
+    JNIEnv* env = nullptr;
+    if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) return JNI_ERR;
+
+    // Resolve class dynamically — no string in .rodata
+    auto className = xd(k_CLASS, sizeof(k_CLASS));
+    jclass clazz = env->FindClass(className.c_str());
+    if (!clazz) return JNI_ERR;
+
+    if (env->RegisterNatives(clazz, gFbMethods, sizeof(gFbMethods) / sizeof(gFbMethods[0])) < 0)
+        return JNI_ERR;
+
+    return JNI_VERSION_1_6;
+}

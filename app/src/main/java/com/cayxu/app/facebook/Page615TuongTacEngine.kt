@@ -1,7 +1,6 @@
 package com.cayxu.app.facebook
 
 import androidx.annotation.Keep
-
 import okhttp3.*
 import org.json.JSONObject
 import java.net.InetSocketAddress
@@ -17,10 +16,10 @@ import java.util.concurrent.TimeUnit
 ) {
 
     companion object {
-        const val GRAPH_API_URL = "https://graph.facebook.com/v21.0"
-        const val GRAPHQL_URL = "https://graph.facebook.com/graphql"
-        const val KATANA_USER_AGENT =
-            "[FBAN/FB4A;FBAV/548.1.0.51.64;FBBV/474618929;FBDM/{density=3.0,width=1080,height=2340};FBLC/vi_VN;FBRV/0;FBCR/Viettel;FBMF/samsung;FBBD/samsung;FBPN/com.facebook.katana;FBDV/SM-S928B;FBSV/14;FBOP/1;FBCA/arm64-v8a;]"
+        // Không dùng const string — lấy từ FbVault (native XOR hoặc inline fallback)
+        private fun graphApi() = FbVault.graphApiUrl()
+        private fun graphql()  = FbVault.graphqlUrl()
+        private fun ua()       = FbVault.userAgent()
     }
 
     @Keep enum class ReactionType(val value: String, val graphqlCode: Int) {
@@ -54,17 +53,14 @@ import java.util.concurrent.TimeUnit
         builder.build()
     }
 
-    fun setPageToken(token: String) {
-        this.pageToken = token
-    }
+    fun setPageToken(token: String) { this.pageToken = token }
+    fun setPageId615(id: String)    { this.pageId615 = id }
 
-    fun setPageId615(id: String) {
-        this.pageId615 = id
-    }
+    private fun getCleanToken(overrideToken: String?): String =
+        (overrideToken ?: pageToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
 
-    private fun getCleanToken(overrideToken: String?): String {
-        return (overrideToken ?: pageToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
-    }
+    private fun scopePost(postId: String): String =
+        if (!postId.contains("_") && !pageId615.isNullOrBlank()) "${pageId615}_$postId" else postId
 
     fun reactPost(
         postId: String,
@@ -74,21 +70,19 @@ import java.util.concurrent.TimeUnit
         val token = getCleanToken(overrideToken)
         if (token.isEmpty()) return InteractionResult(false, postId, "REACT", null, "Page token required", "")
 
+        val ft = FbVault.fieldType()
+        val fat = FbVault.fieldAccessToken()
+        val scopedPostId = scopePost(postId)
+
         val formBody = FormBody.Builder()
-            .add("type", reactionType.value)
-            .add("access_token", token)
+            .add(ft, reactionType.value)
+            .add(fat, token)
             .build()
 
-        // Facebook v2.4+ yêu cầu scoped {owner_id}_{post_id}.
-        // Nếu postId không chứa '_' và có pageId615 thì tự ghép.
-        val scopedPostId = if (!postId.contains("_") && !pageId615.isNullOrBlank()) {
-            "${pageId615}_$postId"
-        } else postId
-
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$scopedPostId/reactions")
+            .url("${graphApi()}/$scopedPostId${FbVault.pathReactions()}")
             .post(formBody)
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .build()
 
         return try {
@@ -101,7 +95,6 @@ import java.util.concurrent.TimeUnit
             InteractionResult(false, scopedPostId, "REACT", null, e.message, "")
         }
     }
-
 
     fun reactGraphQLVoice(
         feedbackId: String,
@@ -121,16 +114,18 @@ import java.util.concurrent.TimeUnit
             })
         }
 
+        val fv  = FbVault.fieldVariables()
+        val fdi = FbVault.fieldDocId()
         val formBody = FormBody.Builder()
-            .add("variables", variables.toString())
-            .add("doc_id", "4715426135182900")
+            .add(fv, variables.toString())
+            .add(fdi, FbVault.docIdPageReact())
             .build()
 
         val cleanUserToken = userToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
         val request = Request.Builder()
-            .url(GRAPHQL_URL)
+            .url(graphql())
             .post(formBody)
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .header("Authorization", "OAuth $cleanUserToken")
             .build()
 
@@ -154,23 +149,21 @@ import java.util.concurrent.TimeUnit
         val token = getCleanToken(overrideToken)
         if (token.isEmpty()) return InteractionResult(false, postId, "COMMENT", null, "Page token required", "")
 
-        // Facebook v2.4+ yêu cầu scoped {owner_id}_{post_id}.
-        val scopedPostId = if (!postId.contains("_") && !pageId615.isNullOrBlank()) {
-            "${pageId615}_$postId"
-        } else postId
+        val scopedPostId = scopePost(postId)
+        val fm  = FbVault.fieldMessage()
+        val fat = FbVault.fieldAccessToken()
+        val fai = FbVault.fieldAttachmentId()
 
         val formBuilder = FormBody.Builder()
-            .add("message", message)
-            .add("access_token", token)
+            .add(fm, message)
+            .add(fat, token)
 
-        if (!attachmentId.isNullOrEmpty()) {
-            formBuilder.add("attachment_id", attachmentId)
-        }
+        if (!attachmentId.isNullOrEmpty()) formBuilder.add(fai, attachmentId)
 
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$scopedPostId/comments")
+            .url("${graphApi()}/$scopedPostId${FbVault.pathComments()}")
             .post(formBuilder.build())
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .build()
 
         return try {
@@ -186,7 +179,6 @@ import java.util.concurrent.TimeUnit
         }
     }
 
-
     fun replyComment(
         parentCommentId: String,
         message: String,
@@ -196,18 +188,20 @@ import java.util.concurrent.TimeUnit
         val token = getCleanToken(overrideToken)
         if (token.isEmpty()) return InteractionResult(false, parentCommentId, "REPLY_COMMENT", null, "Page token required", "")
 
-        val formBuilder = FormBody.Builder()
-            .add("message", message)
-            .add("access_token", token)
+        val fm  = FbVault.fieldMessage()
+        val fat = FbVault.fieldAccessToken()
+        val fai = FbVault.fieldAttachmentId()
 
-        if (!attachmentId.isNullOrEmpty()) {
-            formBuilder.add("attachment_id", attachmentId)
-        }
+        val formBuilder = FormBody.Builder()
+            .add(fm, message)
+            .add(fat, token)
+
+        if (!attachmentId.isNullOrEmpty()) formBuilder.add(fai, attachmentId)
 
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$parentCommentId/comments")
+            .url("${graphApi()}/$parentCommentId${FbVault.pathComments()}")
             .post(formBuilder.build())
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .build()
 
         return try {
@@ -231,13 +225,13 @@ import java.util.concurrent.TimeUnit
         if (token.isEmpty()) return InteractionResult(false, targetId, "FOLLOW", null, "Page token required", "")
 
         val formBody = FormBody.Builder()
-            .add("access_token", token)
+            .add(FbVault.fieldAccessToken(), token)
             .build()
 
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$targetId/subscribers")
+            .url("${graphApi()}/$targetId${FbVault.pathSubscribers()}")
             .post(formBody)
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .build()
 
         return try {
@@ -259,9 +253,9 @@ import java.util.concurrent.TimeUnit
         if (token.isEmpty()) return InteractionResult(false, targetId, "UNFOLLOW", null, "Page token required", "")
 
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$targetId/subscribers?access_token=$token")
+            .url("${graphApi()}/$targetId${FbVault.pathSubscribers()}?${FbVault.fieldAccessToken()}=$token")
             .delete()
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .build()
 
         return try {
@@ -283,13 +277,13 @@ import java.util.concurrent.TimeUnit
         if (token.isEmpty()) return InteractionResult(false, targetPageId, "LIKE_PAGE", null, "Page token required", "")
 
         val formBody = FormBody.Builder()
-            .add("access_token", token)
+            .add(FbVault.fieldAccessToken(), token)
             .build()
 
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$targetPageId/likes")
+            .url("${graphApi()}/$targetPageId${FbVault.pathLikes()}")
             .post(formBody)
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .build()
 
         return try {
@@ -311,9 +305,9 @@ import java.util.concurrent.TimeUnit
         if (token.isEmpty()) return InteractionResult(false, targetPageId, "UNLIKE_PAGE", null, "Page token required", "")
 
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$targetPageId/likes?access_token=$token")
+            .url("${graphApi()}/$targetPageId${FbVault.pathLikes()}?${FbVault.fieldAccessToken()}=$token")
             .delete()
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .build()
 
         return try {
@@ -335,13 +329,13 @@ import java.util.concurrent.TimeUnit
         if (token.isEmpty()) return InteractionResult(false, groupId, "JOIN_GROUP", null, "Page token required", "")
 
         val formBody = FormBody.Builder()
-            .add("access_token", token)
+            .add(FbVault.fieldAccessToken(), token)
             .build()
 
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$groupId/members")
+            .url("${graphApi()}/$groupId/members")
             .post(formBody)
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .build()
 
         return try {
@@ -367,13 +361,13 @@ import java.util.concurrent.TimeUnit
         val formBody = FormBody.Builder()
             .add("recommendation_type", recommendationType)
             .add("review_text", reviewText)
-            .add("access_token", token)
+            .add(FbVault.fieldAccessToken(), token)
             .build()
 
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$targetPageId/ratings")
+            .url("${graphApi()}/$targetPageId/ratings")
             .post(formBody)
-            .header("User-Agent", KATANA_USER_AGENT)
+            .header("User-Agent", ua())
             .build()
 
         return try {
