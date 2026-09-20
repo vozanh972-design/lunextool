@@ -19,7 +19,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,6 +37,7 @@ import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.data.local.FacebookPageItem
 import com.cayxu.app.facebook.FacebookMediaEngine
+import com.cayxu.app.facebook.FacebookPageEngine
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
@@ -47,61 +47,92 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FacebookAccountDetailSheet(
-    account: FacebookAccount,
+fun FacebookPageDetailSheet(
+    parentAccount: FacebookAccount,
+    page: FacebookPageItem,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var currentAvatar by remember { mutableStateOf(account.avatar) }
-    var currentCover by remember { mutableStateOf(account.cover) }
+    var currentAvatar by remember { mutableStateOf(page.avatar) }
+    var currentCover by remember { mutableStateOf(page.cover) }
+    var resolvedUid by remember { mutableStateOf(if (page.displayUid.startsWith("615")) page.displayUid else "") }
     var isUploadingAvatar by remember { mutableStateOf(false) }
     var isUploadingCover by remember { mutableStateOf(false) }
 
-    // Tự động load cover photo và avatar HD khi mở Sheet nếu có token
-    androidx.compose.runtime.LaunchedEffect(account.uid, account.bio) {
-        val token = account.bio.ifBlank { "" }
-        if (token.isNotBlank()) {
-            withContext(Dispatchers.IO) {
-                try {
-                    val proxyParts = account.phone.ifBlank { null }?.split(":")
-                    val proxyHost = proxyParts?.getOrNull(0)
-                    val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
-                    val mediaEngine = FacebookMediaEngine(
-                        accessToken = token,
+    val effectiveToken = page.pageToken.ifBlank { parentAccount.bio }.trim()
+
+    // Tự động quét UID 615 và load cover/avatar HD của Page khi mở Sheet
+    LaunchedEffect(page.pageId, page.pageToken, parentAccount.bio) {
+        withContext(Dispatchers.IO) {
+            try {
+                val proxyParts = parentAccount.phone.ifBlank { null }?.split(":")
+                val proxyHost = proxyParts?.getOrNull(0)
+                val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+
+                // 1. Quét UID 615 thật nếu hiện tại chưa có
+                if (resolvedUid.isBlank() || !resolvedUid.startsWith("615")) {
+                    val pageEngine = FacebookPageEngine(
+                        accessToken = parentAccount.bio,
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
-                    val mediaInfo = mediaEngine.getProfileMedia(account.uid, tokenParam = token)
+                    val uid615 = pageEngine.fetchProfilePlusIdForPage(
+                        pageId = page.pageId,
+                        tokenParam = parentAccount.bio,
+                        pageTokenParam = page.pageToken
+                    )
+                    if (!uid615.isNullOrBlank() && uid615.startsWith("615")) {
+                        withContext(Dispatchers.Main) {
+                            resolvedUid = uid615
+                        }
+                        FacebookAccountsStore.updatePageUid(context, parentAccount.uid, page.pageId, uid615)
+                    }
+                }
+
+                // 2. Load cover photo và avatar HD của Page
+                if (effectiveToken.isNotBlank()) {
+                    val mediaEngine = FacebookMediaEngine(
+                        accessToken = effectiveToken,
+                        proxyHost = proxyHost,
+                        proxyPort = proxyPort
+                    )
+                    val targetEndpoint = if (page.pageToken.isNotBlank()) "me" else (resolvedUid.ifBlank { page.pageId })
+                    val mediaInfo = mediaEngine.getProfileMedia(targetEndpoint, tokenParam = effectiveToken)
                     if (mediaInfo != null) {
                         val fetchedCover = mediaInfo.coverUrl.orEmpty()
                         val fetchedAvatar = mediaInfo.avatarUrl.orEmpty()
                         withContext(Dispatchers.Main) {
-                            if (fetchedCover.isNotBlank() && fetchedCover != currentCover) {
+                            if (fetchedCover.isNotBlank()) {
                                 currentCover = fetchedCover
                             }
-                            if (fetchedAvatar.isNotBlank() && currentAvatar.isBlank()) {
+                            if (fetchedAvatar.isNotBlank() && (currentAvatar.isBlank() || currentAvatar.contains("silhouette"))) {
                                 currentAvatar = fetchedAvatar
                             }
-                            val updatedAcc = account.copy(avatar = currentAvatar, cover = currentCover)
-                            FacebookAccountsStore.updateAccount(context, updatedAcc)
                         }
+                        FacebookAccountsStore.updatePageMedia(
+                            context = context,
+                            parentUid = parentAccount.uid,
+                            pageId = page.pageId,
+                            avatar = currentAvatar,
+                            cover = currentCover,
+                            additionalProfileId = resolvedUid.ifBlank { null }
+                        )
                     }
-                } catch (_: Exception) {}
-            }
+                }
+            } catch (_: Exception) {}
         }
     }
 
-    // Launcher chọn ảnh đại diện (Avatar) qua 100% Graph API (Token)
+    // Launcher chọn ảnh đại diện (Avatar) cho Page
     val pickAvatarLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val token = account.bio.ifBlank { "" }
-            if (token.isBlank()) {
-                Toast.makeText(context, "Tài khoản cần có Access Token để đổi Avatar", Toast.LENGTH_SHORT).show()
+            if (effectiveToken.isBlank()) {
+                Toast.makeText(context, "Cần có Token để đổi Avatar cho Page", Toast.LENGTH_SHORT).show()
                 return@rememberLauncherForActivityResult
             }
 
@@ -118,37 +149,44 @@ fun FacebookAccountDetailSheet(
                     }
 
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Đang tải lên Avatar mới...", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Đang tải lên Avatar mới cho Page...", Toast.LENGTH_SHORT).show()
                     }
 
-                    val proxyParts = account.phone.ifBlank { null }?.split(":")
+                    val proxyParts = parentAccount.phone.ifBlank { null }?.split(":")
                     val proxyHost = proxyParts?.getOrNull(0)
                     val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
 
                     val mediaEngine = FacebookMediaEngine(
-                        accessToken = token,
+                        accessToken = effectiveToken,
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
+                    val targetEndpoint = if (page.pageToken.isNotBlank()) "me" else (resolvedUid.ifBlank { page.pageId })
                     val result = mediaEngine.updateAvatar(
                         imageBytes = bytes,
-                        targetId = account.uid,
-                        tokenParam = token
+                        targetId = targetEndpoint,
+                        tokenParam = effectiveToken
                     )
 
                     withContext(Dispatchers.Main) {
                         isUploadingAvatar = false
                         if (result.isSuccess) {
-                            Toast.makeText(context, "Đổi Avatar thành công!", Toast.LENGTH_SHORT).show()
-                            // Lấy lại URL avatar mới
-                            val updatedMedia = mediaEngine.getProfileMedia(account.uid, tokenParam = token)
-                            val rawAvatar = updatedMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/${account.uid}/picture?type=large&access_token=$token"
+                            Toast.makeText(context, "Đổi Avatar Page thành công!", Toast.LENGTH_SHORT).show()
+                            kotlinx.coroutines.delay(1500)
+                            val updatedMedia = mediaEngine.getProfileMedia(targetEndpoint, tokenParam = effectiveToken)
+                            val rawAvatar = updatedMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/${resolvedUid.ifBlank { page.pageId }}/picture?type=large&access_token=$effectiveToken"
                             val newAvatarUrl = if (rawAvatar.contains("?")) "$rawAvatar&t=${System.currentTimeMillis()}" else "$rawAvatar?t=${System.currentTimeMillis()}"
                             currentAvatar = newAvatarUrl
-                            val updatedAcc = account.copy(avatar = newAvatarUrl, cover = currentCover)
-                            FacebookAccountsStore.updateAccount(context, updatedAcc)
+                            FacebookAccountsStore.updatePageMedia(
+                                context = context,
+                                parentUid = parentAccount.uid,
+                                pageId = page.pageId,
+                                avatar = newAvatarUrl,
+                                cover = currentCover,
+                                additionalProfileId = resolvedUid.ifBlank { null }
+                            )
                         } else {
-                            Toast.makeText(context, "Lỗi đổi Avatar: ${result.message}", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "Lỗi đổi Avatar Page: ${result.message}", Toast.LENGTH_LONG).show()
                         }
                     }
                 } catch (e: Exception) {
@@ -161,14 +199,13 @@ fun FacebookAccountDetailSheet(
         }
     }
 
-    // Launcher chọn ảnh bìa (Cover) qua 100% Graph API (Token)
+    // Launcher chọn ảnh bìa (Cover) cho Page
     val pickCoverLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val token = account.bio.ifBlank { "" }
-            if (token.isBlank()) {
-                Toast.makeText(context, "Tài khoản cần có Access Token để đổi Ảnh Bìa", Toast.LENGTH_SHORT).show()
+            if (effectiveToken.isBlank()) {
+                Toast.makeText(context, "Cần có Token để đổi Ảnh Bìa cho Page", Toast.LENGTH_SHORT).show()
                 return@rememberLauncherForActivityResult
             }
 
@@ -185,47 +222,51 @@ fun FacebookAccountDetailSheet(
                     }
 
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Đang tải lên Ảnh Bìa mới...", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Đang tải lên Ảnh Bìa mới cho Page...", Toast.LENGTH_SHORT).show()
                     }
 
-                    val proxyParts = account.phone.ifBlank { null }?.split(":")
+                    val proxyParts = parentAccount.phone.ifBlank { null }?.split(":")
                     val proxyHost = proxyParts?.getOrNull(0)
                     val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
 
                     val mediaEngine = FacebookMediaEngine(
-                        accessToken = token,
+                        accessToken = effectiveToken,
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
+                    val targetEndpoint = if (page.pageToken.isNotBlank()) "me" else (resolvedUid.ifBlank { page.pageId })
                     val result = mediaEngine.updateCoverPhoto(
                         imageBytes = bytes,
-                        targetId = account.uid,
-                        tokenParam = token
+                        targetId = targetEndpoint,
+                        tokenParam = effectiveToken
                     )
 
                     withContext(Dispatchers.Main) {
                         isUploadingCover = false
                         if (result.isSuccess) {
-                            Toast.makeText(context, "Đổi Ảnh Bìa thành công!", Toast.LENGTH_SHORT).show()
-                            // Delay nhỏ để Facebook CDN cập nhật trước khi lấy URL mới
+                            Toast.makeText(context, "Đổi Ảnh Bìa Page thành công!", Toast.LENGTH_SHORT).show()
                             kotlinx.coroutines.delay(1500)
-                            val updatedMedia = mediaEngine.getProfileMedia(account.uid, tokenParam = token)
+                            val updatedMedia = mediaEngine.getProfileMedia(targetEndpoint, tokenParam = effectiveToken)
                             val rawCover = updatedMedia?.coverUrl.orEmpty()
                             val newCoverUrl = if (rawCover.isNotBlank()) {
-                                // Cache-bust để Coil không dùng ảnh cũ
                                 if (rawCover.contains("?")) "$rawCover&t=${System.currentTimeMillis()}"
                                 else "$rawCover?t=${System.currentTimeMillis()}"
                             } else if (result.mediaId != null) {
-                                // Fallback: dùng trực tiếp URL ảnh từ photo_id vừa upload
-                                "https://graph.facebook.com/v21.0/${result.mediaId}/picture?access_token=$token&t=${System.currentTimeMillis()}"
+                                "https://graph.facebook.com/v21.0/${result.mediaId}/picture?access_token=$effectiveToken&t=${System.currentTimeMillis()}"
                             } else {
                                 currentCover
                             }
                             if (newCoverUrl != currentCover) currentCover = newCoverUrl
-                            val updatedAcc = account.copy(avatar = currentAvatar, cover = currentCover)
-                            FacebookAccountsStore.updateAccount(context, updatedAcc)
+                            FacebookAccountsStore.updatePageMedia(
+                                context = context,
+                                parentUid = parentAccount.uid,
+                                pageId = page.pageId,
+                                avatar = currentAvatar,
+                                cover = currentCover,
+                                additionalProfileId = resolvedUid.ifBlank { null }
+                            )
                         } else {
-                            Toast.makeText(context, "Lỗi đổi Ảnh Bìa: ${result.message}", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "Lỗi đổi Ảnh Bìa Page: ${result.message}", Toast.LENGTH_LONG).show()
                         }
                     }
                 } catch (e: Exception) {
@@ -259,14 +300,14 @@ fun FacebookAccountDetailSheet(
                 .verticalScroll(rememberScrollState())
         ) {
             // ========================================================
-            // BANNER ẢNH BÌA VÀ AVATAR PROFILE (Đúng chuẩn Facebook App)
+            // BANNER ẢNH BÌA VÀ AVATAR PAGE (Đúng chuẩn Facebook Page Pro5)
             // ========================================================
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(150.dp)
             ) {
-                // 1. Ảnh Bìa (Cover Photo)
+                // 1. Ảnh Bìa của Page
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -281,20 +322,20 @@ fun FacebookAccountDetailSheet(
                     if (currentCover.isNotBlank()) {
                         AsyncImage(
                             model = currentCover,
-                            contentDescription = "Cover Photo",
+                            contentDescription = "Cover Page",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
                         )
                     }
 
-                    // Nút đổi ảnh bìa góc trên phải
+                    // Nút đổi ảnh bìa Page
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(8.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(Color.Black.copy(alpha = 0.55f))
-                            .clickable { pickCoverLauncher.launch("image/*") }
+                            .clickable(enabled = !isUploadingCover) { pickCoverLauncher.launch("image/*") }
                             .padding(horizontal = 8.dp, vertical = 5.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -316,7 +357,7 @@ fun FacebookAccountDetailSheet(
                     }
                 }
 
-                // 2. Avatar đặt đè lên góc dưới bên trái ảnh bìa
+                // 2. Avatar của Page đặt đè lên góc dưới bên trái ảnh bìa
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
@@ -326,160 +367,128 @@ fun FacebookAccountDetailSheet(
                     if (currentAvatar.isNotBlank()) {
                         AsyncImage(
                             model = currentAvatar,
-                            contentDescription = "Avatar",
+                            contentDescription = "Avatar Page",
+                            contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .clip(CircleShape)
-                                .border(2.5.dp, Color.White, CircleShape),
-                            contentScale = ContentScale.Crop
+                                .border(3.dp, CardWhite, CircleShape)
                         )
                     } else {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .clip(CircleShape)
-                                .background(Color(0xFF1877F2).copy(alpha = 0.15f))
-                                .border(2.5.dp, Color.White, CircleShape),
+                                .background(Color(0xFF1877F2))
+                                .border(3.dp, CardWhite, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Filled.Person,
+                                Icons.Filled.Flag,
                                 contentDescription = null,
-                                tint = Color(0xFF1877F2),
-                                modifier = Modifier.size(36.dp)
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
                             )
                         }
                     }
 
-                    // Nút camera nhỏ để đổi Avatar
+                    // Nút máy ảnh đổi Avatar Page
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .size(24.dp)
                             .clip(CircleShape)
                             .background(Color(0xFF1877F2))
-                            .border(1.5.dp, Color.White, CircleShape)
-                            .clickable { pickAvatarLauncher.launch("image/*") },
+                            .border(1.5.dp, CardWhite, CircleShape)
+                            .clickable(enabled = !isUploadingAvatar) { pickAvatarLauncher.launch("image/*") },
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.CameraAlt,
-                            contentDescription = "Đổi Avatar",
-                            tint = Color.White,
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Tên và Trạng thái Live/Die
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = account.name.ifBlank { account.uid },
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp,
-                        color = TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val isLive = account.isLive
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (isLive) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f))
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = if (isLive) "● Live" else "● Die / Checkpoint",
-                                color = if (isLive) Color(0xFF10B981) else Color(0xFFEF4444),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                        if (isUploadingAvatar) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                strokeWidth = 1.5.dp,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.CameraAlt,
+                                contentDescription = "Đổi avatar",
+                                tint = Color.White,
+                                modifier = Modifier.size(12.dp)
                             )
                         }
                     }
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
-            HorizontalDivider(color = Color(0xFFF1F5F9))
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
 
-            Text("Chi tiết tài khoản", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
-            Spacer(Modifier.height(8.dp))
-
-            // 1. UID
-            InfoRowItem("UID Facebook", account.uid) { copyToClipboard("UID", account.uid) }
-
-            // 2. Email (nếu có)
-            if (account.email.isNotBlank()) {
-                InfoRowItem("Email", account.email) { copyToClipboard("Email", account.email) }
-            }
-
-            // 3. 2FA (nếu có)
-            if (account.link.isNotBlank()) {
-                InfoRowItem("2FA Secret", account.link) { copyToClipboard("2FA", account.link) }
-            }
-
-            // 4. Proxy (nếu có)
-            if (account.phone.isNotBlank()) {
-                InfoRowItem("Proxy", account.phone) { copyToClipboard("Proxy", account.phone) }
-            }
-
-            // 5. Cookie (Hộp text scrollable)
-            if (account.note.isNotBlank()) {
-                Spacer(Modifier.height(6.dp))
-                InfoBoxItem("Cookie", account.note) { copyToClipboard("Cookie", account.note) }
-            }
-
-            // 6. Token (Hộp text scrollable)
-            if (account.bio.isNotBlank()) {
-                Spacer(Modifier.height(6.dp))
-                InfoBoxItem("Access Token", account.bio) { copyToClipboard("Token", account.bio) }
-            }
-
-            // 7. Danh sách Page con — HIỂN THỊ CHÍNH XÁC PAGE UID 615, KHÔNG HIỆN ID PAGE
-            Spacer(Modifier.height(16.dp))
-            if (account.pages.isEmpty()) {
+            // Tên Page và trạng thái Live
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
-                    text = "Tài khoản không có Page",
-                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                    fontSize = 12.5.sp,
-                    color = TextSecondary.copy(alpha = 0.8f)
-                )
-            } else {
-                Text(
-                    text = "Danh sách Fanpage Pro5 (${account.pages.size}):",
+                    text = page.pageName.ifBlank { "Fanpage Facebook" },
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.5.sp,
                     color = TextPrimary
                 )
-                Spacer(Modifier.height(8.dp))
-
-                account.pages.forEach { page ->
-                    // Lấy chính xác UID 615 thật của Page (ưu tiên additionalProfileId nếu là 615 hoặc pageId 615)
-                    val uid615 = if (page.additionalProfileId.isNotBlank() && page.additionalProfileId.startsWith("615")) {
-                        page.additionalProfileId
-                    } else if (page.pageId.startsWith("615")) {
-                        page.pageId
-                    } else if (page.additionalProfileId.isNotBlank() && !page.additionalProfileId.equals(page.pageId, ignoreCase = true)) {
-                        page.additionalProfileId
-                    } else {
-                        page.displayUid
-                    }
-
-                    PageDetailItem(pageName = page.pageName, uid615 = uid615) {
-                        copyToClipboard("Page UID", uid615.ifBlank { page.pageId })
-                    }
-                    Spacer(Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF22C55E).copy(alpha = 0.12f))
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF16A34A))
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Live", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF16A34A))
                 }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // ========================================================
+            // THÔNG TIN CHI TIẾT PAGE (Ép hiện UID thật 615)
+            // ========================================================
+            Text(
+                text = "Chi tiết Page / Profile+",
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = TextPrimary
+            )
+            Spacer(Modifier.height(6.dp))
+
+            val display615 = resolvedUid.ifBlank { if (page.displayUid.startsWith("615")) page.displayUid else "" }
+            if (display615.isNotBlank()) {
+                InfoRowItem("UID Facebook (UID 615)", display615) { copyToClipboard("UID Page", display615) }
+            } else {
+                InfoRowItem("UID Facebook (UID 615)", "Đang quét UID 615...") { copyToClipboard("Page ID", page.pageId) }
+            }
+
+            if (page.pageId.isNotBlank() && page.pageId != display615) {
+                InfoRowItem("ID Page (Gốc)", page.pageId) { copyToClipboard("ID Page", page.pageId) }
+            }
+
+            InfoRowItem("Tên Page", page.pageName) { copyToClipboard("Tên Page", page.pageName) }
+
+            InfoRowItem(
+                "Tài khoản mẹ (Profile)",
+                "${parentAccount.name.ifBlank { parentAccount.uid }} (${parentAccount.uid})"
+            ) { copyToClipboard("UID Mẹ", parentAccount.uid) }
+
+            if (page.pageToken.isNotBlank()) {
+                Spacer(Modifier.height(6.dp))
+                InfoBoxItem("Page Access Token", page.pageToken) { copyToClipboard("Page Token", page.pageToken) }
+            } else if (parentAccount.bio.isNotBlank()) {
+                Spacer(Modifier.height(6.dp))
+                InfoBoxItem("User Access Token (Dùng chung)", parentAccount.bio) { copyToClipboard("Token", parentAccount.bio) }
             }
 
             Spacer(Modifier.height(24.dp))
@@ -547,50 +556,5 @@ private fun InfoBoxItem(label: String, value: String, onCopy: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             lineHeight = 15.sp
         )
-    }
-}
-
-/**
- * Hiển thị Page: Hiển thị Page UID 615, KHÔNG HIỆN ID PAGE
- */
-@Composable
-private fun PageDetailItem(pageName: String, uid615: String, onCopy: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFFF1F5F9))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(Icons.Filled.Flag, contentDescription = null, tint = Color(0xFF1877F2), modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Page: ${pageName.ifBlank { uid615 }}",
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.5.sp,
-                color = TextPrimary
-            )
-            // Hiển thị Page UID 615 thật, không hiện id page
-            if (uid615.isNotBlank()) {
-                Text(
-                    text = "UID: $uid615",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF1877F2)
-                )
-            } else {
-                Text(
-                    text = "UID: Đang quét UID 615...",
-                    fontSize = 10.sp,
-                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                    color = TextSecondary
-                )
-            }
-        }
-        IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {
-            Icon(Icons.Filled.ContentCopy, contentDescription = "Copy UID", tint = Color(0xFF1877F2), modifier = Modifier.size(14.dp))
-        }
     }
 }

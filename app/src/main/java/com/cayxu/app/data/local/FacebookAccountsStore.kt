@@ -14,6 +14,7 @@ data class FacebookPageItem(
     @SerializedName("pageToken") val pageToken: String = "",
     @SerializedName("additionalProfileId") val additionalProfileId: String = "",
     @SerializedName("avatar") val avatar: String = "",
+    @SerializedName("cover") val cover: String = "",
     @SerializedName("isLive") val isLive: Boolean = true
 ) {
     val displayUid: String
@@ -21,10 +22,10 @@ data class FacebookPageItem(
             additionalProfileId
         } else if (pageId.startsWith("615")) {
             pageId
-        } else if (additionalProfileId.isNotBlank()) {
+        } else if (additionalProfileId.isNotBlank() && !additionalProfileId.equals(pageId, ignoreCase = true)) {
             additionalProfileId
         } else {
-            pageId
+            "" // Ép không hiện ID page thông thường làm UID
         }
 }
 
@@ -84,6 +85,7 @@ object FacebookAccountsStore {
                                         pageToken = pObj.optString("pageToken", ""),
                                         additionalProfileId = pObj.optString("additionalProfileId", ""),
                                         avatar = pObj.optString("avatar", ""),
+                                        cover = pObj.optString("cover", ""),
                                         isLive = pObj.optBoolean("isLive", true)
                                     )
                                 )
@@ -219,6 +221,55 @@ object FacebookAccountsStore {
     }
 
     @Synchronized
+    fun updatePageMedia(
+        context: Context,
+        parentUid: String,
+        pageId: String,
+        avatar: String? = null,
+        cover: String? = null,
+        additionalProfileId: String? = null
+    ) {
+        val current = getAccounts(context, forceReload = true).toMutableList()
+        val parentIdx = current.indexOfFirst { it.uid == parentUid }
+        if (parentIdx >= 0) {
+            val parent = current[parentIdx]
+            val updatedPages = parent.pages.map { p ->
+                if (p.pageId == pageId || (p.additionalProfileId.isNotBlank() && p.additionalProfileId == pageId)) {
+                    p.copy(
+                        avatar = if (!avatar.isNullOrBlank()) avatar else p.avatar,
+                        cover = if (!cover.isNullOrBlank()) cover else p.cover,
+                        additionalProfileId = if (!additionalProfileId.isNullOrBlank()) additionalProfileId else p.additionalProfileId
+                    )
+                } else p
+            }
+            current[parentIdx] = parent.copy(pages = updatedPages)
+            save(context, current)
+        }
+    }
+
+    @Synchronized
+    fun updatePageUid(
+        context: Context,
+        parentUid: String,
+        pageId: String,
+        uid615: String
+    ) {
+        if (uid615.isBlank()) return
+        val current = getAccounts(context, forceReload = true).toMutableList()
+        val parentIdx = current.indexOfFirst { it.uid == parentUid }
+        if (parentIdx >= 0) {
+            val parent = current[parentIdx]
+            val updatedPages = parent.pages.map { p ->
+                if (p.pageId == pageId) {
+                    p.copy(additionalProfileId = uid615)
+                } else p
+            }
+            current[parentIdx] = parent.copy(pages = updatedPages)
+            save(context, current)
+        }
+    }
+
+    @Synchronized
     fun removeAccount(context: Context, uid: String) {
         removeAccounts(context, listOf(uid))
     }
@@ -306,6 +357,7 @@ object FacebookAccountsStore {
                         pObj.put("pageToken", p.pageToken)
                         pObj.put("additionalProfileId", p.additionalProfileId)
                         pObj.put("avatar", p.avatar)
+                        pObj.put("cover", p.cover)
                         pObj.put("isLive", p.isLive)
                         pagesArr.put(pObj)
                     }

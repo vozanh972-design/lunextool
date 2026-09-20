@@ -71,25 +71,60 @@ class FacebookPageEngine(
 
     /**
      * Lấy Profile Plus ID (UID 615) cho Page.
-     * delegate_page_id chính là UID 615 của Page Pro5!
+     * Ưu tiên truy vấn /me bằng chính pageToken, hoặc /{pageId} với các fields profile_plus_id, additional_profile_id, delegate_page_id.
+     * Chỉ trả về khi ID bắt đầu bằng "615", không bao giờ trả về ID page thông thường.
      */
-    fun fetchProfilePlusIdForPage(pageId: String, tokenParam: String? = null): String? {
+    fun fetchProfilePlusIdForPage(
+        pageId: String,
+        tokenParam: String? = null,
+        pageTokenParam: String? = null
+    ): String? {
         val token = (tokenParam ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
-        if (token.isEmpty()) return null
+        val pToken = (pageTokenParam ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        if (token.isEmpty() && pToken.isEmpty()) return null
 
-        val url = "$GRAPH_API_URL/$pageId?fields=id,name,delegate_page_id&access_token=$token"
-        val request = Request.Builder().url(url).get().header("User-Agent", KATANA_USER_AGENT).build()
+        val p615Regex = Regex("""615\d{10,}""")
 
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: "{}"
-                val json = JSONObject(body)
-                val delegateId = json.optString("delegate_page_id", "")
-                if (delegateId.isNotEmpty()) delegateId else json.optString("id", pageId)
-            }
-        } catch (_: Exception) {
-            null
+        // 1. Nếu có pageToken, gọi /me bằng chính pageToken để lấy profile ID thật của Page
+        if (pToken.isNotEmpty()) {
+            try {
+                val url = "$GRAPH_API_URL/me?fields=id,name,additional_profile_id,delegate_page_id&access_token=$pToken"
+                val request = Request.Builder().url(url).get().header("User-Agent", KATANA_USER_AGENT).build()
+                httpClient.newCall(request).execute().use { res ->
+                    val body = res.body?.string() ?: ""
+                    val json = try { JSONObject(body) } catch (_: Exception) { null }
+                    val addId = json?.optString("additional_profile_id", "") ?: ""
+                    if (addId.startsWith("615")) return addId
+                    val delegateId = json?.optString("delegate_page_id", "") ?: ""
+                    if (delegateId.startsWith("615")) return delegateId
+                    val meId = json?.optString("id", "") ?: ""
+                    if (meId.startsWith("615")) return meId
+                    p615Regex.find(body)?.value?.let { return it }
+                }
+            } catch (_: Exception) {}
         }
+
+        // 2. Gọi /{pageId} với các fields đầy đủ bằng pageToken hoặc user token
+        val testTokens = listOfNotNull(pToken.ifBlank { null }, token.ifBlank { null }).distinct()
+        for (tk in testTokens) {
+            try {
+                val url = "$GRAPH_API_URL/$pageId?fields=id,name,additional_profile_id,delegate_page_id,global_brand_root_id&access_token=$tk"
+                val request = Request.Builder().url(url).get().header("User-Agent", KATANA_USER_AGENT).build()
+                httpClient.newCall(request).execute().use { res ->
+                    val body = res.body?.string() ?: ""
+                    val json = try { JSONObject(body) } catch (_: Exception) { null }
+                    val addId = json?.optString("additional_profile_id", "") ?: ""
+                    if (addId.startsWith("615")) return addId
+                    val delegateId = json?.optString("delegate_page_id", "") ?: ""
+                    if (delegateId.startsWith("615")) return delegateId
+                    val id = json?.optString("id", "") ?: ""
+                    if (id.startsWith("615")) return id
+                    p615Regex.find(body)?.value?.let { return it }
+                }
+            } catch (_: Exception) {}
+        }
+
+        return null
     }
 
     /**
@@ -100,7 +135,7 @@ class FacebookPageEngine(
         val token = (tokenParam ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
         if (token.isEmpty()) return list
 
-        val url = "$GRAPH_API_URL/me/accounts?fields=id,name,access_token,category,tasks&limit=100&access_token=$token"
+        val url = "$GRAPH_API_URL/me/accounts?fields=id,name,access_token,category,tasks,additional_profile_id,delegate_page_id,global_brand_root_id&limit=100&access_token=$token"
         val request = Request.Builder()
             .url(url)
             .get()
@@ -119,12 +154,18 @@ class FacebookPageEngine(
                         val name = item.optString("name", "")
                         val pToken = item.optString("access_token", "")
                         if (id.isNotEmpty()) {
-                            // Xác định UID 615
-                            var uid615 = id
-                            if (id.startsWith("615")) {
+                            // Xác định UID 615 thật (không lấy id page làm UID)
+                            var uid615 = ""
+                            val addId = item.optString("additional_profile_id", "").trim()
+                            val delegate = item.optString("delegate_page_id", "").trim()
+                            if (addId.startsWith("615")) {
+                                uid615 = addId
+                            } else if (delegate.startsWith("615")) {
+                                uid615 = delegate
+                            } else if (id.startsWith("615")) {
                                 uid615 = id
                             } else {
-                                val fetched615 = fetchProfilePlusIdForPage(id, token)
+                                val fetched615 = fetchProfilePlusIdForPage(id, tokenParam = token, pageTokenParam = pToken)
                                 if (!fetched615.isNullOrBlank() && fetched615.startsWith("615")) {
                                     uid615 = fetched615
                                 }
@@ -136,7 +177,7 @@ class FacebookPageEngine(
                                     pageName = name,
                                     pageToken = pToken,
                                     additionalProfileId = uid615,
-                                    avatar = "https://graph.facebook.com/v21.0/$uid615/picture?type=large",
+                                    avatar = "https://graph.facebook.com/v21.0/${uid615.ifBlank { id }}/picture?type=large",
                                     isLive = true
                                 )
                             )

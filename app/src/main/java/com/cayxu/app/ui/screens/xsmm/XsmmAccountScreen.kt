@@ -106,6 +106,7 @@ fun XsmmAccountScreen(navController: NavController) {
     var showFacebookLoginSheet by remember { mutableStateOf(false) }
     var showTikTokCheckSheet by remember { mutableStateOf(false) }
     var selectedFbDetailAccount by remember { mutableStateOf<FacebookAccount?>(null) }
+    var selectedFbDetailPage by remember { mutableStateOf<Pair<FacebookAccount, com.cayxu.app.data.local.FacebookPageItem>?>(null) }
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
 
     var allTikTokAccounts by remember { mutableStateOf(TikTokAccountsStore.getAccounts(context).filter { it.enabled }) }
@@ -128,6 +129,49 @@ fun XsmmAccountScreen(navController: NavController) {
                 .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
         } else {
             allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+        }
+    }
+
+    LaunchedEffect(selectedPlatform, facebookAccounts.size) {
+        if (selectedPlatform == "facebook") {
+            val hasUnresolved = facebookAccounts.any { acc ->
+                acc.pages.any { !it.displayUid.startsWith("615") }
+            }
+            if (hasUnresolved) {
+                scope.launch(Dispatchers.IO) {
+                    var needReload = false
+                    facebookAccounts.forEach { acc ->
+                        val proxyParts = acc.phone.ifBlank { null }?.split(":")
+                        val proxyHost = proxyParts?.getOrNull(0)
+                        val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+                        val pageEngine = com.cayxu.app.facebook.FacebookPageEngine(
+                            accessToken = acc.bio,
+                            proxyHost = proxyHost,
+                            proxyPort = proxyPort
+                        )
+                        acc.pages.forEach { p ->
+                            if (!p.displayUid.startsWith("615")) {
+                                try {
+                                    val uid615 = pageEngine.fetchProfilePlusIdForPage(
+                                        pageId = p.pageId,
+                                        tokenParam = acc.bio,
+                                        pageTokenParam = p.pageToken
+                                    )
+                                    if (!uid615.isNullOrBlank() && uid615.startsWith("615")) {
+                                        com.cayxu.app.data.local.FacebookAccountsStore.updatePageUid(context, acc.uid, p.pageId, uid615)
+                                        needReload = true
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
+                    }
+                    if (needReload) {
+                        withContext(Dispatchers.Main) {
+                            facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -410,6 +454,18 @@ fun XsmmAccountScreen(navController: NavController) {
         FacebookAccountDetailSheet(
             account = selectedFbDetailAccount!!,
             onDismiss = { selectedFbDetailAccount = null }
+        )
+    }
+
+    if (selectedFbDetailPage != null) {
+        val (parentAcc, pageItem) = selectedFbDetailPage!!
+        FacebookPageDetailSheet(
+            parentAccount = parentAcc,
+            page = pageItem,
+            onDismiss = {
+                selectedFbDetailPage = null
+                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+            }
         )
     }
 
@@ -1308,22 +1364,41 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         .clip(RoundedCornerShape(10.dp))
                                                         .background(Color(0xFFF8FAFC))
                                                         .border(0.8.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
-                                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                        .padding(horizontal = 8.dp, vertical = 6.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
+                                                    // 1. Dấu tích chọn (Checkbox) của Page như Profile
+                                                    val pageKey = if (page.displayUid.startsWith("615")) page.displayUid else page.pageId
+                                                    val isPageChecked = pageKey in selectedForRunUids || (page.displayUid.isNotBlank() && page.displayUid in selectedForRunUids)
+                                                    Checkbox(
+                                                        checked = isPageChecked,
+                                                        onCheckedChange = { checked ->
+                                                            val primaryKey = if (page.displayUid.startsWith("615")) page.displayUid else page.pageId
+                                                            selectedForRunUids = if (checked) {
+                                                                selectedForRunUids + primaryKey
+                                                            } else {
+                                                                selectedForRunUids - primaryKey - page.pageId - page.displayUid
+                                                            }
+                                                        },
+                                                        colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2)),
+                                                        modifier = Modifier.size(22.dp)
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+
+                                                    // 2. Avatar của Page
                                                     if (page.avatar.isNotBlank()) {
                                                         AsyncImage(
                                                             model = page.avatar,
                                                             contentDescription = "Page Avatar",
                                                             contentScale = ContentScale.Crop,
                                                             modifier = Modifier
-                                                                .size(26.dp)
+                                                                .size(28.dp)
                                                                 .clip(CircleShape)
                                                         )
                                                     } else {
                                                         Box(
                                                             modifier = Modifier
-                                                                .size(26.dp)
+                                                                .size(28.dp)
                                                                 .clip(CircleShape)
                                                                 .background(Color(0xFF1877F2).copy(alpha = 0.15f)),
                                                             contentAlignment = Alignment.Center
@@ -1332,29 +1407,63 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                 Icons.Filled.Flag,
                                                                 contentDescription = null,
                                                                 tint = Color(0xFF1877F2),
-                                                                modifier = Modifier.size(14.dp)
+                                                                modifier = Modifier.size(15.dp)
                                                             )
                                                         }
                                                     }
                                                     Spacer(Modifier.width(8.dp))
+
+                                                    // 3. Tên Page và ép hiển thị UID thật (615), không hiển thị ID page
                                                     Column(modifier = Modifier.weight(1f)) {
                                                         val uid615 = page.displayUid
                                                         Text(
-                                                            "Page: ${page.pageName.ifBlank { uid615 }}",
+                                                            "Page: ${page.pageName.ifBlank { uid615.ifBlank { page.pageId } }}",
                                                             fontSize = 12.sp,
                                                             fontWeight = FontWeight.SemiBold,
                                                             color = TextPrimary,
                                                             maxLines = 1,
                                                             overflow = TextOverflow.Ellipsis
                                                         )
-                                                        Text(
-                                                            "UID: $uid615",
-                                                            fontSize = 10.sp,
-                                                            fontWeight = FontWeight.Medium,
-                                                            color = Color(0xFF1877F2),
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
+                                                        if (uid615.isNotBlank()) {
+                                                            Text(
+                                                                "UID: $uid615",
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Medium,
+                                                                color = Color(0xFF1877F2),
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                        } else {
+                                                            Text(
+                                                                "UID: Đang quét UID 615...",
+                                                                fontSize = 10.sp,
+                                                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                                                color = TextSecondary,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                        }
+                                                    }
+
+                                                    // 4. Dấu chấm than xanh (i) xem info và đổi avatar bìa của page
+                                                    IconButton(
+                                                        onClick = { selectedFbDetailPage = Pair(account, page) },
+                                                        modifier = Modifier.size(28.dp)
+                                                    ) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(26.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Icon(
+                                                                Icons.Filled.Info,
+                                                                contentDescription = "Xem thông tin và đổi avatar bìa của Page",
+                                                                tint = Color(0xFF1877F2),
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1934,10 +2043,15 @@ fun XsmmAccountScreen(navController: NavController) {
             // ---- Instagram & Facebook: Thanh công cụ tiện ích (Cấu hình, Tất cả, Xóa, Thêm +) ----
             val isIg = selectedPlatform == "instagram"
             val platformColor = if (isIg) Color(0xFFE1306C) else Color(0xFF1877F2)
+            val allFbKeys = remember(facebookAccounts) {
+                facebookAccounts.flatMap { acc ->
+                    listOf(acc.uid) + acc.pages.map { p -> if (p.displayUid.startsWith("615")) p.displayUid else p.pageId }
+                }.toSet()
+            }
             val allSelected = if (isIg) {
                 instagramAccounts.isNotEmpty() && instagramAccounts.all { it.trim() in selectedForRunUids }
             } else {
-                facebookAccounts.isNotEmpty() && facebookAccounts.all { it.uid in selectedForRunUids }
+                allFbKeys.isNotEmpty() && allFbKeys.all { it in selectedForRunUids }
             }
 
             Surface(
@@ -1983,9 +2097,8 @@ fun XsmmAccountScreen(navController: NavController) {
                                         selectedForRunUids = if (allSelected) selectedForRunUids - cleanAccounts
                                         else selectedForRunUids + cleanAccounts
                                     } else {
-                                        val allUids = facebookAccounts.map { it.uid }.toSet()
-                                        selectedForRunUids = if (allSelected) selectedForRunUids - allUids
-                                        else selectedForRunUids + allUids
+                                        selectedForRunUids = if (allSelected) selectedForRunUids - allFbKeys
+                                        else selectedForRunUids + allFbKeys
                                     }
                                 }
                                 .padding(horizontal = 6.dp, vertical = 6.dp)
