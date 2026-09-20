@@ -59,6 +59,9 @@ import com.cayxu.app.data.repository.XsmmLoginResult
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -563,26 +566,42 @@ fun XsmmAccountScreen(navController: NavController) {
 
         val token = XsmmAccountStore.getToken(context) ?: return@LaunchedEffect
         isCheckingLinked = true
-        when (val result = XsmmAccountsRepository.getAccounts(token, accountType = selectedPlatform)) {
-            is XsmmAccountsResult.Success -> {
-                val accMap = mutableMapOf<String, String>()
-                val internalMap = mutableMapOf<String, String>()
-                if (selectedPlatform == "facebook") {
-                    val xsmmUids = result.accounts
-                        .filter { it.type.equals("facebook", ignoreCase = true) }
-                        .map { it.accountId.trim() }
-                        .toSet()
-                    linkedFbUids = xsmmUids
+        if (selectedPlatform == "facebook") {
+            val localUids = mutableSetOf<String>()
+            facebookAccounts.forEach { acc ->
+                if (acc.uid.isNotBlank()) localUids.add(acc.uid.trim())
+                acc.pages.forEach { page ->
+                    val pUid = page.additionalProfileId.ifBlank { page.pageId }.trim()
+                    if (pUid.isNotBlank()) localUids.add(pUid)
+                }
+            }
+            val foundUids = mutableSetOf<String>()
+            val accMap = mutableMapOf<String, String>()
+            val internalMap = mutableMapOf<String, String>()
 
-                    val accMap = result.accounts
-                        .filter { it.type.equals("facebook", ignoreCase = true) && it.accountId.isNotBlank() }
-                        .associate { it.accountId.trim() to it.accountId.trim() }
-                    val internalMap = result.accounts
-                        .filter { it.type.equals("facebook", ignoreCase = true) && it.accountId.isNotBlank() && it.id.isNotBlank() }
-                        .associate { it.accountId.trim() to it.id.trim() }
-                    XsmmAccountStore.saveAccountIdMap(context, accMap)
-                    XsmmAccountStore.saveInternalIdMap(context, internalMap)
-                } else {
+            coroutineScope {
+                localUids.map { uid ->
+                    async {
+                        val matched = XsmmAccountsRepository.searchFacebookAccount(token, uid)
+                        if (matched != null) {
+                            synchronized(foundUids) {
+                                foundUids.add(uid)
+                                accMap[uid] = matched.accountId.trim()
+                                if (matched.id.isNotBlank()) internalMap[uid] = matched.id
+                            }
+                        }
+                    }
+                }.awaitAll()
+            }
+
+            linkedFbUids = foundUids
+            XsmmAccountStore.saveAccountIdMap(context, accMap)
+            XsmmAccountStore.saveInternalIdMap(context, internalMap)
+        } else {
+            when (val result = XsmmAccountsRepository.getAccounts(token, accountType = selectedPlatform)) {
+                is XsmmAccountsResult.Success -> {
+                    val accMap = mutableMapOf<String, String>()
+                    val internalMap = mutableMapOf<String, String>()
                     result.accounts.forEach { acc ->
                         val handle = acc.linkAccount.substringAfterLast("@").trim('/').lowercase()
                         if (handle.isNotBlank()) {
@@ -596,10 +615,8 @@ fun XsmmAccountScreen(navController: NavController) {
                         acc.linkAccount.substringAfterLast("@").trim('/').lowercase().takeIf { it.isNotBlank() }
                     }.toSet()
                 }
-            }
-            is XsmmAccountsResult.Error -> {
-                if (selectedPlatform == "facebook") {
-                    linkedFbUids = emptySet()
+                is XsmmAccountsResult.Error -> {
+                    linkedHandles = emptySet()
                 }
             }
         }
@@ -712,30 +729,38 @@ fun XsmmAccountScreen(navController: NavController) {
                                         is XsmmLoginResult.Error -> Unit
                                     }
                                     if (selectedPlatform == "facebook") {
-                                        val accRes = XsmmAccountsRepository.getAccounts(token, accountType = "facebook")
-                                        if (accRes is XsmmAccountsResult.Success) {
-                                            val xsmmUids = accRes.accounts
-                                                .filter { it.type.equals("facebook", ignoreCase = true) }
-                                                .map { it.accountId.trim() }
-                                                .toSet()
-                                            linkedFbUids = xsmmUids
-
-                                            val accMap = accRes.accounts
-                                                .filter { it.type.equals("facebook", ignoreCase = true) && it.accountId.isNotBlank() }
-                                                .associate { it.accountId.trim() to it.accountId.trim() }
-                                            val internalMap = accRes.accounts
-                                                .filter { it.type.equals("facebook", ignoreCase = true) && it.accountId.isNotBlank() && it.id.isNotBlank() }
-                                                .associate { it.accountId.trim() to it.id.trim() }
-                                            XsmmAccountStore.saveAccountIdMap(context, accMap)
-                                            XsmmAccountStore.saveInternalIdMap(context, internalMap)
-
-                                            val count = xsmmUids.size
-                                            android.widget.Toast.makeText(context, "Đã đồng bộ XSMM: $count tài khoản Facebook đã liên kết", android.widget.Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            linkedFbUids = emptySet()
-                                            val errMsg = (accRes as? XsmmAccountsResult.Error)?.message ?: "Lỗi không rõ"
-                                            android.widget.Toast.makeText(context, "XSMM lỗi: $errMsg", android.widget.Toast.LENGTH_LONG).show()
+                                        val localUids = mutableSetOf<String>()
+                                        facebookAccounts.forEach { acc ->
+                                            if (acc.uid.isNotBlank()) localUids.add(acc.uid.trim())
+                                            acc.pages.forEach { page ->
+                                                val pUid = page.additionalProfileId.ifBlank { page.pageId }.trim()
+                                                if (pUid.isNotBlank()) localUids.add(pUid)
+                                            }
                                         }
+                                        val foundUids = mutableSetOf<String>()
+                                        val accMap = mutableMapOf<String, String>()
+                                        val internalMap = mutableMapOf<String, String>()
+
+                                        coroutineScope {
+                                            localUids.map { uid ->
+                                                async {
+                                                    val matched = XsmmAccountsRepository.searchFacebookAccount(token, uid)
+                                                    if (matched != null) {
+                                                        synchronized(foundUids) {
+                                                            foundUids.add(uid)
+                                                            accMap[uid] = matched.accountId.trim()
+                                                            if (matched.id.isNotBlank()) internalMap[uid] = matched.id
+                                                        }
+                                                    }
+                                                }
+                                            }.awaitAll()
+                                        }
+
+                                        linkedFbUids = foundUids
+                                        XsmmAccountStore.saveAccountIdMap(context, accMap)
+                                        XsmmAccountStore.saveInternalIdMap(context, internalMap)
+                                        val count = foundUids.size
+                                        android.widget.Toast.makeText(context, "Đã kiểm tra XSMM: $count tài khoản đã liên kết", android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                     isRefreshing = false
                                 }
@@ -1382,29 +1407,35 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
                                                     }
 
-                                                    // Đồng bộ thực tế danh sách tài khoản đã thêm từ XSMM
+                                                    // Kiểm tra thực tế tài khoản này và các Page của nó qua search API của XSMM
                                                     val xsmmToken = XsmmAccountStore.getToken(context)
                                                     if (!xsmmToken.isNullOrBlank()) {
-                                                        val syncRes = XsmmAccountsRepository.getAccounts(xsmmToken, accountType = "facebook")
-                                                        withContext(Dispatchers.Main) {
-                                                            if (syncRes is XsmmAccountsResult.Success) {
-                                                                val xsmmUids = syncRes.accounts
-                                                                    .filter { it.type.equals("facebook", ignoreCase = true) }
-                                                                    .map { it.accountId.trim() }
-                                                                    .toSet()
-                                                                linkedFbUids = xsmmUids
+                                                        val targetUids = mutableListOf(account.uid.trim())
+                                                        account.pages.forEach { p ->
+                                                            val pUid = p.additionalProfileId.ifBlank { p.pageId }.trim()
+                                                            if (pUid.isNotBlank()) targetUids.add(pUid)
+                                                        }
+                                                        val accMap = XsmmAccountStore.getAccountIdMap(context).toMutableMap()
+                                                        val internalMap = XsmmAccountStore.getInternalIdMap(context).toMutableMap()
+                                                        val newlyLinked = mutableSetOf<String>()
+                                                        val newlyUnlinked = mutableSetOf<String>()
 
-                                                                val accMap = syncRes.accounts
-                                                                    .filter { it.type.equals("facebook", ignoreCase = true) && it.accountId.isNotBlank() }
-                                                                    .associate { it.accountId.trim() to it.accountId.trim() }
-                                                                val internalMap = syncRes.accounts
-                                                                    .filter { it.type.equals("facebook", ignoreCase = true) && it.accountId.isNotBlank() && it.id.isNotBlank() }
-                                                                    .associate { it.accountId.trim() to it.id.trim() }
-                                                                XsmmAccountStore.saveAccountIdMap(context, accMap)
-                                                                XsmmAccountStore.saveInternalIdMap(context, internalMap)
+                                                        targetUids.forEach { u ->
+                                                            val matched = XsmmAccountsRepository.searchFacebookAccount(xsmmToken, u)
+                                                            if (matched != null) {
+                                                                newlyLinked.add(u)
+                                                                accMap[u] = matched.accountId.trim()
+                                                                if (matched.id.isNotBlank()) internalMap[u] = matched.id
                                                             } else {
-                                                                linkedFbUids = emptySet()
+                                                                newlyUnlinked.add(u)
+                                                                accMap.remove(u)
+                                                                internalMap.remove(u)
                                                             }
+                                                        }
+                                                        withContext(Dispatchers.Main) {
+                                                            linkedFbUids = (linkedFbUids + newlyLinked) - newlyUnlinked
+                                                            XsmmAccountStore.saveAccountIdMap(context, accMap)
+                                                            XsmmAccountStore.saveInternalIdMap(context, internalMap)
                                                         }
                                                     }
 

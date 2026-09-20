@@ -97,6 +97,21 @@ object XsmmAccountsRepository {
         }
     }
 
+    /** Tìm kiếm tài khoản Facebook trên XSMM theo UID (dùng endpoint search của API accounts2).
+     *  Trả về [XsmmAccount] nếu tìm thấy, hoặc null nếu không tồn tại trên XSMM. */
+    suspend fun searchFacebookAccount(rawToken: String, uid: String): XsmmAccount? {
+        val cleanUid = uid.trim()
+        if (cleanUid.isBlank()) return null
+        val result = getAccounts(rawToken, accountType = "facebook", search = cleanUid)
+        val accounts = (result as? XsmmAccountsResult.Success)?.accounts.orEmpty()
+        return accounts.firstOrNull { it.accountId.trim() == cleanUid }
+    }
+
+    /** Kiểm tra nhanh 1 UID Facebook (acc chính hoặc Page) đã có trên XSMM chưa qua search. */
+    suspend fun isFacebookUidLinked(rawToken: String, uid: String): Boolean {
+        return searchFacebookAccount(rawToken, uid) != null
+    }
+
     /** Kiểm tra 1 @handle TikTok đã có trong danh sách acc XSMM chưa (dùng search để lọc
      *  gọn phía server, rồi so khớp CHÍNH XÁC @handle trong link_account để chắc chắn). */
     suspend fun isTikTokHandleLinked(rawToken: String, handle: String): Boolean {
