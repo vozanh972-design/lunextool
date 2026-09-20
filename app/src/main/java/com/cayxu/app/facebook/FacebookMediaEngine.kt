@@ -73,62 +73,71 @@ class FacebookMediaEngine(
         cookieParam: String? = null // Giữ tương thích signature cũ nếu có caller
     ): ProfileMediaInfo? {
         val token = (tokenParam ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
-        val target = if (targetId.isNullOrBlank() || targetId == "me") "me" else targetId
-
-        if (token.isNotEmpty()) {
-            val url = "$GRAPH_API_URL/$target?fields=id,name,picture.width(1024).height(1024){url,is_silhouette},cover{id,source}&access_token=$token"
-            val request = Request.Builder()
-                .url(url)
-                .get()
-                .header("User-Agent", KATANA_USER_AGENT)
-                .header("Authorization", "OAuth $token")
-                .build()
-
-            try {
-                httpClient.newCall(request).execute().use { res ->
-                    val body = res.body?.string() ?: "{}"
-                    val json = JSONObject(body)
-                    val id = json.optString("id", target)
-                    val name = json.optString("name", null)
-
-                    var avatarUrl: String? = null
-                    var isSilhouette = false
-                    if (json.has("picture")) {
-                        val picObj = json.optJSONObject("picture")
-                        val picData = picObj?.optJSONObject("data")
-                        if (picData != null) {
-                            avatarUrl = picData.optString("url", null)
-                            isSilhouette = picData.optBoolean("is_silhouette", false)
-                        }
-                    }
-
-                    var coverUrl: String? = null
-                    var coverId: String? = null
-                    if (json.has("cover")) {
-                        val coverData = json.optJSONObject("cover")
-                        if (coverData != null) {
-                            coverUrl = coverData.optString("source", null)
-                            coverId = coverData.optString("id", null)
-                        }
-                    }
-
-                    if (avatarUrl.isNullOrBlank()) {
-                        val validId = if (id != "me" && id.isNotBlank()) id else (if (target != "me") target else "")
-                        avatarUrl = if (validId.isNotEmpty()) "$GRAPH_API_URL/$validId/picture?type=large"
-                                    else "$GRAPH_API_URL/me/picture?type=large&access_token=$token"
-                    }
-
-                    return ProfileMediaInfo(id, name, avatarUrl, isSilhouette, coverUrl, coverId)
-                }
-            } catch (_: Exception) {}
+        val isUserEndpoint = targetId.isNullOrBlank() || targetId == "me" || targetId.startsWith("615")
+        val candidateTargets = if (isUserEndpoint) {
+            listOf("me")
+        } else {
+            listOf(targetId!!, "me")
         }
 
-        val fallbackId = if (target == "me") "me" else target
+        if (token.isNotEmpty()) {
+            for (target in candidateTargets) {
+                val url = "$GRAPH_API_URL/$target?fields=id,name,picture.width(1024).height(1024){url,is_silhouette},cover{id,source}&access_token=$token"
+                val request = Request.Builder()
+                    .url(url)
+                    .get()
+                    .header("User-Agent", KATANA_USER_AGENT)
+                    .header("Authorization", "OAuth $token")
+                    .build()
+
+                try {
+                    httpClient.newCall(request).execute().use { res ->
+                        val body = res.body?.string() ?: "{}"
+                        val json = JSONObject(body)
+                        if (!json.has("error")) {
+                            val id = json.optString("id", target)
+                            val name = json.optString("name", null)
+
+                            var avatarUrl: String? = null
+                            var isSilhouette = false
+                            if (json.has("picture")) {
+                                val picObj = json.optJSONObject("picture")
+                                val picData = picObj?.optJSONObject("data")
+                                if (picData != null) {
+                                    val urlCandidate = picData.optString("url", "")
+                                    if (urlCandidate.isNotBlank()) {
+                                        avatarUrl = urlCandidate
+                                    }
+                                    isSilhouette = picData.optBoolean("is_silhouette", false)
+                                }
+                            }
+
+                            var coverUrl: String? = null
+                            var coverId: String? = null
+                            if (json.has("cover")) {
+                                val coverData = json.optJSONObject("cover")
+                                if (coverData != null) {
+                                    coverUrl = coverData.optString("source", null)
+                                    coverId = coverData.optString("id", null)
+                                }
+                            }
+
+                            if (avatarUrl.isNullOrBlank()) {
+                                avatarUrl = "$GRAPH_API_URL/me/picture?type=large&access_token=$token"
+                            }
+
+                            return ProfileMediaInfo(id, name, avatarUrl, isSilhouette, coverUrl, coverId)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
+        val fallbackId = if (isUserEndpoint) "me" else (targetId ?: "me")
         return ProfileMediaInfo(
             id = fallbackId,
             name = null,
-            avatarUrl = if (fallbackId != "me") "$GRAPH_API_URL/$fallbackId/picture?type=large"
-                        else "$GRAPH_API_URL/me/picture?type=large${if (token.isNotEmpty()) "&access_token=$token" else ""}",
+            avatarUrl = "$GRAPH_API_URL/me/picture?type=large${if (token.isNotEmpty()) "&access_token=$token" else ""}",
             isSilhouette = false,
             coverUrl = null,
             coverId = null

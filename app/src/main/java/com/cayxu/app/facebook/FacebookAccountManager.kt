@@ -452,16 +452,16 @@ class FacebookAccountManager {
         // Lấy Avatar HD & Bìa từ FacebookMediaEngine
         try {
             val mediaEngine = FacebookMediaEngine(accessToken = token)
-            val media = mediaEngine.getProfileMedia(if (id.isNotBlank()) id else "me", token)
+            val media = mediaEngine.getProfileMedia("me", token)
             if (media != null) {
-                if (!media.avatarUrl.isNullOrBlank()) avatarUrl = media.avatarUrl
+                if (!media.avatarUrl.isNullOrBlank() && !media.avatarUrl.contains("84628273_176159830277856")) avatarUrl = media.avatarUrl
                 if (!media.coverUrl.isNullOrBlank()) coverUrl = media.coverUrl
                 if (!media.name.isNullOrBlank() && name.isBlank()) name = media.name
             }
         } catch (_: Exception) {}
 
-        if (avatarUrl.isBlank() && id.isNotBlank()) {
-            avatarUrl = "$GRAPH_BASE_URL/$id/picture?type=large"
+        if (avatarUrl.isBlank()) {
+            avatarUrl = "$GRAPH_BASE_URL/me/picture?type=large&access_token=$token"
         }
 
         // Lấy danh sách Pages với UID 615 chuẩn từ FacebookPageEngine

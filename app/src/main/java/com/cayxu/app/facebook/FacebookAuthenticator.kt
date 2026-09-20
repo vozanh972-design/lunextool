@@ -102,9 +102,11 @@ class FacebookAuthenticator {
                 proxyHost = proxyHost,
                 proxyPort = proxyPort
             )
-            val profileMedia = if (token.isNotBlank()) mediaEngine.getProfileMedia(realUid) else null
+            val profileMedia = if (token.isNotBlank()) mediaEngine.getProfileMedia("me", tokenParam = token) else null
             val fullName = profileMedia?.name?.ifBlank { realUid } ?: realUid
-            val avatarUrl = profileMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/$realUid/picture?type=large"
+            val avatarUrl = profileMedia?.avatarUrl?.takeIf { !it.contains("84628273_176159830277856") }
+                ?: (if (token.isNotBlank()) "https://graph.facebook.com/v21.0/me/picture?type=large&access_token=$token"
+                    else "https://graph.facebook.com/v21.0/$realUid/picture?type=large")
             val coverUrl = profileMedia?.coverUrl.orEmpty()
 
             // 2. Lấy danh sách Fanpage chuẩn UID 615

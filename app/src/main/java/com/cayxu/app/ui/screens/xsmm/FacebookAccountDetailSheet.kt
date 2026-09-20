@@ -74,7 +74,7 @@ fun FacebookAccountDetailSheet(
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
-                    val mediaInfo = mediaEngine.getProfileMedia(account.uid, tokenParam = token)
+                    val mediaInfo = mediaEngine.getProfileMedia("me", tokenParam = token)
                     if (mediaInfo != null) {
                         val fetchedCover = mediaInfo.coverUrl.orEmpty()
                         val fetchedAvatar = mediaInfo.avatarUrl.orEmpty()
@@ -82,7 +82,7 @@ fun FacebookAccountDetailSheet(
                             if (fetchedCover.isNotBlank() && fetchedCover != currentCover) {
                                 currentCover = fetchedCover
                             }
-                            if (fetchedAvatar.isNotBlank() && currentAvatar.isBlank()) {
+                            if (fetchedAvatar.isNotBlank() && !fetchedAvatar.contains("84628273_176159830277856")) {
                                 currentAvatar = fetchedAvatar
                             }
                             val updatedAcc = account.copy(avatar = currentAvatar, cover = currentCover)
@@ -132,7 +132,7 @@ fun FacebookAccountDetailSheet(
                     )
                     val result = mediaEngine.updateAvatar(
                         imageBytes = bytes,
-                        targetId = account.uid,
+                        targetId = "me",
                         tokenParam = token
                     )
 
@@ -140,10 +140,16 @@ fun FacebookAccountDetailSheet(
                         isUploadingAvatar = false
                         if (result.isSuccess) {
                             Toast.makeText(context, "Đổi Avatar thành công!", Toast.LENGTH_SHORT).show()
-                            // Lấy lại URL avatar mới
-                            val updatedMedia = mediaEngine.getProfileMedia(account.uid, tokenParam = token)
-                            val rawAvatar = updatedMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/${account.uid}/picture?type=large&access_token=$token"
-                            val newAvatarUrl = if (rawAvatar.contains("?")) "$rawAvatar&t=${System.currentTimeMillis()}" else "$rawAvatar?t=${System.currentTimeMillis()}"
+                            // Lấy lại URL avatar mới trực tiếp từ photoId hoặc qua /me
+                            var directUrl: String? = null
+                            if (!result.mediaId.isNullOrBlank()) {
+                                directUrl = mediaEngine.getPhotoDirectUrl(result.mediaId, tokenParam = token)
+                            }
+                            if (directUrl.isNullOrBlank()) {
+                                val updatedMedia = mediaEngine.getProfileMedia("me", tokenParam = token)
+                                directUrl = updatedMedia?.avatarUrl?.takeIf { !it.contains("84628273_176159830277856") }
+                            }
+                            val newAvatarUrl = directUrl ?: "https://graph.facebook.com/v21.0/me/picture?type=large&access_token=$token&t=${System.currentTimeMillis()}"
                             currentAvatar = newAvatarUrl
                             val updatedAcc = account.copy(avatar = newAvatarUrl, cover = currentCover)
                             FacebookAccountsStore.updateAccount(context, updatedAcc)

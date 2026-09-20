@@ -120,6 +120,7 @@ fun XsmmAccountScreen(navController: NavController) {
         )
     }
     var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
+    var liveFbAvatars by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var livePageUids by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var livePageAvatars by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var livePageCovers by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -138,6 +139,35 @@ fun XsmmAccountScreen(navController: NavController) {
     LaunchedEffect(selectedPlatform, facebookAccounts) {
         if (selectedPlatform == "facebook") {
             facebookAccounts.forEach { acc ->
+                val token = acc.bio.trim()
+                // Tự động kiểm tra và cập nhật Avatar thật cho nick cá nhân nếu chưa có hoặc đang dính ảnh silhouette
+                val curAv = liveFbAvatars[acc.uid] ?: acc.avatar
+                val needAvatarFix = curAv.isBlank() || curAv.contains("picture?type=large") || curAv.contains("84628273_176159830277856")
+                if (needAvatarFix && token.isNotBlank()) {
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val proxyParts = acc.phone.ifBlank { null }?.split(":")
+                            val proxyHost = proxyParts?.getOrNull(0)
+                            val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+                            val mediaEngine = com.cayxu.app.facebook.FacebookMediaEngine(
+                                accessToken = token,
+                                proxyHost = proxyHost,
+                                proxyPort = proxyPort
+                            )
+                            val media = mediaEngine.getProfileMedia("me", tokenParam = token)
+                            val realAvatar = media?.avatarUrl?.takeIf { !it.contains("84628273_176159830277856") }
+                            if (!realAvatar.isNullOrBlank() && realAvatar != acc.avatar) {
+                                val updated = acc.copy(avatar = realAvatar)
+                                com.cayxu.app.data.local.FacebookAccountsStore.updateAccount(context, updated)
+                                withContext(Dispatchers.Main) {
+                                    liveFbAvatars = liveFbAvatars + (acc.uid to realAvatar)
+                                    avatarVersion = System.currentTimeMillis()
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+
                 val proxyParts = acc.phone.ifBlank { null }?.split(":")
                 val proxyHost = proxyParts?.getOrNull(0)
                 val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
@@ -372,17 +402,24 @@ fun XsmmAccountScreen(navController: NavController) {
                     )
                     val result = mediaEngine.updateAvatar(
                         imageBytes = bytes,
-                        targetId = acc.uid,
+                        targetId = "me",
                         tokenParam = token
                     )
 
                     if (result.isSuccess) {
-                        val updatedMedia = mediaEngine.getProfileMedia(acc.uid, tokenParam = token)
-                        val rawAvatar = updatedMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/${acc.uid}/picture?type=large&access_token=$token"
-                        val finalAvatar = if (rawAvatar.contains("?")) "$rawAvatar&t=${System.currentTimeMillis()}" else "$rawAvatar?t=${System.currentTimeMillis()}"
+                        var directUrl: String? = null
+                        if (!result.mediaId.isNullOrBlank()) {
+                            directUrl = mediaEngine.getPhotoDirectUrl(result.mediaId, tokenParam = token)
+                        }
+                        if (directUrl.isNullOrBlank()) {
+                            val updatedMedia = mediaEngine.getProfileMedia("me", tokenParam = token)
+                            directUrl = updatedMedia?.avatarUrl?.takeIf { !it.contains("84628273_176159830277856") }
+                        }
+                        val finalAvatar = directUrl ?: "https://graph.facebook.com/v21.0/me/picture?type=large&access_token=$token&t=${System.currentTimeMillis()}"
                         val updatedAcc = acc.copy(avatar = finalAvatar)
-                        com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updatedAcc)
+                        com.cayxu.app.data.local.FacebookAccountsStore.updateAccount(context, updatedAcc)
                         withContext(Dispatchers.Main) {
+                            liveFbAvatars = liveFbAvatars + (acc.uid to finalAvatar)
                             avatarVersion = System.currentTimeMillis()
                             facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
                             android.widget.Toast.makeText(context, "Đổi avatar Facebook thành công!", android.widget.Toast.LENGTH_SHORT).show()
@@ -979,13 +1016,14 @@ fun XsmmAccountScreen(navController: NavController) {
                         facebookAccounts.forEach { account ->
                             val isChecked = account.uid in selectedForRunUids
                             val isRunningFbThis = com.cayxu.app.automation.facebook.XsmmFacebookManager.isRunning(account.uid)
-                            val fbAvatarModel = remember(account.avatar, avatarVersion) {
-                                if (account.avatar.isBlank()) null
+                            val currentFbAvatar = liveFbAvatars[account.uid] ?: account.avatar
+                            val fbAvatarModel = remember(currentFbAvatar, avatarVersion) {
+                                if (currentFbAvatar.isBlank()) null
                                 else coil.request.ImageRequest.Builder(context)
-                                    .data(account.avatar)
+                                    .data(currentFbAvatar)
                                     .crossfade(true)
-                                    .memoryCacheKey("${account.avatar}_$avatarVersion")
-                                    .diskCacheKey("${account.avatar}_$avatarVersion")
+                                    .memoryCacheKey("${currentFbAvatar}_$avatarVersion")
+                                    .diskCacheKey("${currentFbAvatar}_$avatarVersion")
                                     .build()
                             }
                             Card(
@@ -1032,7 +1070,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 },
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            if (account.avatar.isNotBlank()) {
+                                            if (currentFbAvatar.isNotBlank()) {
                                                 AsyncImage(
                                                     model = fbAvatarModel,
                                                     contentDescription = "Avatar Facebook",
