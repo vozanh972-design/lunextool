@@ -3,6 +3,7 @@ package com.cayxu.app.data.repository
 import com.cayxu.app.data.api.XsmmRetrofitClient
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 
 data class XsmmAccount(
     val id: String,
@@ -391,10 +392,11 @@ object XsmmAccountsRepository {
 
         // Fallback trực tiếp bằng OkHttp
         try {
+            val mediaType = "application/json".toMediaTypeOrNull()
             val req = okhttp3.Request.Builder()
                 .url("https://xsmm.net/api/taskapi/accounts/$accountId/set-active")
                 .header("Authorization", authHeader(rawToken))
-                .put(okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), "{}"))
+                .put(okhttp3.RequestBody.create(mediaType, "{}"))
                 .build()
             XsmmRetrofitClient.okHttpClient.newCall(req).execute().use { it.isSuccessful }
         } catch (_: Exception) {

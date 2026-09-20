@@ -150,7 +150,7 @@ class TuongTacCheoApiClient(
 
         httpClient.newCall(request).execute().use { response ->
             val body = response.body?.string() ?: ""
-            return response.isSuccessful && (body.contains(""status":1") || body.contains(""status":"success"") || body.contains("Cấu hình thành công"))
+            return response.isSuccessful && (body.contains("\"status\":1") || body.contains("\"status\":\"success\"") || body.contains("Cấu hình thành công"))
         }
     }
 
@@ -168,7 +168,7 @@ class TuongTacCheoApiClient(
 
         httpClient.newCall(request).execute().use { response ->
             val body = response.body?.string() ?: ""
-            if (body.contains("Hết Job") || body.contains("countdown") || body.contains(""error"")) {
+            if (body.contains("Hết Job") || body.contains("countdown") || body.contains("\"error\"")) {
                 return emptyList()
             }
 
@@ -212,7 +212,7 @@ class TuongTacCheoApiClient(
 
         httpClient.newCall(request).execute().use { response ->
             val body = response.body?.string() ?: ""
-            val isSuccess = response.isSuccessful && (body.contains(""success"") || body.contains(""status":"success"") || body.contains("Thành công"))
+            val isSuccess = response.isSuccessful && (body.contains("\"success\"") || body.contains("\"status\":\"success\"") || body.contains("Thành công"))
             
             val json = if (body.trim().startsWith("{")) JSONObject(body) else JSONObject()
             val soduStr = json.optString("sodu", "0").replace(",", "").replace(".", "")
