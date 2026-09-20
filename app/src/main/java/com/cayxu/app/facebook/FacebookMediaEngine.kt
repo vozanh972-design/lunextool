@@ -113,7 +113,9 @@ class FacebookMediaEngine(
                     }
 
                     if (avatarUrl.isNullOrBlank()) {
-                        avatarUrl = "$GRAPH_API_URL/$id/picture?type=large&access_token=$token"
+                        val validId = if (id != "me" && id.isNotBlank()) id else (if (target != "me") target else "")
+                        avatarUrl = if (validId.isNotEmpty()) "$GRAPH_API_URL/$validId/picture?type=large"
+                                    else "$GRAPH_API_URL/me/picture?type=large&access_token=$token"
                     }
 
                     return ProfileMediaInfo(id, name, avatarUrl, isSilhouette, coverUrl, coverId)
@@ -125,7 +127,8 @@ class FacebookMediaEngine(
         return ProfileMediaInfo(
             id = fallbackId,
             name = null,
-            avatarUrl = "$GRAPH_API_URL/$fallbackId/picture?type=large${if (token.isNotEmpty()) "&access_token=$token" else ""}",
+            avatarUrl = if (fallbackId != "me") "$GRAPH_API_URL/$fallbackId/picture?type=large"
+                        else "$GRAPH_API_URL/me/picture?type=large${if (token.isNotEmpty()) "&access_token=$token" else ""}",
             isSilhouette = false,
             coverUrl = null,
             coverId = null
@@ -134,76 +137,146 @@ class FacebookMediaEngine(
 
     /**
      * 100% Graph API: Cập nhật Avatar qua Token (không dùng cookie, không lai tạp)
-     * Bước 1: Upload file ảnh vào /{target}/photos (published=true) lấy photo_id
-     * Bước 2: Thiết lập làm Avatar qua /{target}/picture với tham số photo={photo_id}
+     * Thử qua targetId và me để hỗ trợ cả Profile lẫn Page Token
+     */
+    /**
+     * Lấy direct CDN URL từ Photo ID đã upload qua Graph API
+     */
+    fun getPhotoDirectUrl(photoId: String, tokenParam: String? = null): String? {
+        val token = (tokenParam ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        if (token.isEmpty() || photoId.isBlank()) return null
+        return try {
+            val req = Request.Builder()
+                .url("$GRAPH_API_URL/$photoId?fields=id,source,images&access_token=$token")
+                .get()
+                .header("User-Agent", KATANA_USER_AGENT)
+                .build()
+            httpClient.newCall(req).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val json = JSONObject(body)
+                val src = json.optString("source", "")
+                if (src.isNotBlank()) src
+                else {
+                    val images = json.optJSONArray("images")
+                    images?.optJSONObject(0)?.optString("source", null)
+                }
+            }
+        } catch (_: Exception) { null }
+    }
+
+    /**
+     * 100% Graph API: Cập nhật Avatar qua Token (không dùng cookie, không lai tạp)
+     * Thử qua targetId và me để hỗ trợ cả Profile lẫn Page Token
      */
     fun updateAvatar(
         imageBytes: ByteArray,
         mimeType: String = "image/jpeg",
         targetId: String? = null,
         tokenParam: String? = null,
-        cookieParam: String? = null // Giữ tham số tương thích, không dùng cookie
+        cookieParam: String? = null
     ): MediaResult {
         val token = (tokenParam ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
         if (token.isEmpty()) return MediaResult(false, null, "Cần có Access Token để đổi avatar", "")
 
-        val target = if (targetId.isNullOrBlank() || targetId == "me") "me" else targetId
         val mediaType = mimeType.toMediaTypeOrNull()
         val fileBody = imageBytes.toRequestBody(mediaType)
 
-        // 1. Upload ảnh lên Graph API /{target}/photos
-        val uploadBody = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("access_token", token)
-            .addFormDataPart("published", "true")
-            .addFormDataPart("source", "avatar_${System.currentTimeMillis()}.jpg", fileBody)
-            .build()
-
-        val uploadReq = Request.Builder()
-            .url("$GRAPH_API_URL/$target/photos?access_token=$token")
-            .post(uploadBody)
-            .header("User-Agent", KATANA_USER_AGENT)
-            .header("Authorization", "OAuth $token")
-            .build()
-
-        val photoId: String
-        try {
-            val uploadRes = httpClient.newCall(uploadReq).execute()
-            val uploadRespStr = uploadRes.body?.string() ?: ""
-            val json = try { JSONObject(uploadRespStr) } catch (_: Exception) { null }
-            photoId = json?.optString("id", "") ?: ""
-            if (photoId.isEmpty()) {
-                val errMsg = json?.optJSONObject("error")?.optString("message") ?: uploadRespStr
-                return MediaResult(false, null, "Lỗi tải ảnh lên: $errMsg", uploadRespStr)
-            }
-        } catch (e: Exception) {
-            return MediaResult(false, null, e.message, "")
+        val candidateEndpoints = mutableListOf<String>()
+        if (!targetId.isNullOrBlank() && targetId != "me") {
+            candidateEndpoints.add(targetId)
         }
 
-        // 2. Gán photoId làm Avatar qua /{target}/picture (theo ProfileAvatarBiaEngine: param "photo_id")
-        val setPicBody = FormBody.Builder()
-            .add("access_token", token)
-            .add("photo_id", photoId)
-            .add("photo", photoId)
-            .add("picture", photoId)
-            .build()
+        // Tự động kiểm tra ID thật mà Token gắn kèm nếu chưa có targetId cụ thể
+        if (candidateEndpoints.isEmpty()) {
+            try {
+                val meReq = Request.Builder()
+                    .url("$GRAPH_API_URL/me?fields=id&access_token=$token")
+                    .get()
+                    .header("User-Agent", KATANA_USER_AGENT)
+                    .build()
+                httpClient.newCall(meReq).execute().use { meRes ->
+                    val meBody = meRes.body?.string() ?: ""
+                    val meJson = try { JSONObject(meBody) } catch (_: Exception) { null }
+                    val realId = meJson?.optString("id", "") ?: ""
+                    if (realId.isNotEmpty()) {
+                        candidateEndpoints.add(realId)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        candidateEndpoints.add("me")
 
-        val setPicReq = Request.Builder()
-            .url("$GRAPH_API_URL/$target/picture?access_token=$token")
-            .post(setPicBody)
-            .header("User-Agent", KATANA_USER_AGENT)
-            .header("Authorization", "OAuth $token")
-            .build()
+        fun doUploadPhoto(ep: String): Pair<String, String> {
+            val uploadBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("access_token", token)
+                .addFormDataPart("published", "true")
+                .addFormDataPart("source", "avatar_${System.currentTimeMillis()}.jpg", fileBody)
+                .build()
 
-        try {
-            val setPicRes = httpClient.newCall(setPicReq).execute()
-            val setPicStr = setPicRes.body?.string() ?: ""
-            if (setPicRes.isSuccessful && !setPicStr.contains("\"error\"")) {
-                return MediaResult(true, photoId, "Cập nhật ảnh đại diện thành công", setPicStr)
+            val uploadReq = Request.Builder()
+                .url("$GRAPH_API_URL/$ep/photos")
+                .post(uploadBody)
+                .header("User-Agent", KATANA_USER_AGENT)
+                .header("Authorization", "OAuth $token")
+                .build()
+
+            return try {
+                httpClient.newCall(uploadReq).execute().use { res ->
+                    val body = res.body?.string() ?: ""
+                    val json = try { JSONObject(body) } catch (_: Exception) { null }
+                    val id = json?.optString("id", "") ?: ""
+                    val err = json?.optJSONObject("error")?.optString("message") ?: body
+                    Pair(id, err)
+                }
+            } catch (e: Exception) {
+                Pair("", e.message ?: "Network error")
             }
-        } catch (_: Exception) {}
+        }
 
-        // Fallback 1: Trực tiếp upload multipart vào /{target}/picture
+        var photoId = ""
+        var errMsg = ""
+        var successfulEndpoint = ""
+
+        for (ep in candidateEndpoints) {
+            val res = doUploadPhoto(ep)
+            if (res.first.isNotEmpty()) {
+                photoId = res.first
+                successfulEndpoint = ep
+                break
+            } else {
+                errMsg = res.second
+            }
+        }
+
+        val targetForPic = if (successfulEndpoint.isNotEmpty()) successfulEndpoint else (targetId ?: "me")
+
+        if (photoId.isNotEmpty()) {
+            // Gán photoId làm Avatar qua /{target}/picture
+            val setPicBody = FormBody.Builder()
+                .add("access_token", token)
+                .add("photo_id", photoId)
+                .add("photo", photoId)
+                .add("picture", photoId)
+                .build()
+
+            val setPicReq = Request.Builder()
+                .url("$GRAPH_API_URL/$targetForPic/picture")
+                .post(setPicBody)
+                .header("User-Agent", KATANA_USER_AGENT)
+                .header("Authorization", "OAuth $token")
+                .build()
+
+            try {
+                val res = httpClient.newCall(setPicReq).execute()
+                val body = res.body?.string() ?: ""
+                if (res.isSuccessful && !body.contains("\"error\"")) {
+                    return MediaResult(true, photoId, "Cập nhật ảnh đại diện thành công", body)
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Fallback: Direct upload vào /{target}/picture
         try {
             val directPart = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
@@ -211,7 +284,7 @@ class FacebookMediaEngine(
                 .addFormDataPart("source", "avatar.jpg", fileBody)
                 .build()
             val directReq = Request.Builder()
-                .url("$GRAPH_API_URL/$target/picture?access_token=$token")
+                .url("$GRAPH_API_URL/$targetForPic/picture")
                 .post(directPart)
                 .header("User-Agent", KATANA_USER_AGENT)
                 .header("Authorization", "OAuth $token")
@@ -219,40 +292,18 @@ class FacebookMediaEngine(
             val directRes = httpClient.newCall(directReq).execute()
             val directStr = directRes.body?.string() ?: ""
             if (directRes.isSuccessful && !directStr.contains("\"error\"")) {
-                return MediaResult(true, photoId, "Cập nhật ảnh đại diện thành công", directStr)
+                val directJson = try { JSONObject(directStr) } catch (_: Exception) { null }
+                val dId = directJson?.optString("id", photoId).ifBlank { photoId }
+                return MediaResult(true, dId, "Cập nhật ảnh đại diện thành công", directStr)
             }
         } catch (_: Exception) {}
 
-        // Fallback 2: POST /{target} với picture=photoId
-        val setPicBody2 = FormBody.Builder()
-            .add("access_token", token)
-            .add("picture", photoId)
-            .build()
-
-        val setPicReq2 = Request.Builder()
-            .url("$GRAPH_API_URL/$target?access_token=$token")
-            .post(setPicBody2)
-            .header("User-Agent", KATANA_USER_AGENT)
-            .header("Authorization", "OAuth $token")
-            .build()
-
-        return try {
-            httpClient.newCall(setPicReq2).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && !body.contains("\"error\"")
-                val json = try { JSONObject(body) } catch (_: Exception) { null }
-                val errMsg = json?.optJSONObject("error")?.optString("message") ?: body
-                MediaResult(isOk, photoId, if (isOk) "Cập nhật ảnh đại diện thành công" else "Lỗi đặt Avatar: $errMsg", body)
-            }
-        } catch (e: Exception) {
-            MediaResult(false, null, e.message, "")
-        }
+        return MediaResult(false, null, if (errMsg.isNotBlank()) "Lỗi tải ảnh đại diện: $errMsg" else "Lỗi cập nhật ảnh đại diện", "")
     }
 
     /**
      * 100% Graph API: Cập nhật Ảnh Bìa (Cover Photo) qua Token
-     * Bước 1: Upload ảnh lên /me/photos với is_profile_cover=true + published=true → lấy photo_id
-     * Bước 2: POST /{photo_id} với cover_photo={"cover_id": photo_id} để set làm bìa chính thức
+     * Thử qua targetId và me để hỗ trợ cả Profile lẫn Page Token
      */
     fun updateCoverPhoto(
         imageBytes: ByteArray,
@@ -264,19 +315,44 @@ class FacebookMediaEngine(
         val token = (tokenParam ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
         if (token.isEmpty()) return MediaResult(false, null, "Cần có Access Token để đổi ảnh bìa", "")
 
-        val target = if (targetId.isNullOrBlank() || targetId == "me") "me" else targetId
         val mediaType = mimeType.toMediaTypeOrNull()
         val fileBody = imageBytes.toRequestBody(mediaType)
 
-        // Bước 1: Upload ảnh với is_profile_cover=true (Facebook nhận dạng đây là ảnh bìa)
-        fun doUploadCover(endpointTarget: String): Pair<String, String> {
-            val uploadBody = MultipartBody.Builder()
+        val candidateEndpoints = mutableListOf<String>()
+        if (!targetId.isNullOrBlank() && targetId != "me") {
+            candidateEndpoints.add(targetId)
+        }
+
+        // Tự động kiểm tra ID thật mà Token gắn kèm nếu chưa có targetId cụ thể
+        if (candidateEndpoints.isEmpty()) {
+            try {
+                val meReq = Request.Builder()
+                    .url("$GRAPH_API_URL/me?fields=id&access_token=$token")
+                    .get()
+                    .header("User-Agent", KATANA_USER_AGENT)
+                    .build()
+                httpClient.newCall(meReq).execute().use { meRes ->
+                    val meBody = meRes.body?.string() ?: ""
+                    val meJson = try { JSONObject(meBody) } catch (_: Exception) { null }
+                    val realId = meJson?.optString("id", "") ?: ""
+                    if (realId.isNotEmpty()) {
+                        candidateEndpoints.add(realId)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        candidateEndpoints.add("me")
+
+        fun doUploadCover(endpointTarget: String, withProfileCover: Boolean): Pair<String, String> {
+            val uploadBodyBuilder = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("access_token", token)
-                .addFormDataPart("is_profile_cover", "true")
                 .addFormDataPart("published", "true")
                 .addFormDataPart("source", "cover_${System.currentTimeMillis()}.jpg", fileBody)
-                .build()
+            if (withProfileCover) {
+                uploadBodyBuilder.addFormDataPart("is_profile_cover", "true")
+            }
+            val uploadBody = uploadBodyBuilder.build()
 
             val uploadReq = Request.Builder()
                 .url("$GRAPH_API_URL/$endpointTarget/photos")
@@ -298,26 +374,70 @@ class FacebookMediaEngine(
             }
         }
 
-        val uploadResult = doUploadCover(target)
-        var photoId = uploadResult.first
-        var errMsg = uploadResult.second
+        var photoId = ""
+        var errMsg = ""
+        var successfulEndpoint = ""
 
-        // Fallback: nếu target bị từ chối thì thử "me"
-        if (photoId.isEmpty() && target != "me") {
-            val fallback = doUploadCover("me")
-            if (fallback.first.isNotEmpty()) {
-                photoId = fallback.first
+        for (ep in candidateEndpoints) {
+            // Cách 1: Upload chuẩn không có cờ is_profile_cover (bắt buộc cho Page và hoạt động tốt cho Profile)
+            var res = doUploadCover(ep, withProfileCover = false)
+            if (res.first.isNotEmpty()) {
+                photoId = res.first
+                successfulEndpoint = ep
+                break
             } else {
-                errMsg = fallback.second
+                errMsg = res.second
+                // Cách 2: Nếu ep là me hoặc profile cá nhân, thử thêm cờ is_profile_cover
+                if (ep == "me") {
+                    res = doUploadCover(ep, withProfileCover = true)
+                    if (res.first.isNotEmpty()) {
+                        photoId = res.first
+                        successfulEndpoint = ep
+                        break
+                    }
+                }
             }
+        }
+
+        // Nếu cả các candidate đều lỗi (ví dụ token thuộc về Page ID khác chưa nằm trong list):
+        if (photoId.isEmpty()) {
+            try {
+                val meReq = Request.Builder()
+                    .url("$GRAPH_API_URL/me?fields=id&access_token=$token")
+                    .get()
+                    .header("User-Agent", KATANA_USER_AGENT)
+                    .build()
+                httpClient.newCall(meReq).execute().use { meRes ->
+                    val meBody = meRes.body?.string() ?: ""
+                    val meJson = try { JSONObject(meBody) } catch (_: Exception) { null }
+                    val realId = meJson?.optString("id", "") ?: ""
+                    if (realId.isNotEmpty() && realId !in candidateEndpoints) {
+                        val res = doUploadCover(realId, withProfileCover = false)
+                        if (res.first.isNotEmpty()) {
+                            photoId = res.first
+                            successfulEndpoint = realId
+                        } else {
+                            errMsg = res.second
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
         }
 
         if (photoId.isEmpty()) {
             return MediaResult(false, null, "Lỗi tải ảnh bìa lên: $errMsg", errMsg)
         }
 
-        // Bước 2: Set photo này làm cover qua POST /{uid} với cover field JSON
-        return updateCoverPhotoWithPhotoId(photoId, target, tokenParam = token)
+        // Bước 2: Set photo này làm cover qua POST /{endpoint}
+        val targetForCover = if (successfulEndpoint.isNotEmpty()) successfulEndpoint else (targetId ?: "me")
+        val res1 = updateCoverPhotoWithPhotoId(photoId, targetForCover, tokenParam = token)
+        if (res1.isSuccess) return res1
+
+        if (targetForCover != "me") {
+            val res2 = updateCoverPhotoWithPhotoId(photoId, "me", tokenParam = token)
+            if (res2.isSuccess) return res2
+        }
+        return res1
     }
 
     fun updateCoverPhotoWithPhotoId(
@@ -332,55 +452,73 @@ class FacebookMediaEngine(
 
         val target = if (targetId.isNullOrBlank() || targetId == "me") "me" else targetId
 
-        // POST /{uid}?cover={"cover_id":"<photoId>","offset_x":0,"offset_y":0}
-        // Đây là cách Graph API chuẩn để set cover photo
+        // Thử cách 1: cover={"cover_id":"<photoId>","offset_x":0,"offset_y":0}
         val coverJson = """{"cover_id":"$photoId","offset_x":$offsetX,"offset_y":$offsetY}"""
-        val formBody = FormBody.Builder()
+        val formBody1 = FormBody.Builder()
             .add("access_token", token)
             .add("cover", coverJson)
             .build()
 
-        val request = Request.Builder()
+        val req1 = Request.Builder()
             .url("$GRAPH_API_URL/$target")
-            .post(formBody)
+            .post(formBody1)
             .header("User-Agent", KATANA_USER_AGENT)
             .header("Authorization", "OAuth $token")
             .build()
 
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val json = try { JSONObject(body) } catch (_: Exception) { null }
-                val hasError = json?.has("error") == true
-                val isOk = res.isSuccessful && !hasError
-                val errMsg = json?.optJSONObject("error")?.optString("message") ?: body
-                if (isOk) {
-                    MediaResult(true, photoId, "Cập nhật ảnh bìa thành công", body)
-                } else if (target != "me") {
-                    // Fallback: thử lại với "me"
-                    val fallbackBody = FormBody.Builder()
-                        .add("access_token", token)
-                        .add("cover", coverJson)
-                        .build()
-                    val fallbackReq = Request.Builder()
-                        .url("$GRAPH_API_URL/me")
-                        .post(fallbackBody)
-                        .header("User-Agent", KATANA_USER_AGENT)
-                        .header("Authorization", "OAuth $token")
-                        .build()
-                    httpClient.newCall(fallbackReq).execute().use { res2 ->
-                        val body2 = res2.body?.string() ?: ""
-                        val json2 = try { JSONObject(body2) } catch (_: Exception) { null }
-                        val isOk2 = res2.isSuccessful && json2?.has("error") != true
-                        val err2 = json2?.optJSONObject("error")?.optString("message") ?: body2
-                        MediaResult(isOk2, photoId, if (isOk2) "Cập nhật ảnh bìa thành công" else "Lỗi đặt ảnh bìa: $err2", body2)
-                    }
-                } else {
-                    MediaResult(false, null, "Lỗi đặt ảnh bìa: $errMsg", body)
-                }
+        try {
+            val res1 = httpClient.newCall(req1).execute()
+            val body1 = res1.body?.string() ?: ""
+            val json1 = try { JSONObject(body1) } catch (_: Exception) { null }
+            val hasError1 = json1?.has("error") == true
+            if (res1.isSuccessful && !hasError1) {
+                return MediaResult(true, photoId, "Cập nhật ảnh bìa thành công", body1)
             }
-        } catch (e: Exception) {
-            MediaResult(false, null, e.message, "")
+        } catch (_: Exception) {}
+
+        // Thử cách 2: cover=<photoId> string đơn giản
+        val formBody2 = FormBody.Builder()
+            .add("access_token", token)
+            .add("cover", photoId)
+            .add("offset_x", offsetX.toString())
+            .add("offset_y", offsetY.toString())
+            .build()
+
+        val req2 = Request.Builder()
+            .url("$GRAPH_API_URL/$target")
+            .post(formBody2)
+            .header("User-Agent", KATANA_USER_AGENT)
+            .header("Authorization", "OAuth $token")
+            .build()
+
+        try {
+            val res2 = httpClient.newCall(req2).execute()
+            val body2 = res2.body?.string() ?: ""
+            val json2 = try { JSONObject(body2) } catch (_: Exception) { null }
+            val hasError2 = json2?.has("error") == true
+            if (res2.isSuccessful && !hasError2) {
+                return MediaResult(true, photoId, "Cập nhật ảnh bìa thành công", body2)
+            }
+        } catch (_: Exception) {}
+
+        // Thử cách 3: fallback POST /me nếu target != "me"
+        if (target != "me") {
+            try {
+                val fallbackReq = Request.Builder()
+                    .url("$GRAPH_API_URL/me")
+                    .post(formBody1)
+                    .header("User-Agent", KATANA_USER_AGENT)
+                    .header("Authorization", "OAuth $token")
+                    .build()
+                val res3 = httpClient.newCall(fallbackReq).execute()
+                val body3 = res3.body?.string() ?: ""
+                val json3 = try { JSONObject(body3) } catch (_: Exception) { null }
+                if (res3.isSuccessful && json3?.has("error") != true) {
+                    return MediaResult(true, photoId, "Cập nhật ảnh bìa thành công", body3)
+                }
+            } catch (_: Exception) {}
         }
+
+        return MediaResult(false, null, "Không thể thiết lập ảnh bìa", "")
     }
 }

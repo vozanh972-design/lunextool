@@ -120,6 +120,9 @@ fun XsmmAccountScreen(navController: NavController) {
         )
     }
     var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
+    var livePageUids by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var livePageAvatars by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var livePageCovers by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
     LaunchedEffect(selectedPlatform, showFacebookLoginSheet, showInstagramCookieSheet) {
         if (selectedPlatform == "facebook") {
@@ -132,42 +135,34 @@ fun XsmmAccountScreen(navController: NavController) {
         }
     }
 
-    LaunchedEffect(selectedPlatform, facebookAccounts.size) {
+    LaunchedEffect(selectedPlatform, facebookAccounts) {
         if (selectedPlatform == "facebook") {
-            val hasUnresolved = facebookAccounts.any { acc ->
-                acc.pages.any { !it.displayUid.startsWith("615") }
-            }
-            if (hasUnresolved) {
-                scope.launch(Dispatchers.IO) {
-                    var needReload = false
-                    facebookAccounts.forEach { acc ->
-                        val proxyParts = acc.phone.ifBlank { null }?.split(":")
-                        val proxyHost = proxyParts?.getOrNull(0)
-                        val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
-                        val pageEngine = com.cayxu.app.facebook.FacebookPageEngine(
-                            accessToken = acc.bio,
-                            proxyHost = proxyHost,
-                            proxyPort = proxyPort
-                        )
-                        acc.pages.forEach { p ->
-                            if (!p.displayUid.startsWith("615")) {
-                                try {
-                                    val uid615 = pageEngine.fetchProfilePlusIdForPage(
-                                        pageId = p.pageId,
-                                        tokenParam = acc.bio,
-                                        pageTokenParam = p.pageToken
-                                    )
-                                    if (!uid615.isNullOrBlank() && uid615.startsWith("615")) {
-                                        com.cayxu.app.data.local.FacebookAccountsStore.updatePageUid(context, acc.uid, p.pageId, uid615)
-                                        needReload = true
+            facebookAccounts.forEach { acc ->
+                val proxyParts = acc.phone.ifBlank { null }?.split(":")
+                val proxyHost = proxyParts?.getOrNull(0)
+                val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+                acc.pages.forEach { p ->
+                    val curUid = livePageUids[p.pageId] ?: p.displayUid
+                    if (!curUid.startsWith("615")) {
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val pageEngine = com.cayxu.app.facebook.FacebookPageEngine(
+                                    accessToken = acc.bio,
+                                    proxyHost = proxyHost,
+                                    proxyPort = proxyPort
+                                )
+                                val uid615 = pageEngine.fetchProfilePlusIdForPage(
+                                    pageId = p.pageId,
+                                    tokenParam = acc.bio,
+                                    pageTokenParam = p.pageToken
+                                )
+                                if (!uid615.isNullOrBlank() && uid615.startsWith("615")) {
+                                    com.cayxu.app.data.local.FacebookAccountsStore.updatePageUid(context, acc.uid, p.pageId, uid615)
+                                    withContext(Dispatchers.Main) {
+                                        livePageUids = livePageUids + (p.pageId to uid615)
                                     }
-                                } catch (_: Exception) {}
-                            }
-                        }
-                    }
-                    if (needReload) {
-                        withContext(Dispatchers.Main) {
-                            facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                }
+                            } catch (_: Exception) {}
                         }
                     }
                 }
@@ -462,6 +457,13 @@ fun XsmmAccountScreen(navController: NavController) {
         FacebookPageDetailSheet(
             parentAccount = parentAcc,
             page = pageItem,
+            onUidResolved = { uid615 ->
+                livePageUids = livePageUids + (pageItem.pageId to uid615)
+            },
+            onMediaUpdated = { avatar, cover ->
+                if (avatar.isNotBlank()) livePageAvatars = livePageAvatars + (pageItem.pageId to avatar)
+                if (cover.isNotBlank()) livePageCovers = livePageCovers + (pageItem.pageId to cover)
+            },
             onDismiss = {
                 selectedFbDetailPage = null
                 facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
@@ -1368,16 +1370,17 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     // 1. Dấu tích chọn (Checkbox) của Page như Profile
-                                                    val pageKey = if (page.displayUid.startsWith("615")) page.displayUid else page.pageId
-                                                    val isPageChecked = pageKey in selectedForRunUids || (page.displayUid.isNotBlank() && page.displayUid in selectedForRunUids)
+                                                    val pageDisplayUid = livePageUids[page.pageId] ?: page.displayUid
+                                                    val pageKey = if (pageDisplayUid.startsWith("615")) pageDisplayUid else page.pageId
+                                                    val isPageChecked = pageKey in selectedForRunUids || (pageDisplayUid.isNotBlank() && pageDisplayUid in selectedForRunUids)
                                                     Checkbox(
                                                         checked = isPageChecked,
                                                         onCheckedChange = { checked ->
-                                                            val primaryKey = if (page.displayUid.startsWith("615")) page.displayUid else page.pageId
+                                                            val primaryKey = if (pageDisplayUid.startsWith("615")) pageDisplayUid else page.pageId
                                                             selectedForRunUids = if (checked) {
                                                                 selectedForRunUids + primaryKey
                                                             } else {
-                                                                selectedForRunUids - primaryKey - page.pageId - page.displayUid
+                                                                selectedForRunUids - primaryKey - page.pageId - pageDisplayUid
                                                             }
                                                         },
                                                         colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2)),
@@ -1386,9 +1389,13 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     Spacer(Modifier.width(8.dp))
 
                                                     // 2. Avatar của Page
-                                                    if (page.avatar.isNotBlank()) {
+                                                    val avatarToDisplay = livePageAvatars[page.pageId] ?: (
+                                                        if (page.avatar.isNotBlank() && !page.avatar.contains("silhouette") && !page.avatar.endsWith(".gif") && !page.avatar.contains(page.displayUid)) page.avatar
+                                                        else "https://graph.facebook.com/v21.0/${page.pageId}/picture?type=large"
+                                                    )
+                                                    if (avatarToDisplay.isNotBlank()) {
                                                         AsyncImage(
-                                                            model = page.avatar,
+                                                            model = avatarToDisplay,
                                                             contentDescription = "Page Avatar",
                                                             contentScale = ContentScale.Crop,
                                                             modifier = Modifier
@@ -1415,7 +1422,7 @@ fun XsmmAccountScreen(navController: NavController) {
 
                                                     // 3. Tên Page và ép hiển thị UID thật (615), không hiển thị ID page
                                                     Column(modifier = Modifier.weight(1f)) {
-                                                        val uid615 = page.displayUid
+                                                        val uid615 = pageDisplayUid
                                                         Text(
                                                             "Page: ${page.pageName.ifBlank { uid615.ifBlank { page.pageId } }}",
                                                             fontSize = 12.sp,
@@ -2043,9 +2050,12 @@ fun XsmmAccountScreen(navController: NavController) {
             // ---- Instagram & Facebook: Thanh công cụ tiện ích (Cấu hình, Tất cả, Xóa, Thêm +) ----
             val isIg = selectedPlatform == "instagram"
             val platformColor = if (isIg) Color(0xFFE1306C) else Color(0xFF1877F2)
-            val allFbKeys = remember(facebookAccounts) {
+            val allFbKeys = remember(facebookAccounts, livePageUids) {
                 facebookAccounts.flatMap { acc ->
-                    listOf(acc.uid) + acc.pages.map { p -> if (p.displayUid.startsWith("615")) p.displayUid else p.pageId }
+                    listOf(acc.uid) + acc.pages.map { p ->
+                        val u = livePageUids[p.pageId] ?: p.displayUid
+                        if (u.startsWith("615")) u else p.pageId
+                    }
                 }.toSet()
             }
             val allSelected = if (isIg) {

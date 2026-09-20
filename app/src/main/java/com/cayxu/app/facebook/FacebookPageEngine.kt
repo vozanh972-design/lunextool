@@ -177,7 +177,7 @@ class FacebookPageEngine(
                                     pageName = name,
                                     pageToken = pToken,
                                     additionalProfileId = uid615,
-                                    avatar = "https://graph.facebook.com/v21.0/${uid615.ifBlank { id }}/picture?type=large",
+                                    avatar = "https://graph.facebook.com/v21.0/$id/picture?type=large",
                                     isLive = true
                                 )
                             )

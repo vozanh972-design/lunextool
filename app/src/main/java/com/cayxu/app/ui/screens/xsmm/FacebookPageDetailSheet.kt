@@ -50,13 +50,22 @@ import kotlinx.coroutines.withContext
 fun FacebookPageDetailSheet(
     parentAccount: FacebookAccount,
     page: FacebookPageItem,
+    onUidResolved: ((String) -> Unit)? = null,
+    onMediaUpdated: ((String, String) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var currentAvatar by remember { mutableStateOf(page.avatar) }
+    val initialAvatar = remember(page.pageId, page.avatar) {
+        if (page.avatar.isNotBlank() && !page.avatar.contains("silhouette") && !page.avatar.endsWith(".gif") && !page.avatar.contains(page.displayUid)) {
+            page.avatar
+        } else {
+            "https://graph.facebook.com/v21.0/${page.pageId}/picture?type=large"
+        }
+    }
+    var currentAvatar by remember { mutableStateOf(initialAvatar) }
     var currentCover by remember { mutableStateOf(page.cover) }
     var resolvedUid by remember { mutableStateOf(if (page.displayUid.startsWith("615")) page.displayUid else "") }
     var isUploadingAvatar by remember { mutableStateOf(false) }
@@ -87,20 +96,20 @@ fun FacebookPageDetailSheet(
                     if (!uid615.isNullOrBlank() && uid615.startsWith("615")) {
                         withContext(Dispatchers.Main) {
                             resolvedUid = uid615
+                            onUidResolved?.invoke(uid615)
                         }
                         FacebookAccountsStore.updatePageUid(context, parentAccount.uid, page.pageId, uid615)
                     }
                 }
 
-                // 2. Load cover photo và avatar HD của Page
+                // 2. Load cover photo và avatar HD của Page qua Graph API
                 if (effectiveToken.isNotBlank()) {
                     val mediaEngine = FacebookMediaEngine(
                         accessToken = effectiveToken,
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
-                    val targetEndpoint = if (page.pageToken.isNotBlank()) "me" else (resolvedUid.ifBlank { page.pageId })
-                    val mediaInfo = mediaEngine.getProfileMedia(targetEndpoint, tokenParam = effectiveToken)
+                    val mediaInfo = mediaEngine.getProfileMedia(page.pageId, tokenParam = effectiveToken)
                     if (mediaInfo != null) {
                         val fetchedCover = mediaInfo.coverUrl.orEmpty()
                         val fetchedAvatar = mediaInfo.avatarUrl.orEmpty()
@@ -108,9 +117,10 @@ fun FacebookPageDetailSheet(
                             if (fetchedCover.isNotBlank()) {
                                 currentCover = fetchedCover
                             }
-                            if (fetchedAvatar.isNotBlank() && (currentAvatar.isBlank() || currentAvatar.contains("silhouette"))) {
+                            if (fetchedAvatar.isNotBlank() && !fetchedAvatar.contains("silhouette") && !fetchedAvatar.endsWith(".gif")) {
                                 currentAvatar = fetchedAvatar
                             }
+                            onMediaUpdated?.invoke(currentAvatar, currentCover)
                         }
                         FacebookAccountsStore.updatePageMedia(
                             context = context,
@@ -161,7 +171,7 @@ fun FacebookPageDetailSheet(
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
-                    val targetEndpoint = if (page.pageToken.isNotBlank()) "me" else (resolvedUid.ifBlank { page.pageId })
+                    val targetEndpoint = page.pageId.ifBlank { "me" }
                     val result = mediaEngine.updateAvatar(
                         imageBytes = bytes,
                         targetId = targetEndpoint,
@@ -172,16 +182,23 @@ fun FacebookPageDetailSheet(
                         isUploadingAvatar = false
                         if (result.isSuccess) {
                             Toast.makeText(context, "Đổi Avatar Page thành công!", Toast.LENGTH_SHORT).show()
-                            kotlinx.coroutines.delay(1500)
-                            val updatedMedia = mediaEngine.getProfileMedia(targetEndpoint, tokenParam = effectiveToken)
-                            val rawAvatar = updatedMedia?.avatarUrl ?: "https://graph.facebook.com/v21.0/${resolvedUid.ifBlank { page.pageId }}/picture?type=large&access_token=$effectiveToken"
-                            val newAvatarUrl = if (rawAvatar.contains("?")) "$rawAvatar&t=${System.currentTimeMillis()}" else "$rawAvatar?t=${System.currentTimeMillis()}"
-                            currentAvatar = newAvatarUrl
+                            // Lấy link CDN trực tiếp của ảnh vừa upload để hiển thị ngay không bị trắng
+                            var directAvatarUrl: String? = null
+                            if (!result.mediaId.isNullOrBlank()) {
+                                directAvatarUrl = mediaEngine.getPhotoDirectUrl(result.mediaId, tokenParam = effectiveToken)
+                            }
+                            if (directAvatarUrl.isNullOrBlank()) {
+                                val updatedMedia = mediaEngine.getProfileMedia(page.pageId, tokenParam = effectiveToken)
+                                directAvatarUrl = updatedMedia?.avatarUrl?.takeIf { !it.contains("silhouette") && !it.endsWith(".gif") }
+                            }
+                            val finalAvatarUrl = directAvatarUrl ?: "https://graph.facebook.com/v21.0/${page.pageId}/picture?type=large&t=${System.currentTimeMillis()}"
+                            currentAvatar = finalAvatarUrl
+                            onMediaUpdated?.invoke(currentAvatar, currentCover)
                             FacebookAccountsStore.updatePageMedia(
                                 context = context,
                                 parentUid = parentAccount.uid,
                                 pageId = page.pageId,
-                                avatar = newAvatarUrl,
+                                avatar = finalAvatarUrl,
                                 cover = currentCover,
                                 additionalProfileId = resolvedUid.ifBlank { null }
                             )
@@ -234,7 +251,7 @@ fun FacebookPageDetailSheet(
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
-                    val targetEndpoint = if (page.pageToken.isNotBlank()) "me" else (resolvedUid.ifBlank { page.pageId })
+                    val targetEndpoint = page.pageId.ifBlank { "me" }
                     val result = mediaEngine.updateCoverPhoto(
                         imageBytes = bytes,
                         targetId = targetEndpoint,
@@ -245,18 +262,18 @@ fun FacebookPageDetailSheet(
                         isUploadingCover = false
                         if (result.isSuccess) {
                             Toast.makeText(context, "Đổi Ảnh Bìa Page thành công!", Toast.LENGTH_SHORT).show()
-                            kotlinx.coroutines.delay(1500)
-                            val updatedMedia = mediaEngine.getProfileMedia(targetEndpoint, tokenParam = effectiveToken)
-                            val rawCover = updatedMedia?.coverUrl.orEmpty()
-                            val newCoverUrl = if (rawCover.isNotBlank()) {
-                                if (rawCover.contains("?")) "$rawCover&t=${System.currentTimeMillis()}"
-                                else "$rawCover?t=${System.currentTimeMillis()}"
-                            } else if (result.mediaId != null) {
-                                "https://graph.facebook.com/v21.0/${result.mediaId}/picture?access_token=$effectiveToken&t=${System.currentTimeMillis()}"
-                            } else {
-                                currentCover
+                            // Lấy link CDN trực tiếp của ảnh bìa vừa upload
+                            var directCoverUrl: String? = null
+                            if (!result.mediaId.isNullOrBlank()) {
+                                directCoverUrl = mediaEngine.getPhotoDirectUrl(result.mediaId, tokenParam = effectiveToken)
                             }
-                            if (newCoverUrl != currentCover) currentCover = newCoverUrl
+                            if (directCoverUrl.isNullOrBlank()) {
+                                val updatedMedia = mediaEngine.getProfileMedia(page.pageId, tokenParam = effectiveToken)
+                                directCoverUrl = updatedMedia?.coverUrl?.takeIf { it.isNotBlank() }
+                            }
+                            val finalCoverUrl = directCoverUrl ?: (result.mediaId?.let { "https://graph.facebook.com/v21.0/$it/picture?access_token=$effectiveToken&t=${System.currentTimeMillis()}" } ?: currentCover)
+                            currentCover = finalCoverUrl
+                            onMediaUpdated?.invoke(currentAvatar, currentCover)
                             FacebookAccountsStore.updatePageMedia(
                                 context = context,
                                 parentUid = parentAccount.uid,
