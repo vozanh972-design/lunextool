@@ -1,4 +1,4 @@
-﻿package com.cayxu.app.facebook
+package com.cayxu.app.facebook
 
 import androidx.annotation.Keep
 
@@ -79,8 +79,14 @@ import java.util.concurrent.TimeUnit
             .add("access_token", token)
             .build()
 
+        // Facebook v2.4+ yêu cầu scoped {owner_id}_{post_id}.
+        // Nếu postId không chứa '_' và có pageId615 thì tự ghép.
+        val scopedPostId = if (!postId.contains("_") && !pageId615.isNullOrBlank()) {
+            "${pageId615}_$postId"
+        } else postId
+
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$postId/reactions")
+            .url("$GRAPH_API_URL/$scopedPostId/reactions")
             .post(formBody)
             .header("User-Agent", KATANA_USER_AGENT)
             .build()
@@ -89,12 +95,13 @@ import java.util.concurrent.TimeUnit
             httpClient.newCall(request).execute().use { res ->
                 val body = res.body?.string() ?: ""
                 val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
-                InteractionResult(isOk, postId, "REACT_${reactionType.value}", null, if (isOk) "Success" else body, body)
+                InteractionResult(isOk, scopedPostId, "REACT_${reactionType.value}", null, if (isOk) "Success" else body, body)
             }
         } catch (e: Exception) {
-            InteractionResult(false, postId, "REACT", null, e.message, "")
+            InteractionResult(false, scopedPostId, "REACT", null, e.message, "")
         }
     }
+
 
     fun reactGraphQLVoice(
         feedbackId: String,
@@ -147,6 +154,11 @@ import java.util.concurrent.TimeUnit
         val token = getCleanToken(overrideToken)
         if (token.isEmpty()) return InteractionResult(false, postId, "COMMENT", null, "Page token required", "")
 
+        // Facebook v2.4+ yêu cầu scoped {owner_id}_{post_id}.
+        val scopedPostId = if (!postId.contains("_") && !pageId615.isNullOrBlank()) {
+            "${pageId615}_$postId"
+        } else postId
+
         val formBuilder = FormBody.Builder()
             .add("message", message)
             .add("access_token", token)
@@ -156,7 +168,7 @@ import java.util.concurrent.TimeUnit
         }
 
         val request = Request.Builder()
-            .url("$GRAPH_API_URL/$postId/comments")
+            .url("$GRAPH_API_URL/$scopedPostId/comments")
             .post(formBuilder.build())
             .header("User-Agent", KATANA_USER_AGENT)
             .build()
@@ -167,12 +179,13 @@ import java.util.concurrent.TimeUnit
                 val json = try { JSONObject(body) } catch (_: Exception) { null }
                 val commentId = json?.optString("id", null)
                 val isOk = res.isSuccessful && !commentId.isNullOrEmpty()
-                InteractionResult(isOk, postId, "COMMENT", commentId, if (isOk) "Success" else body, body)
+                InteractionResult(isOk, scopedPostId, "COMMENT", commentId, if (isOk) "Success" else body, body)
             }
         } catch (e: Exception) {
-            InteractionResult(false, postId, "COMMENT", null, e.message, "")
+            InteractionResult(false, scopedPostId, "COMMENT", null, e.message, "")
         }
     }
+
 
     fun replyComment(
         parentCommentId: String,
