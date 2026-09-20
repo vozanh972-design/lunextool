@@ -57,14 +57,19 @@ object XsmmAccountsRepository {
         }.getOrNull() ?: fallback
     }
 
-    private fun parseAccount(obj: JsonObject): XsmmAccount = XsmmAccount(
-        id = obj.get("id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-        type = obj.get("type")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-        accountId = obj.get("account_id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-        name = obj.get("name")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-        linkAccount = obj.get("link_account")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-        isActive = obj.get("is_active")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
-    )
+    private fun parseAccount(obj: JsonObject): XsmmAccount {
+        val rawAccId = obj.get("account_id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+        val rawId = obj.get("id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+        val finalAccountId = rawAccId.ifBlank { rawId }
+        return XsmmAccount(
+            id = rawId,
+            type = obj.get("type")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+            accountId = finalAccountId,
+            name = obj.get("name")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+            linkAccount = obj.get("link_account")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+            isActive = obj.get("is_active")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
+        )
+    }
 
     /** [accountType]: "facebook"/"tiktok"/"instagram"/"thread"/"youtube"/"google". */
     suspend fun getAccounts(
@@ -74,7 +79,12 @@ object XsmmAccountsRepository {
         page: Int? = null
     ): XsmmAccountsResult {
         return try {
-            val response = XsmmRetrofitClient.api.getAccounts(authHeader(rawToken), search, page, accountType)
+            // Với Facebook: gọi thẳng API web /api/accounts theo đúng web XSMM
+            val response = if (accountType.equals("facebook", ignoreCase = true)) {
+                XsmmRetrofitClient.api.getAccountsWeb(authHeader(rawToken), search, page ?: 1, "facebook")
+            } else {
+                XsmmRetrofitClient.api.getAccounts(authHeader(rawToken), search, page, accountType)
+            }
             if (!response.isSuccessful) {
                 return XsmmAccountsResult.Error(readError(response.errorBody()?.string(), "Lỗi lấy danh sách (mã HTTP: ${response.code()})"))
             }

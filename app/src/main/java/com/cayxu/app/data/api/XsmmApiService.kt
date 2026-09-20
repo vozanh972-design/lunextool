@@ -23,6 +23,15 @@ interface XsmmApiService {
     @GET("api/taskapi/user")
     suspend fun getUser(@Header("Authorization") authorization: String): Response<JsonObject>
 
+    /** Lấy danh sách tài khoản theo API web XSMM (/api/accounts) */
+    @GET("api/accounts")
+    suspend fun getAccountsWeb(
+        @Header("Authorization") authorization: String,
+        @Query("search") search: String? = null,
+        @Query("page") page: Int? = 1,
+        @Query("account_type") accountType: String? = "facebook"
+    ): Response<JsonObject>
+
     /** Lấy danh sách tài khoản (accounts2) */
     @GET("api/taskapi/accounts2")
     suspend fun getAccounts(
