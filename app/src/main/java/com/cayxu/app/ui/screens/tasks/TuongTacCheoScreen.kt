@@ -279,9 +279,11 @@ fun TuongTacCheoScreen(navController: NavController) {
                         selectedTtcUsernames = if (checkAll) ttcAccounts.map { it.username }.toSet() else emptySet()
                     },
                     onAddNew = { showAddTtcSheet = true },
-                    onDelete = { username ->
-                        TtcAccountsStore.removeAccount(context, username)
-                        selectedTtcUsernames = selectedTtcUsernames - username
+                    onDeleteSelected = {
+                        selectedTtcUsernames.forEach { username ->
+                            TtcAccountsStore.removeAccount(context, username)
+                        }
+                        selectedTtcUsernames = emptySet()
                         reloadData()
                     }
                 )
@@ -405,10 +407,10 @@ private fun TtcAccountsTabContent(
     onToggle: (String) -> Unit,
     onSelectAll: (Boolean) -> Unit,
     onAddNew: () -> Unit,
-    onDelete: (String) -> Unit
+    onDeleteSelected: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Thanh công cụ: Checkbox "Tất cả" + Dấu cộng "+"
+        // Thanh công cụ: Checkbox "Tất cả" + Nút thùng rác & Dấu cộng "+"
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -434,14 +436,33 @@ private fun TtcAccountsTabContent(
                 )
             }
 
-            // Nút dấu cộng "+"
-            FilledIconButton(
-                onClick = onAddNew,
-                shape = CircleShape,
-                colors = IconButtonDefaults.filledIconButtonColors(containerColor = TtcPink),
-                modifier = Modifier.size(36.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Filled.Add, contentDescription = "Thêm acc TTC", tint = Color.White, modifier = Modifier.size(20.dp))
+                // Nút thùng rác xóa các acc đã chọn
+                IconButton(
+                    onClick = onDeleteSelected,
+                    enabled = selectedUsernames.isNotEmpty(),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "Xóa đã chọn",
+                        tint = if (selectedUsernames.isNotEmpty()) Color(0xFFEF4444) else Color(0xFFD1D5DB),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // Nút dấu cộng "+"
+                FilledIconButton(
+                    onClick = onAddNew,
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = TtcPink),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Thêm acc TTC", tint = Color.White, modifier = Modifier.size(20.dp))
+                }
             }
         }
 
@@ -503,20 +524,6 @@ private fun TtcAccountsTabContent(
                                 onCheckedChange = { onToggle(acc.username) },
                                 colors = CheckboxDefaults.colors(checkedColor = TtcPink)
                             )
-                            Spacer(Modifier.width(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .background(TtcPink.copy(alpha = 0.15f), CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Filled.SwapHoriz,
-                                    contentDescription = null,
-                                    tint = TtcPink,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
                             Spacer(Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
@@ -549,14 +556,6 @@ private fun TtcAccountsTabContent(
                                         )
                                     }
                                 }
-                            }
-                            IconButton(onClick = { onDelete(acc.username) }) {
-                                Icon(
-                                    Icons.Filled.Delete,
-                                    contentDescription = "Xóa",
-                                    tint = Color(0xFF9CA3AF),
-                                    modifier = Modifier.size(18.dp)
-                                )
                             }
                         }
                     }

@@ -87,25 +87,56 @@ object XsmmAccountsRepository {
         search: String? = null,
         page: Int? = null
     ): XsmmAccountsResult {
-        return try {
+        try {
             val response = XsmmRetrofitClient.api.getAccounts(authHeader(rawToken), search, page, accountType)
-            if (!response.isSuccessful) {
-                return XsmmAccountsResult.Error(readError(response.errorBody()?.string(), "Lỗi lấy danh sách (mã HTTP: ${response.code()})"))
+            if (response.isSuccessful) {
+                val json = response.body()
+                val errorField = json?.get("error")?.takeIf { it.isJsonPrimitive }?.asString
+                if (errorField.isNullOrBlank()) {
+                    val accountsArray = json?.get("accounts")?.takeIf { it.isJsonArray }?.asJsonArray
+                    val accounts = accountsArray?.mapNotNull { el ->
+                        if (el.isJsonObject) parseAccount(el.asJsonObject) else null
+                    }.orEmpty()
+                    if (accounts.isNotEmpty()) {
+                        val filteredAccounts = if (!accountType.isNullOrBlank()) {
+                            accounts.filter { it.type.equals(accountType, ignoreCase = true) }
+                        } else accounts
+                        val totalPages = json?.get("total_pages")?.takeIf { it.isJsonPrimitive }?.asInt ?: 1
+                        return XsmmAccountsResult.Success(filteredAccounts, totalPages)
+                    }
+                }
             }
-            val json = response.body()
-            val errorField = json?.get("error")?.takeIf { it.isJsonPrimitive }?.asString
-            if (!errorField.isNullOrBlank()) return XsmmAccountsResult.Error(errorField)
+        } catch (_: Exception) {}
 
-            val accountsArray = json?.get("accounts")?.takeIf { it.isJsonArray }?.asJsonArray
-            val accounts = accountsArray?.mapNotNull { el ->
-                if (el.isJsonObject) parseAccount(el.asJsonObject) else null
-            }.orEmpty()
-            val filteredAccounts = if (!accountType.isNullOrBlank()) {
-                accounts.filter { it.type.equals(accountType, ignoreCase = true) }
-            } else accounts
-            val totalPages = json?.get("total_pages")?.takeIf { it.isJsonPrimitive }?.asInt ?: 1
+        // Fallback trực tiếp sang endpoint web chuẩn: https://xsmm.net/api/accounts
+        return try {
+            val urlBuilder = okhttp3.HttpUrl.Builder()
+                .scheme("https")
+                .host("xsmm.net")
+                .addPathSegments("api/accounts")
+            if (page != null) urlBuilder.addQueryParameter("page", page.toString())
+            if (!accountType.isNullOrBlank()) urlBuilder.addQueryParameter("account_type", accountType)
+            if (!search.isNullOrBlank()) urlBuilder.addQueryParameter("search", search)
 
-            XsmmAccountsResult.Success(filteredAccounts, totalPages)
+            val req = okhttp3.Request.Builder()
+                .url(urlBuilder.build())
+                .header("Authorization", authHeader(rawToken))
+                .get()
+                .build()
+
+            XsmmRetrofitClient.okHttpClient.newCall(req).execute().use { res ->
+                val bodyStr = res.body?.string().orEmpty()
+                val json = runCatching { JsonParser.parseString(bodyStr).asJsonObject }.getOrNull()
+                val accountsArray = json?.get("accounts")?.takeIf { it.isJsonArray }?.asJsonArray
+                val accounts = accountsArray?.mapNotNull { el ->
+                    if (el.isJsonObject) parseAccount(el.asJsonObject) else null
+                }.orEmpty()
+                val filtered = if (!accountType.isNullOrBlank()) {
+                    accounts.filter { it.type.equals(accountType, ignoreCase = true) }
+                } else accounts
+                val totalPages = json?.get("total_pages")?.takeIf { it.isJsonPrimitive }?.asInt ?: 1
+                XsmmAccountsResult.Success(filtered, totalPages)
+            }
         } catch (e: Exception) {
             XsmmAccountsResult.Error(e.message ?: "Lỗi kết nối mạng")
         }
@@ -390,15 +421,25 @@ object XsmmAccountsRepository {
             if (response.isSuccessful) return@withContext true
         } catch (_: Exception) {}
 
-        // Fallback trực tiếp bằng OkHttp
+        // Fallback trực tiếp bằng OkHttp với cả 2 URL (/api/accounts và /api/taskapi/accounts)
         try {
             val mediaType = "application/json".toMediaTypeOrNull()
-            val req = okhttp3.Request.Builder()
-                .url("https://xsmm.net/api/taskapi/accounts/$accountId/set-active")
-                .header("Authorization", authHeader(rawToken))
-                .put(okhttp3.RequestBody.create(mediaType, "{}"))
-                .build()
-            XsmmRetrofitClient.okHttpClient.newCall(req).execute().use { it.isSuccessful }
+            val urls = listOf(
+                "https://xsmm.net/api/accounts/$accountId/set-active",
+                "https://xsmm.net/api/taskapi/accounts/$accountId/set-active"
+            )
+            for (targetUrl in urls) {
+                try {
+                    val req = okhttp3.Request.Builder()
+                        .url(targetUrl)
+                        .header("Authorization", authHeader(rawToken))
+                        .put(okhttp3.RequestBody.create(mediaType, "{}"))
+                        .build()
+                    val success = XsmmRetrofitClient.okHttpClient.newCall(req).execute().use { it.isSuccessful }
+                    if (success) return@withContext true
+                } catch (_: Exception) {}
+            }
+            false
         } catch (_: Exception) {
             false
         }
