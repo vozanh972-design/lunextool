@@ -154,7 +154,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                 proxyHost = proxyHost,
                                 proxyPort = proxyPort
                             )
-                            val media = mediaEngine.getProfileMedia("me", tokenParam = token)
+                            val media = mediaEngine.getUserMedia(tokenParam = token)
                             val realAvatar = media?.avatarUrl?.takeIf { !it.contains("84628273_176159830277856") }
                             if (!realAvatar.isNullOrBlank() && realAvatar != acc.avatar) {
                                 val updated = acc.copy(avatar = realAvatar)
@@ -400,9 +400,8 @@ fun XsmmAccountScreen(navController: NavController) {
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
-                    val result = mediaEngine.updateAvatar(
+                    val result = mediaEngine.updateUserAvatar(
                         imageBytes = bytes,
-                        targetId = "me",
                         tokenParam = token
                     )
 
@@ -412,7 +411,7 @@ fun XsmmAccountScreen(navController: NavController) {
                             directUrl = mediaEngine.getPhotoDirectUrl(result.mediaId, tokenParam = token)
                         }
                         if (directUrl.isNullOrBlank()) {
-                            val updatedMedia = mediaEngine.getProfileMedia("me", tokenParam = token)
+                            val updatedMedia = mediaEngine.getUserMedia(tokenParam = token)
                             directUrl = updatedMedia?.avatarUrl?.takeIf { !it.contains("84628273_176159830277856") }
                         }
                         val finalAvatar = directUrl ?: "https://graph.facebook.com/v21.0/me/picture?type=large&access_token=$token&t=${System.currentTimeMillis()}"

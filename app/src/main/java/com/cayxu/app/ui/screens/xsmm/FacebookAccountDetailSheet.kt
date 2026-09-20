@@ -130,9 +130,8 @@ fun FacebookAccountDetailSheet(
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
-                    val result = mediaEngine.updateAvatar(
+                    val result = mediaEngine.updateUserAvatar(
                         imageBytes = bytes,
-                        targetId = "me",
                         tokenParam = token
                     )
 
@@ -146,7 +145,7 @@ fun FacebookAccountDetailSheet(
                                 directUrl = mediaEngine.getPhotoDirectUrl(result.mediaId, tokenParam = token)
                             }
                             if (directUrl.isNullOrBlank()) {
-                                val updatedMedia = mediaEngine.getProfileMedia("me", tokenParam = token)
+                                val updatedMedia = mediaEngine.getUserMedia(tokenParam = token)
                                 directUrl = updatedMedia?.avatarUrl?.takeIf { !it.contains("84628273_176159830277856") }
                             }
                             val newAvatarUrl = directUrl ?: "https://graph.facebook.com/v21.0/me/picture?type=large&access_token=$token&t=${System.currentTimeMillis()}"

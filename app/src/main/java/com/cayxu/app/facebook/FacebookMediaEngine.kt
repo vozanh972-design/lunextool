@@ -64,8 +64,92 @@ class FacebookMediaEngine(
         this.userId = uid
     }
 
+    // =========================================================================
+    // PHẦN 1: LOGIC DÀNH RIÊNG CHO PROFILE CÁ NHÂN (USER PERSONAL)
+    // Tách biệt hoàn toàn, không đụng và không can thiệp vào logic của Page
+    // =========================================================================
+
     /**
-     * 100% Graph API: Lấy thông tin Avatar HD 1024x1024 và Ảnh bìa (Cover) qua Token
+     * Dành riêng cho Profile cá nhân: Lấy Avatar HD CDN thật và Bìa qua /me
+     */
+    fun getUserMedia(tokenParam: String? = null): ProfileMediaInfo? {
+        val token = (tokenParam ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        if (token.isEmpty()) return null
+
+        val url = "$GRAPH_API_URL/me?fields=id,name,picture.width(1024).height(1024){url,is_silhouette},cover{id,source}&access_token=$token"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .header("User-Agent", KATANA_USER_AGENT)
+            .header("Authorization", "OAuth $token")
+            .build()
+
+        return try {
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: "{}"
+                val json = JSONObject(body)
+                if (!json.has("error")) {
+                    val id = json.optString("id", "me")
+                    val name = json.optString("name", null)
+
+                    var avatarUrl: String? = null
+                    var isSilhouette = false
+                    if (json.has("picture")) {
+                        val picObj = json.optJSONObject("picture")
+                        val picData = picObj?.optJSONObject("data")
+                        if (picData != null) {
+                            val urlCandidate = picData.optString("url", "")
+                            if (urlCandidate.isNotBlank()) {
+                                avatarUrl = urlCandidate
+                            }
+                            isSilhouette = picData.optBoolean("is_silhouette", false)
+                        }
+                    }
+
+                    var coverUrl: String? = null
+                    var coverId: String? = null
+                    if (json.has("cover")) {
+                        val coverData = json.optJSONObject("cover")
+                        if (coverData != null) {
+                            coverUrl = coverData.optString("source", null)
+                            coverId = coverData.optString("id", null)
+                        }
+                    }
+
+                    if (avatarUrl.isNullOrBlank()) {
+                        avatarUrl = "$GRAPH_API_URL/me/picture?type=large&access_token=$token"
+                    }
+
+                    ProfileMediaInfo(id, name, avatarUrl, isSilhouette, coverUrl, coverId)
+                } else null
+            }
+        } catch (_: Exception) {
+            ProfileMediaInfo("me", null, "$GRAPH_API_URL/me/picture?type=large&access_token=$token", false, null, null)
+        }
+    }
+
+    /**
+     * Dành riêng cho Profile cá nhân: Đổi Avatar nick cá nhân qua Graph API /me
+     */
+    fun updateUserAvatar(
+        imageBytes: ByteArray,
+        mimeType: String = "image/jpeg",
+        tokenParam: String? = null
+    ): MediaResult {
+        return updateAvatar(
+            imageBytes = imageBytes,
+            mimeType = mimeType,
+            targetId = "me",
+            tokenParam = tokenParam
+        )
+    }
+
+    // =========================================================================
+    // PHẦN 2: LOGIC CHUNG / FANPAGE (GIỮ NGUYÊN HOÀN TOÀN KHÔNG SỬA ĐỔI)
+    // =========================================================================
+
+    /**
+     * Lấy thông tin Media chung (hỗ trợ Page qua pageId)
      */
     fun getProfileMedia(
         targetId: String? = null,
