@@ -222,20 +222,18 @@ object XsmmAccountsRepository {
         val cleanUid = uid.trim()
         if (cleanUid.isBlank()) return XsmmAddAccountResult.Error("Thiếu UID Facebook để thêm")
 
-        val rawLink = (linkAccount?.trim().takeIf { !it.isNullOrBlank() } ?: cleanUid).trim()
-        val numericMatch = Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(rawLink)?.groupValues?.getOrNull(1)
-            ?: cleanUid.takeIf { it.all { c -> c.isDigit() } }
-
-        val targetLink = when {
-            numericMatch != null && numericMatch.isNotBlank() -> "https://www.facebook.com/profile.php?id=$numericMatch"
-            rawLink.startsWith("http://", ignoreCase = true) || rawLink.startsWith("https://", ignoreCase = true) -> rawLink
-            rawLink.contains("facebook.com") -> "https://" + rawLink.removePrefix("https://").removePrefix("http://")
-            else -> "https://www.facebook.com/$rawLink"
+        // Gửi thẳng UID số (hoặc link nếu không phải số) - XSMM chấp nhận cả 2 dạng
+        val targetValue = if (cleanUid.all { it.isDigit() }) {
+            cleanUid  // Gửi raw UID số: 61594204073299
+        } else {
+            val rawLink = linkAccount?.trim().takeIf { !it.isNullOrBlank() } ?: cleanUid
+            if (rawLink.startsWith("http", ignoreCase = true)) rawLink
+            else "https://www.facebook.com/$rawLink"
         }
 
         val body = JsonObject().apply {
             addProperty("type", "facebook")
-            addProperty("link_account", targetLink)
+            addProperty("link_account", targetValue)
         }
 
         return try {
@@ -245,52 +243,38 @@ object XsmmAccountsRepository {
             }
             val json = response.body() ?: return XsmmAddAccountResult.Error("Phản hồi rỗng từ máy chủ XSMM")
 
-            // Kiểm tra lỗi rõ ràng từ server trả về
+            // Kiểm tra lỗi rõ ràng từ server
             val errorField = json.get("error")?.takeIf { it.isJsonPrimitive }?.asString
             if (!errorField.isNullOrBlank()) return XsmmAddAccountResult.Error(errorField)
 
-            val isFailedStatus = (json.get("status")?.takeIf { it.isJsonPrimitive }?.asString == "error" ||
-                json.get("status")?.takeIf { it.isJsonPrimitive }?.asString == "fail" ||
-                json.get("success")?.takeIf { it.isJsonPrimitive }?.asBoolean == false)
-            val statusMsg = (json.get("message")?.takeIf { it.isJsonPrimitive }?.asString
-                ?: json.get("msg")?.takeIf { it.isJsonPrimitive }?.asString)
-            if (isFailedStatus && !statusMsg.isNullOrBlank()) {
-                return XsmmAddAccountResult.Error(statusMsg)
+            val statusStr = json.get("status")?.takeIf { it.isJsonPrimitive }?.asString
+            val successBool = json.get("success")?.takeIf { it.isJsonPrimitive }?.asBoolean
+            val isExplicitFail = (statusStr == "error" || statusStr == "fail" || successBool == false)
+            val msgStr = json.get("message")?.takeIf { it.isJsonPrimitive }?.asString
+                ?: json.get("msg")?.takeIf { it.isJsonPrimitive }?.asString
+            if (isExplicitFail && !msgStr.isNullOrBlank()) {
+                return XsmmAddAccountResult.Error(msgStr)
             }
 
-            val accountObj = when {
-                json.has("id") && json.get("id").isJsonPrimitive && json.get("id").asString.isNotBlank() -> json
-                json.has("account_id") && json.get("account_id").isJsonPrimitive && json.get("account_id").asString.isNotBlank() -> json
-                json.get("account")?.isJsonObject == true -> json.getAsJsonObject("account")
-                json.get("data")?.isJsonObject == true -> json.getAsJsonObject("data")
-                else -> null
-            }
+            // HTTP 200 + không có lỗi = thành công (XSMM trả "Thêm tài khoản thành công!" không kèm id)
+            // Tự dựng object thành công từ dữ liệu gửi lên
+            val accountObj = json.takeIf { it.has("id") && it.get("id").isJsonPrimitive && it.get("id").asString.isNotBlank() }
+                ?: json.get("account")?.takeIf { it.isJsonObject }?.asJsonObject
+                ?: json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
 
-            val validId = accountObj?.get("id")?.takeIf { it.isJsonPrimitive }?.asString?.isNotBlank() == true ||
-                accountObj?.get("account_id")?.takeIf { it.isJsonPrimitive }?.asString?.isNotBlank() == true
-
-            if (accountObj != null && validId) {
-                XsmmAddAccountResult.Success(parseAccount(accountObj))
+            val builtAccount = if (accountObj != null) {
+                parseAccount(accountObj)
             } else {
-                // Kiểm tra lại danh sách thực tế từ XSMM để xác thực chắc chắn
-                val verifyRes = getAccounts(rawToken, accountType = "facebook", search = cleanUid)
-                if (verifyRes is XsmmAccountsResult.Success) {
-                    val found = verifyRes.accounts.firstOrNull { acc ->
-                        acc.type.equals("facebook", ignoreCase = true) &&
-                            (acc.accountId == cleanUid || acc.linkAccount.contains(cleanUid))
-                    }
-                    if (found != null) {
-                        return XsmmAddAccountResult.Success(found)
-                    }
-                }
-
-                val failureReason = statusMsg
-                    ?: json.get("message")?.takeIf { it.isJsonPrimitive }?.asString
-                    ?: json.get("msg")?.takeIf { it.isJsonPrimitive }?.asString
-                    ?: json.get("detail")?.takeIf { it.isJsonPrimitive }?.asString
-                    ?: "XSMM không trả về thông tin tài khoản hợp lệ"
-                XsmmAddAccountResult.Error(failureReason)
+                XsmmAccount(
+                    id = cleanUid,
+                    type = "facebook",
+                    accountId = cleanUid,
+                    name = cleanUid,
+                    linkAccount = targetValue,
+                    isActive = false
+                )
             }
+            XsmmAddAccountResult.Success(builtAccount)
         } catch (e: Exception) {
             XsmmAddAccountResult.Error(e.message ?: "Lỗi kết nối mạng")
         }
