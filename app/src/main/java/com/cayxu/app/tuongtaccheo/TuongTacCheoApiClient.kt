@@ -113,13 +113,20 @@ class TuongTacCheoApiClient(
             val json = JSONObject(body)
             val status = json.optString("status", "")
             if (status != "success" && !body.contains("user")) {
-                val msg = json.optString("mess", "Không Thể Login Token TTC")
+                val msg = json.optString("mess", json.optString("error", "Không Thể Login Token TTC"))
                 throw IllegalStateException(msg)
             }
 
-            val user = json.optString("user", "Unknown")
-            val soduStr = json.optString("sodu", "0").replace(",", "").replace(".", "")
-            val sodu = soduStr.toLongOrNull() ?: 0L
+            val dataObj = json.optJSONObject("data")
+            val user = dataObj?.optString("user")?.takeIf { it.isNotBlank() }
+                ?: json.optString("user").takeIf { it.isNotBlank() }
+                ?: "Unknown"
+            val sodu = dataObj?.optLong("sodu")
+                ?: run {
+                    val soduRaw = dataObj?.optString("sodu") ?: json.optString("sodu", "0")
+                    val soduClean = soduRaw.replace(",", "").replace(".", "").trim()
+                    soduClean.toLongOrNull() ?: 0L
+                }
 
             return TuongTacCheoAccount(
                 username = user,

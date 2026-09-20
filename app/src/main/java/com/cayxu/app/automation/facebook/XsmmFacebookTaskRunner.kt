@@ -245,9 +245,11 @@ object XsmmFacebookTaskRunner {
                 XsmmAccountStore.saveInternalIdMap(context, internalMap)
             }
         } else {
-            notify("XSMM: ${syncResult.message}")
-            onErrorDetail?.invoke(cleanUid, "Lỗi kiểm tra nick [$targetUidForXsmm] trên XSMM: ${syncResult.message}")
-            delay(1500L)
+            val errMsg = "Lỗi kích hoạt nick [$targetUidForXsmm] trên XSMM: ${syncResult.message}"
+            notify(errMsg)
+            onErrorDetail?.invoke(cleanUid, errMsg)
+            if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, errMsg)
+            return RunResult(0, 1, 0, errMsg)
         }
 
 
@@ -297,8 +299,9 @@ object XsmmFacebookTaskRunner {
                 if (newInternalId.isNotBlank()) {
                     XsmmAccountsRepository.setActiveAccount(token, newInternalId)
                 }
+                val activeUid = reSync.uid.ifBlank { xsmmUidToRun }
                 delay(1200L)
-                taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, xsmmUidToRun)
+                taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, activeUid)
             }
 
             val (isNoTask, errorMsg) = when (taskResult) {
