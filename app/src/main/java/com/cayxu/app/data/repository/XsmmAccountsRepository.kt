@@ -261,20 +261,20 @@ object XsmmAccountsRepository {
                 return XsmmAddAccountResult.Error(msgStr)
             }
 
-            // Verify: gọi getAccounts sau khi thêm để xác nhận acc thực sự tồn tại & active
+            // Verify: gọi getAccounts để xác nhận acc thực sự tồn tại (không cần isActive - "Đủ điều kiện" cũng is_active=false)
             val verifyRes = getAccounts(rawToken, accountType = "facebook")
             if (verifyRes is XsmmAccountsResult.Success) {
                 val found = verifyRes.accounts.firstOrNull { acc ->
                     acc.type.equals("facebook", ignoreCase = true) &&
-                    acc.isActive &&
                     acc.accountId.trim() == cleanUid
+                    // KHÔNG check isActive - acc "Đủ điều kiện" có is_active=false nhưng vẫn hợp lệ
                 }
                 if (found != null) {
                     return XsmmAddAccountResult.Success(found)
                 }
-                // Acc không active hoặc không tìm thấy → thực ra thêm thất bại
+                // Không tìm thấy trong danh sách → thêm thực sự thất bại
                 val failReason = msgStr?.takeIf { it.isNotBlank() }
-                    ?: "Tài khoản không đạt yêu cầu chất lượng của XSMM (không active)"
+                    ?: "Tài khoản chưa được XSMM xác nhận, vui lòng kiểm tra lại"
                 return XsmmAddAccountResult.Error(failReason)
             }
 

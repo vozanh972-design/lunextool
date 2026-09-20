@@ -570,8 +570,10 @@ fun XsmmAccountScreen(navController: NavController) {
                     val fbUids = mutableSetOf<String>()
                     result.accounts.forEach { acc ->
                         if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
-                        // Chỉ tính acc ACTIVE (is_active=true) - bỏ qua acc chờ duyệt/bị từ chối
-                        if (!acc.isActive) return@forEach
+                        // Bỏ qua acc rác: không active VÀ không có tên thật
+                        // Acc "Đủ điều kiện" có is_active=false nhưng có tên thật → giữ lại
+                        val hasRealName = acc.name.isNotBlank() && acc.name != acc.accountId
+                        if (!acc.isActive && !hasRealName) return@forEach
                         val uid = acc.accountId.trim()
                         if (uid.isNotBlank()) {
                             fbUids.add(uid)
@@ -719,8 +721,8 @@ fun XsmmAccountScreen(navController: NavController) {
                                             val internalMap = mutableMapOf<String, String>()
                                             accRes.accounts.forEach { acc ->
                                                 if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
-                                                // Chỉ tính acc ACTIVE (is_active=true)
-                                                if (!acc.isActive) return@forEach
+                                                val hasRealName = acc.name.isNotBlank() && acc.name != acc.accountId
+                                                if (!acc.isActive && !hasRealName) return@forEach
                                                 val uid = acc.accountId.trim()
                                                 if (uid.isNotBlank()) {
                                                     fbUids.add(uid)
@@ -1404,8 +1406,8 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                 val internalMap = mutableMapOf<String, String>()
                                                                 syncRes.accounts.forEach { a ->
                                                                     if (!a.type.equals("facebook", ignoreCase = true)) return@forEach
-                                                                    // Chỉ tính acc ACTIVE (is_active=true)
-                                                                    if (!a.isActive) return@forEach
+                                                                    val hasRealName = a.name.isNotBlank() && a.name != a.accountId
+                                                                    if (!a.isActive && !hasRealName) return@forEach
                                                                     val u = a.accountId.trim()
                                                                     if (u.isNotBlank()) {
                                                                         fbUids.add(u)
