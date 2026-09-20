@@ -178,6 +178,73 @@ object XsmmAccountsRepository {
         }
     }
 
+    /**
+     * Kiểm tra tài khoản Facebook (theo UID) đã có trên XSMM chưa.
+     */
+    suspend fun isFacebookAccountLinked(rawToken: String, uid: String): Boolean {
+        val cleanUid = uid.trim()
+        if (cleanUid.isBlank()) return false
+        val result = getAccounts(rawToken, accountType = "facebook", search = cleanUid)
+        val accounts = (result as? XsmmAccountsResult.Success)?.accounts.orEmpty()
+        return accounts.any { acc ->
+            acc.accountId == cleanUid || acc.linkAccount.contains(cleanUid)
+        }
+    }
+
+    /**
+     * Thêm tài khoản Facebook mới vào XSMM theo UID hoặc link_account
+     * Body: {"type": "facebook", "link_account": "https://facebook.com/username"}
+     */
+    suspend fun addFacebookAccount(
+        rawToken: String,
+        uid: String,
+        linkAccount: String? = null
+    ): XsmmAddAccountResult {
+        val cleanUid = uid.trim()
+        if (cleanUid.isBlank()) return XsmmAddAccountResult.Error("Thiếu UID Facebook để thêm")
+
+        val targetLink = if (!linkAccount.isNullOrBlank()) {
+            linkAccount.trim()
+        } else {
+            "https://www.facebook.com/profile.php?id=$cleanUid"
+        }
+
+        val body = JsonObject().apply {
+            addProperty("type", "facebook")
+            addProperty("link_account", targetLink)
+        }
+
+        return try {
+            val response = XsmmRetrofitClient.api.addAccount(authHeader(rawToken), body)
+            if (!response.isSuccessful) {
+                return XsmmAddAccountResult.Error(readError(response.errorBody()?.string(), "Lỗi thêm tài khoản Facebook (mã HTTP: ${response.code()})"))
+            }
+            val json = response.body()
+            val errorField = json?.get("error")?.takeIf { it.isJsonPrimitive }?.asString
+            if (!errorField.isNullOrBlank()) return XsmmAddAccountResult.Error(errorField)
+
+            val accountObj = json?.takeIf { it.has("id") || it.has("account_id") }
+                ?: json?.get("account")?.takeIf { it.isJsonObject }?.asJsonObject
+
+            if (accountObj != null) {
+                XsmmAddAccountResult.Success(parseAccount(accountObj))
+            } else {
+                XsmmAddAccountResult.Success(
+                    XsmmAccount(
+                        id = "",
+                        type = "facebook",
+                        accountId = cleanUid,
+                        name = cleanUid,
+                        linkAccount = targetLink,
+                        isActive = true
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            XsmmAddAccountResult.Error(e.message ?: "Lỗi kết nối mạng")
+        }
+    }
+
     /** Đặt 1 acc (theo id) làm "nick chạy". */
     suspend fun setActiveAccount(rawToken: String, accountId: String): Boolean {
         return try {

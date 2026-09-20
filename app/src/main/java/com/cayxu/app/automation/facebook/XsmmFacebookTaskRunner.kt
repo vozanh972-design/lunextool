@@ -138,17 +138,30 @@ object XsmmFacebookTaskRunner {
             } catch (_: Exception) {}
         }
 
-        // Đồng bộ lên XSMM nếu cần
+        // Đồng bộ và tự động thêm nick lên XSMM nếu chưa có
         try {
-            notify("Đồng bộ nick lên XSMM...")
+            notify("Kiểm tra nick trên XSMM...")
             val syncRes = XsmmAccountsRepository.getAccounts(token, "facebook", search = cleanUid)
-            if (syncRes is XsmmAccountsResult.Success) {
-                val exists = syncRes.accounts.any { it.accountId == cleanUid || it.name.contains(cleanUid, ignoreCase = true) }
-                if (!exists) {
-                    notify("Nick chưa liên kết trên XSMM")
-                }
+            val xsmmAccounts = (syncRes as? XsmmAccountsResult.Success)?.accounts.orEmpty()
+            val matchedAcc = xsmmAccounts.firstOrNull { acc ->
+                acc.accountId == cleanUid || acc.linkAccount.contains(cleanUid)
             }
-        } catch (_: Exception) {}
+            if (matchedAcc == null) {
+                notify("Đang thêm nick lên XSMM...")
+                val addRes = XsmmAccountsRepository.addFacebookAccount(token, cleanUid)
+                if (addRes is com.cayxu.app.data.repository.XsmmAddAccountResult.Success) {
+                    notify("Đã thêm nick lên XSMM thành công")
+                    delay(1000L)
+                } else if (addRes is com.cayxu.app.data.repository.XsmmAddAccountResult.Error) {
+                    notify("Thêm XSMM: ${addRes.message}")
+                    delay(1500L)
+                }
+            } else {
+                notify("Nick đã liên kết trên XSMM")
+            }
+        } catch (e: Exception) {
+            notify("Lỗi kiểm tra XSMM: ${e.message}")
+        }
 
         val pendingBatchTaskIds = mutableListOf<String>()
 
@@ -310,6 +323,24 @@ object XsmmFacebookTaskRunner {
                         val url = "https://graph.facebook.com/v19.0/$targetId/comments?access_token=$cleanToken"
                         val form = FormBody.Builder().add("message", comment.ifBlank { "❤️❤️" }).build()
                         val req = Request.Builder().url(url).post(form).build()
+                        httpClient.newCall(req).execute().use { res ->
+                            res.isSuccessful || res.code in 200..299
+                        }
+                    } else true
+                }
+                taskType.contains("share", ignoreCase = true) -> {
+                    if (cleanToken.isNotBlank()) {
+                        val url = "https://graph.facebook.com/v19.0/me/feed?link=$targetId&access_token=$cleanToken"
+                        val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
+                        httpClient.newCall(req).execute().use { res ->
+                            res.isSuccessful || res.code in 200..299
+                        }
+                    } else true
+                }
+                taskType.contains("member", ignoreCase = true) -> {
+                    if (cleanToken.isNotBlank()) {
+                        val url = "https://graph.facebook.com/v19.0/$targetId/members?access_token=$cleanToken"
+                        val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
                         httpClient.newCall(req).execute().use { res ->
                             res.isSuccessful || res.code in 200..299
                         }

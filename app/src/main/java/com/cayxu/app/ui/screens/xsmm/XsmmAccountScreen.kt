@@ -98,6 +98,8 @@ fun XsmmAccountScreen(navController: NavController) {
     var selectedPlatform by remember { mutableStateOf("tiktok") }
     var selectedVariant by remember { mutableStateOf(TikTokAppVariant.STANDARD) }
     var linkedHandles by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var linkedFbUids by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var addingFbUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     var isCheckingLinked by remember { mutableStateOf(false) }
     var addingUid by remember { mutableStateOf<String?>(null) }
     var selectedAccountUid by remember(selectedPlatform, selectedVariant) { mutableStateOf<String?>(null) }
@@ -564,18 +566,35 @@ fun XsmmAccountScreen(navController: NavController) {
             is XsmmAccountsResult.Success -> {
                 val accMap = mutableMapOf<String, String>()
                 val internalMap = mutableMapOf<String, String>()
-                result.accounts.forEach { acc ->
-                    val handle = acc.linkAccount.substringAfterLast("@").trim('/').lowercase()
-                    if (handle.isNotBlank()) {
-                        if (!acc.accountId.isNullOrBlank()) accMap[handle] = acc.accountId
-                        if (!acc.id.isNullOrBlank()) internalMap[handle] = acc.id
+                if (selectedPlatform == "facebook") {
+                    val fbUids = mutableSetOf<String>()
+                    result.accounts.forEach { acc ->
+                        val uid = acc.accountId.ifBlank {
+                            Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(acc.linkAccount)?.groupValues?.getOrNull(1) ?: ""
+                        }.trim()
+                        if (uid.isNotBlank()) {
+                            fbUids.add(uid)
+                            accMap[uid] = acc.accountId.ifBlank { uid }
+                            if (acc.id.isNotBlank()) internalMap[uid] = acc.id
+                        }
                     }
+                    linkedFbUids = fbUids
+                    XsmmAccountStore.saveAccountIdMap(context, accMap)
+                    XsmmAccountStore.saveInternalIdMap(context, internalMap)
+                } else {
+                    result.accounts.forEach { acc ->
+                        val handle = acc.linkAccount.substringAfterLast("@").trim('/').lowercase()
+                        if (handle.isNotBlank()) {
+                            if (!acc.accountId.isNullOrBlank()) accMap[handle] = acc.accountId
+                            if (!acc.id.isNullOrBlank()) internalMap[handle] = acc.id
+                        }
+                    }
+                    XsmmAccountStore.saveAccountIdMap(context, accMap)
+                    XsmmAccountStore.saveInternalIdMap(context, internalMap)
+                    linkedHandles = accMap.keys + result.accounts.mapNotNull { acc ->
+                        acc.linkAccount.substringAfterLast("@").trim('/').lowercase().takeIf { it.isNotBlank() }
+                    }.toSet()
                 }
-                XsmmAccountStore.saveAccountIdMap(context, accMap)
-                XsmmAccountStore.saveInternalIdMap(context, internalMap)
-                linkedHandles = accMap.keys + result.accounts.mapNotNull { acc ->
-                    acc.linkAccount.substringAfterLast("@").trim('/').lowercase().takeIf { it.isNotBlank() }
-                }.toSet()
             }
             is XsmmAccountsResult.Error -> Unit
         }
@@ -623,6 +642,27 @@ fun XsmmAccountScreen(navController: NavController) {
                                     XsmmSession.login(context, token, result.info.username, result.info.points)
                                 }
                                 is XsmmLoginResult.Error -> Unit
+                            }
+                            if (selectedPlatform == "facebook") {
+                                val accRes = XsmmAccountsRepository.getAccounts(token, accountType = "facebook")
+                                if (accRes is XsmmAccountsResult.Success) {
+                                    val fbUids = mutableSetOf<String>()
+                                    val accMap = mutableMapOf<String, String>()
+                                    val internalMap = mutableMapOf<String, String>()
+                                    accRes.accounts.forEach { acc ->
+                                        val uid = acc.accountId.ifBlank {
+                                            Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(acc.linkAccount)?.groupValues?.getOrNull(1) ?: ""
+                                        }.trim()
+                                        if (uid.isNotBlank()) {
+                                            fbUids.add(uid)
+                                            accMap[uid] = acc.accountId.ifBlank { uid }
+                                            if (acc.id.isNotBlank()) internalMap[uid] = acc.id
+                                        }
+                                    }
+                                    linkedFbUids = fbUids
+                                    XsmmAccountStore.saveAccountIdMap(context, accMap)
+                                    XsmmAccountStore.saveInternalIdMap(context, internalMap)
+                                }
                             }
                             isRefreshing = false
                         }
@@ -1167,13 +1207,94 @@ fun XsmmAccountScreen(navController: NavController) {
                                             }
 
                                             Spacer(Modifier.height(2.dp))
-                                            Text(
-                                                "UID: ${account.uid}",
-                                                color = TextSecondary,
-                                                fontSize = 12.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    "UID: ${account.uid}",
+                                                    color = TextSecondary,
+                                                    fontSize = 12.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+
+                                                // Trạng thái kiểm tra trên XSMM / Nút Thêm vào XSMM
+                                                val isFbLinked = account.uid in linkedFbUids
+                                                val isFbAdding = account.uid in addingFbUids
+
+                                                if (isFbAdding) {
+                                                    CircularProgressIndicator(
+                                                        color = Color(0xFF1877F2),
+                                                        strokeWidth = 2.dp,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                } else if (isFbLinked) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(6.dp))
+                                                            .background(Color(0xFF16A34A).copy(alpha = 0.12f))
+                                                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Filled.Check,
+                                                            contentDescription = null,
+                                                            tint = Color(0xFF16A34A),
+                                                            modifier = Modifier.size(11.dp)
+                                                        )
+                                                        Spacer(Modifier.width(2.dp))
+                                                        Text(
+                                                            "XSMM",
+                                                            color = Color(0xFF16A34A),
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                } else {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(6.dp))
+                                                            .background(Color(0xFF1877F2).copy(alpha = 0.12f))
+                                                            .clickable {
+                                                                val token = XsmmAccountStore.getToken(context)
+                                                                if (token.isNullOrBlank()) {
+                                                                    android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                                    return@clickable
+                                                                }
+                                                                addingFbUids = addingFbUids + account.uid
+                                                                scope.launch {
+                                                                    when (val res = XsmmAccountsRepository.addFacebookAccount(token, account.uid)) {
+                                                                        is XsmmAddAccountResult.Success -> {
+                                                                            linkedFbUids = linkedFbUids + account.uid
+                                                                            android.widget.Toast.makeText(context, "Đã thêm Facebook [${account.name.ifBlank { account.uid }}] vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                                        }
+                                                                        is XsmmAddAccountResult.Error -> {
+                                                                            android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
+                                                                        }
+                                                                    }
+                                                                    addingFbUids = addingFbUids - account.uid
+                                                                }
+                                                            }
+                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Filled.Add,
+                                                            contentDescription = null,
+                                                            tint = Color(0xFF1877F2),
+                                                            modifier = Modifier.size(11.dp)
+                                                        )
+                                                        Spacer(Modifier.width(2.dp))
+                                                        Text(
+                                                            "Thêm XSMM",
+                                                            color = Color(0xFF1877F2),
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
 
                                         // Nút Reload (Làm mới) màu xanh chủ đạo Facebook
