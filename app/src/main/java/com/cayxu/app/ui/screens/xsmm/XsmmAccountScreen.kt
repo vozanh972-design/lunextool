@@ -729,14 +729,8 @@ fun XsmmAccountScreen(navController: NavController) {
                                             linkedFbUids = fbUids
                                             XsmmAccountStore.saveAccountIdMap(context, accMap)
                                             XsmmAccountStore.saveInternalIdMap(context, internalMap)
-                                            // Toast debug: hiện số lượng + UID từ XSMM
-                                            val msg = if (accRes.accounts.isEmpty()) {
-                                                "XSMM: 0 Facebook acc → sẽ hiện nút Thêm"
-                                            } else {
-                                                val uids = accRes.accounts.joinToString("\n") { "accId='${it.accountId}' link='${it.linkAccount.take(40)}'" }
-                                                "XSMM có ${accRes.accounts.size} FB acc:\n$uids"
-                                            }
-                                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                                            val count = fbUids.size
+                                            android.widget.Toast.makeText(context, "Đã đồng bộ XSMM: $count tài khoản Facebook đã liên kết", android.widget.Toast.LENGTH_SHORT).show()
                                         } else {
                                             linkedFbUids = emptySet()
                                             val errMsg = (accRes as? XsmmAccountsResult.Error)?.message ?: "Lỗi không rõ"
@@ -1664,9 +1658,12 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         Spacer(Modifier.height(3.dp))
 
                                                         // Áp dụng trạng thái kiểm tra & thêm XSMM cho cả Page
-                                                        val pageTargetUid = if (pageDisplayUid.startsWith("615")) pageDisplayUid else page.pageId
-                                                        val isPageLinked = pageTargetUid in linkedFbUids || page.pageId in linkedFbUids || (pageDisplayUid.isNotBlank() && pageDisplayUid in linkedFbUids)
-                                                        val isPageAdding = pageTargetUid in addingFbUids || page.pageId in addingFbUids
+                                                        // CHỈ tính UID thật của Page (615), TUYỆT ĐỐI không lấy UID mẹ hoặc pageId rác để tránh nhận nhầm acc đã liên kết
+                                                        val pageRealUid = if (pageDisplayUid.startsWith("615") && pageDisplayUid != account.uid) pageDisplayUid
+                                                                          else if (page.additionalProfileId.startsWith("615") && page.additionalProfileId != account.uid) page.additionalProfileId
+                                                                          else ""
+                                                        val isPageLinked = pageRealUid.isNotBlank() && pageRealUid in linkedFbUids
+                                                        val isPageAdding = pageRealUid.isNotBlank() && pageRealUid in addingFbUids
 
                                                         if (isPageAdding) {
                                                             Row(
@@ -1727,24 +1724,25 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                             android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
                                                                             return@clickable
                                                                         }
-                                                                         addingFbUids = addingFbUids + pageTargetUid + page.pageId
+                                                                        val targetToAdd = pageRealUid.ifBlank { page.pageId }
+                                                                        if (targetToAdd.isBlank()) {
+                                                                            android.widget.Toast.makeText(context, "Chưa xác định được UID của Page", android.widget.Toast.LENGTH_SHORT).show()
+                                                                            return@clickable
+                                                                        }
+                                                                        addingFbUids = addingFbUids + targetToAdd
                                                                         scope.launch {
-                                                                             when (val res = XsmmAccountsRepository.addFacebookAccount(token, pageTargetUid)) {
+                                                                            when (val res = XsmmAccountsRepository.addFacebookAccount(token, targetToAdd)) {
                                                                                 is XsmmAddAccountResult.Success -> {
-                                                                                    // Thêm UID vào linkedFbUids ngay - không cần gọi thêm API
-                                                                                    val realUid = res.account.accountId.ifBlank { pageTargetUid }
-                                                                                    linkedFbUids = linkedFbUids + pageTargetUid + realUid
-                                                                                    if (page.pageId.isNotBlank()) {
-                                                                                        linkedFbUids = linkedFbUids + page.pageId
-                                                                                    }
-                                                                                    android.widget.Toast.makeText(context, "Đã thêm Page [${page.pageName.ifBlank { pageTargetUid }}] vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                                                    val realUid = res.account.accountId.ifBlank { targetToAdd }
+                                                                                    linkedFbUids = linkedFbUids + targetToAdd + realUid
+                                                                                    android.widget.Toast.makeText(context, "Đã thêm Page [${page.pageName.ifBlank { targetToAdd }}] vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
                                                                                 }
                                                                                 is XsmmAddAccountResult.Error -> {
-                                                                                    linkedFbUids = linkedFbUids - pageTargetUid - page.pageId
+                                                                                    linkedFbUids = linkedFbUids - targetToAdd
                                                                                     android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
                                                                                 }
                                                                             }
-                                                                            addingFbUids = addingFbUids - pageTargetUid - page.pageId
+                                                                            addingFbUids = addingFbUids - targetToAdd
                                                                         }
                                                                     }
                                                                     .padding(horizontal = 6.dp, vertical = 2.dp)
