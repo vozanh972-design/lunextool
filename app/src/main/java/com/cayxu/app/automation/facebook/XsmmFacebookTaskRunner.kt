@@ -148,26 +148,42 @@ object XsmmFacebookTaskRunner {
             } catch (_: Exception) {}
         }
 
-        // Đồng bộ và tự động thêm nick lên XSMM nếu chưa có
+        // Đồng bộ và tự động thêm nick lên XSMM nếu chưa có, đồng thời set làm nick chạy mặc định
         try {
             notify("Kiểm tra nick trên XSMM...")
-            val syncRes = XsmmAccountsRepository.getAccounts(token, "facebook", search = cleanUid)
-            val xsmmAccounts = (syncRes as? XsmmAccountsResult.Success)?.accounts.orEmpty()
-            val matchedAcc = xsmmAccounts.firstOrNull { acc ->
-                acc.accountId == cleanUid || acc.linkAccount.contains(cleanUid)
-            }
-            if (matchedAcc == null) {
-                notify("Đang thêm nick lên XSMM...")
-                val addRes = XsmmAccountsRepository.addFacebookAccount(token, cleanUid)
-                if (addRes is com.cayxu.app.data.repository.XsmmAddAccountResult.Success) {
-                    notify("Đã thêm nick lên XSMM thành công")
-                    delay(1000L)
-                } else if (addRes is com.cayxu.app.data.repository.XsmmAddAccountResult.Error) {
-                    notify("Thêm XSMM: ${addRes.message}")
-                    delay(1500L)
+            var internalId = XsmmAccountStore.getInternalIdMap(context)[cleanUid].orEmpty()
+            if (internalId.isBlank()) {
+                val syncRes = XsmmAccountsRepository.getAccounts(token, "facebook", search = cleanUid)
+                val xsmmAccounts = (syncRes as? XsmmAccountsResult.Success)?.accounts.orEmpty()
+                val matchedAcc = xsmmAccounts.firstOrNull { acc ->
+                    acc.accountId == cleanUid || acc.linkAccount.contains(cleanUid)
+                }
+                if (matchedAcc == null) {
+                    notify("Đang thêm nick lên XSMM...")
+                    val addRes = XsmmAccountsRepository.addFacebookAccount(token, cleanUid)
+                    if (addRes is com.cayxu.app.data.repository.XsmmAddAccountResult.Success) {
+                        internalId = addRes.account.id
+                        notify("Đã thêm nick lên XSMM thành công")
+                        delay(1000L)
+                    } else if (addRes is com.cayxu.app.data.repository.XsmmAddAccountResult.Error) {
+                        notify("Thêm XSMM: ${addRes.message}")
+                        delay(1500L)
+                    }
+                } else {
+                    internalId = matchedAcc.id
+                    notify("Nick đã liên kết trên XSMM")
                 }
             } else {
                 notify("Nick đã liên kết trên XSMM")
+            }
+
+            // Đặt tài khoản này làm mặc định (Active) trên XSMM trước khi nhận nhiệm vụ
+            if (internalId.isNotBlank()) {
+                notify("Đặt nick làm mặc định trên XSMM...")
+                XsmmAccountsRepository.setActiveAccount(token, internalId)
+                val internalMap = XsmmAccountStore.getInternalIdMap(context).toMutableMap()
+                internalMap[cleanUid] = internalId
+                XsmmAccountStore.saveInternalIdMap(context, internalMap)
             }
         } catch (e: Exception) {
             notify("Lỗi kiểm tra XSMM: ${e.message}")

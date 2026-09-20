@@ -2519,12 +2519,16 @@ fun XsmmAccountScreen(navController: NavController) {
                                         android.widget.Toast.makeText(context, "Đã dừng tất cả tác vụ Facebook", android.widget.Toast.LENGTH_SHORT).show()
                                     } else {
                                         val accountsToRun = if (selectedForRunUids.isNotEmpty()) {
-                                            facebookAccounts.filter { it.uid in selectedForRunUids }.map { it.uid }
+                                            selectedForRunUids.toList()
                                         } else {
                                             facebookAccounts.map { it.uid }
                                         }
-                                        com.cayxu.app.automation.facebook.XsmmFacebookManager.startAccounts(context, accountsToRun)
-                                        android.widget.Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Facebook", android.widget.Toast.LENGTH_SHORT).show()
+                                        if (accountsToRun.isEmpty()) {
+                                            android.widget.Toast.makeText(context, "Vui lòng chọn ít nhất 1 tài khoản để chạy", android.widget.Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            com.cayxu.app.automation.facebook.XsmmFacebookManager.startAccounts(context, accountsToRun)
+                                            android.widget.Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Facebook", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 },
                                 modifier = Modifier.size(38.dp)
