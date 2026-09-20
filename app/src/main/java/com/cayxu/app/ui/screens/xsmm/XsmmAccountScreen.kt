@@ -568,15 +568,12 @@ fun XsmmAccountScreen(navController: NavController) {
                 val internalMap = mutableMapOf<String, String>()
                 if (selectedPlatform == "facebook") {
                     val fbUids = mutableSetOf<String>()
-                    // Với mỗi acc trong getAccounts, verify lại bằng search=uid
-                    // Acc thật → search trả kết quả → đúng
-                    // Acc rác/failed → search trả rỗng → bỏ qua
+                    // API docs: GET accounts2 trả danh sách acc của user
+                    // account_id = Facebook UID → match thẳng với local UID
                     result.accounts.forEach { acc ->
                         if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
                         val uid = acc.accountId.trim()
-                        if (uid.isBlank()) return@forEach
-                        val isVerified = XsmmAccountsRepository.isFacebookAccountLinked(token, uid)
-                        if (isVerified) {
+                        if (uid.isNotBlank()) {
                             fbUids.add(uid)
                             accMap[uid] = uid
                             if (acc.id.isNotBlank()) internalMap[uid] = acc.id
@@ -723,9 +720,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             accRes.accounts.forEach { acc ->
                                                 if (!acc.type.equals("facebook", ignoreCase = true)) return@forEach
                                                 val uid = acc.accountId.trim()
-                                                if (uid.isBlank()) return@forEach
-                                                val isVerified = XsmmAccountsRepository.isFacebookAccountLinked(token, uid)
-                                                if (isVerified) {
+                                                if (uid.isNotBlank()) {
                                                     fbUids.add(uid)
                                                     accMap[uid] = uid
                                                     if (acc.id.isNotBlank()) internalMap[uid] = acc.id
@@ -1408,9 +1403,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                 syncRes.accounts.forEach { a ->
                                                                     if (!a.type.equals("facebook", ignoreCase = true)) return@forEach
                                                                     val u = a.accountId.trim()
-                                                                    if (u.isBlank()) return@forEach
-                                                                    val isVerified = XsmmAccountsRepository.isFacebookAccountLinked(xsmmToken, u)
-                                                                    if (isVerified) {
+                                                                    if (u.isNotBlank()) {
                                                                         fbUids.add(u)
                                                                         accMap[u] = u
                                                                         if (a.id.isNotBlank()) internalMap[u] = a.id
