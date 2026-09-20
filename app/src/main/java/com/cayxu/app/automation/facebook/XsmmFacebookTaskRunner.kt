@@ -274,6 +274,24 @@ object XsmmFacebookTaskRunner {
         }
 
         val pendingBatchTaskIds = mutableListOf<String>()
+        val activeTaskTypes = config.effectiveTaskTypes()
+        var currentTypeIndex = 0
+        var currentTypeRetryCount = 0
+
+        fun getTaskName(type: String): String {
+            val full = XsmmRunConfigStore.facebookTaskTypes.firstOrNull { it.first == type }?.second ?: type
+            return when {
+                type == "facebook_like" -> "Cảm xúc"
+                type == "facebook_follow" -> "Theo dõi"
+                type == "facebook_comment" -> "Comment"
+                type == "facebook_share" -> "Share"
+                type == "facebook_likepage" -> "Like Page"
+                type == "facebook_member" -> "Nhóm"
+                type == "facebook_likecmt" -> "Cảm xúc cmt"
+                type == "facebook_review" -> "Đánh giá"
+                else -> full
+            }
+        }
 
         while (coroutineContext.isActive) {
             if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) {
@@ -285,134 +303,157 @@ object XsmmFacebookTaskRunner {
                 break
             }
 
-            notify("Lấy nhiệm vụ Facebook (${config.taskType})...")
-            val taskResult = XsmmTasksRepository.getTasks2(token, config.taskType, targetUidForXsmm)
+            val currentActiveTaskType = activeTaskTypes.getOrElse(currentTypeIndex) { config.taskType }
+            val currentTaskLabel = getTaskName(currentActiveTaskType)
 
-            when (taskResult) {
+            notify("Lấy nhiệm vụ Facebook ($currentTaskLabel)...")
+            val taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, targetUidForXsmm)
+
+            val (isNoTask, errorMsg) = when (taskResult) {
                 is XsmmTasks2Result.Error -> {
-                    noTaskConsecutiveCount++
                     val xsmmDetail = "Lỗi lấy nhiệm vụ từ XSMM:\n• Server phản hồi: ${taskResult.message}"
                     onErrorDetail?.invoke(cleanUid, xsmmDetail)
                     if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, xsmmDetail)
-                    notify("Hết nhiệm vụ (${taskResult.message}). Chờ ${config.fetchTaskIntervalSeconds}s...")
-                    if (config.stopAfterNoTaskCount > 0 && noTaskConsecutiveCount >= config.stopAfterNoTaskCount) {
-                        notify("Hết nhiệm vụ liên tiếp $noTaskConsecutiveCount lần. Dừng.")
-                        break
-                    }
-                    delay(config.fetchTaskIntervalSeconds * 1000L)
+                    Pair(true, taskResult.message)
                 }
                 is XsmmTasks2Result.Success -> {
-                    if (taskResult.tasks.isEmpty()) {
-                        noTaskConsecutiveCount++
-                        notify("Hết nhiệm vụ (${config.taskType}). Chờ ${config.fetchTaskIntervalSeconds}s...")
-                        if (config.stopAfterNoTaskCount > 0 && noTaskConsecutiveCount >= config.stopAfterNoTaskCount) {
-                            notify("Hết nhiệm vụ liên tiếp $noTaskConsecutiveCount lần. Dừng.")
-                            break
-                        }
-                        delay(config.fetchTaskIntervalSeconds * 1000L)
+                    Pair(taskResult.tasks.isEmpty(), "Hết nhiệm vụ")
+                }
+            }
+
+            if (isNoTask) {
+                noTaskConsecutiveCount++
+                if (config.stopAfterNoTaskCount > 0 && noTaskConsecutiveCount >= config.stopAfterNoTaskCount) {
+                    notify("Hết nhiệm vụ liên tiếp $noTaskConsecutiveCount lần. Dừng.")
+                    break
+                }
+
+                if (activeTaskTypes.size > 1) {
+                    if (currentTypeRetryCount == 0) {
+                        // Lần đầu hết NV của loại này: chờ 10s tự reload lại đúng loại đó
+                        currentTypeRetryCount++
+                        notify("Hết NV ($currentTaskLabel). Chờ 10s reload lại...")
+                        delay(10_000L)
                     } else {
-                        noTaskConsecutiveCount = 0
+                        // Đã reload sau 10s mà vẫn hết NV -> chuyển sang loại nhiệm vụ khác trong danh sách
+                        currentTypeRetryCount = 0
+                        currentTypeIndex = (currentTypeIndex + 1) % activeTaskTypes.size
+                        val nextTaskType = activeTaskTypes[currentTypeIndex]
+                        val nextTaskLabel = getTaskName(nextTaskType)
+                        notify("Hết NV ($currentTaskLabel). Chuyển sang: $nextTaskLabel...")
+                        delay(1_000L)
+                    }
+                } else {
+                    // Chỉ chọn 1 loại nhiệm vụ: chờ theo cấu hình (mặc định 10s) rồi thử lại
+                    val waitSec = if (config.fetchTaskIntervalSeconds > 0) config.fetchTaskIntervalSeconds else 10
+                    notify("Hết NV ($currentTaskLabel). Chờ ${waitSec}s...")
+                    delay(waitSec * 1000L)
+                }
+                continue
+            }
 
-                        for ((idx, task) in taskResult.tasks.withIndex()) {
-                            if (!coroutineContext.isActive) break
+            // Có nhiệm vụ
+            currentTypeRetryCount = 0
+            noTaskConsecutiveCount = 0
+            val taskList = (taskResult as XsmmTasks2Result.Success).tasks
 
-                            if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) break
-                            if (config.stopAfterCompletedCount > 0 && totalCompleted >= config.stopAfterCompletedCount) break
+            for ((idx, task) in taskList.withIndex()) {
+                if (!coroutineContext.isActive) break
 
-                            val target = if (task.idorlink.contains("_")) {
-                                task.idorlink
-                            } else {
-                                task.targetId.ifBlank { task.idorlink }.ifBlank { task.targetUrl }
-                            }
-                            val shortTarget = if (target.length > 20) target.take(17) + "..." else target
-                            val pos = "[${idx + 1}/${taskResult.tasks.size}]"
+                if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) break
+                if (config.stopAfterCompletedCount > 0 && totalCompleted >= config.stopAfterCompletedCount) break
 
-                            notify("$pos Đang làm: $shortTarget")
+                val target = if (task.idorlink.contains("_")) {
+                    task.idorlink
+                } else {
+                    task.targetId.ifBlank { task.idorlink }.ifBlank { task.targetUrl }
+                }
+                val shortTarget = if (target.length > 20) target.take(17) + "..." else target
+                val pos = "[${idx + 1}/${taskList.size}]"
 
-                            val taskRes = executeFacebookTask(
-                                taskType = task.type.ifBlank { config.taskType },
-                                targetId = target,
-                                comment = task.comment,
-                                token = fbToken,
-                                cookie = account.note,
-                                proxyStr = account.phone.ifBlank { null },
-                                uid = targetUidForXsmm,
-                                isPage = (matchedPage != null),
-                                pageId615 = if (matchedPage != null) targetUidForXsmm else null
-                            )
+                notify("$pos Đang làm ($currentTaskLabel): $shortTarget")
 
-                            // Delay mô phỏng thời gian thao tác
-                            if (config.doTaskDurationSeconds > 0) {
-                                delay(config.doTaskDurationSeconds * 1000L)
-                            }
+                val taskRes = executeFacebookTask(
+                    taskType = task.type.ifBlank { currentActiveTaskType },
+                    targetId = target,
+                    comment = task.comment,
+                    token = fbToken,
+                    cookie = account.note,
+                    proxyStr = account.phone.ifBlank { null },
+                    uid = targetUidForXsmm,
+                    isPage = (matchedPage != null),
+                    pageId615 = if (matchedPage != null) targetUidForXsmm else null
+                )
 
-                            if (taskRes.isSuccess) {
-                                consecutiveErrors = 0
-                                pendingBatchTaskIds.add(task.id)
-                                totalCompleted++
-                                notify("$pos Xong (Đã gom ${pendingBatchTaskIds.size}/10)")
-                            } else {
-                                consecutiveErrors++
-                                totalErrors++
-                                notify("$pos Lỗi tác vụ ($consecutiveErrors/${config.failJobCountToSwitchAccount})")
-                                val detailMsg = buildString {
-                                    append("Nhiệm vụ: ${task.type.ifBlank { config.taskType }}\n")
-                                    append("Target: $target\n")
-                                    append("Lỗi từ Facebook: ${taskRes.message ?: "Thao tác không thành công"}")
-                                }
-                                onErrorDetail?.invoke(cleanUid, detailMsg)
-                                if (cleanUid != targetUidForXsmm) {
-                                    onErrorDetail?.invoke(targetUidForXsmm, detailMsg)
-                                }
-                                if (config.failJobCountToSwitchAccount > 0 && consecutiveErrors >= config.failJobCountToSwitchAccount) {
-                                    notify("Nick $cleanUid lỗi liên tiếp $consecutiveErrors job. Dừng.")
-                                    break
-                                }
-                            }
+                // Delay mô phỏng thời gian thao tác
+                if (config.doTaskDurationSeconds > 0) {
+                    delay(config.doTaskDurationSeconds * 1000L)
+                }
 
-                            // follow → gom đủ 10 rồi mới nhận xu
-                            // comment / like (cảm xúc) / các loại khác → nhận xu ngay sau mỗi job
-                            val currentTaskType = (task.type.ifBlank { config.taskType }).lowercase()
-                            val isFollowTask = currentTaskType.contains("follow") || currentTaskType.contains("sub")
-                            val batchLimit = if (isFollowTask) 10 else 1
-                            val isLast = (idx == taskResult.tasks.size - 1)
-                            if (pendingBatchTaskIds.size >= batchLimit || (isLast && pendingBatchTaskIds.isNotEmpty())) {
-                                val bSize = pendingBatchTaskIds.size
-                                if (isFollowTask) notify("Gửi nhận xu $bSize job follow...")
-                                else notify("Gửi nhận xu job...")
+                if (taskRes.isSuccess) {
+                    consecutiveErrors = 0
+                    pendingBatchTaskIds.add(task.id)
+                    totalCompleted++
+                    notify("$pos Xong (Đã gom ${pendingBatchTaskIds.size}/10)")
+                } else {
+                    consecutiveErrors++
+                    totalErrors++
+                    notify("$pos Lỗi tác vụ ($consecutiveErrors/${config.failJobCountToSwitchAccount})")
+                    val detailMsg = buildString {
+                        append("Nhiệm vụ: ${task.type.ifBlank { currentActiveTaskType }}\n")
+                        append("Target: $target\n")
+                        append("Lỗi từ Facebook: ${taskRes.message ?: "Thao tác không thành công"}")
+                    }
+                    onErrorDetail?.invoke(cleanUid, detailMsg)
+                    if (cleanUid != targetUidForXsmm) {
+                        onErrorDetail?.invoke(targetUidForXsmm, detailMsg)
+                    }
+                    if (config.failJobCountToSwitchAccount > 0 && consecutiveErrors >= config.failJobCountToSwitchAccount) {
+                        notify("Nick $cleanUid lỗi liên tiếp $consecutiveErrors job. Dừng.")
+                        break
+                    }
+                }
 
-                                val compRes = XsmmTasksRepository.completeTasks2(
-                                    token,
-                                    task.type.ifBlank { config.taskType },
-                                    pendingBatchTaskIds.toList(),
-                                    targetUidForXsmm
-                                )
+                // follow → gom đủ 10 rồi mới nhận xu
+                // comment / like (cảm xúc) / các loại khác → nhận xu ngay sau mỗi job
+                val actualType = (task.type.ifBlank { currentActiveTaskType }).lowercase()
+                val isFollowTask = actualType.contains("follow") || actualType.contains("sub")
+                val batchLimit = if (isFollowTask) 10 else 1
+                val isLast = (idx == taskList.size - 1)
+                if (pendingBatchTaskIds.size >= batchLimit || (isLast && pendingBatchTaskIds.isNotEmpty())) {
+                    val bSize = pendingBatchTaskIds.size
+                    if (isFollowTask) notify("Gửi nhận xu $bSize job follow...")
+                    else notify("Gửi nhận xu job...")
 
-                                val pts = if (compRes.points > 0) compRes.points else 0
-                                if (pts > 0) {
-                                    totalEarnedPoints += pts
-                                    withContext(Dispatchers.Main) {
-                                        val currentPts = XsmmAccountStore.getPoints(context) + pts
-                                        XsmmAccountStore.updatePoints(context, currentPts)
-                                        XsmmSession.points.value = currentPts
-                                    }
-                                }
+                    val compRes = XsmmTasksRepository.completeTasks2(
+                        token,
+                        task.type.ifBlank { currentActiveTaskType },
+                        pendingBatchTaskIds.toList(),
+                        targetUidForXsmm
+                    )
 
-                                if (compRes.success && pts > 0) {
-                                    notify("+$pts xu ($bSize job) (Tổng $totalCompleted NV)")
-                                    if (compRes.countdown > 0) {
-                                        delay(compRes.countdown * 1000L)
-                                    }
-                                } else {
-                                    notify("Nhận xu: ${compRes.message}")
-                                    val compErr = "Lỗi nhận xu từ XSMM:\n• Server phản hồi: ${compRes.message}"
-                                    onErrorDetail?.invoke(cleanUid, compErr)
-                                    if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, compErr)
-                                }
-                                pendingBatchTaskIds.clear()
-                            }
+                    val pts = if (compRes.points > 0) compRes.points else 0
+                    if (pts > 0) {
+                        totalEarnedPoints += pts
+                        withContext(Dispatchers.Main) {
+                            val currentPts = XsmmAccountStore.getPoints(context) + pts
+                            XsmmAccountStore.updatePoints(context, currentPts)
+                            XsmmSession.points.value = currentPts
                         }
                     }
+
+                    if (compRes.success && pts > 0) {
+                        notify("+$pts xu ($bSize job) (Tổng $totalCompleted NV)")
+                        if (compRes.countdown > 0) {
+                            delay(compRes.countdown * 1000L)
+                        }
+                    } else {
+                        notify("Nhận xu: ${compRes.message}")
+                        val compErr = "Lỗi nhận xu từ XSMM:\n• Server phản hồi: ${compRes.message}"
+                        onErrorDetail?.invoke(cleanUid, compErr)
+                        if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, compErr)
+                    }
+                    pendingBatchTaskIds.clear()
                 }
             }
         }

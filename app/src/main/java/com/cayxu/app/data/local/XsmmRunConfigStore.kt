@@ -6,8 +6,10 @@ import android.content.Context
 data class XsmmRunConfig(
     /** Nền tảng (mặc định: tiktok) */
     val platform: String = "tiktok",
-    /** Loại nhiệm vụ (mặc định: tiktok_follow) */
+    /** Loại nhiệm vụ đơn (mặc định: tiktok_follow) — giữ để tương thích ngược */
     val taskType: String = "tiktok_follow",
+    /** Danh sách loại nhiệm vụ được chọn (multi-select). Nếu trống thì dùng taskType. */
+    val taskTypes: List<String> = emptyList(),
     /** Thời gian giữa các lần lấy nhiệm vụ (giây). */
     val fetchTaskIntervalSeconds: Int = 10,
     /** Thời gian "làm" 1 nhiệm vụ trước khi báo hoàn thành (giây). */
@@ -24,12 +26,17 @@ data class XsmmRunConfig(
     val swipeBeforeTask: Boolean = false,
     /** Trở về Home rồi lướt sau khi làm xong (giữa các nhiệm vụ). */
     val returnHomeAndSwipe: Boolean = false
-)
+) {
+    /** Trả về danh sách loại nhiệm vụ hiệu lực (ưu tiên taskTypes, fallback taskType). */
+    fun effectiveTaskTypes(): List<String> =
+        taskTypes.filter { it.isNotBlank() }.ifEmpty { listOf(taskType).filter { it.isNotBlank() } }
+}
 
 object XsmmRunConfigStore {
     private const val PREFS_NAME = "cayxu_xsmm_run_config"
     private const val KEY_PLATFORM = "platform"
     private const val KEY_TASK_TYPE = "task_type"
+    private const val KEY_TASK_TYPES = "task_types"   // comma-separated
     private const val KEY_FETCH_INTERVAL = "fetch_task_interval_seconds"
     private const val KEY_DO_DURATION = "do_task_duration_seconds"
     private const val KEY_TASK_COUNT_TARGET = "task_count_target"
@@ -40,51 +47,51 @@ object XsmmRunConfigStore {
     private const val KEY_RETURN_HOME_SWIPE = "return_home_and_swipe"
 
     val supportedPlatforms = listOf(
-        "tiktok" to "TikTok",
-        "facebook" to "Facebook",
+        "tiktok"    to "TikTok",
+        "facebook"  to "Facebook",
         "instagram" to "Instagram"
     )
 
     val tiktokTaskTypes = listOf(
-        "tiktok_follow" to "TikTok Follow (Theo dõi)",
-        "tiktok_like" to "TikTok Like (Thả tim)",
+        "tiktok_follow"  to "TikTok Follow (Theo dõi)",
+        "tiktok_like"    to "TikTok Like (Thả tim)",
         "tiktok_comment" to "TikTok Comment (Bình luận)"
     )
 
     val facebookTaskTypes = listOf(
-        "facebook_like" to "Cảm xúc Facebook (Like / Love / Care / Haha / Wow / Sad / Angry)",
-        "facebook_follow" to "Theo dõi Facebook",
-        "facebook_comment" to "Comment Facebook (Bình luận)",
-        "facebook_share" to "Share Facebook (Chia sẻ)",
+        "facebook_like"     to "Cảm xúc Facebook (Like / Love / Care / Haha / Wow / Sad / Angry)",
+        "facebook_follow"   to "Theo dõi Facebook",
+        "facebook_comment"  to "Comment Facebook (Bình luận)",
+        "facebook_share"    to "Share Facebook (Chia sẻ)",
         "facebook_likepage" to "Like Page Facebook",
-        "facebook_member" to "Tham gia nhóm Facebook",
-        "facebook_likecmt" to "Cảm xúc comment Facebook",
-        "facebook_review" to "Đánh giá Facebook"
+        "facebook_member"   to "Tham gia nhóm Facebook",
+        "facebook_likecmt"  to "Cảm xúc comment Facebook",
+        "facebook_review"   to "Đánh giá Facebook"
     )
 
     val instagramTaskTypes = listOf(
-        "instagram_random" to "Ngẫu nhiên (Tym / Follow / Comment)",
-        "instagram_follow" to "Chỉ Follow (Theo dõi)",
-        "instagram_like" to "Chỉ Tym / Like (Thích bài viết)",
+        "instagram_random"  to "Ngẫu nhiên (Tym / Follow / Comment)",
+        "instagram_follow"  to "Chỉ Follow (Theo dõi)",
+        "instagram_like"    to "Chỉ Tym / Like (Thích bài viết)",
         "instagram_comment" to "Chỉ Comment (Bình luận)"
     )
 
     fun taskTypesFor(platform: String): List<Pair<String, String>> = when (platform.lowercase()) {
-        "facebook" -> facebookTaskTypes
+        "facebook"  -> facebookTaskTypes
         "instagram" -> instagramTaskTypes
-        else -> tiktokTaskTypes
+        else        -> tiktokTaskTypes
     }
 
     fun defaultTaskTypeFor(platform: String): String = when (platform.lowercase()) {
         "instagram" -> "instagram_random"
-        "facebook" -> "facebook_like"
-        else -> "tiktok_follow"
+        "facebook"  -> "facebook_like"
+        else        -> "tiktok_follow"
     }
 
     private fun prefixFor(platform: String): String = when (platform.lowercase()) {
         "instagram" -> "instagram_"
-        "facebook" -> "facebook_"
-        else -> "tiktok_"
+        "facebook"  -> "facebook_"
+        else        -> "tiktok_"
     }
 
     val supportedTaskTypes: List<Pair<String, String>>
@@ -108,16 +115,18 @@ object XsmmRunConfigStore {
         val validTypes = taskTypesFor(selectedPlatform).map { it.first }
         val rawTaskType = p.getString("${prefix}${KEY_TASK_TYPE}", null)
             ?: if (selectedPlatform == "tiktok") p.getString(KEY_TASK_TYPE, null) else null
+        val safeTaskType = if (rawTaskType != null && rawTaskType in validTypes) rawTaskType
+                           else defaultTaskTypeFor(selectedPlatform)
 
-        val safeTaskType = if (rawTaskType != null && rawTaskType in validTypes) {
-            rawTaskType
-        } else {
-            defaultTaskTypeFor(selectedPlatform)
-        }
+        // Đọc taskTypes (comma-separated)
+        val rawTaskTypes = p.getString("${prefix}${KEY_TASK_TYPES}", "")
+            ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() && it in validTypes }
+            ?: emptyList()
 
         return XsmmRunConfig(
             platform = selectedPlatform,
             taskType = safeTaskType,
+            taskTypes = rawTaskTypes,
             fetchTaskIntervalSeconds = p.getInt("${prefix}${KEY_FETCH_INTERVAL}", p.getInt(KEY_FETCH_INTERVAL, 10)),
             doTaskDurationSeconds = p.getInt("${prefix}${KEY_DO_DURATION}", p.getInt(KEY_DO_DURATION, 10)),
             taskCountTarget = p.getInt("${prefix}${KEY_TASK_COUNT_TARGET}", p.getInt(KEY_TASK_COUNT_TARGET, 0)),
@@ -135,10 +144,12 @@ object XsmmRunConfigStore {
         val prefix = prefixFor(selectedPlatform)
         val validTypes = taskTypesFor(selectedPlatform).map { it.first }
         val safeTaskType = if (config.taskType in validTypes) config.taskType else defaultTaskTypeFor(selectedPlatform)
+        val safeTaskTypes = config.taskTypes.filter { it in validTypes }
 
         p.edit()
             .putString(KEY_PLATFORM, selectedPlatform)
             .putString("${prefix}${KEY_TASK_TYPE}", safeTaskType)
+            .putString("${prefix}${KEY_TASK_TYPES}", safeTaskTypes.joinToString(","))
             .putInt("${prefix}${KEY_FETCH_INTERVAL}", config.fetchTaskIntervalSeconds)
             .putInt("${prefix}${KEY_DO_DURATION}", config.doTaskDurationSeconds)
             .putInt("${prefix}${KEY_TASK_COUNT_TARGET}", config.taskCountTarget)
