@@ -228,7 +228,8 @@ object XsmmFacebookTaskRunner {
                                 comment = task.comment,
                                 token = fbToken,
                                 cookie = account.note,
-                                proxyStr = account.phone.ifBlank { null }
+                                proxyStr = account.phone.ifBlank { null },
+                                uid = cleanUid
                             )
 
                             // Delay mô phỏng thời gian thao tác
@@ -301,65 +302,83 @@ object XsmmFacebookTaskRunner {
         comment: String,
         token: String,
         cookie: String,
-        proxyStr: String?
+        proxyStr: String?,
+        uid: String? = null
     ): Boolean {
         if (targetId.isBlank()) return false
-        val cleanToken = token.removePrefix("OAuth ").trim()
+        val cleanToken = token.removePrefix("OAuth ").removePrefix("Bearer ").trim()
 
+        val proxyParts = proxyStr?.split(":")
+        val proxyHost = proxyParts?.getOrNull(0)
+        val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+
+        val engine = com.cayxu.app.facebook.FacebookTuongTacEngine(
+            accessToken = cleanToken,
+            userId = uid,
+            proxyHost = proxyHost,
+            proxyPort = proxyPort
+        )
+
+        val lower = taskType.lowercase()
+        val result = when {
+            lower.contains("comment") -> {
+                engine.comment(targetId, comment.ifBlank { "❤️❤️❤️" })
+            }
+            lower.contains("follow") || lower.contains("sub") -> {
+                engine.follow(targetId)
+            }
+            lower.contains("page") -> {
+                engine.likePage(targetId)
+            }
+            lower.contains("group") || lower.contains("member") || lower.contains("join") -> {
+                engine.joinGroup(targetId)
+            }
+            lower.contains("review") || lower.contains("danhgia") -> {
+                engine.reviewPage(targetId, isPositive = true, reviewText = comment.ifBlank { "Rất tuyệt vời!" })
+            }
+            lower.contains("like") || lower.contains("love") || lower.contains("care") ||
+            lower.contains("haha") || lower.contains("wow") || lower.contains("sad") || lower.contains("angry") || lower.contains("tym") -> {
+                val reaction = when {
+                    lower.contains("love") || lower.contains("tym") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LOVE
+                    lower.contains("care") || lower.contains("thuongthuong") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.CARE
+                    lower.contains("haha") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.HAHA
+                    lower.contains("wow") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.WOW
+                    lower.contains("sad") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.SAD
+                    lower.contains("angry") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.ANGRY
+                    else -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE
+                }
+                engine.react(targetId, reaction)
+            }
+            else -> {
+                engine.react(targetId, com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE)
+            }
+        }
+
+        if (result.isSuccess) return true
+
+        // Fallback sang Graph API v21.0 nếu GraphQL mutation gặp lỗi
         return try {
             when {
-                taskType.contains("like", ignoreCase = true) -> {
-                    // Like post / page via Graph API
-                    if (cleanToken.isNotBlank()) {
-                        val url = "https://graph.facebook.com/v19.0/$targetId/likes?access_token=$cleanToken"
-                        val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
-                        httpClient.newCall(req).execute().use { res ->
-                            res.isSuccessful || res.code in 200..299
-                        }
-                    } else true
+                lower.contains("like") -> {
+                    val url = "https://graph.facebook.com/v21.0/$targetId/likes?access_token=$cleanToken"
+                    val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
+                    httpClient.newCall(req).execute().use { it.isSuccessful }
                 }
-                taskType.contains("follow", ignoreCase = true) || taskType.contains("sub", ignoreCase = true) -> {
-                    // Follow user / page
-                    if (cleanToken.isNotBlank()) {
-                        val url = "https://graph.facebook.com/v19.0/$targetId/subscribers?access_token=$cleanToken"
-                        val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
-                        httpClient.newCall(req).execute().use { res ->
-                            res.isSuccessful || res.code in 200..299
-                        }
-                    } else true
+                lower.contains("follow") || lower.contains("sub") -> {
+                    val url = "https://graph.facebook.com/v21.0/$targetId/subscribers?access_token=$cleanToken"
+                    val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
+                    httpClient.newCall(req).execute().use { it.isSuccessful }
                 }
-                taskType.contains("comment", ignoreCase = true) -> {
-                    if (cleanToken.isNotBlank()) {
-                        val url = "https://graph.facebook.com/v19.0/$targetId/comments?access_token=$cleanToken"
-                        val form = FormBody.Builder().add("message", comment.ifBlank { "❤️❤️" }).build()
-                        val req = Request.Builder().url(url).post(form).build()
-                        httpClient.newCall(req).execute().use { res ->
-                            res.isSuccessful || res.code in 200..299
-                        }
-                    } else true
+                lower.contains("comment") -> {
+                    val url = "https://graph.facebook.com/v21.0/$targetId/comments?access_token=$cleanToken"
+                    val form = FormBody.Builder().add("message", comment.ifBlank { "❤️❤️" }).build()
+                    val req = Request.Builder().url(url).post(form).build()
+                    httpClient.newCall(req).execute().use { it.isSuccessful }
                 }
-                taskType.contains("share", ignoreCase = true) -> {
-                    if (cleanToken.isNotBlank()) {
-                        val url = "https://graph.facebook.com/v19.0/me/feed?link=$targetId&access_token=$cleanToken"
-                        val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
-                        httpClient.newCall(req).execute().use { res ->
-                            res.isSuccessful || res.code in 200..299
-                        }
-                    } else true
-                }
-                taskType.contains("member", ignoreCase = true) -> {
-                    if (cleanToken.isNotBlank()) {
-                        val url = "https://graph.facebook.com/v19.0/$targetId/members?access_token=$cleanToken"
-                        val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
-                        httpClient.newCall(req).execute().use { res ->
-                            res.isSuccessful || res.code in 200..299
-                        }
-                    } else true
-                }
-                else -> true
+                else -> false
             }
         } catch (_: Exception) {
-            true // Fallback cho mbasic / server xác nhận sau
+            false
         }
     }
 }
