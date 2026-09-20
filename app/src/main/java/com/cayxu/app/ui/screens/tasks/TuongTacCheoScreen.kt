@@ -44,11 +44,15 @@ private val TtcPink = Color(0xFFEC4899)
 private val FbBlue = Color(0xFF1877F2)
 
 /**
- * Màn hình Tương Tác Chéo dạng 2 THẺ (Tabs):
- *   - Bấm vào thẻ "Acc TTC" -> Nội dung bên dưới hiển thị danh sách tài khoản TTC
- *   - Bấm qua thẻ "Facebook" -> Nội dung bên dưới hiển thị danh sách tài khoản Facebook
- * Không hiển thị song song dọc chật chội.
+ * Màn hình Tương Tác Chéo:
+ *   - 2 Thẻ (Tabs) ở trên: Acc TTC / Facebook
+ *   - Checkbox rút gọn thành "Tất cả"
+ *   - Nút thêm acc TTC là dấu "+"
+ *   - Cơ chế trượt từ dưới lên (ModalBottomSheet) để dán token mỗi dòng 1 acc
+ *   - Có 2 ô chọn: Token và Proxy
+ *   - 2 nút: "Hủy" và "Đăng nhập"
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TuongTacCheoScreen(navController: NavController) {
     val context = LocalContext.current
@@ -60,29 +64,48 @@ fun TuongTacCheoScreen(navController: NavController) {
     var ttcAccounts by remember { mutableStateOf(TtcAccountsStore.getAccounts(context)) }
     var fbAccounts by remember { mutableStateOf(FacebookAccountsStore.getAccounts(context)) }
 
-    // Quản lý selection (được lưu giữ độc lập giữa 2 tab)
+    // Quản lý selection
     var selectedTtcUsernames by remember { mutableStateOf<Set<String>>(emptySet()) }
     var selectedFbUids by remember { mutableStateOf<Set<String>>(emptySet()) }
 
-    // Dialog thêm acc TTC
-    var showAddTtcDialog by remember { mutableStateOf(false) }
+    // BottomSheet thêm acc TTC (trượt từ dưới lên)
+    var showAddTtcSheet by remember { mutableStateOf(false) }
 
     fun reloadData() {
         ttcAccounts = TtcAccountsStore.getAccounts(context)
         fbAccounts = FacebookAccountsStore.getAccounts(context)
     }
 
-    if (showAddTtcDialog) {
-        AddTtcAccountDialog(
-            onDismiss = { showAddTtcDialog = false },
-            onSave = { username, token ->
-                TtcAccountsStore.addAccount(
-                    context,
-                    TtcAccount(username = username.trim(), token = token.trim())
-                )
+    if (showAddTtcSheet) {
+        AddTtcBottomSheet(
+            onDismiss = { showAddTtcSheet = false },
+            onLogin = { lines, mode, proxyValue ->
+                var addedCount = 0
+                lines.forEach { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.isNotBlank()) {
+                        val parts = trimmed.split("|")
+                        val token = parts[0].trim()
+                        val proxy = if (parts.size > 1) parts[1].trim() else proxyValue.trim()
+                        val username = when {
+                            token.contains("c_user=") -> token.substringAfter("c_user=").substringBefore(";")
+                            token.length > 12 -> "TTC_${token.take(8)}"
+                            else -> token
+                        }
+                        TtcAccountsStore.addAccount(
+                            context,
+                            TtcAccount(
+                                username = username,
+                                token = token,
+                                isLive = true
+                            )
+                        )
+                        addedCount++
+                    }
+                }
                 reloadData()
-                showAddTtcDialog = false
-                Toast.makeText(context, "Đã thêm tài khoản TTC: $username", Toast.LENGTH_SHORT).show()
+                showAddTtcSheet = false
+                Toast.makeText(context, "Đã thêm $addedCount tài khoản TTC", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -118,14 +141,13 @@ fun TuongTacCheoScreen(navController: NavController) {
             }
         }
 
-        // ==================== 2 THẺ (TABS) CHỌN Ở TRÊN ====================
+        // ==================== 2 THẺ (TABS) Ở TRÊN ====================
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Thẻ 1: Acc TTC
             TtcTabButton(
                 label = "Acc TTC",
                 count = ttcAccounts.size,
@@ -136,7 +158,6 @@ fun TuongTacCheoScreen(navController: NavController) {
                 onClick = { selectedTab = 0 }
             )
 
-            // Thẻ 2: Facebook
             TtcTabButton(
                 label = "Facebook",
                 count = fbAccounts.size,
@@ -150,7 +171,7 @@ fun TuongTacCheoScreen(navController: NavController) {
 
         Spacer(Modifier.height(12.dp))
 
-        // ==================== NỘI DUNG BÊN DƯỚI TÙY THEO THẺ ====================
+        // ==================== NỘI DUNG BÊN DƯỚI ====================
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -158,7 +179,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                 .padding(horizontal = 16.dp)
         ) {
             if (selectedTab == 0) {
-                // ---------- NỘI DUNG THẺ ACC TTC ----------
+                // ---------- TAB ACC TTC ----------
                 TtcAccountsTabContent(
                     accounts = ttcAccounts,
                     selectedUsernames = selectedTtcUsernames,
@@ -172,7 +193,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                     onSelectAll = { checkAll ->
                         selectedTtcUsernames = if (checkAll) ttcAccounts.map { it.username }.toSet() else emptySet()
                     },
-                    onAddNew = { showAddTtcDialog = true },
+                    onAddNew = { showAddTtcSheet = true },
                     onDelete = { username ->
                         TtcAccountsStore.removeAccount(context, username)
                         selectedTtcUsernames = selectedTtcUsernames - username
@@ -180,7 +201,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                     }
                 )
             } else {
-                // ---------- NỘI DUNG THẺ ACC FACEBOOK ----------
+                // ---------- TAB FACEBOOK ----------
                 FbAccountsTabContent(
                     accounts = fbAccounts,
                     selectedUids = selectedFbUids,
@@ -212,18 +233,12 @@ fun TuongTacCheoScreen(navController: NavController) {
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Đã chọn: ${selectedTtcUsernames.size} acc TTC  •  ${selectedFbUids.size} acc FB",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
-                    )
-                }
+                Text(
+                    text = "Đã chọn: ${selectedTtcUsernames.size} acc TTC  •  ${selectedFbUids.size} acc FB",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
+                )
 
                 Spacer(Modifier.height(8.dp))
 
@@ -308,7 +323,7 @@ private fun TtcAccountsTabContent(
     onDelete: (String) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Thanh công cụ
+        // Thanh công cụ: Checkbox "Tất cả" + Dấu cộng "+"
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -327,23 +342,21 @@ private fun TtcAccountsTabContent(
                     colors = CheckboxDefaults.colors(checkedColor = TtcPink)
                 )
                 Text(
-                    "Chọn tất cả (${selectedUsernames.size}/${accounts.size})",
+                    "Tất cả (${selectedUsernames.size}/${accounts.size})",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = TextPrimary
                 )
             }
 
-            OutlinedButton(
+            // Nút dấu cộng "+"
+            FilledIconButton(
                 onClick = onAddNew,
-                shape = RoundedCornerShape(8.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, TtcPink),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                modifier = Modifier.height(32.dp)
+                shape = CircleShape,
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = TtcPink),
+                modifier = Modifier.size(36.dp)
             ) {
-                Icon(Icons.Filled.Add, contentDescription = null, tint = TtcPink, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("+ Thêm acc TTC", fontSize = 12.sp, color = TtcPink, fontWeight = FontWeight.Bold)
+                Icon(Icons.Filled.Add, contentDescription = "Thêm acc TTC", tint = Color.White, modifier = Modifier.size(20.dp))
             }
         }
 
@@ -364,12 +377,13 @@ private fun TtcAccountsTabContent(
                     Spacer(Modifier.height(10.dp))
                     Text("Chưa có tài khoản Tương tác chéo", fontSize = 14.sp, color = TextSecondary)
                     Spacer(Modifier.height(10.dp))
-                    Button(
+                    FilledIconButton(
                         onClick = onAddNew,
-                        colors = ButtonDefaults.buttonColors(containerColor = TtcPink),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = TtcPink),
+                        modifier = Modifier.size(44.dp)
                     ) {
-                        Text("+ Thêm tài khoản TTC ngay")
+                        Icon(Icons.Filled.Add, contentDescription = "Thêm acc TTC", tint = Color.White, modifier = Modifier.size(24.dp))
                     }
                 }
             }
@@ -469,7 +483,6 @@ private fun FbAccountsTabContent(
     onAddNew: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Thanh công cụ
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -488,7 +501,7 @@ private fun FbAccountsTabContent(
                     colors = CheckboxDefaults.colors(checkedColor = FbBlue)
                 )
                 Text(
-                    "Chọn tất cả (${selectedUids.size}/${accounts.size})",
+                    "Tất cả (${selectedUids.size}/${accounts.size})",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = TextPrimary
@@ -504,7 +517,7 @@ private fun FbAccountsTabContent(
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null, tint = FbBlue, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("+ Quản lý FB", fontSize = 12.sp, color = FbBlue, fontWeight = FontWeight.Bold)
+                Text("Quản lý FB", fontSize = 12.sp, color = FbBlue, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -567,7 +580,6 @@ private fun FbAccountsTabContent(
                             )
                             Spacer(Modifier.width(8.dp))
 
-                            // Avatar Facebook
                             if (acc.avatar.isNotBlank()) {
                                 AsyncImage(
                                     model = acc.avatar,
@@ -628,56 +640,146 @@ private fun FbAccountsTabContent(
     }
 }
 
-/** Dialog thêm tài khoản TTC mới */
+/** BottomSheet thêm tài khoản TTC trượt từ dưới lên */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddTtcAccountDialog(
+private fun AddTtcBottomSheet(
     onDismiss: () -> Unit,
-    onSave: (username: String, token: String) -> Unit
+    onLogin: (lines: List<String>, mode: String, proxy: String) -> Unit
 ) {
-    var username by remember { mutableStateOf("") }
-    var token by remember { mutableStateOf("") }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var selectedOption by remember { mutableStateOf("token") } // "token" hoặc "proxy"
+    var tokenInputText by remember { mutableStateOf("") }
+    var proxyInputText by remember { mutableStateOf("") }
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text("Thêm tài khoản TTC", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
-                    label = { Text("Tên đăng nhập / Username TTC", fontSize = 12.sp) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = token,
-                    onValueChange = { token = it },
-                    label = { Text("Cookie / Access Token TTC (tùy chọn)", fontSize = 12.sp) },
-                    singleLine = false,
-                    maxLines = 3,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (username.isNotBlank()) {
-                        onSave(username, token)
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = TtcPink),
-                enabled = username.isNotBlank()
+        sheetState = sheetState,
+        containerColor = CardWhite,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(
+                "Thêm tài khoản Tương tác chéo",
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                color = TextPrimary
+            )
+
+            // 2 ô để chọn: Token và Proxy
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Lưu")
+                // Ô chọn Token
+                FilterChip(
+                    selected = selectedOption == "token",
+                    onClick = { selectedOption = "token" },
+                    label = { Text("Token", fontWeight = FontWeight.SemiBold) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = TtcPink.copy(alpha = 0.15f),
+                        selectedLabelColor = TtcPink
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Ô chọn Proxy
+                FilterChip(
+                    selected = selectedOption == "proxy",
+                    onClick = { selectedOption = "proxy" },
+                    label = { Text("Proxy (Tùy chọn)", fontWeight = FontWeight.SemiBold) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = TtcPink.copy(alpha = 0.15f),
+                        selectedLabelColor = TtcPink
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Hủy")
+
+            // Nếu chọn Proxy thì hiện ô nhập Proxy chung
+            if (selectedOption == "proxy") {
+                OutlinedTextField(
+                    value = proxyInputText,
+                    onValueChange = { proxyInputText = it },
+                    label = { Text("Proxy (ip:port hoặc ip:port:user:pass)", fontSize = 12.sp) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = TtcPink,
+                        cursorColor = TtcPink
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Bảng để dán token - mỗi dòng 1 acc
+            Column {
+                Text(
+                    "Dán danh sách token (mỗi dòng 1 tài khoản):",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextPrimary
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = tokenInputText,
+                    onValueChange = { tokenInputText = it },
+                    placeholder = {
+                        Text(
+                            "Dán token tại đây...\ntoken_acc_1\ntoken_acc_2\ntoken_acc_3",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                    },
+                    minLines = 5,
+                    maxLines = 8,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = TtcPink,
+                        cursorColor = TtcPink
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // 2 Nút: Hủy và Đăng nhập
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp)
+                ) {
+                    Text("Hủy", color = TextSecondary, fontWeight = FontWeight.Medium)
+                }
+
+                Button(
+                    onClick = {
+                        val lines = tokenInputText.split("\n").map { it.trim() }.filter { it.isNotBlank() }
+                        if (lines.isEmpty()) {
+                            return@Button
+                        }
+                        onLogin(lines, selectedOption, proxyInputText)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = TtcPink),
+                    shape = RoundedCornerShape(10.dp),
+                    enabled = tokenInputText.isNotBlank(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp)
+                ) {
+                    Text("Đăng nhập", fontWeight = FontWeight.Bold)
+                }
             }
         }
-    )
+    }
 }
