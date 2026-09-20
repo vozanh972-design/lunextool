@@ -52,14 +52,14 @@ object XsmmRunConfigStore {
     )
 
     val facebookTaskTypes = listOf(
-        "facebook_follow" to "Facebook Follow (Theo dõi)",
-        "facebook_like" to "Facebook Like (Thích bài viết)",
-        "facebook_comment" to "Facebook Comment (Bình luận)",
-        "facebook_share" to "Facebook Share (Chia sẻ)",
-        "facebook_likepage" to "Facebook Like Fanpage",
-        "facebook_member" to "Facebook Tham gia nhóm",
-        "facebook_likecmt" to "Facebook Like Comment",
-        "facebook_review" to "Facebook Đánh giá"
+        "facebook_like" to "Cảm xúc Facebook (Like / Love / Care / Haha / Wow / Sad / Angry)",
+        "facebook_follow" to "Theo dõi Facebook",
+        "facebook_comment" to "Comment Facebook (Bình luận)",
+        "facebook_share" to "Share Facebook (Chia sẻ)",
+        "facebook_likepage" to "Like Page Facebook",
+        "facebook_member" to "Tham gia nhóm Facebook",
+        "facebook_likecmt" to "Cảm xúc comment Facebook",
+        "facebook_review" to "Đánh giá Facebook"
     )
 
     val instagramTaskTypes = listOf(
@@ -77,7 +77,7 @@ object XsmmRunConfigStore {
 
     fun defaultTaskTypeFor(platform: String): String = when (platform.lowercase()) {
         "instagram" -> "instagram_random"
-        "facebook" -> "facebook_follow"
+        "facebook" -> "facebook_like"
         else -> "tiktok_follow"
     }
 
