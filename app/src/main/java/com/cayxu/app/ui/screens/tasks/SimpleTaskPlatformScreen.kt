@@ -45,9 +45,15 @@ import com.cayxu.app.ui.theme.TextSecondary
  */
 @Composable
 fun SimpleTaskPlatformScreen(navController: NavController, service: String) {
+    if (service.equals("Tuongtaccheo", ignoreCase = true)) {
+        TuongTacCheoScreen(navController)
+        return
+    }
+
     val context = LocalContext.current
     val accent = accentColorFor(service)
     val displayName = displayNameFor(service)
+
 
     var selectedTabIndex by remember { mutableIntStateOf(0) } // 0 = Facebook, 1 = TikTok
     var selectedAccountUid by remember(selectedTabIndex) { mutableStateOf<String?>(null) }
