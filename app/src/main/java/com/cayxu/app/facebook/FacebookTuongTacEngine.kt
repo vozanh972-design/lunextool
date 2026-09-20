@@ -156,6 +156,7 @@ class FacebookTuongTacEngine(
      */
     fun comment(feedbackId: String, text: String, replyToCommentId: String? = null): EngineResult {
         val cleanId = extractId(feedbackId)
+        if (text.isBlank()) return EngineResult(false, "COMMENT", cleanId, "Nội dung comment trống", "")
         val input = JSONObject().apply {
             put("client_mutation_id", UUID.randomUUID().toString())
             put("actor_id", userId ?: "")

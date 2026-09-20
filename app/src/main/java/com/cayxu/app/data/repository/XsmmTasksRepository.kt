@@ -81,7 +81,7 @@ object XsmmTasksRepository {
                     targetId = obj.get("target_id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     idorlink = obj.get("idorlink")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     points = obj.get("points")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                    comment = obj.get("comment")?.takeIf { it.isJsonPrimitive }?.asString ?: "❤️❤️❤️"
+                    comment = extractComment(obj)
                 )
             }
             XsmmTasks2Result.Success(tasks)
@@ -232,7 +232,7 @@ object XsmmTasksRepository {
                     targetId = obj.get("target_id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     idorlink = obj.get("idorlink")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     points = obj.get("points")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                    comment = obj.get("comment")?.takeIf { it.isJsonPrimitive }?.asString ?: "❤️❤️❤️"
+                    comment = extractComment(obj)
                 )
             }
             XsmmTasks2Result.Success(tasks)
@@ -365,5 +365,61 @@ object XsmmTasksRepository {
 
         val errText = lastException?.message ?: "Đã thử lại nhiều lần nhưng không thành công"
         return XsmmCompleteTask2Result(false, errText, 0, null, 0, 0, false)
+    }
+
+    /**
+     * Tự động trích xuất nội dung comment từ phản hồi nhiệm vụ của XSMM.
+     * Hỗ trợ mọi định dạng: chuỗi, mảng chuỗi, lồng trong data/task/params...
+     */
+    private fun extractComment(obj: JsonObject): String {
+        val candidateKeys = listOf(
+            "comment", "comments",
+            "content", "contents",
+            "message", "msg", "text",
+            "comment_text", "comment_content",
+            "noi_dung", "noidung"
+        )
+
+        fun fromElement(el: com.google.gson.JsonElement?): String? {
+            if (el == null || el.isJsonNull) return null
+            if (el.isJsonPrimitive) {
+                val s = el.asString.trim()
+                if (s.isNotBlank()) return s
+            }
+            if (el.isJsonArray) {
+                val arr = el.asJsonArray
+                val list = arr.mapNotNull { item ->
+                    if (item.isJsonPrimitive) item.asString.trim()
+                    else if (item.isJsonObject) {
+                        val innerObj = item.asJsonObject
+                        candidateKeys.firstNotNullOfOrNull { k ->
+                            innerObj.get(k)?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+                        }
+                    } else null
+                }.filter { it.isNotBlank() }
+                if (list.isNotEmpty()) return list.random()
+            }
+            if (el.isJsonObject) {
+                val innerObj = el.asJsonObject
+                for (k in candidateKeys) {
+                    val found = fromElement(innerObj.get(k))
+                    if (!found.isNullOrBlank()) return found
+                }
+            }
+            return null
+        }
+
+        for (k in candidateKeys) {
+            val found = fromElement(obj.get(k))
+            if (!found.isNullOrBlank()) return found
+        }
+
+        for (containerKey in listOf("data", "task", "job", "params")) {
+            val container = obj.get(containerKey)
+            val found = fromElement(container)
+            if (!found.isNullOrBlank()) return found
+        }
+
+        return ""
     }
 }

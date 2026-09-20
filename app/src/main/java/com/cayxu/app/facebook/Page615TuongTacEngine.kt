@@ -150,10 +150,10 @@ import java.util.concurrent.TimeUnit
         attachmentId: String? = null,
         overrideToken: String? = null
     ): InteractionResult {
+        if (message.isBlank()) return InteractionResult(false, postId, "COMMENT", null, "Nội dung comment trống", "")
         val token = getCleanToken(overrideToken)
         if (token.isEmpty()) return InteractionResult(false, postId, "COMMENT", null, "Page token required", "")
 
-        val scopedPostId = scopePost(postId)
         val fm  = FbVault.fieldMessage()
         val fat = FbVault.fieldAccessToken()
         val fai = FbVault.fieldAttachmentId()
@@ -164,8 +164,9 @@ import java.util.concurrent.TimeUnit
 
         if (!attachmentId.isNullOrEmpty()) formBuilder.add(fai, attachmentId)
 
+        // Thử gửi trực tiếp với postId mục tiêu trước
         val request = Request.Builder()
-            .url("${graphApi()}/$scopedPostId${FbVault.pathComments()}")
+            .url("${graphApi()}/$postId${FbVault.pathComments()}")
             .post(formBuilder.build())
             .header("User-Agent", ua())
             .build()
@@ -176,10 +177,31 @@ import java.util.concurrent.TimeUnit
                 val json = try { JSONObject(body) } catch (_: Exception) { null }
                 val commentId = json?.optString("id", null)
                 val isOk = res.isSuccessful && !commentId.isNullOrEmpty()
-                InteractionResult(isOk, scopedPostId, "COMMENT", commentId, if (isOk) "Success" else body, body)
+                if (isOk) {
+                    return InteractionResult(true, postId, "COMMENT", commentId, "Success", body)
+                }
+
+                // Nếu lỗi và postId chưa có prefix pageId, thử lại với scopedPostId (pageId_postId)
+                val scopedPostId = scopePost(postId)
+                if (scopedPostId != postId) {
+                    val fallbackReq = Request.Builder()
+                        .url("${graphApi()}/$scopedPostId${FbVault.pathComments()}")
+                        .post(formBuilder.build())
+                        .header("User-Agent", ua())
+                        .build()
+                    httpClient.newCall(fallbackReq).execute().use { res2 ->
+                        val body2 = res2.body?.string() ?: ""
+                        val json2 = try { JSONObject(body2) } catch (_: Exception) { null }
+                        val commentId2 = json2?.optString("id", null)
+                        val isOk2 = res2.isSuccessful && !commentId2.isNullOrEmpty()
+                        InteractionResult(isOk2, scopedPostId, "COMMENT", commentId2, if (isOk2) "Success" else body2, body2)
+                    }
+                } else {
+                    InteractionResult(false, postId, "COMMENT", null, body, body)
+                }
             }
         } catch (e: Exception) {
-            InteractionResult(false, scopedPostId, "COMMENT", null, e.message, "")
+            InteractionResult(false, postId, "COMMENT", null, e.message, "")
         }
     }
 

@@ -365,7 +365,20 @@ object XsmmFacebookTaskRunner {
                 val shortTarget = if (target.length > 20) target.take(17) + "..." else target
                 val pos = "[${idx + 1}/${taskList.size}]"
 
-                notify("$pos Đang làm ($currentTaskLabel): $shortTarget")
+                val isCommentTask = currentActiveTaskType.contains("comment", ignoreCase = true) ||
+                    task.type.contains("comment", ignoreCase = true)
+
+                if (isCommentTask && task.comment.isBlank()) {
+                    notify("$pos Bỏ qua: XSMM không trả về nội dung comment cho task ${task.id}")
+                    continue
+                }
+
+                if (isCommentTask) {
+                    val displayCmt = if (task.comment.length > 25) task.comment.take(22) + "..." else task.comment
+                    notify("$pos Đang làm ($currentTaskLabel): \"$displayCmt\"")
+                } else {
+                    notify("$pos Đang làm ($currentTaskLabel): $shortTarget")
+                }
 
                 val taskRes = executeFacebookTask(
                     taskType = task.type.ifBlank { currentActiveTaskType },
@@ -477,6 +490,11 @@ object XsmmFacebookTaskRunner {
         val proxyHost = proxyParts?.getOrNull(0)
         val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
 
+        val lower = taskType.lowercase()
+        if (lower.contains("comment") && comment.isBlank()) {
+            return FbTaskResult(false, "Không có nội dung bình luận từ nhiệm vụ XSMM")
+        }
+
         // =========================================================================
         // 1. NẾU LÀ TÀI KHOẢN PAGE (PROFILE+ / 615):
         // SỬ DỤNG FULL LOGIC TƯƠNG TÁC TỪ Page615TuongTacEngine (Graph API v21.0)
@@ -488,10 +506,9 @@ object XsmmFacebookTaskRunner {
                 proxyHost = proxyHost,
                 proxyPort = proxyPort
             )
-            val lower = taskType.lowercase()
             val res = when {
                 lower.contains("comment") -> {
-                    pageEngine.commentPost(targetId, comment.ifBlank { "❤️❤️❤️" })
+                    pageEngine.commentPost(targetId, comment)
                 }
                 lower.contains("follow") || lower.contains("sub") -> {
                     pageEngine.followTarget(targetId)
@@ -503,7 +520,7 @@ object XsmmFacebookTaskRunner {
                     pageEngine.joinGroup(targetId)
                 }
                 lower.contains("review") || lower.contains("danhgia") -> {
-                    pageEngine.reviewOtherPage(targetId, reviewText = comment.ifBlank { "Rất tuyệt vời!" }, recommendationType = "positive")
+                    pageEngine.reviewOtherPage(targetId, reviewText = comment.ifBlank { "Tuyệt vời!" }, recommendationType = "positive")
                 }
                 lower.contains("like") || lower.contains("love") || lower.contains("care") ||
                 lower.contains("haha") || lower.contains("wow") || lower.contains("sad") || lower.contains("angry") || lower.contains("tym") -> {
@@ -537,10 +554,9 @@ object XsmmFacebookTaskRunner {
             proxyPort = proxyPort
         )
 
-        val lower = taskType.lowercase()
         val result = when {
             lower.contains("comment") -> {
-                engine.comment(targetId, comment.ifBlank { "❤️❤️❤️" })
+                engine.comment(targetId, comment)
             }
             lower.contains("follow") || lower.contains("sub") -> {
                 engine.follow(targetId)
@@ -557,7 +573,7 @@ object XsmmFacebookTaskRunner {
                 engine.joinGroup(targetId)
             }
             lower.contains("review") || lower.contains("danhgia") -> {
-                engine.reviewPage(targetId, isPositive = true, reviewText = comment.ifBlank { "Rất tuyệt vời!" })
+                engine.reviewPage(targetId, isPositive = true, reviewText = comment.ifBlank { "Tuyệt vời!" })
             }
             lower.contains("like") || lower.contains("love") || lower.contains("care") ||
             lower.contains("haha") || lower.contains("wow") || lower.contains("sad") || lower.contains("angry") || lower.contains("tym") -> {
@@ -608,7 +624,7 @@ object XsmmFacebookTaskRunner {
                 }
                 lower.contains("comment") -> {
                     val url = "https://graph.facebook.com/v21.0/$targetId/comments?access_token=$cleanToken"
-                    val form = FormBody.Builder().add("message", comment.ifBlank { "❤️❤️" }).build()
+                    val form = FormBody.Builder().add("message", comment).build()
                     val req = Request.Builder().url(url).post(form).build()
                     httpClient.newCall(req).execute().use { res ->
                         if (res.isSuccessful) return FbTaskResult(true, "Thành công")
