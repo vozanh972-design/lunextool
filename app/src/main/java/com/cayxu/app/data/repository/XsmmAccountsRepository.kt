@@ -222,11 +222,15 @@ object XsmmAccountsRepository {
         val cleanUid = uid.trim()
         if (cleanUid.isBlank()) return XsmmAddAccountResult.Error("Thiếu UID Facebook để thêm")
 
+        val rawLink = (linkAccount?.trim().takeIf { !it.isNullOrBlank() } ?: cleanUid).trim()
+        val numericMatch = Regex("""(?:\?id=|\/profile\.php\?id=|\/)(\d{10,}|615\d+)""").find(rawLink)?.groupValues?.getOrNull(1)
+            ?: cleanUid.takeIf { it.all { c -> c.isDigit() } }
+
         val targetLink = when {
-            !linkAccount.isNullOrBlank() -> linkAccount.trim()
-            cleanUid.startsWith("http://", ignoreCase = true) || cleanUid.startsWith("https://", ignoreCase = true) -> cleanUid
-            cleanUid.contains("facebook.com") -> "https://$cleanUid"
-            else -> "https://facebook.com/$cleanUid"
+            numericMatch != null && numericMatch.isNotBlank() -> "https://www.facebook.com/profile.php?id=$numericMatch"
+            rawLink.startsWith("http://", ignoreCase = true) || rawLink.startsWith("https://", ignoreCase = true) -> rawLink
+            rawLink.contains("facebook.com") -> "https://" + rawLink.removePrefix("https://").removePrefix("http://")
+            else -> "https://www.facebook.com/$rawLink"
         }
 
         val body = JsonObject().apply {
