@@ -23,8 +23,8 @@ interface XsmmApiService {
     @GET("api/taskapi/user")
     suspend fun getUser(@Header("Authorization") authorization: String): Response<JsonObject>
 
-    /** Lấy danh sách tài khoản (GET /api/accounts) */
-    @GET("api/accounts")
+    /** Lấy danh sách tài khoản (GET /api/taskapi/accounts) */
+    @GET("api/taskapi/accounts")
     suspend fun getAccounts(
         @Header("Authorization") authorization: String,
         @Query("search") search: String? = null,
@@ -32,28 +32,41 @@ interface XsmmApiService {
         @Query("account_type") accountType: String? = null
     ): Response<JsonObject>
 
-    /** Lấy tài khoản đang được đặt làm "nick chạy" (active). */
-    @GET("api/accounts/active")
+    /** Lấy tài khoản đang active (GET /api/taskapi/accounts/active) */
+    @GET("api/taskapi/accounts/active")
     suspend fun getActiveAccount(@Header("Authorization") authorization: String): Response<JsonObject>
 
-    /** Thêm tài khoản mới (POST /api/accounts) */
-    @POST("api/accounts")
+    /** Thêm tài khoản mới (POST /api/taskapi/accounts) */
+    @POST("api/taskapi/accounts")
     suspend fun addAccount(
         @Header("Authorization") authorization: String,
         @Body body: JsonObject
     ): Response<JsonObject>
 
-    /** Đặt 1 tài khoản đã có làm "nick chạy" (PUT /api/accounts/{id}/set-active). */
-    @PUT("api/accounts/{id}/set-active")
+    /** Đặt 1 tài khoản đã có làm "nick chạy" (PUT /api/taskapi/accounts/{id}/set-active). */
+    @PUT("api/taskapi/accounts/{id}/set-active")
     suspend fun setActiveAccount(
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
         @Body body: JsonObject = JsonObject()
     ): Response<JsonObject>
 
-    /** Lấy danh sách nhiệm vụ khả dụng (tasks2 - có type, uid, typejob).
-     *  [type]: vd "tiktok_follow", "tiktok_like", "facebook_like"...
-     *  [uid]: account_id của acc trên XSMM */
+    /** Lấy danh sách nhiệm vụ khả dụng (GET /api/taskapi/tasks - chuẩn 100% tài liệu XSMM) */
+    @GET("api/taskapi/tasks")
+    suspend fun getTasks(
+        @Header("Authorization") authorization: String,
+        @Query("type") type: String,
+        @Query("typejob") typejob: String? = "normal,better,best"
+    ): Response<com.google.gson.JsonElement>
+
+    /** Hoàn thành nhiệm vụ (POST /api/taskapi/tasks/complete - chuẩn 100% tài liệu XSMM) */
+    @POST("api/taskapi/tasks/complete")
+    suspend fun completeTasks(
+        @Header("Authorization") authorization: String,
+        @Body body: JsonObject
+    ): Response<JsonObject>
+
+    /** Lấy danh sách nhiệm vụ khả dụng tasks2 (đa luồng TikTok) */
     @GET("api/taskapi/tasks2")
     suspend fun getTasks2(
         @Header("Authorization") authorization: String,
@@ -62,7 +75,7 @@ interface XsmmApiService {
         @Query("typejob") typejob: String? = "normal,better,best"
     ): Response<com.google.gson.JsonElement>
 
-    /** Hoàn thành nhiệm vụ (tasks2/complete). Body: {"type": "...", "task_id": [...], "uid": "..."} */
+    /** Hoàn thành nhiệm vụ tasks2 */
     @POST("api/taskapi/tasks2/complete")
     suspend fun completeTasks2(
         @Header("Authorization") authorization: String,

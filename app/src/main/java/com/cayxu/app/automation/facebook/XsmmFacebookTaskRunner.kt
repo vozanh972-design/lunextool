@@ -287,7 +287,7 @@ object XsmmFacebookTaskRunner {
             val currentTaskLabel = getTaskName(currentActiveTaskType)
 
             notify("Lấy nhiệm vụ Facebook ($currentTaskLabel)...")
-            var taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, xsmmUidToRun)
+            var taskResult = XsmmTasksRepository.getTasks(token, currentActiveTaskType)
 
             if (taskResult is XsmmTasks2Result.Error && taskResult.message.contains("cần thêm tài khoản", ignoreCase = true)) {
                 notify("Kích hoạt lại nick [$xsmmUidToRun] trên XSMM...")
@@ -299,9 +299,8 @@ object XsmmFacebookTaskRunner {
                 if (newInternalId.isNotBlank()) {
                     XsmmAccountsRepository.setActiveAccount(token, newInternalId)
                 }
-                val activeUid = reSync.uid.ifBlank { xsmmUidToRun }
                 delay(1200L)
-                taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, activeUid)
+                taskResult = XsmmTasksRepository.getTasks(token, currentActiveTaskType)
             }
 
             val (isNoTask, errorMsg) = when (taskResult) {
@@ -420,11 +419,10 @@ object XsmmFacebookTaskRunner {
                     if (isFollowTask) notify("Gửi nhận xu $bSize job follow...")
                     else notify("Gửi nhận xu job...")
 
-                    val compRes = XsmmTasksRepository.completeTasks2(
+                    val compRes = XsmmTasksRepository.completeTasks(
                         token,
                         task.type.ifBlank { currentActiveTaskType },
-                        pendingBatchTaskIds.toList(),
-                        xsmmUidToRun
+                        pendingBatchTaskIds.toList()
                     )
 
                     val pts = if (compRes.points > 0) compRes.points else 0
