@@ -1828,6 +1828,8 @@ private fun TtcRunConfigBottomSheet(
     var delaySec by remember { mutableIntStateOf(config.delaySeconds) }
     var targetCount by remember { mutableIntStateOf(config.taskCountTarget) }
     var failLimit by remember { mutableIntStateOf(config.failJobCountLimit) }
+    var pairModeEnabled by remember { mutableStateOf(config.pairModeEnabled) }
+    var pairTargetType by remember { mutableStateOf(config.pairTargetType) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1863,7 +1865,7 @@ private fun TtcRunConfigBottomSheet(
 
             HorizontalDivider(color = Color(0xFFF1F5F9))
 
-            // 1. Loại nhiệm vụ
+            // 1. Loại nhiệm vụ (Switch gạt bật tắt)
             Text("Loại nhiệm vụ thực hiện:", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 TtcRunConfigStore.fbTaskTypes.forEach { (typeKey, typeLabel) ->
@@ -1880,23 +1882,102 @@ private fun TtcRunConfigBottomSheet(
                                 }
                             }
                             .padding(vertical = 4.dp, horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Checkbox(
+                        Text(typeLabel, fontSize = 13.5.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                        Switch(
                             checked = isChecked,
                             onCheckedChange = { chk ->
                                 selectedTypes = if (chk) selectedTypes + typeKey
                                 else if (selectedTypes.size > 1) selectedTypes - typeKey else selectedTypes
                             },
-                            colors = CheckboxDefaults.colors(checkedColor = TtcPrimary)
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = TtcPrimary,
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = Color(0xFFCBD5E1)
+                            )
                         )
-                        Spacer(Modifier.width(8.dp))
-                        Text(typeLabel, fontSize = 13.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
                     }
                 }
             }
 
-            // 2. Độ trễ (delay)
+            HorizontalDivider(color = Color(0xFFF1F5F9))
+
+            // 2. Chế độ chạy ghép 1 TTC ↔ 1 Page hoặc Profile
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Chạy ghép 1 TTC ↔ 1 Nick FB", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        Text("Mỗi tài khoản TTC sẽ ghép cặp cùng 1 nick FB tương ứng", fontSize = 11.5.sp, color = TextSecondary)
+                    }
+                    Switch(
+                        checked = pairModeEnabled,
+                        onCheckedChange = { pairModeEnabled = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = TtcPrimary,
+                            uncheckedThumbColor = Color.White,
+                            uncheckedTrackColor = Color(0xFFCBD5E1)
+                        )
+                    )
+                }
+
+                if (pairModeEnabled) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFF1F5F9))
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val isPage = pairTargetType.equals("page", ignoreCase = true)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isPage) TtcPrimary else Color.Transparent)
+                                .clickable { pairTargetType = "page" }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Dùng Page (Profile+)",
+                                fontSize = 12.5.sp,
+                                fontWeight = if (isPage) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isPage) Color.White else TextPrimary
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (!isPage) TtcPrimary else Color.Transparent)
+                                .clickable { pairTargetType = "profile" }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Dùng Profile (Nick mẹ)",
+                                fontSize = 12.5.sp,
+                                fontWeight = if (!isPage) FontWeight.Bold else FontWeight.Medium,
+                                color = if (!isPage) Color.White else TextPrimary
+                            )
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFFF1F5F9))
+
+            // 3. Độ trễ (delay)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1919,7 +2000,7 @@ private fun TtcRunConfigBottomSheet(
                 )
             }
 
-            // 3. Số lượng nhiệm vụ cần chạy (Target)
+            // 4. Số lượng nhiệm vụ cần chạy (Target)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1946,7 +2027,7 @@ private fun TtcRunConfigBottomSheet(
                 }
             }
 
-            // 4. Số lần lỗi liên tiếp thì dừng
+            // 5. Số lần lỗi liên tiếp thì dừng
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1993,7 +2074,9 @@ private fun TtcRunConfigBottomSheet(
                             taskTypes = selectedTypes.toList(),
                             delaySeconds = delaySec,
                             taskCountTarget = targetCount,
-                            failJobCountLimit = failLimit
+                            failJobCountLimit = failLimit,
+                            pairModeEnabled = pairModeEnabled,
+                            pairTargetType = pairTargetType
                         )
                         onSaveConfig(newCfg)
                     },

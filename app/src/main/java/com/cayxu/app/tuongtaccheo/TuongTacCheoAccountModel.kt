@@ -25,6 +25,8 @@ enum class TTCJobType(val apiType: String, val displayName: String) {
     FB_COMMENT("comment", "Facebook Comment"),
     FB_SHARE("share", "Facebook Share"),
     FB_PAGE("page", "Facebook Like Page"),
+    FB_MEMBER("member", "Facebook Tham gia nhóm"),
+    FB_VIP("vip", "Nhiệm vụ VIP"),
     TIKTOK_LIKE("tiktok_like", "TikTok Like"),
     TIKTOK_FOLLOW("tiktok_follow", "TikTok Follow")
 }

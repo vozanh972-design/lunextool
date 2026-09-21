@@ -87,9 +87,13 @@ import java.util.concurrent.TimeUnit
             .header("User-Agent", ua())
             .build()
 
-        return try {
+        var restErrorMsg = ""
+        var restBody = ""
+
+        try {
             httpClient.newCall(request).execute().use { res ->
                 val body = res.body?.string() ?: ""
+                restBody = body
                 val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
                 if (isOk) {
                     return InteractionResult(true, cleanTargetId, "REACT_${reactionType.value}", null, "Success", body)
@@ -109,18 +113,81 @@ import java.util.concurrent.TimeUnit
                         httpClient.newCall(likeReq).execute().use { res2 ->
                             val body2 = res2.body?.string() ?: ""
                             val isOk2 = res2.isSuccessful && (body2.contains("\"success\":true") || !body2.contains("\"error\""))
-                            val errMsg = if (isOk2) "Success" else parseErrorMessage(body2)
                             if (isOk2) {
-                                return InteractionResult(true, cleanTargetId, "REACT_LIKE_FALLBACK", null, errMsg, body2)
+                                return InteractionResult(true, cleanTargetId, "REACT_LIKE_FALLBACK", null, "Success", body2)
                             }
                         }
                     } catch (_: Exception) {}
                 }
 
-                InteractionResult(false, cleanTargetId, "REACT_${reactionType.value}", null, parseErrorMessage(body), body)
+                restErrorMsg = parseErrorMessage(body)
             }
         } catch (e: Exception) {
-            InteractionResult(false, cleanTargetId, "REACT", null, e.message, "")
+            restErrorMsg = e.message ?: "Lỗi kết nối mạng"
+        }
+
+        // Fallback sang Katana GraphQL độc lập của chính Page615 bằng pageToken
+        // Xử lý triệt để lỗi "Object with ID does not exist, cannot be loaded due to missing permissions" cho bài viết cá nhân/status/photo/reel
+        val actor = pageId615?.takeIf { it.isNotBlank() } ?: ""
+        val gqlRes = reactGraphQLPage(cleanTargetId, token, reactionType, actor)
+        if (gqlRes.isSuccess) {
+            return gqlRes
+        }
+
+        val finalErrMsg = if (restErrorMsg.contains("does not exist") || restErrorMsg.contains("missing permissions") || restErrorMsg.contains("Unsupported post request")) {
+            gqlRes.message ?: restErrorMsg
+        } else {
+            restErrorMsg.ifBlank { gqlRes.message ?: "Lỗi tương tác cảm xúc" }
+        }
+
+        return InteractionResult(false, cleanTargetId, "REACT_${reactionType.value}", null, finalErrMsg, gqlRes.rawResponse.ifBlank { restBody })
+    }
+
+    fun reactGraphQLPage(
+        feedbackId: String,
+        token: String,
+        reactionType: ReactionType = ReactionType.LIKE,
+        pageActorId: String = pageId615 ?: ""
+    ): InteractionResult {
+        val cleanFeedbackId = if (!feedbackId.startsWith("http")) feedbackId.trim() else FacebookTuongTacEngine.extractId(feedbackId)
+        val actor = pageActorId.ifBlank { pageId615 ?: "" }
+
+        val variables = JSONObject().apply {
+            put("input", JSONObject().apply {
+                put("feedback_id", cleanFeedbackId)
+                put("feedback_reaction", reactionType.graphqlCode)
+                if (actor.isNotBlank()) put("actor_id", actor)
+                put("client_mutation_id", java.util.UUID.randomUUID().toString())
+            })
+        }
+
+        val fv  = FbVault.fieldVariables()
+        val fdi = FbVault.fieldDocId()
+        val fat = FbVault.fieldAccessToken()
+
+        val formBody = FormBody.Builder()
+            .add(fdi, "5411782298894101")
+            .add(fv, variables.toString())
+            .add(fat, token)
+            .build()
+
+        val request = Request.Builder()
+            .url(graphql())
+            .post(formBody)
+            .header("User-Agent", ua())
+            .header("Authorization", "OAuth $token")
+            .header("X-FB-Friendly-Name", "UFIFeedbackReactMutation")
+            .build()
+
+        return try {
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val isOk = res.isSuccessful && !body.contains("\"errors\":")
+                val errMsg = if (isOk) "Success" else parseErrorMessage(body)
+                InteractionResult(isOk, cleanFeedbackId, "REACT_GQL_${reactionType.value}", null, errMsg, body)
+            }
+        } catch (e: Exception) {
+            InteractionResult(false, cleanFeedbackId, "REACT_GQL", null, e.message ?: "Lỗi mạng", "")
         }
     }
 
@@ -144,9 +211,10 @@ import java.util.concurrent.TimeUnit
 
         val fv  = FbVault.fieldVariables()
         val fdi = FbVault.fieldDocId()
+
         val formBody = FormBody.Builder()
             .add(fv, variables.toString())
-            .add(fdi, FbVault.docIdPageReact())
+            .add(fdi, "4715426135182900")
             .build()
 
         val cleanUserToken = userToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
@@ -196,9 +264,13 @@ import java.util.concurrent.TimeUnit
             .header("User-Agent", ua())
             .build()
 
-        return try {
+        var restErrorMsg = ""
+        var restBody = ""
+
+        try {
             httpClient.newCall(request).execute().use { res ->
                 val body = res.body?.string() ?: ""
+                restBody = body
                 val json = try { JSONObject(body) } catch (_: Exception) { null }
                 val commentId = json?.optString("id", null)
                 val isOk = res.isSuccessful && !commentId.isNullOrEmpty()
@@ -206,10 +278,75 @@ import java.util.concurrent.TimeUnit
                     return InteractionResult(true, cleanTargetId, "COMMENT", commentId, "Success", body)
                 }
 
-                InteractionResult(false, cleanTargetId, "COMMENT", null, parseErrorMessage(body), body)
+                restErrorMsg = parseErrorMessage(body)
             }
         } catch (e: Exception) {
-            InteractionResult(false, cleanTargetId, "COMMENT", null, e.message, "")
+            restErrorMsg = e.message ?: "Lỗi kết nối mạng"
+        }
+
+        // Fallback sang Katana GraphQL độc lập của chính Page615 bằng pageToken
+        // Xử lý triệt để lỗi "(#12) singular statuses API is deprecated for versions v2.4 and higher"
+        val actor = pageId615?.takeIf { it.isNotBlank() } ?: ""
+        val gqlRes = commentGraphQLPage(cleanTargetId, message, token, actor)
+        if (gqlRes.isSuccess) {
+            return gqlRes
+        }
+
+        val finalErrMsg = if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)")) {
+            gqlRes.message ?: restErrorMsg
+        } else {
+            restErrorMsg.ifBlank { gqlRes.message ?: "Bình luận không thành công" }
+        }
+
+        return InteractionResult(false, cleanTargetId, "COMMENT", null, finalErrMsg, gqlRes.rawResponse.ifBlank { restBody })
+    }
+
+    fun commentGraphQLPage(
+        cleanTargetId: String,
+        message: String,
+        token: String,
+        pageActorId: String = pageId615 ?: ""
+    ): InteractionResult {
+        val actor = pageActorId.ifBlank { pageId615 ?: "" }
+        val input = JSONObject().apply {
+            put("client_mutation_id", java.util.UUID.randomUUID().toString())
+            if (actor.isNotBlank()) put("actor_id", actor)
+            put("feedback_id", cleanTargetId)
+            put("message", JSONObject().put("text", message))
+        }
+
+        val fv  = FbVault.fieldVariables()
+        val fdi = FbVault.fieldDocId()
+        val fat = FbVault.fieldAccessToken()
+
+        val formBody = FormBody.Builder()
+            .add(fdi, "6739921102758190")
+            .add(fv, JSONObject().put("input", input).toString())
+            .add(fat, token)
+            .build()
+
+        val request = Request.Builder()
+            .url(graphql())
+            .post(formBody)
+            .header("User-Agent", ua())
+            .header("Authorization", "OAuth $token")
+            .header("X-FB-Friendly-Name", "CommentCreateMutation")
+            .build()
+
+        return try {
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val isOk = res.isSuccessful && !body.contains("\"errors\":")
+                val json = try { JSONObject(body) } catch (_: Exception) { null }
+                val commentId = json?.optJSONObject("data")
+                    ?.optJSONObject("comment_create")
+                    ?.optJSONObject("comment")
+                    ?.optString("id", null)
+                val errMsg = if (isOk) "Success" else parseErrorMessage(body)
+                InteractionResult(isOk, cleanTargetId, "COMMENT_GQL", commentId, errMsg, body)
+            }
+        } catch (e: Exception) {
+            InteractionResult(false, cleanTargetId, "COMMENT_GQL", null, e.message ?: "Lỗi kết nối", "")
         }
     }
 
