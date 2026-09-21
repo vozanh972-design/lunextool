@@ -156,58 +156,6 @@ import java.util.concurrent.TimeUnit
 
         val cleanTargetId = if (!postId.startsWith("http")) postId.trim() else FacebookTuongTacEngine.extractId(postId)
 
-        // 1. ƯU TIÊN 1: GraphQL Mutation chuẩn của Facebook Katana (CommentCreateMutation)
-        // Tránh bị Facebook Sentry quét lỗi "action deemed abusive (Code 368)" do gọi REST API v21.0
-        try {
-            val actor = pageId615?.takeIf { it.isNotBlank() } ?: ""
-            val input = JSONObject().apply {
-                put("client_mutation_id", java.util.UUID.randomUUID().toString())
-                if (actor.isNotEmpty()) put("actor_id", actor)
-                put("feedback_id", cleanTargetId)
-                put("message", JSONObject().put("text", message))
-            }
-            val fdi = FbVault.fieldDocId()
-            val fv  = FbVault.fieldVariables()
-            val fat = FbVault.fieldAccessToken()
-
-            val formBody = FormBody.Builder()
-                .add(fdi, "6739921102758190")
-                .add(fv, JSONObject().put("input", input).toString())
-                .add(fat, token)
-                .build()
-
-            val gqlReq = Request.Builder()
-                .url(graphql())
-                .post(formBody)
-                .header("User-Agent", ua())
-                .header("X-FB-Friendly-Name", "CommentCreateMutation")
-                .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
-                .header("Authorization", "OAuth $token")
-                .build()
-
-            val gqlRes = httpClient.newCall(gqlReq).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && !body.contains("\"errors\":") && !body.contains("\"error\":")
-                if (isOk) {
-                    val json = try { JSONObject(body) } catch (_: Exception) { null }
-                    val commentId = json?.optJSONObject("data")
-                        ?.optJSONObject("comment_create")
-                        ?.optJSONObject("comment")
-                        ?.optString("id", null)
-                    InteractionResult(true, cleanTargetId, "COMMENT", commentId, "Success", body)
-                } else {
-                    val parsedErr = parseErrorMessage(body)
-                    if (body.contains("368") || body.contains("1390008") || body.contains("abusive", ignoreCase = true)) {
-                        InteractionResult(false, cleanTargetId, "COMMENT", null, parsedErr, body)
-                    } else {
-                        null
-                    }
-                }
-            }
-            if (gqlRes != null) return gqlRes
-        } catch (_: Exception) {}
-
-        // 2. FALLBACK: Graph API REST nếu GraphQL không hỗ trợ đối tượng này
         val fm  = FbVault.fieldMessage()
         val fat = FbVault.fieldAccessToken()
         val fai = FbVault.fieldAttachmentId()
