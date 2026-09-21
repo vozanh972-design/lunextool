@@ -255,4 +255,60 @@ class TuongTacCheoApiClient(
             )
         }
     }
+
+    /**
+     * 5. Thêm tài khoản Facebook vào TTC (cauhinh/themacc.php)
+     * @param uidOrLink UID số Facebook hoặc link profile
+     * @return true nếu thêm thành công, false nếu thất bại
+     */
+    @Throws(Exception::class)
+    fun addFacebookAccountToTtc(uidOrLink: String): Boolean {
+        val cleanInput = uidOrLink.trim()
+
+        // Thử endpoint 1: cauhinh/themacc.php
+        val formBody = FormBody.Builder()
+            .add("idfacebook", cleanInput)
+            .add("loai", "fb")
+            .build()
+
+        val request = Request.Builder()
+            .url("$BASE_URL/cauhinh/themacc.php")
+            .headers(buildHeaders())
+            .post(formBody)
+            .build()
+
+        httpClient.newCall(request).execute().use { response ->
+            val body = response.body?.string() ?: ""
+            val ok = response.isSuccessful && (
+                body.contains("\"status\":1") ||
+                body.contains("\"status\":\"success\"") ||
+                body.contains("Thêm thành công") ||
+                body.contains("success") ||
+                body.contains("\"result\":1")
+            )
+            if (ok) return true
+
+            // Thử endpoint 2: cauhinh/facebook.php
+            val formBody2 = FormBody.Builder()
+                .add("idfacebook", cleanInput)
+                .build()
+
+            val request2 = Request.Builder()
+                .url("$BASE_URL/cauhinh/facebook.php")
+                .headers(buildHeaders())
+                .post(formBody2)
+                .build()
+
+            httpClient.newCall(request2).execute().use { response2 ->
+                val body2 = response2.body?.string() ?: ""
+                return response2.isSuccessful && (
+                    body2.contains("\"status\":1") ||
+                    body2.contains("\"status\":\"success\"") ||
+                    body2.contains("Thêm thành công") ||
+                    body2.contains("success") ||
+                    body2.contains("\"result\":1")
+                )
+            }
+        }
+    }
 }

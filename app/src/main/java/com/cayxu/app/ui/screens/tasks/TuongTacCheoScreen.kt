@@ -297,7 +297,26 @@ fun TuongTacCheoScreen(navController: NavController) {
         if (uid in runningTtcUids) return
         val fbAccount = fbAccounts.firstOrNull { it.uid == uid }
         val usePage = ttcConfig.pairTargetType == "page"
-        val pageItem = if (usePage) fbAccount?.pages?.firstOrNull() else null
+
+        // --- Logic ghép 1 TTC ↔ 1 Page theo index ---
+        // pairModeEnabled=true + pairTargetType=page:
+        //   Thu thập toàn bộ Page từ tất cả FB acc (theo thứ tự fbAccounts), ghép theo index với fbAcc[i]
+        // Không ghép hoặc pairTargetType=profile: dùng page đầu tiên / UID profile của acc này
+        val pageItem = if (usePage && ttcConfig.pairModeEnabled) {
+            val allPages = mutableListOf<Pair<FacebookAccount, FacebookPageItem>>()
+            fbAccounts.forEach { acc -> acc.pages.forEach { p -> allPages.add(acc to p) } }
+            val fbIndex = fbAccounts.indexOfFirst { it.uid == uid }
+            if (fbIndex >= 0 && allPages.isNotEmpty()) {
+                allPages[fbIndex % allPages.size].second
+            } else {
+                fbAccount?.pages?.firstOrNull()
+            }
+        } else if (usePage) {
+            fbAccount?.pages?.firstOrNull()
+        } else {
+            null
+        }
+
         val runUid = if (usePage && pageItem != null && pageItem.pageId.isNotBlank()) pageItem.pageId else uid
         val runToken = if (usePage && pageItem != null && pageItem.pageToken.isNotBlank()) pageItem.pageToken else (fbAccount?.bio ?: "")
         val cleanToken = runToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
@@ -338,12 +357,36 @@ fun TuongTacCheoScreen(navController: NavController) {
                     sessionCookie = activeTtcAccount.cookie.orEmpty(),
                     proxyStr = activeTtcAccount.proxy.ifBlank { null }
                 )
-                // Cấu hình nick chạy trên TTC (nếu dùng page thì đặt ID page, profile thì đặt UID fb)
-                withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Đặt nick [$runUid] chạy TTC..." }
-                val isSet = ttcClient.setNickRun(runUid, "fb")
+
+                // Cấu hình nick chạy trên TTC — thử lại tối đa 50 lần, mỗi lần thất bại đếm ngược 10s
+                var isSet = false
+                for (attempt in 1..50) {
+                    if (!isActive || uid !in runningTtcUids) break
+                    withContext(Dispatchers.Main) {
+                        ttcStatusMap[uid] = "Đặt nick [$runUid] chạy TTC... (lần $attempt/50)"
+                    }
+                    try {
+                        isSet = ttcClient.setNickRun(runUid, "fb")
+                    } catch (_: Exception) {
+                        isSet = false
+                    }
+                    if (isSet) break
+
+                    // Thất bại: đếm ngược 10s trước khi thử lại
+                    if (attempt < 50) {
+                        for (countdown in 10 downTo 1) {
+                            if (!isActive || uid !in runningTtcUids) break
+                            withContext(Dispatchers.Main) {
+                                ttcStatusMap[uid] = "Đặt nick thất bại (lần $attempt/50), thử lại sau ${countdown}s..."
+                            }
+                            delay(1000L)
+                        }
+                    }
+                }
+
                 if (!isSet) {
                     withContext(Dispatchers.Main) {
-                        val err = "Đặt nick [$runUid] chạy TTC thất bại (nick chưa thêm vào TTC?)"
+                        val err = "Đặt nick [$runUid] chạy TTC thất bại sau 50 lần (nick chưa thêm vào TTC?)"
                         ttcStatusMap[uid] = err
                         ttcErrorDetailMap[uid] = err
                         ttcErrorCountMap[uid] = (ttcErrorCountMap[uid] ?: 0) + 1
