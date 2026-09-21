@@ -35,10 +35,13 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
+import com.cayxu.app.data.local.FacebookPageItem
 import com.cayxu.app.facebook.FacebookAccountManager
 import com.cayxu.app.facebook.FacebookPageService
+import com.cayxu.app.facebook.QuanLyPageEngine
 import com.cayxu.app.ui.screens.xsmm.FacebookAccountDetailSheet
 import com.cayxu.app.ui.screens.xsmm.FacebookLoginBottomSheet
+import com.cayxu.app.ui.screens.xsmm.FacebookPageDetailSheet
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -70,6 +73,9 @@ fun RegAndTransferPageScreen(navController: NavController) {
     var selectedForRunUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showFacebookLoginSheet by remember { mutableStateOf(false) }
     var selectedFbDetailAccount by remember { mutableStateOf<FacebookAccount?>(null) }
+    var selectedPageDetail by remember { mutableStateOf<Pair<FacebookAccount, FacebookPageItem>?>(null) }
+    val livePageAvatars = remember { mutableStateMapOf<String, String>() }
+    val livePageUids = remember { mutableStateMapOf<String, String>() }
     var isUploadingAvatar by remember { mutableStateOf(false) }
     var targetFbAvatarChangeUid by remember { mutableStateOf<String?>(null) }
     var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -82,6 +88,8 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
     // State cho tab Chuyển Page
     var transferReceiverUid by remember { mutableStateOf("") }
+    var showTransferConfigSheet by remember { mutableStateOf(false) }
+    var isFullPermission by remember { mutableStateOf(true) } // true = Full quyền, false = No full (không full quyền)
 
     // Trạng thái đang chạy và Job điều khiển
     var isRunning by remember { mutableStateOf(false) }
@@ -242,23 +250,28 @@ fun RegAndTransferPageScreen(navController: NavController) {
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Nút Cấu hình (chỉ hiện khi ở tab Reg Page)
-                    if (activeTab == 0) {
-                        OutlinedButton(
-                            onClick = { showConfigSheet = true },
-                            shape = RoundedCornerShape(12.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Cobalt600),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Cobalt600),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                        ) {
-                            Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Cấu hình", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
-                    } else {
-                        Spacer(Modifier.weight(1f))
+                    // Nút Cấu hình (hiện ở cả 2 tab)
+                    OutlinedButton(
+                        onClick = {
+                            if (activeTab == 0) showConfigSheet = true
+                            else showTransferConfigSheet = true
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Cobalt600),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Cobalt600),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                    ) {
+                        Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (activeTab == 0) "Cấu hình" else "Cấu hình (${if (isFullPermission) "Full quyền" else "No full"})",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
 
                     // Nút tam giác nhỏ Bắt đầu chạy (Icon Play, không có chữ)
@@ -437,30 +450,119 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                     }
                                 }
                             } else {
-                                // Chuyển Page
+                                // Chuyển Page với Full quyền hoặc No full
                                 if (transferReceiverUid.trim().isBlank()) {
                                     Toast.makeText(context, "Vui lòng nhập UID người nhận quyền admin!", Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
 
                                 isRunning = true
+                                val permissionLabel = if (isFullPermission) "Full quyền" else "No full"
                                 runJob = scope.launch(Dispatchers.IO) {
                                     try {
                                         var transferredCount = 0
+                                        var failCount = 0
+                                        val receiverUid = transferReceiverUid.trim()
+
                                         for (account in targetAccounts) {
                                             if (!isActive) break
+                                            runningAccountUid = account.uid
+
+                                            withContext(Dispatchers.Main) {
+                                                accountStatusMap[account.uid] = "Đang chuẩn bị chuyển Page ($permissionLabel)..."
+                                            }
+
+                                            val proxyParts = account.phone.ifBlank { null }?.split(":")
+                                            val proxyHost = proxyParts?.getOrNull(0)
+                                            val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+
+                                            val engine = QuanLyPageEngine(
+                                                accessToken = account.bio.ifBlank { null },
+                                                proxyHost = proxyHost,
+                                                proxyPort = proxyPort
+                                            )
+
+                                            if (account.pages.isEmpty()) {
+                                                withContext(Dispatchers.Main) {
+                                                    accountStatusMap[account.uid] = "Tài khoản không có Fanpage nào"
+                                                }
+                                                continue
+                                            }
+
                                             for (page in account.pages) {
                                                 if (!isActive) break
-                                                if (page.pageToken.isNotBlank()) {
-                                                    val ok = pageService.transferPageRole(page.pageId, page.pageToken, transferReceiverUid.trim())
-                                                    if (ok) transferredCount++
+                                                val pageKey = "${account.uid}_${page.pageId}"
+                                                runningAccountUid = pageKey
+
+                                                val pName = page.pageName.ifBlank { page.displayUid.ifBlank { page.pageId } }
+                                                withContext(Dispatchers.Main) {
+                                                    accountStatusMap[account.uid] = "Đang chuyển: $pName ($permissionLabel)..."
+                                                    accountStatusMap[pageKey] = "Đang chuyển ($permissionLabel)..."
                                                 }
+
+                                                var tokenToUse = page.pageToken.ifBlank { account.bio }.trim()
+                                                if (tokenToUse.isBlank() && account.note.contains("c_user=")) {
+                                                    try {
+                                                        val mgr = FacebookAccountManager()
+                                                        val direct = mgr.getTokenFromCookie(account.note, account.phone.ifBlank { null })
+                                                        if (direct != null && direct.bio.isNotBlank()) {
+                                                            tokenToUse = direct.bio
+                                                        }
+                                                    } catch (_: Exception) {}
+                                                }
+
+                                                if (tokenToUse.isBlank()) {
+                                                    failCount++
+                                                    val msg = "Thiếu Token thực thi"
+                                                    withContext(Dispatchers.Main) {
+                                                        accountStatusMap[pageKey] = "Lỗi: $msg"
+                                                        accountStatusMap[account.uid] = "Lỗi ($pName): $msg"
+                                                    }
+                                                    continue
+                                                }
+
+                                                val res = if (isFullPermission) {
+                                                    engine.chuyenPageFullQuyen(
+                                                        pageId = page.pageId,
+                                                        targetUserId = receiverUid,
+                                                        pageToken = tokenToUse
+                                                    )
+                                                } else {
+                                                    engine.chuyenPageKhongFullQuyen(
+                                                        pageId = page.pageId,
+                                                        targetUserId = receiverUid,
+                                                        pageToken = tokenToUse
+                                                    )
+                                                }
+
+                                                if (res.isSuccess) {
+                                                    transferredCount++
+                                                    withContext(Dispatchers.Main) {
+                                                        accountStatusMap[pageKey] = "Thành công ($permissionLabel)"
+                                                    }
+                                                } else {
+                                                    failCount++
+                                                    val msg = res.message ?: "Chuyển thất bại"
+                                                    withContext(Dispatchers.Main) {
+                                                        accountStatusMap[pageKey] = "Lỗi: $msg"
+                                                        accountStatusMap[account.uid] = "Lỗi ($pName): $msg"
+                                                    }
+                                                }
+                                                delay(1200L)
+                                            }
+
+                                            withContext(Dispatchers.Main) {
+                                                accountStatusMap[account.uid] = "Hoàn tất: [Thành công: $transferredCount | Lỗi: $failCount]"
                                             }
                                         }
+
                                         withContext(Dispatchers.Main) {
-                                            Toast.makeText(context, "Đã chuyển $transferredCount Page sang UID $transferReceiverUid!", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "Hoàn tất chuyển: $transferredCount Page thành công ($permissionLabel) sang UID $receiverUid!", Toast.LENGTH_LONG).show()
                                         }
                                     } catch (_: kotlinx.coroutines.CancellationException) {
+                                        withContext(Dispatchers.Main) {
+                                            runningAccountUid?.let { accountStatusMap[it] = "Đã dừng" }
+                                        }
                                     } catch (e: Throwable) {
                                         withContext(Dispatchers.Main) {
                                             Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -1208,41 +1310,130 @@ fun RegAndTransferPageScreen(navController: NavController) {
                             if (account.pages.isNotEmpty()) {
                                 Spacer(Modifier.height(6.dp))
                                 Column(
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                    modifier = Modifier.padding(start = 4.dp)
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     account.pages.forEach { page ->
+                                        val pageDisplayUid = livePageUids[page.pageId] ?: page.displayUid
+                                        val effectivePageUid = (page.additionalProfileId.takeIf { it.isNotBlank() && it.startsWith("615") }
+                                            ?: pageDisplayUid.takeIf { it.isNotBlank() && it.startsWith("615") }
+                                            ?: page.additionalProfileId.takeIf { it.isNotBlank() }
+                                            ?: pageDisplayUid.takeIf { it.isNotBlank() }
+                                            ?: page.pageId).trim()
+
+                                        val avatarToDisplay = livePageAvatars[page.pageId] ?: (
+                                            if (page.avatar.isNotBlank() && !page.avatar.contains("silhouette") && !page.avatar.endsWith(".gif") && !page.avatar.contains(page.displayUid)) page.avatar
+                                            else "https://graph.facebook.com/v21.0/${page.pageId}/picture?type=large"
+                                        )
+
+                                        val pageKey = "${account.uid}_${page.pageId}"
+                                        val pageStatus = accountStatusMap[pageKey] ?: accountStatusMap[effectivePageUid]
+                                        val isPageRunning = isRunning && runningAccountUid == pageKey
+                                        val isPageError = pageStatus != null && (pageStatus.contains("Lỗi", ignoreCase = true) || pageStatus.contains("Thất bại", ignoreCase = true))
+
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clip(RoundedCornerShape(6.dp))
+                                                .clip(RoundedCornerShape(10.dp))
                                                 .background(Color(0xFFF8FAFC))
-                                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                                .border(0.8.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
+                                                .padding(horizontal = 10.dp, vertical = 8.dp)
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Flag,
-                                                contentDescription = null,
-                                                tint = Color(0xFF1877F2),
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Spacer(Modifier.width(8.dp))
+                                            // Avatar Page
+                                            if (avatarToDisplay.isNotBlank()) {
+                                                AsyncImage(
+                                                    model = avatarToDisplay,
+                                                    contentDescription = "Page Avatar",
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .size(32.dp)
+                                                        .clip(CircleShape)
+                                                        .border(1.dp, Color(0xFF1877F2).copy(alpha = 0.3f), CircleShape)
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(32.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        Icons.Filled.Flag,
+                                                        contentDescription = null,
+                                                        tint = Color(0xFF1877F2),
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            Spacer(Modifier.width(10.dp))
+
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = "Page: ${page.pageName.ifBlank { page.displayUid }}",
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Medium,
+                                                    text = "Page: ${page.pageName.ifBlank { effectivePageUid.ifBlank { page.pageId } }}",
+                                                    fontSize = 12.5.sp,
+                                                    fontWeight = FontWeight.SemiBold,
                                                     color = TextPrimary,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
-                                                Text(
-                                                    text = "UID: ${page.displayUid}",
-                                                    fontSize = 10.sp,
-                                                    color = TextSecondary,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
+                                                if (effectivePageUid.isNotBlank()) {
+                                                    Text(
+                                                        text = "UID: $effectivePageUid",
+                                                        fontSize = 10.5.sp,
+                                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                                        color = TextSecondary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                                if (!pageStatus.isNullOrBlank() || isPageRunning) {
+                                                    Spacer(Modifier.height(3.dp))
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        if (isPageRunning) {
+                                                            CircularProgressIndicator(
+                                                                strokeWidth = 1.5.dp,
+                                                                modifier = Modifier.size(10.dp),
+                                                                color = Cobalt600
+                                                            )
+                                                            Spacer(Modifier.width(4.dp))
+                                                        }
+                                                        Text(
+                                                            text = pageStatus ?: "Đang xử lý...",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = when {
+                                                                isPageError -> DangerRed
+                                                                isPageRunning -> Cobalt600
+                                                                else -> Color(0xFF16A34A)
+                                                            },
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            // Nút (i) xem chi tiết Page (Ảnh đại diện, Ảnh bìa cover, UID, Token...)
+                                            IconButton(
+                                                onClick = { selectedPageDetail = Pair(account, page) },
+                                                modifier = Modifier.size(30.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(26.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color(0xFF1877F2).copy(alpha = 0.1f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        Icons.Filled.Info,
+                                                        contentDescription = "Chi tiết Fanpage",
+                                                        tint = Color(0xFF1877F2),
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1480,6 +1671,211 @@ fun RegAndTransferPageScreen(navController: NavController) {
                 facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
                 showFacebookLoginSheet = false
             }
+        )
+    }
+
+    // Modal Cấu hình Chuyển Page (trượt từ dưới lên)
+    if (showTransferConfigSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showTransferConfigSheet = false },
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            containerColor = Color.White
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+                    .navigationBarsPadding()
+                    .padding(bottom = 20.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(
+                            "Cấu hình Chuyển Page",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = TextPrimary
+                        )
+                        Text(
+                            "Chọn 1 trong 2 loại quyền gán sang UID nhận",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                    }
+                    IconButton(
+                        onClick = { showTransferConfigSheet = false },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Filled.Close, contentDescription = "Đóng", tint = TextSecondary)
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+
+                // 1. Chức năng Full quyền
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isFullPermission) Cobalt600.copy(alpha = 0.06f) else Color(0xFFF8FAFC)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = if (isFullPermission) 1.5.dp else 1.dp,
+                        color = if (isFullPermission) Cobalt600 else CardBorderColor
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { isFullPermission = true }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "Full quyền",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = if (isFullPermission) Cobalt600 else TextPrimary
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (isFullPermission) Cobalt600 else Color(0xFFE2E8F0))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        "Toàn quyền",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isFullPermission) Color.White else TextSecondary
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Toàn quyền quản trị Admin (gồm quyền MANAGE: quản lý người dùng, xóa Page, đăng bài, tin nhắn, quảng cáo).",
+                                fontSize = 11.5.sp,
+                                color = TextSecondary,
+                                lineHeight = 16.sp
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Switch(
+                            checked = isFullPermission,
+                            onCheckedChange = { isFullPermission = true },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Cobalt600
+                            )
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // 2. Chức năng No full
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (!isFullPermission) Cobalt600.copy(alpha = 0.06f) else Color(0xFFF8FAFC)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = if (!isFullPermission) 1.5.dp else 1.dp,
+                        color = if (!isFullPermission) Cobalt600 else CardBorderColor
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { isFullPermission = false }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "No full",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = if (!isFullPermission) Cobalt600 else TextPrimary
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (!isFullPermission) Color(0xFF0284C7) else Color(0xFFE2E8F0))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        "Quyền tác vụ",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (!isFullPermission) Color.White else TextSecondary
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Chỉ cấp quyền tác vụ (Tạo nội dung, Tin nhắn, Kiểm duyệt, Quảng cáo). Tuyệt đối KHÔNG có quyền MANAGE quản lý hoặc xóa Trang.",
+                                fontSize = 11.5.sp,
+                                color = TextSecondary,
+                                lineHeight = 16.sp
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Switch(
+                            checked = !isFullPermission,
+                            onCheckedChange = { isFullPermission = false },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Cobalt600
+                            )
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                Button(
+                    onClick = { showTransferConfigSheet = false },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Cobalt600),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Text("Lưu cấu hình", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                }
+            }
+        }
+    }
+
+    if (selectedPageDetail != null) {
+        val (parentAcc, pageItem) = selectedPageDetail!!
+        FacebookPageDetailSheet(
+            parentAccount = parentAcc,
+            page = pageItem,
+            onUidResolved = { uid615 ->
+                livePageUids[pageItem.pageId] = uid615
+            },
+            onMediaUpdated = { avt, cov ->
+                livePageAvatars[pageItem.pageId] = avt
+            },
+            onDismiss = { selectedPageDetail = null }
         )
     }
 }
