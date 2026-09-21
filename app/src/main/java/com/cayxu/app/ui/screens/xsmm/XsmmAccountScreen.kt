@@ -1,4 +1,4 @@
-﻿package com.cayxu.app.ui.screens.xsmm
+package com.cayxu.app.ui.screens.xsmm
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -73,21 +73,21 @@ private val TikTokBrandBlack = Color(0xFF0F172A)
 private val TikTokDarkSurface = Color(0xFF1E293B)
 
 /**
- * MÃ n tÃ i khoáº£n XSMM - hiá»‡n username + sá»‘ dÆ° (points) dáº¡ng tháº» gradient á»Ÿ trÃªn, vÃ  NGAY BÃŠN
- * DÆ¯á»šI lÃ  danh sÃ¡ch acc TikTok (3 tab: TikTok / TikTok Lite / TikTok Studio, giá»‘ng bá»‘ cá»¥c mÃ n
- * TikTok cá»§a GoLike trÆ°á»›c Ä‘Ã¢y) - acc chÆ°a "ThÃªm" hiá»‡n nÃºt ThÃªm, acc Ä‘Ã£ thÃªm rá»“i thÃ¬ áº©n nÃºt Ä‘Ã³.
- * Cuá»‘i mÃ n cÃ³ 2 nÃºt cá»‘ Ä‘á»‹nh: "Cáº¥u hÃ¬nh cháº¡y" vÃ  "Cháº¡y".
+ * Màn tài khoản XSMM - hiện username + số dư (points) dạng thẻ gradient ở trên, và NGAY BÊN
+ * DƯỚI là danh sách acc TikTok (3 tab: TikTok / TikTok Lite / TikTok Studio, giống bố cục màn
+ * TikTok của GoLike trước đây) - acc chưa "Thêm" hiện nút Thêm, acc đã thêm rồi thì ẩn nút đó.
+ * Cuối màn có 2 nút cố định: "Cấu hình chạy" và "Chạy".
  *
- * ÄÃ£ ná»‘i THáº¬T vá»›i API XSMM (/api/taskapi/accounts):
- *   - VÃ o mÃ n/Ä‘á»•i tab -> gá»i GET accounts?account_type=tiktok Ä‘á»ƒ biáº¿t @handle nÃ o ÄÃƒ cÃ³ trÃªn
- *     XSMM (so khá»›p theo link_account) -> tá»± áº©n nÃºt "ThÃªm" cho acc Ä‘Ã³.
- *   - Báº¥m "ThÃªm" -> gá»i THáº¬T POST accounts (type=tiktok, link_account, active=true) Ä‘á»ƒ thÃªm
- *     acc Ä‘Ã³ vÃ o XSMM (Ä‘áº·t luÃ´n lÃ m "nick cháº¡y").
+ * Đã nối THẬT với API XSMM (/api/taskapi/accounts):
+ *   - Vào màn/đổi tab -> gọi GET accounts?account_type=tiktok để biết @handle nào ĐÃ có trên
+ *     XSMM (so khớp theo link_account) -> tự ẩn nút "Thêm" cho acc đó.
+ *   - Bấm "Thêm" -> gọi THẬT POST accounts (type=tiktok, link_account, active=true) để thêm
+ *     acc đó vào XSMM (đặt luôn làm "nick chạy").
  *
- * "Cáº¥u hÃ¬nh cháº¡y" vÃ  "Cháº¡y" HIá»†N VáºªN LÃ€ PLACEHOLDER - XSMM cÃ³ API GET tasks + POST
- * tasks/complete (xem XsmmTasksRepository, Ä‘Ã£ viáº¿t sáºµn sÃ ng ná»‘i) nhÆ°ng CHÆ¯A gáº¯n vÃ o Ä‘Ã¢y vÃ¬
- * "type" nhiá»‡m vá»¥ cÃ³ nhiá»u loáº¡i (tiktok_follow/tiktok_like/tiktok_comment...) vÃ  chÆ°a rÃµ mÃ n
- * nÃ y nÃªn Ä‘á»ƒ ngÆ°á»i dÃ¹ng tá»± chá»n loáº¡i nÃ o hay máº·c Ä‘á»‹nh loáº¡i nÃ o.
+ * "Cấu hình chạy" và "Chạy" HIỆN VẪN LÀ PLACEHOLDER - XSMM có API GET tasks + POST
+ * tasks/complete (xem XsmmTasksRepository, đã viết sẵn sàng nối) nhưng CHƯA gắn vào đây vì
+ * "type" nhiệm vụ có nhiều loại (tiktok_follow/tiktok_like/tiktok_comment...) và chưa rõ màn
+ * này nên để người dùng tự chọn loại nào hay mặc định loại nào.
  */
 @Composable
 fun XsmmAccountScreen(navController: NavController) {
@@ -146,7 +146,7 @@ fun XsmmAccountScreen(navController: NavController) {
         if (selectedPlatform == "facebook") {
             facebookAccounts.forEach { acc ->
                 val token = acc.bio.trim()
-                // Tá»± Ä‘á»™ng kiá»ƒm tra vÃ  cáº­p nháº­t Avatar tháº­t cho nick cÃ¡ nhÃ¢n náº¿u chÆ°a cÃ³ hoáº·c Ä‘ang dÃ­nh áº£nh silhouette
+                // Tự động kiểm tra và cập nhật Avatar thật cho nick cá nhân nếu chưa có hoặc đang dính ảnh silhouette
                 val curAv = liveFbAvatars[acc.uid] ?: acc.avatar
                 val needAvatarFix = curAv.isBlank() || curAv.contains("picture?type=large") || curAv.contains("84628273_176159830277856")
                 if (needAvatarFix && token.isNotBlank()) {
@@ -208,7 +208,7 @@ fun XsmmAccountScreen(navController: NavController) {
 
     LaunchedEffect(selectedPlatform, selectedVariant, allTikTokAccounts.size) {
         if (selectedPlatform == "tiktok") {
-            // Tá»± Ä‘á»™ng kiá»ƒm tra vÃ  lÃ m má»›i cho cÃ¡c tÃ i khoáº£n chÆ°a cÃ³ avatar, chÆ°a cÃ³ ngÃ y táº¡o chuáº©n, hoáº·c bá»‹ Ä‘Ã¡nh dáº¥u Die do lá»—i cÅ©
+            // Tự động kiểm tra và làm mới cho các tài khoản chưa có avatar, chưa có ngày tạo chuẩn, hoặc bị đánh dấu Die do lỗi cũ
             val needCheck = accountsForVariant.filter {
                 (it.avatarUrl.isBlank() || it.createDateFormatted.isBlank() || !it.isLive) &&
                 it.handle.isNotBlank() && it.uid !in reloadingTikTokUids
@@ -280,7 +280,7 @@ fun XsmmAccountScreen(navController: NavController) {
 
     LaunchedEffect(selectedPlatform, facebookAccounts.size) {
         if (selectedPlatform == "facebook") {
-            // Tá»± Ä‘á»™ng kiá»ƒm tra vÃ  phá»¥c há»“i tÃªn/avatar tháº­t cá»§a nick Profile máº¹ náº¿u trÆ°á»›c Ä‘Ã³ bá»‹ ghi Ä‘Ã¨ nháº§m tÃªn Page
+            // Tự động kiểm tra và phục hồi tên/avatar thật của nick Profile mẹ nếu trước đó bị ghi đè nhầm tên Page
             val needRestoreProfile = facebookAccounts.filter { acc ->
                 acc.pages.isNotEmpty() && acc.pages.any { p -> p.pageName.isNotBlank() && p.pageName.equals(acc.name, ignoreCase = true) } && acc.note.contains("c_user=")
             }
@@ -340,7 +340,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     if (bytes == null || bytes.isEmpty()) {
                         withContext(Dispatchers.Main) {
-                            android.widget.Toast.makeText(context, "KhÃ´ng thá»ƒ Ä‘á»c file áº£nh", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Không thể đọc file ảnh", android.widget.Toast.LENGTH_SHORT).show()
                             isUploadingAvatar = false
                         }
                         return@launch
@@ -348,13 +348,13 @@ fun XsmmAccountScreen(navController: NavController) {
                     val acc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, username)
                     if (acc == null || acc.cookie.isBlank()) {
                         withContext(Dispatchers.Main) {
-                            android.widget.Toast.makeText(context, "KhÃ´ng tÃ¬m tháº¥y cookie cho $username", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Không tìm thấy cookie cho $username", android.widget.Toast.LENGTH_SHORT).show()
                             isUploadingAvatar = false
                         }
                         return@launch
                     }
                     withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "Äang Ä‘á»•i áº£nh Ä‘áº¡i diá»‡n Instagram...", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, "Đang đổi ảnh đại diện Instagram...", android.widget.Toast.LENGTH_SHORT).show()
                     }
                     val client = com.cayxu.app.instagram.InstagramApiClient(
                         cookie = acc.cookie,
@@ -379,15 +379,15 @@ fun XsmmAccountScreen(navController: NavController) {
                         avatarVersion = System.currentTimeMillis()
                         instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
                         if (newPicUrl != null || freshDetails?.profilePicUrl?.startsWith("http") == true) {
-                            android.widget.Toast.makeText(context, "Äá»•i avatar Instagram thÃ nh cÃ´ng!", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Đổi avatar Instagram thành công!", android.widget.Toast.LENGTH_SHORT).show()
                         } else {
-                            android.widget.Toast.makeText(context, "ÄÃ£ gá»­i yÃªu cáº§u Ä‘á»•i avatar Instagram", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Đã gửi yêu cầu đổi avatar Instagram", android.widget.Toast.LENGTH_SHORT).show()
                         }
                         isUploadingAvatar = false
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "Lá»—i Ä‘á»•i avatar: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.makeText(context, "Lỗi đổi avatar: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                         isUploadingAvatar = false
                     }
                 }
@@ -406,7 +406,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     if (bytes == null || bytes.isEmpty()) {
                         withContext(Dispatchers.Main) {
-                            android.widget.Toast.makeText(context, "KhÃ´ng thá»ƒ Ä‘á»c file áº£nh", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Không thể đọc file ảnh", android.widget.Toast.LENGTH_SHORT).show()
                             isUploadingAvatar = false
                         }
                         return@launch
@@ -414,7 +414,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     val acc = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context).firstOrNull { it.uid == uid }
                     if (acc == null) {
                         withContext(Dispatchers.Main) {
-                            android.widget.Toast.makeText(context, "KhÃ´ng tÃ¬m tháº¥y tÃ i khoáº£n Facebook $uid", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Không tìm thấy tài khoản Facebook $uid", android.widget.Toast.LENGTH_SHORT).show()
                             isUploadingAvatar = false
                         }
                         return@launch
@@ -422,14 +422,14 @@ fun XsmmAccountScreen(navController: NavController) {
                     val token = acc.bio.ifBlank { "" }
                     if (token.isBlank()) {
                         withContext(Dispatchers.Main) {
-                            android.widget.Toast.makeText(context, "TÃ i khoáº£n cáº§n cÃ³ Access Token Ä‘á»ƒ Ä‘á»•i Avatar", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Tài khoản cần có Access Token để đổi Avatar", android.widget.Toast.LENGTH_SHORT).show()
                             isUploadingAvatar = false
                         }
                         return@launch
                     }
 
                     withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "Äang Ä‘á»•i áº£nh Ä‘áº¡i diá»‡n Facebook...", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, "Đang đổi ảnh đại diện Facebook...", android.widget.Toast.LENGTH_SHORT).show()
                     }
                     val proxy = acc.phone.ifBlank { null }
                     val proxyParts = proxy?.split(":")
@@ -462,18 +462,18 @@ fun XsmmAccountScreen(navController: NavController) {
                             liveFbAvatars = liveFbAvatars + (acc.uid to finalAvatar)
                             avatarVersion = System.currentTimeMillis()
                             facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
-                            android.widget.Toast.makeText(context, "Äá»•i avatar Facebook thÃ nh cÃ´ng!", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Đổi avatar Facebook thành công!", android.widget.Toast.LENGTH_SHORT).show()
                             isUploadingAvatar = false
                         }
                     } else {
                         withContext(Dispatchers.Main) {
-                            android.widget.Toast.makeText(context, "Lá»—i Ä‘á»•i avatar: ${result.message}", android.widget.Toast.LENGTH_LONG).show()
+                            android.widget.Toast.makeText(context, "Lỗi đổi avatar: ${result.message}", android.widget.Toast.LENGTH_LONG).show()
                             isUploadingAvatar = false
                         }
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "Lá»—i Ä‘á»•i avatar: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.makeText(context, "Lỗi đổi avatar: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                         isUploadingAvatar = false
                     }
                 }
@@ -487,7 +487,7 @@ fun XsmmAccountScreen(navController: NavController) {
             ?: igErrorDetailMap[targetUser]
             ?: fbStatusMap[targetUser]
             ?: igStatusMap[targetUser]
-            ?: "KhÃ´ng cÃ³ thÃ´ng tin lá»—i chi tiáº¿t."
+            ?: "Không có thông tin lỗi chi tiết."
         val displayName = remember(targetUser, facebookAccounts, instagramAccounts) {
             val fb = facebookAccounts.firstOrNull { it.uid.equals(targetUser, ignoreCase = true) }
             if (fb != null) return@remember fb.name.ifBlank { targetUser }
@@ -599,7 +599,7 @@ fun XsmmAccountScreen(navController: NavController) {
                 }
                 selectedForRunUids = emptySet()
                 showDeleteConfirmSheet = false
-                android.widget.Toast.makeText(context, "ÄÃ£ xÃ³a thÃ nh cÃ´ng $count tÃ i khoáº£n", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, "Đã xóa thành công $count tài khoản", android.widget.Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -650,7 +650,7 @@ fun XsmmAccountScreen(navController: NavController) {
         isCheckingLinked = false
     }
 
-    // Tá»± Ä‘á»™ng cáº­p nháº­t sá»‘ dÆ° XSMM Ä‘á»‹nh ká»³ má»—i 15 giÃ¢y mÃ  khÃ´ng cáº§n báº¥m reload tay
+    // Tự động cập nhật số dư XSMM định kỳ mỗi 15 giây mà không cần bấm reload tay
     LaunchedEffect(Unit) {
         while (isActive) {
             delay(15_000L)
@@ -676,7 +676,7 @@ fun XsmmAccountScreen(navController: NavController) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = { navController.popBackStack() }, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Quay láº¡i", tint = TextPrimary)
+                Icon(Icons.Filled.ArrowBack, contentDescription = "Quay lại", tint = TextPrimary)
             }
             Spacer(Modifier.width(8.dp))
             Text("XSMM", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
@@ -689,7 +689,7 @@ fun XsmmAccountScreen(navController: NavController) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            // ---- Tháº» tÃ i khoáº£n XSMM gá»n gÃ ng ----
+            // ---- Thẻ tài khoản XSMM gọn gàng ----
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = CardWhite),
@@ -773,7 +773,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         XsmmAccountStore.saveInternalIdMap(context, internalMap)
 
                                         val count = xsmmUids.size
-                                        android.widget.Toast.makeText(context, "ÄÃ£ Ä‘á»“ng bá»™ XSMM: $count tÃ i khoáº£n Facebook Ä‘Ã£ liÃªn káº¿t", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(context, "Đã đồng bộ XSMM: $count tài khoản Facebook đã liên kết", android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                     isRefreshing = false
                                 }
@@ -785,7 +785,7 @@ fun XsmmAccountScreen(navController: NavController) {
                         if (isRefreshing) {
                             CircularProgressIndicator(color = XsmmAccentEnd, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                         } else {
-                            Icon(Icons.Filled.Refresh, contentDescription = "LÃ m má»›i", tint = XsmmAccentEnd, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Filled.Refresh, contentDescription = "Làm mới", tint = XsmmAccentEnd, modifier = Modifier.size(20.dp))
                         }
                     }
                     IconButton(
@@ -797,14 +797,14 @@ fun XsmmAccountScreen(navController: NavController) {
                         },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Icon(Icons.Filled.ExitToApp, contentDescription = "ÄÄƒng xuáº¥t", tint = DangerRed, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Filled.ExitToApp, contentDescription = "Đăng xuất", tint = DangerRed, modifier = Modifier.size(20.dp))
                     }
                 }
             }
 
             Spacer(Modifier.height(16.dp))
 
-            // ---- Chá»n ná»n táº£ng (TikTok / Facebook / Instagram) ----
+            // ---- Chọn nền tảng (TikTok / Facebook / Instagram) ----
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -854,7 +854,7 @@ fun XsmmAccountScreen(navController: NavController) {
 
             if (selectedPlatform == "tiktok") {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("TÃ i khoáº£n TikTok", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                    Text("Tài khoản TikTok", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
                     
                     if (selectedForRunUids.isNotEmpty()) {
                         IconButton(
@@ -868,7 +868,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     .background(DangerRed.copy(alpha = 0.12f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "XÃ³a tÃ i khoáº£n Ä‘Ã£ chá»n", tint = DangerRed, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Filled.Delete, contentDescription = "Xóa tài khoản đã chọn", tint = DangerRed, modifier = Modifier.size(18.dp))
                             }
                         }
                         Spacer(Modifier.width(6.dp))
@@ -893,7 +893,7 @@ fun XsmmAccountScreen(navController: NavController) {
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Táº¥t cáº£", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text("Tất cả", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
 
                     Spacer(Modifier.width(6.dp))
@@ -909,7 +909,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                 .background(TikTokBrandBlack),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.Add, contentDescription = "ThÃªm/Kiá»ƒm tra tÃ i khoáº£n TikTok", tint = Color.White, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.Add, contentDescription = "Thêm/Kiểm tra tài khoản TikTok", tint = Color.White, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -923,7 +923,7 @@ fun XsmmAccountScreen(navController: NavController) {
                 }
             } else if (selectedPlatform == "facebook") {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("TÃ i khoáº£n Facebook", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                    Text("Tài khoản Facebook", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
                     
                     if (selectedForRunUids.isNotEmpty()) {
                         IconButton(
@@ -937,7 +937,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     .background(DangerRed.copy(alpha = 0.12f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "XÃ³a tÃ i khoáº£n Ä‘Ã£ chá»n", tint = DangerRed, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Filled.Delete, contentDescription = "Xóa tài khoản đã chọn", tint = DangerRed, modifier = Modifier.size(18.dp))
                             }
                         }
                         Spacer(Modifier.width(6.dp))
@@ -954,13 +954,13 @@ fun XsmmAccountScreen(navController: NavController) {
                                 .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.Add, contentDescription = "ThÃªm tÃ i khoáº£n Facebook", tint = Color(0xFF1877F2), modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.Add, contentDescription = "Thêm tài khoản Facebook", tint = Color(0xFF1877F2), modifier = Modifier.size(18.dp))
                         }
                     }
                 }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("TÃ i khoáº£n Instagram", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                    Text("Tài khoản Instagram", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
                     
                     if (selectedForRunUids.isNotEmpty()) {
                         IconButton(
@@ -974,7 +974,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     .background(DangerRed.copy(alpha = 0.12f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "XÃ³a tÃ i khoáº£n Ä‘Ã£ chá»n", tint = DangerRed, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Filled.Delete, contentDescription = "Xóa tài khoản đã chọn", tint = DangerRed, modifier = Modifier.size(18.dp))
                             }
                         }
                         Spacer(Modifier.width(6.dp))
@@ -991,7 +991,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                 .background(Color(0xFFE1306C).copy(alpha = 0.12f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.Add, contentDescription = "ThÃªm tÃ i khoáº£n Instagram", tint = Color(0xFFE1306C), modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.Add, contentDescription = "Thêm tài khoản Instagram", tint = Color(0xFFE1306C), modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -1003,7 +1003,7 @@ fun XsmmAccountScreen(navController: NavController) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
                     CircularProgressIndicator(color = XsmmAccentEnd, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Äang kiá»ƒm tra tÃ i khoáº£n trÃªn XSMM...", color = TextSecondary, fontSize = 12.sp)
+                    Text("Đang kiểm tra tài khoản trên XSMM...", color = TextSecondary, fontSize = 12.sp)
                 }
             }
 
@@ -1016,7 +1016,7 @@ fun XsmmAccountScreen(navController: NavController) {
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(Modifier.padding(20.dp)) {
-                            Text("ChÆ°a cÃ³ tÃ i khoáº£n nÃ o á»Ÿ loáº¡i nÃ y - thÃªm á»Ÿ pháº§n Quáº£n lÃ½ tÃ i khoáº£n TikTok trÆ°á»›c.", color = TextSecondary, fontSize = 13.sp)
+                            Text("Chưa có tài khoản nào ở loại này - thêm ở phần Quản lý tài khoản TikTok trước.", color = TextSecondary, fontSize = 13.sp)
                         }
                     }
                 } else {
@@ -1050,20 +1050,20 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 withContext(Dispatchers.Main) {
                                                     allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
                                                     val msg = if (profile.isLive) {
-                                                        "ÄÃ£ cáº­p nháº­t @${profile.username}: Live (${formatTikTokCount(profile.followerCount)} follow)"
+                                                        "Đã cập nhật @${profile.username}: Live (${formatTikTokCount(profile.followerCount)} follow)"
                                                     } else {
-                                                        "TÃ i khoáº£n @${profile.username} khÃ´ng tá»“n táº¡i hoáº·c bá»‹ khÃ³a"
+                                                        "Tài khoản @${profile.username} không tồn tại hoặc bị khóa"
                                                     }
                                                     android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                                                 }
                                             } else {
                                                 withContext(Dispatchers.Main) {
-                                                    android.widget.Toast.makeText(context, "KhÃ´ng thá»ƒ káº¿t ná»‘i TikTok, vui lÃ²ng thá»­ láº¡i", Toast.LENGTH_SHORT).show()
+                                                    android.widget.Toast.makeText(context, "Không thể kết nối TikTok, vui lòng thử lại", Toast.LENGTH_SHORT).show()
                                                 }
                                             }
                                         } catch (e: Exception) {
                                             withContext(Dispatchers.Main) {
-                                                android.widget.Toast.makeText(context, "Lá»—i cáº­p nháº­t: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                                android.widget.Toast.makeText(context, "Lỗi cập nhật: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
                                             }
                                         } finally {
                                             withContext(Dispatchers.Main) {
@@ -1075,7 +1075,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                 onAddClick = {
                                     val token = XsmmAccountStore.getToken(context)
                                     if (token.isNullOrBlank()) {
-                                        android.widget.Toast.makeText(context, "ChÆ°a Ä‘Äƒng nháº­p XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
                                         return@XsmmTikTokAccountCard
                                     }
                                     addingUid = account.uid
@@ -1083,7 +1083,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         when (val result = XsmmAccountsRepository.addTikTokAccount(token, account.handle)) {
                                              is XsmmAddAccountResult.Success -> {
                                                 linkedHandles = linkedHandles + handleLower
-                                                android.widget.Toast.makeText(context, "ÄÃ£ thÃªm @${account.handle} vÃ o XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                android.widget.Toast.makeText(context, "Đã thêm @${account.handle} vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
                                             }
                                             is XsmmAddAccountResult.Error -> {
                                                 android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
@@ -1111,9 +1111,9 @@ fun XsmmAccountScreen(navController: NavController) {
                             Modifier.padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("ChÆ°a cÃ³ tÃ i khoáº£n Facebook nÃ o.", color = TextSecondary, fontSize = 13.sp)
+                            Text("Chưa có tài khoản Facebook nào.", color = TextSecondary, fontSize = 13.sp)
                             Spacer(Modifier.height(4.dp))
-                            Text("Báº¥m vÃ o Ä‘Ã¢y hoáº·c nÃºt dáº¥u + Ä‘á»ƒ Ä‘Äƒng nháº­p tÃ i khoáº£n Facebook.", color = Color(0xFF1877F2), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("Bấm vào đây hoặc nút dấu + để đăng nhập tài khoản Facebook.", color = Color(0xFF1877F2), fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 } else {
@@ -1162,7 +1162,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         )
                                         Spacer(Modifier.width(6.dp))
 
-                                        // Avatar Facebook cÃ³ nÃºt Ä‘á»•i áº£nh cÃ¢y bÃºt nhá» náº±m bÃªn trong
+                                        // Avatar Facebook có nút đổi ảnh cây bút nhỏ nằm bên trong
                                         val isThisFbUploading = isUploadingAvatar && targetFbAvatarChangeUid == account.uid
                                         Box(
                                             modifier = Modifier
@@ -1198,7 +1198,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 }
                                             }
 
-                                            // Lá»›p phá»§ vÃ  icon bÃºt sá»­a áº£nh náº±m bÃªn trong Ä‘Ã¡y avatar
+                                            // Lớp phủ và icon bút sửa ảnh nằm bên trong đáy avatar
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -1209,7 +1209,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Filled.Edit,
-                                                    contentDescription = "Äá»•i avatar",
+                                                    contentDescription = "Đổi avatar",
                                                     tint = Color.White,
                                                     modifier = Modifier.size(11.dp)
                                                 )
@@ -1247,7 +1247,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     overflow = TextOverflow.Ellipsis
                                                 )
 
-                                                // NÃºt Live/Die náº±m ngay cáº¡nh tÃªn acc
+                                                // Nút Live/Die nằm ngay cạnh tên acc
                                                 val isLive = account.isLive
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
@@ -1282,7 +1282,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             )
 
                                             Spacer(Modifier.height(4.dp))
-                                            // Tráº¡ng thÃ¡i kiá»ƒm tra trÃªn XSMM / NÃºt ThÃªm vÃ o XSMM náº±m ngang hÃ ng riÃªng
+                                            // Trạng thái kiểm tra trên XSMM / Nút Thêm vào XSMM nằm ngang hàng riêng
                                             val isFbLinked = account.uid.trim() in linkedFbUids
                                             val isFbAdding = account.uid in addingFbUids
 
@@ -1301,7 +1301,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     )
                                                     Spacer(Modifier.width(5.dp))
                                                     Text(
-                                                        "Äang thÃªm...",
+                                                        "Đang thêm...",
                                                         color = Color(0xFF1877F2),
                                                         fontSize = 10.5.sp,
                                                         fontWeight = FontWeight.Medium,
@@ -1325,7 +1325,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     )
                                                     Spacer(Modifier.width(4.dp))
                                                     Text(
-                                                        "ÄÃ£ liÃªn káº¿t XSMM",
+                                                        "Đã liên kết XSMM",
                                                         color = Color(0xFF16A34A),
                                                         fontSize = 10.5.sp,
                                                         fontWeight = FontWeight.Bold,
@@ -1342,18 +1342,18 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         .clickable {
                                                             val token = XsmmAccountStore.getToken(context)
                                                             if (token.isNullOrBlank()) {
-                                                                android.widget.Toast.makeText(context, "ChÆ°a Ä‘Äƒng nháº­p XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                                android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
                                                                 return@clickable
                                                             }
                                                             addingFbUids = addingFbUids + account.uid
                                                             scope.launch {
                                                                 when (val res = XsmmAccountsRepository.addFacebookAccount(token, account.uid)) {
                                                                     is XsmmAddAccountResult.Success -> {
-                                                                        android.widget.Toast.makeText(context, "ÄÃ£ thÃªm Facebook [${account.name.ifBlank { account.uid }}] vÃ o XSMM, Ä‘ang Ä‘á»“ng bá»™...", android.widget.Toast.LENGTH_SHORT).show()
+                                                                        android.widget.Toast.makeText(context, "Đã thêm Facebook [${account.name.ifBlank { account.uid }}] vào XSMM, đang đồng bộ...", android.widget.Toast.LENGTH_SHORT).show()
                                                                         linkedSyncTrigger = System.currentTimeMillis()
                                                                     }
                                                                     is XsmmAddAccountResult.Error -> {
-                                                                        android.widget.Toast.makeText(context, "Lá»—i thÃªm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
+                                                                        android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
                                                                     }
                                                                 }
                                                                 addingFbUids = addingFbUids - account.uid
@@ -1369,7 +1369,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     )
                                                     Spacer(Modifier.width(4.dp))
                                                     Text(
-                                                        "ThÃªm vÃ o XSMM",
+                                                        "Thêm vào XSMM",
                                                         color = Color(0xFF1877F2),
                                                         fontSize = 10.5.sp,
                                                         fontWeight = FontWeight.Bold,
@@ -1380,7 +1380,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             }
                                         }
 
-                                        // NÃºt Reload (LÃ m má»›i) mÃ u xanh chá»§ Ä‘áº¡o Facebook
+                                        // Nút Reload (Làm mới) màu xanh chủ đạo Facebook
                                         IconButton(
                                             onClick = {
                                                 scope.launch(Dispatchers.IO) {
@@ -1423,7 +1423,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
                                                     }
 
-                                                    // Kiá»ƒm tra thá»±c táº¿ tÃ i khoáº£n nÃ y vÃ  cÃ¡c Page cá»§a nÃ³ qua danh sÃ¡ch toÃ n bá»™ acc XSMM
+                                                    // Kiểm tra thực tế tài khoản này và các Page của nó qua danh sách toàn bộ acc XSMM
                                                     val xsmmToken = XsmmAccountStore.getToken(context)
                                                     if (!xsmmToken.isNullOrBlank()) {
                                                         val allFbOnXsmm = XsmmAccountsRepository.getFacebookAccounts(xsmmToken)
@@ -1459,7 +1459,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     withContext(Dispatchers.Main) {
                                                         avatarVersion = System.currentTimeMillis()
                                                         facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
-                                                        android.widget.Toast.makeText(context, "ÄÃ£ lÃ m má»›i thÃ´ng tin Facebook", android.widget.Toast.LENGTH_SHORT).show()
+                                                        android.widget.Toast.makeText(context, "Đã làm mới thông tin Facebook", android.widget.Toast.LENGTH_SHORT).show()
                                                     }
                                                 }
                                             },
@@ -1474,7 +1474,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Filled.Refresh,
-                                                    contentDescription = "LÃ m má»›i",
+                                                    contentDescription = "Làm mới",
                                                     tint = Color(0xFF1877F2),
                                                     modifier = Modifier.size(16.dp)
                                                 )
@@ -1483,15 +1483,15 @@ fun XsmmAccountScreen(navController: NavController) {
 
                                         Spacer(Modifier.width(6.dp))
 
-                                        // NÃºt Cháº¡y (Play tam giÃ¡c mÃ u xanh Facebook) / Dá»«ng
+                                        // Nút Chạy (Play tam giác màu xanh Facebook) / Dừng
                                         IconButton(
                                             onClick = {
                                                 if (isRunningFbThis) {
                                                     com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(account.uid)
-                                                    android.widget.Toast.makeText(context, "ÄÃ£ dá»«ng cháº¡y Facebook: ${account.name.ifBlank { account.uid }}", android.widget.Toast.LENGTH_SHORT).show()
+                                                    android.widget.Toast.makeText(context, "Đã dừng chạy Facebook: ${account.name.ifBlank { account.uid }}", android.widget.Toast.LENGTH_SHORT).show()
                                                 } else {
                                                     com.cayxu.app.automation.facebook.XsmmFacebookManager.start(context, account.uid)
-                                                    android.widget.Toast.makeText(context, "Báº¯t Ä‘áº§u cháº¡y Facebook: ${account.name.ifBlank { account.uid }}", android.widget.Toast.LENGTH_SHORT).show()
+                                                    android.widget.Toast.makeText(context, "Bắt đầu chạy Facebook: ${account.name.ifBlank { account.uid }}", android.widget.Toast.LENGTH_SHORT).show()
                                                 }
                                             },
                                             modifier = Modifier.size(32.dp)
@@ -1513,7 +1513,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 } else {
                                                     Icon(
                                                         imageVector = Icons.Filled.PlayArrow,
-                                                        contentDescription = "Cháº¡y",
+                                                        contentDescription = "Chạy",
                                                         tint = Color.White,
                                                         modifier = Modifier.size(18.dp)
                                                     )
@@ -1549,7 +1549,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         Spacer(Modifier.width(5.dp))
                                                     }
                                                     Text(
-                                                        text = fbStatus ?: "Sáºµn sÃ ng",
+                                                        text = fbStatus ?: "Sẵn sàng",
                                                         fontSize = 11.5.sp,
                                                         color = if (isRunningFbThis) Color(0xFF1877F2) else TextSecondary,
                                                         maxLines = 2,
@@ -1582,7 +1582,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                 ) {
                                                                     Icon(
                                                                         imageVector = Icons.Filled.Warning,
-                                                                        contentDescription = "Xem chi tiáº¿t lá»—i",
+                                                                        contentDescription = "Xem chi tiết lỗi",
                                                                         tint = DangerRed,
                                                                         modifier = Modifier.size(12.dp)
                                                                     )
@@ -1595,7 +1595,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         }
                                     }
 
-                                    // Tráº¡ng thÃ¡i Page: Náº¿u khÃ´ng cÃ³ page -> hiá»ƒn thá»‹ "TÃ i khoáº£n khÃ´ng cÃ³ page", náº¿u cÃ³ page -> hiá»ƒn thá»‹ danh sÃ¡ch vá»›i chá»¯ "Page: " á»Ÿ trÆ°á»›c tÃªn
+                                    // Trạng thái Page: Nếu không có page -> hiển thị "Tài khoản không có page", nếu có page -> hiển thị danh sách với chữ "Page: " ở trước tên
                                     Spacer(Modifier.height(10.dp))
                                     HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
                                     Spacer(Modifier.height(8.dp))
@@ -1609,21 +1609,21 @@ fun XsmmAccountScreen(navController: NavController) {
                                     ) {
                                         if (account.pages.isEmpty()) {
                                             Text(
-                                                "TÃ i khoáº£n khÃ´ng cÃ³ page",
+                                                "Tài khoản không có page",
                                                 fontSize = 11.5.sp,
                                                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                                                 color = TextSecondary.copy(alpha = 0.8f)
                                             )
                                         } else {
                                             Text(
-                                                "Danh sÃ¡ch Page / Profile+ (${account.pages.size}):",
+                                                "Danh sách Page / Profile+ (${account.pages.size}):",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = TextSecondary
                                             )
                                         }
 
-                                        // NÃºt cháº¥m than (i) xem Full Info xuá»‘ng cÃ¹ng hÃ ng vá»›i tráº¡ng thÃ¡i Page
+                                        // Nút chấm than (i) xem Full Info xuống cùng hàng với trạng thái Page
                                         IconButton(
                                             onClick = { selectedFbDetailAccount = account },
                                             modifier = Modifier.size(28.dp)
@@ -1637,7 +1637,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             ) {
                                                 Icon(
                                                     Icons.Filled.Info,
-                                                    contentDescription = "Xem thÃ´ng tin chi tiáº¿t",
+                                                    contentDescription = "Xem thông tin chi tiết",
                                                     tint = Color(0xFF1877F2),
                                                     modifier = Modifier.size(16.dp)
                                                 )
@@ -1680,7 +1680,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         modifier = Modifier.fillMaxWidth(),
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
-                                                        // 1. Dáº¥u tÃ­ch chá»n (Checkbox) cá»§a Page nhÆ° Profile
+                                                        // 1. Dấu tích chọn (Checkbox) của Page như Profile
                                                         Checkbox(
                                                             checked = isPageChecked,
                                                             onCheckedChange = { checked ->
@@ -1695,7 +1695,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         )
                                                         Spacer(Modifier.width(8.dp))
 
-                                                        // 2. Avatar cá»§a Page
+                                                        // 2. Avatar của Page
                                                         val avatarToDisplay = livePageAvatars[page.pageId] ?: (
                                                             if (page.avatar.isNotBlank() && !page.avatar.contains("silhouette") && !page.avatar.endsWith(".gif") && !page.avatar.contains(page.displayUid)) page.avatar
                                                             else "https://graph.facebook.com/v21.0/${page.pageId}/picture?type=large"
@@ -1727,7 +1727,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         }
                                                         Spacer(Modifier.width(8.dp))
 
-                                                        // 3. TÃªn Page vÃ  Ã©p hiá»ƒn thá»‹ UID tháº­t (615), khÃ´ng hiá»ƒn thá»‹ ID page
+                                                        // 3. Tên Page và ép hiển thị UID thật (615), không hiển thị ID page
                                                         Column(modifier = Modifier.weight(1f)) {
                                                             val uid615 = effectivePageUid
                                                             Text(
@@ -1751,7 +1751,7 @@ fun XsmmAccountScreen(navController: NavController) {
 
                                                             Spacer(Modifier.height(3.dp))
 
-                                                             // Tráº¡ng thÃ¡i liÃªn káº¿t Page: chá»‰ so sÃ¡nh UID Page vá»›i danh sÃ¡ch account_id tá»« XSMM
+                                                             // Trạng thái liên kết Page: chỉ so sánh UID Page với danh sách account_id từ XSMM
                                                              val pageUid = effectivePageUid
                                                              val isPageLinked = pageUid.isNotBlank() && pageUid in linkedFbUids
                                                              val isPageAdding = pageUid.isNotBlank() && pageUid in addingFbUids
@@ -1771,7 +1771,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                     )
                                                                     Spacer(Modifier.width(4.dp))
                                                                     Text(
-                                                                        "Äang thÃªm...",
+                                                                        "Đang thêm...",
                                                                         color = Color(0xFF1877F2),
                                                                         fontSize = 9.5.sp,
                                                                         fontWeight = FontWeight.Medium,
@@ -1795,7 +1795,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                     )
                                                                     Spacer(Modifier.width(3.dp))
                                                                     Text(
-                                                                        "ÄÃ£ liÃªn káº¿t XSMM",
+                                                                        "Đã liên kết XSMM",
                                                                         color = Color(0xFF16A34A),
                                                                         fontSize = 9.5.sp,
                                                                         fontWeight = FontWeight.Bold,
@@ -1812,23 +1812,23 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                         .clickable {
                                                                             val token = XsmmAccountStore.getToken(context)
                                                                             if (token.isNullOrBlank()) {
-                                                                                android.widget.Toast.makeText(context, "ChÆ°a Ä‘Äƒng nháº­p XSMM", android.widget.Toast.LENGTH_SHORT).show()
+                                                                                android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
                                                                                 return@clickable
                                                                             }
                                                                             val targetToAdd = pageUid
                                                                             if (targetToAdd.isBlank()) {
-                                                                                android.widget.Toast.makeText(context, "ChÆ°a xÃ¡c Ä‘á»‹nh Ä‘Æ°á»£c UID cá»§a Page", android.widget.Toast.LENGTH_SHORT).show()
+                                                                                android.widget.Toast.makeText(context, "Chưa xác định được UID của Page", android.widget.Toast.LENGTH_SHORT).show()
                                                                                 return@clickable
                                                                             }
                                                                             addingFbUids = addingFbUids + targetToAdd
                                                                             scope.launch {
                                                                                 when (val res = XsmmAccountsRepository.addFacebookAccount(token, targetToAdd)) {
                                                                                     is XsmmAddAccountResult.Success -> {
-                                                                                        android.widget.Toast.makeText(context, "ÄÃ£ thÃªm Page [${page.pageName.ifBlank { targetToAdd }}] vÃ o XSMM, Ä‘ang Ä‘á»“ng bá»™...", android.widget.Toast.LENGTH_SHORT).show()
+                                                                                        android.widget.Toast.makeText(context, "Đã thêm Page [${page.pageName.ifBlank { targetToAdd }}] vào XSMM, đang đồng bộ...", android.widget.Toast.LENGTH_SHORT).show()
                                                                                         linkedSyncTrigger = System.currentTimeMillis()
                                                                                     }
                                                                                     is XsmmAddAccountResult.Error -> {
-                                                                                        android.widget.Toast.makeText(context, "Lá»—i thÃªm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
+                                                                                        android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
                                                                                     }
                                                                                 }
                                                                                 addingFbUids = addingFbUids - targetToAdd
@@ -1844,7 +1844,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                     )
                                                                     Spacer(Modifier.width(3.dp))
                                                                     Text(
-                                                                        "ThÃªm vÃ o XSMM",
+                                                                        "Thêm vào XSMM",
                                                                         color = Color(0xFF1877F2),
                                                                         fontSize = 9.5.sp,
                                                                         fontWeight = FontWeight.Bold,
@@ -1855,7 +1855,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                             }
                                                         }
 
-                                                        // 4. Dáº¥u cháº¥m than xanh (i) xem info vÃ  Ä‘á»•i avatar bÃ¬a cá»§a page
+                                                        // 4. Dấu chấm than xanh (i) xem info và đổi avatar bìa của page
                                                         IconButton(
                                                             onClick = { selectedFbDetailPage = Pair(account, page) },
                                                             modifier = Modifier.size(28.dp)
@@ -1869,7 +1869,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                             ) {
                                                                 Icon(
                                                                     Icons.Filled.Info,
-                                                                    contentDescription = "Xem thÃ´ng tin vÃ  Ä‘á»•i avatar bÃ¬a cá»§a Page",
+                                                                    contentDescription = "Xem thông tin và đổi avatar bìa của Page",
                                                                     tint = Color(0xFF1877F2),
                                                                     modifier = Modifier.size(16.dp)
                                                                 )
@@ -1878,7 +1878,7 @@ fun XsmmAccountScreen(navController: NavController) {
 
                                                         Spacer(Modifier.width(4.dp))
 
-                                                        // 5. NÃºt Play / Stop riÃªng cho Page
+                                                        // 5. Nút Play / Stop riêng cho Page
                                                         IconButton(
                                                             onClick = {
                                                                 if (isPageRunning) {
@@ -1886,10 +1886,10 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                     com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(page.pageId)
                                                                     if (page.additionalProfileId.isNotBlank()) com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(page.additionalProfileId)
                                                                     if (pageDisplayUid.isNotBlank()) com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(pageDisplayUid)
-                                                                    android.widget.Toast.makeText(context, "ÄÃ£ dá»«ng cháº¡y Page: ${page.pageName.ifBlank { effectivePageUid }}", android.widget.Toast.LENGTH_SHORT).show()
+                                                                    android.widget.Toast.makeText(context, "Đã dừng chạy Page: ${page.pageName.ifBlank { effectivePageUid }}", android.widget.Toast.LENGTH_SHORT).show()
                                                                 } else {
                                                                     com.cayxu.app.automation.facebook.XsmmFacebookManager.start(context, effectivePageUid)
-                                                                    android.widget.Toast.makeText(context, "Báº¯t Ä‘áº§u cháº¡y Page: ${page.pageName.ifBlank { effectivePageUid }}", android.widget.Toast.LENGTH_SHORT).show()
+                                                                    android.widget.Toast.makeText(context, "Bắt đầu chạy Page: ${page.pageName.ifBlank { effectivePageUid }}", android.widget.Toast.LENGTH_SHORT).show()
                                                                 }
                                                             },
                                                             modifier = Modifier.size(28.dp)
@@ -1911,7 +1911,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                 } else {
                                                                     Icon(
                                                                         imageVector = Icons.Filled.PlayArrow,
-                                                                        contentDescription = "Cháº¡y Page",
+                                                                        contentDescription = "Chạy Page",
                                                                         tint = Color.White,
                                                                         modifier = Modifier.size(15.dp)
                                                                     )
@@ -1920,7 +1920,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         }
                                                     }
 
-                                                    // 6. Tráº¡ng thÃ¡i cháº¡y & tiáº¿n Ä‘á»™ nháº­n nhiá»‡m vá»¥ cá»§a Page (Live status)
+                                                    // 6. Trạng thái chạy & tiến độ nhận nhiệm vụ của Page (Live status)
                                                     val pageStatus = fbStatusMap[effectivePageUid]
                                                         ?: fbStatusMap[page.pageId]
                                                         ?: fbStatusMap[page.additionalProfileId]
@@ -1970,7 +1970,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                         Spacer(Modifier.width(5.dp))
                                                                     }
                                                                     Text(
-                                                                        text = pageStatus ?: if (isPageRunning) "Äang cháº¡y..." else "Sáºµn sÃ ng",
+                                                                        text = pageStatus ?: if (isPageRunning) "Đang chạy..." else "Sẵn sàng",
                                                                         fontSize = 11.sp,
                                                                         color = if (isPageRunning) Color(0xFF1877F2) else TextSecondary,
                                                                         maxLines = 2,
@@ -2003,7 +2003,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                                 ) {
                                                                                     Icon(
                                                                                         imageVector = Icons.Filled.Warning,
-                                                                                        contentDescription = "Xem chi tiáº¿t lá»—i Page",
+                                                                                        contentDescription = "Xem chi tiết lỗi Page",
                                                                                         tint = DangerRed,
                                                                                         modifier = Modifier.size(11.dp)
                                                                                     )
@@ -2036,9 +2036,9 @@ fun XsmmAccountScreen(navController: NavController) {
                             Modifier.padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("ChÆ°a cÃ³ tÃ i khoáº£n Instagram nÃ o.", color = TextSecondary, fontSize = 13.sp)
+                            Text("Chưa có tài khoản Instagram nào.", color = TextSecondary, fontSize = 13.sp)
                             Spacer(Modifier.height(4.dp))
-                            Text("Báº¥m dáº¥u + Ä‘á»ƒ Ä‘Äƒng nháº­p tÃ i khoáº£n Instagram.", color = TextSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
+                            Text("Bấm dấu + để đăng nhập tài khoản Instagram.", color = TextSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
                         }
                     }
                 } else {
@@ -2090,7 +2090,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         )
                                         Spacer(Modifier.width(6.dp))
 
-                                        // Avatar Instagram cÃ³ nÃºt camera Ä‘á»•i áº£nh náº±m gá»n BÃŠN TRONG avatar
+                                        // Avatar Instagram có nút camera đổi ảnh nằm gọn BÊN TRONG avatar
                                         val isThisUploading = isUploadingAvatar && targetAvatarChangeUsername == cleanIg
                                         Box(
                                             modifier = Modifier
@@ -2134,7 +2134,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 }
                                             }
 
-                                            // Lá»›p phá»§ vÃ  icon bÃºt/camera sá»­a áº£nh náº±m bÃªn trong Ä‘Ã¡y avatar
+                                            // Lớp phủ và icon bút/camera sửa ảnh nằm bên trong đáy avatar
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -2145,7 +2145,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Filled.Edit,
-                                                    contentDescription = "Äá»•i avatar",
+                                                    contentDescription = "Đổi avatar",
                                                     tint = Color.White,
                                                     modifier = Modifier.size(11.dp)
                                                 )
@@ -2188,7 +2188,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     overflow = TextOverflow.Ellipsis
                                                 )
 
-                                                // NÃºt Live/Die náº±m ngay cáº¡nh tÃªn acc (khÃ´ng láº·p láº¡i tÃªn)
+                                                // Nút Live/Die nằm ngay cạnh tên acc (không lặp lại tên)
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     modifier = Modifier
@@ -2231,13 +2231,13 @@ fun XsmmAccountScreen(navController: NavController) {
                                             }
                                             val stats = buildList {
                                                 if ((igAcc?.followersCount ?: 0) > 0) add("${igAcc?.followersCount} follower")
-                                                if ((igAcc?.followingCount ?: 0) > 0) add("${igAcc?.followingCount} Ä‘ang theo dÃµi")
-                                                if ((igAcc?.postsCount ?: 0) > 0) add("${igAcc?.postsCount} bÃ i viáº¿t")
+                                                if ((igAcc?.followingCount ?: 0) > 0) add("${igAcc?.followingCount} đang theo dõi")
+                                                if ((igAcc?.postsCount ?: 0) > 0) add("${igAcc?.postsCount} bài viết")
                                             }
                                             if (stats.isNotEmpty()) {
                                                 Spacer(Modifier.height(2.dp))
                                                 Text(
-                                                    text = stats.joinToString(" â€¢ "),
+                                                    text = stats.joinToString(" • "),
                                                     color = Color(0xFFE1306C),
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Medium
@@ -2245,7 +2245,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             }
                                         }
 
-                                        // NÃºt Reload (LÃ m má»›i)
+                                        // Nút Reload (Làm mới)
                                         val isRunningThis = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanIg)
                                         IconButton(
                                             onClick = {
@@ -2253,14 +2253,14 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     val acc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanIg)
                                                     if (acc == null || acc.cookie.isBlank()) {
                                                         withContext(Dispatchers.Main) {
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "ChÆ°a lÆ°u cookie"
-                                                            android.widget.Toast.makeText(context, "KhÃ´ng tÃ¬m tháº¥y cookie cho $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Chưa lưu cookie"
+                                                            android.widget.Toast.makeText(context, "Không tìm thấy cookie cho $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
                                                         }
                                                         return@launch
                                                     }
                                                     try {
                                                         withContext(Dispatchers.Main) {
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Äang láº¥y thÃ´ng tin..."
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Đang lấy thông tin..."
                                                         }
                                                         val proxyConfig = com.cayxu.app.instagram.InstagramApiClient.parseProxy(acc.proxy)
                                                         val client = com.cayxu.app.instagram.InstagramApiClient(
@@ -2290,9 +2290,9 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         withContext(Dispatchers.Main) {
                                                             avatarVersion = System.currentTimeMillis()
                                                             val nameDisplay = if (updatedAcc.fullName.isNotBlank()) updatedAcc.fullName else updatedAcc.username
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[finalUsername] = if (info.isLive) "Sáºµn sÃ ng" else "Lá»—i: Checkpoint / DIE"
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[finalUsername] = if (info.isLive) "Sẵn sàng" else "Lỗi: Checkpoint / DIE"
                                                             instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
-                                                            val toastMsg = if (info.isLive) "ÄÃ£ cáº­p nháº­t: $nameDisplay" else "Cookie DIE hoáº·c bá»‹ Checkpoint: $nameDisplay"
+                                                            val toastMsg = if (info.isLive) "Đã cập nhật: $nameDisplay" else "Cookie DIE hoặc bị Checkpoint: $nameDisplay"
                                                             android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_SHORT).show()
                                                         }
                                                     } catch (e: Exception) {
@@ -2300,9 +2300,9 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, deadAcc)
                                                         withContext(Dispatchers.Main) {
                                                             avatarVersion = System.currentTimeMillis()
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Lá»—i: Cookie DIE / Checkpoint"
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Lỗi: Cookie DIE / Checkpoint"
                                                             instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
-                                                            android.widget.Toast.makeText(context, "Lá»—i kiá»ƒm tra $cleanIg: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                                            android.widget.Toast.makeText(context, "Lỗi kiểm tra $cleanIg: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
                                                         }
                                                     }
                                                 }
@@ -2319,7 +2319,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Filled.Refresh,
-                                                    contentDescription = "LÃ m má»›i",
+                                                    contentDescription = "Làm mới",
                                                     tint = Color(0xFFE1306C),
                                                     modifier = Modifier.size(16.dp)
                                                 )
@@ -2328,15 +2328,15 @@ fun XsmmAccountScreen(navController: NavController) {
 
                                         Spacer(Modifier.width(6.dp))
 
-                                        // NÃºt Cháº¡y (Play tam giÃ¡c) / Dá»«ng (Stop Ã´ vuÃ´ng Ä‘á»)
+                                        // Nút Chạy (Play tam giác) / Dừng (Stop ô vuông đỏ)
                                         IconButton(
                                             onClick = {
                                                 if (isRunningThis) {
                                                     com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(cleanIg)
-                                                    android.widget.Toast.makeText(context, "ÄÃ£ dá»«ng cháº¡y $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
+                                                    android.widget.Toast.makeText(context, "Đã dừng chạy $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
                                                 } else {
                                                     com.cayxu.app.automation.instagram.XsmmInstagramManager.start(context, cleanIg)
-                                                    android.widget.Toast.makeText(context, "Báº¯t Ä‘áº§u cháº¡y $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
+                                                    android.widget.Toast.makeText(context, "Bắt đầu chạy $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
                                                 }
                                             },
                                             modifier = Modifier.size(32.dp)
@@ -2358,7 +2358,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 } else {
                                                     Icon(
                                                         imageVector = Icons.Filled.PlayArrow,
-                                                        contentDescription = "Cháº¡y",
+                                                        contentDescription = "Chạy",
                                                         tint = Color.White,
                                                         modifier = Modifier.size(18.dp)
                                                     )
@@ -2373,15 +2373,15 @@ fun XsmmAccountScreen(navController: NavController) {
                                         modifier = Modifier.padding(vertical = 10.dp)
                                     )
 
-                                    // Khu vá»±c hiá»ƒn thá»‹ tráº¡ng thÃ¡i + thá»‘ng kÃª HoÃ n thÃ nh / Lá»—i + Proxy
-                                    val rawStatus = igStatusMap[cleanIg] ?: "Tráº¡ng thÃ¡i: Sáºµn sÃ ng"
-                                    val currentStatus = if (rawStatus.equals("Live", ignoreCase = true)) "Tráº¡ng thÃ¡i: Sáºµn sÃ ng" else rawStatus
+                                    // Khu vực hiển thị trạng thái + thống kê Hoàn thành / Lỗi + Proxy
+                                    val rawStatus = igStatusMap[cleanIg] ?: "Trạng thái: Sẵn sàng"
+                                    val currentStatus = if (rawStatus.equals("Live", ignoreCase = true)) "Trạng thái: Sẵn sàng" else rawStatus
                                     val successCount = igSuccessCountMap[cleanIg] ?: 0
                                     val errorCount = igErrorCountMap[cleanIg] ?: 0
-                                    val isError = currentStatus.contains("Lá»—i", ignoreCase = true) || currentStatus.contains("DIE", ignoreCase = true) || currentStatus.contains("KhÃ´ng tÃ¬m tháº¥y", ignoreCase = true)
+                                    val isError = currentStatus.contains("Lỗi", ignoreCase = true) || currentStatus.contains("DIE", ignoreCase = true) || currentStatus.contains("Không tìm thấy", ignoreCase = true)
                                     val isRunningNow = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanIg)
 
-                                    // HÃ m rÃºt gá»n proxy: 128.0.0.1:3098:user:pass -> 128......pass hoáº·c 128...3098
+                                    // Hàm rút gọn proxy: 128.0.0.1:3098:user:pass -> 128......pass hoặc 128...3098
                                     val proxyDisplay = remember(igAcc?.proxy) {
                                         val p = igAcc?.proxy?.trim().orEmpty()
                                         if (p.isBlank()) null
@@ -2397,7 +2397,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                                         verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        // DÃ²ng 1: Status text kÃ¨m cháº¥m trÃ²n tráº¡ng thÃ¡i (Ä‘áº¿m ngÆ°á»£c thá»i gian)
+                                        // Dòng 1: Status text kèm chấm tròn trạng thái (đếm ngược thời gian)
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier.fillMaxWidth()
@@ -2425,7 +2425,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             )
                                         }
 
-                                        // DÃ²ng 2: Hiá»ƒn thá»‹ Thá»‘ng kÃª HoÃ n thÃ nh / Lá»—i + Proxy bÃªn cáº¡nh
+                                        // Dòng 2: Hiển thị Thống kê Hoàn thành / Lỗi + Proxy bên cạnh
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -2435,7 +2435,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                // ThÃ nh cÃ´ng
+                                                // Thành công
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     modifier = Modifier
@@ -2450,14 +2450,14 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     )
                                                     Spacer(Modifier.width(4.dp))
                                                     Text(
-                                                        "HoÃ n thÃ nh: $successCount",
+                                                        "Hoàn thành: $successCount",
                                                         fontSize = 11.5.sp,
                                                         fontWeight = FontWeight.Bold,
                                                         color = Color(0xFF15803D)
                                                     )
                                                 }
 
-                                                // Tháº¥t báº¡i / Lá»—i
+                                                // Thất bại / Lỗi
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     modifier = Modifier
@@ -2472,14 +2472,14 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     )
                                                     Spacer(Modifier.width(5.dp))
                                                     Text(
-                                                        "Lá»—i: $errorCount",
+                                                        "Lỗi: $errorCount",
                                                         fontSize = 11.5.sp,
                                                         fontWeight = FontWeight.Bold,
                                                         color = DangerRed
                                                     )
                                                 }
 
-                                                // Proxy rÃºt gá»n bÃªn cáº¡nh nÃºt Lá»—i (náº¿u acc cÃ³ gÃ¡n proxy)
+                                                // Proxy rút gọn bên cạnh nút Lỗi (nếu acc có gán proxy)
                                                 if (proxyDisplay != null) {
                                                     Row(
                                                         verticalAlignment = Alignment.CenterVertically,
@@ -2512,7 +2512,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     ) {
                                                         Icon(
                                                             imageVector = Icons.Filled.Warning,
-                                                            contentDescription = "Xem chi tiáº¿t lá»—i",
+                                                            contentDescription = "Xem chi tiết lỗi",
                                                             tint = DangerRed,
                                                             modifier = Modifier.size(14.dp)
                                                         )
@@ -2520,7 +2520,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 }
                                             } else if (isRunningNow) {
                                                 Text(
-                                                    "Äang cháº¡y...",
+                                                    "Đang chạy...",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = Color(0xFFE1306C)
@@ -2538,9 +2538,9 @@ fun XsmmAccountScreen(navController: NavController) {
             Spacer(Modifier.height(90.dp))
         }
 
-        // ---- Thanh Ä‘iá»u khiá»ƒn cá»‘ Ä‘á»‹nh dÆ°á»›i cÃ¹ng ----
+        // ---- Thanh điều khiển cố định dưới cùng ----
         if (selectedPlatform == "tiktok") {
-            // ---- TikTok: 2 nÃºt Cáº¥u hÃ¬nh cháº¡y + Cháº¡y to mÃ u Ä‘en TikTok ----
+            // ---- TikTok: 2 nút Cấu hình chạy + Chạy to màu đen TikTok ----
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2561,7 +2561,7 @@ fun XsmmAccountScreen(navController: NavController) {
                 ) {
                     Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp), tint = TikTokBrandBlack)
                     Spacer(Modifier.width(6.dp))
-                    Text("Cáº¥u hÃ¬nh cháº¡y", maxLines = 1, color = TikTokBrandBlack)
+                    Text("Cấu hình chạy", maxLines = 1, color = TikTokBrandBlack)
                 }
                 Button(
                     onClick = {
@@ -2574,7 +2574,7 @@ fun XsmmAccountScreen(navController: NavController) {
                         }
                         val handles = selected.map { it.handle.trim().removePrefix("@") }.filter { it.isNotBlank() }
                         if (handles.isEmpty()) {
-                            android.widget.Toast.makeText(context, "ChÆ°a cÃ³ tÃ i khoáº£n nÃ o Ä‘á»ƒ cháº¡y", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Chưa có tài khoản nào để chạy", android.widget.Toast.LENGTH_SHORT).show()
                             return@Button
                         }
                         com.cayxu.app.ui.overlay.xsmm.startXsmmJobRunnerOverlay(context, handles)
@@ -2586,11 +2586,11 @@ fun XsmmAccountScreen(navController: NavController) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
                     Spacer(Modifier.width(6.dp))
                     val runCount = if (selectedForRunUids.isNotEmpty()) selectedForRunUids.size else accountsForVariant.size
-                    Text(if (runCount > 1) "Cháº¡y ($runCount)" else "Cháº¡y", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(if (runCount > 1) "Chạy ($runCount)" else "Chạy", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         } else {
-            // ---- Instagram & Facebook: Thanh cÃ´ng cá»¥ tiá»‡n Ã­ch (Cáº¥u hÃ¬nh, Táº¥t cáº£, XÃ³a, ThÃªm +) ----
+            // ---- Instagram & Facebook: Thanh công cụ tiện ích (Cấu hình, Tất cả, Xóa, Thêm +) ----
             val isIg = selectedPlatform == "instagram"
             val platformColor = if (isIg) Color(0xFFE1306C) else Color(0xFF1877F2)
             val allFbKeys = remember(facebookAccounts, livePageUids) {
@@ -2623,7 +2623,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // NÃºt Cáº¥u hÃ¬nh cháº¡y
+                    // Nút Cấu hình chạy
                     OutlinedButton(
                         onClick = {
                             com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, selectedPlatform)
@@ -2636,14 +2636,14 @@ fun XsmmAccountScreen(navController: NavController) {
                     ) {
                         Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp), tint = platformColor)
                         Spacer(Modifier.width(6.dp))
-                        Text("Cáº¥u hÃ¬nh", fontSize = 13.sp, color = platformColor)
+                        Text("Cấu hình", fontSize = 13.sp, color = platformColor)
                     }
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // NÃºt Táº¥t cáº£
+                        // Nút Tất cả
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
@@ -2667,10 +2667,10 @@ fun XsmmAccountScreen(navController: NavController) {
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Táº¥t cáº£", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text("Tất cả", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         }
 
-                        // NÃºt XÃ³a (thÃ¹ng rÃ¡c Ä‘á» khi cÃ³ acc Ä‘Æ°á»£c chá»n)
+                        // Nút Xóa (thùng rác đỏ khi có acc được chọn)
                         if (selectedForRunUids.isNotEmpty()) {
                             IconButton(
                                 onClick = { showDeleteConfirmSheet = true },
@@ -2685,7 +2685,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Delete,
-                                        contentDescription = "XÃ³a tÃ i khoáº£n Ä‘Ã£ chá»n",
+                                        contentDescription = "Xóa tài khoản đã chọn",
                                         tint = DangerRed,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -2693,14 +2693,14 @@ fun XsmmAccountScreen(navController: NavController) {
                             }
                         }
 
-                        // NÃºt Cháº¡y táº¥t cáº£ / Dá»«ng táº¥t cáº£ (DÃ nh cho Instagram)
+                        // Nút Chạy tất cả / Dừng tất cả (Dành cho Instagram)
                         if (isIg && instagramAccounts.isNotEmpty()) {
                             val isAnyIgRunning = com.cayxu.app.automation.instagram.XsmmInstagramManager.isAnyRunning()
                             IconButton(
                                 onClick = {
                                     if (isAnyIgRunning) {
                                         com.cayxu.app.automation.instagram.XsmmInstagramManager.stopAll()
-                                        android.widget.Toast.makeText(context, "ÄÃ£ dá»«ng táº¥t cáº£ tÃ¡c vá»¥ Instagram", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(context, "Đã dừng tất cả tác vụ Instagram", android.widget.Toast.LENGTH_SHORT).show()
                                     } else {
                                         val accountsToRun = if (selectedForRunUids.isNotEmpty()) {
                                             selectedForRunUids.toList()
@@ -2708,7 +2708,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             instagramAccounts
                                         }
                                         com.cayxu.app.automation.instagram.XsmmInstagramManager.startAccounts(context, accountsToRun)
-                                        android.widget.Toast.makeText(context, "Báº¯t Ä‘áº§u cháº¡y ${accountsToRun.size} tÃ i khoáº£n Instagram", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Instagram", android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                 },
                                 modifier = Modifier.size(38.dp)
@@ -2730,7 +2730,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     } else {
                                         Icon(
                                             imageVector = Icons.Filled.PlayArrow,
-                                            contentDescription = "Cháº¡y táº¥t cáº£",
+                                            contentDescription = "Chạy tất cả",
                                             tint = Color.White,
                                             modifier = Modifier.size(20.dp)
                                         )
@@ -2738,13 +2738,13 @@ fun XsmmAccountScreen(navController: NavController) {
                                 }
                             }
                         } else if (!isIg && facebookAccounts.isNotEmpty()) {
-                            // NÃºt Cháº¡y táº¥t cáº£ / Dá»«ng táº¥t cáº£ (DÃ nh cho Facebook)
+                            // Nút Chạy tất cả / Dừng tất cả (Dành cho Facebook)
                             val isAnyFbRunning = com.cayxu.app.automation.facebook.XsmmFacebookManager.isAnyRunning()
                             IconButton(
                                 onClick = {
                                     if (isAnyFbRunning) {
                                         com.cayxu.app.automation.facebook.XsmmFacebookManager.stopAll()
-                                        android.widget.Toast.makeText(context, "ÄÃ£ dá»«ng táº¥t cáº£ tÃ¡c vá»¥ Facebook", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(context, "Đã dừng tất cả tác vụ Facebook", android.widget.Toast.LENGTH_SHORT).show()
                                     } else {
                                         val accountsToRun = if (selectedForRunUids.isNotEmpty()) {
                                             selectedForRunUids.toList()
@@ -2752,10 +2752,10 @@ fun XsmmAccountScreen(navController: NavController) {
                                             facebookAccounts.map { it.uid }
                                         }
                                         if (accountsToRun.isEmpty()) {
-                                            android.widget.Toast.makeText(context, "Vui lÃ²ng chá»n Ã­t nháº¥t 1 tÃ i khoáº£n Ä‘á»ƒ cháº¡y", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(context, "Vui lòng chọn ít nhất 1 tài khoản để chạy", android.widget.Toast.LENGTH_SHORT).show()
                                         } else {
                                             com.cayxu.app.automation.facebook.XsmmFacebookManager.startAccounts(context, accountsToRun)
-                                            android.widget.Toast.makeText(context, "Báº¯t Ä‘áº§u cháº¡y ${accountsToRun.size} tÃ i khoáº£n Facebook", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Facebook", android.widget.Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 },
@@ -2778,7 +2778,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     } else {
                                         Icon(
                                             imageVector = Icons.Filled.PlayArrow,
-                                            contentDescription = "Cháº¡y táº¥t cáº£",
+                                            contentDescription = "Chạy tất cả",
                                             tint = Color.White,
                                             modifier = Modifier.size(20.dp)
                                         )
@@ -2787,7 +2787,7 @@ fun XsmmAccountScreen(navController: NavController) {
                             }
                         }
 
-                        // NÃºt ThÃªm acc (+)
+                        // Nút Thêm acc (+)
                         IconButton(
                             onClick = {
                                 if (isIg) showInstagramCookieSheet = true
@@ -2804,7 +2804,7 @@ fun XsmmAccountScreen(navController: NavController) {
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.Add,
-                                    contentDescription = "ThÃªm tÃ i khoáº£n",
+                                    contentDescription = "Thêm tài khoản",
                                     tint = Color.White,
                                     modifier = Modifier.size(22.dp)
                                 )
@@ -2917,7 +2917,7 @@ private fun XsmmTikTokAccountCard(
                 Spacer(Modifier.width(8.dp))
             }
 
-            // Avatar TikTok hiá»ƒn thá»‹ áº£nh HD thá»±c táº¿
+            // Avatar TikTok hiển thị ảnh HD thực tế
             Box(
                 modifier = Modifier
                     .size(46.dp)
@@ -2951,7 +2951,7 @@ private fun XsmmTikTokAccountCard(
 
             Spacer(Modifier.width(10.dp))
 
-            // Ná»™i dung thÃ´ng tin tÃ i khoáº£n TikTok
+            // Nội dung thông tin tài khoản TikTok
             Column(Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -2967,7 +2967,7 @@ private fun XsmmTikTokAccountCard(
                         modifier = Modifier.weight(1f, fill = false)
                     )
 
-                    // NÃºt tráº¡ng thÃ¡i Live / Die
+                    // Nút trạng thái Live / Die
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -2993,7 +2993,7 @@ private fun XsmmTikTokAccountCard(
 
                 Spacer(Modifier.height(1.dp))
                 Text(
-                    text = "@${account.handle.ifBlank { "chÆ°a_rÃµ" }}",
+                    text = "@${account.handle.ifBlank { "chưa_rõ" }}",
                     color = TextSecondary,
                     fontSize = 12.sp,
                     maxLines = 1
@@ -3010,7 +3010,7 @@ private fun XsmmTikTokAccountCard(
                     )
                 }
 
-                // DÃ²ng thá»‘ng kÃª: Followers, Tim
+                // Dòng thống kê: Followers, Tim
                 val statsList = buildList {
                     if (account.followerCount > 0) add("${formatTikTokCount(account.followerCount)} followers")
                     if (account.heartCount > 0) add("${formatTikTokCount(account.heartCount)} tim")
@@ -3018,18 +3018,18 @@ private fun XsmmTikTokAccountCard(
                 if (statsList.isNotEmpty()) {
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = statsList.joinToString(" â€¢ "),
+                        text = statsList.joinToString(" • "),
                         color = Color(0xFFE1306C),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
 
-                // DÃ²ng ngÃ y táº¡o riÃªng biá»‡t
+                // Dòng ngày tạo riêng biệt
                 if (account.createDateFormatted.isNotBlank()) {
                     Spacer(Modifier.height(1.dp))
                     Text(
-                        text = "Táº¡o: ${account.createDateFormatted}",
+                        text = "Tạo: ${account.createDateFormatted}",
                         color = TextSecondary,
                         fontSize = 10.5.sp
                     )
@@ -3038,7 +3038,7 @@ private fun XsmmTikTokAccountCard(
 
             Spacer(Modifier.width(4.dp))
 
-            // NÃºt lÃ m má»›i (Reload) thÃ´ng tin profile TikTok
+            // Nút làm mới (Reload) thông tin profile TikTok
             IconButton(
                 onClick = onReloadProfile,
                 enabled = !isReloading,
@@ -3053,14 +3053,14 @@ private fun XsmmTikTokAccountCard(
                 } else {
                     Icon(
                         imageVector = Icons.Filled.Refresh,
-                        contentDescription = "LÃ m má»›i thÃ´ng tin TikTok",
+                        contentDescription = "Làm mới thông tin TikTok",
                         tint = TextSecondary,
                         modifier = Modifier.size(18.dp)
                     )
                 }
             }
 
-            // NÃºt ThÃªm / ÄÃ£ thÃªm
+            // Nút Thêm / Đã thêm
             when {
                 isAdding -> {
                     CircularProgressIndicator(color = TikTokBrandBlack, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
@@ -3069,7 +3069,7 @@ private fun XsmmTikTokAccountCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Check, contentDescription = null, tint = TikTokBrandBlack, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("ÄÃ£ thÃªm", color = TikTokBrandBlack, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text("Đã thêm", color = TikTokBrandBlack, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
                 }
                 else -> {
@@ -3079,7 +3079,7 @@ private fun XsmmTikTokAccountCard(
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                         modifier = Modifier.height(32.dp)
                     ) {
-                        Text("ThÃªm", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Thêm", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }
@@ -3108,7 +3108,7 @@ private fun DeleteConfirmBottomSheet(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
-            // TiÃªu Ä‘á» BottomSheet
+            // Tiêu đề BottomSheet
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -3130,13 +3130,13 @@ private fun DeleteConfirmBottomSheet(
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
-                        "XÃ¡c nháº­n xÃ³a tÃ i khoáº£n",
+                        "Xác nhận xóa tài khoản",
                         fontWeight = FontWeight.Bold,
                         fontSize = 17.sp,
                         color = TextPrimary
                     )
                     Text(
-                        "XÃ³a ${accountList.size} tÃ i khoáº£n $platformName Ä‘Ã£ chá»n",
+                        "Xóa ${accountList.size} tài khoản $platformName đã chọn",
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
@@ -3145,9 +3145,9 @@ private fun DeleteConfirmBottomSheet(
 
             Spacer(Modifier.height(16.dp))
 
-            // Ná»™i dung cáº£nh bÃ¡o
+            // Nội dung cảnh báo
             Text(
-                "Báº¡n cÃ³ cháº¯c cháº¯n muá»‘n xÃ³a ${accountList.size} tÃ i khoáº£n nÃ y khá»i thiáº¿t bá»‹? Má»i thÃ´ng tin tÃ i khoáº£n vÃ  cookie Ä‘Ã£ lÆ°u sáº½ bá»‹ xÃ³a vÄ©nh viá»…n.",
+                "Bạn có chắc chắn muốn xóa ${accountList.size} tài khoản này khỏi thiết bị? Mọi thông tin tài khoản và cookie đã lưu sẽ bị xóa vĩnh viễn.",
                 fontSize = 13.5.sp,
                 color = TextSecondary,
                 lineHeight = 19.sp
@@ -3155,7 +3155,7 @@ private fun DeleteConfirmBottomSheet(
 
             Spacer(Modifier.height(14.dp))
 
-            // Danh sÃ¡ch cÃ¡c tÃ i khoáº£n bá»‹ xÃ³a
+            // Danh sách các tài khoản bị xóa
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFF9FAFB)),
@@ -3192,7 +3192,7 @@ private fun DeleteConfirmBottomSheet(
 
             Spacer(Modifier.height(20.dp))
 
-            // 2 NÃºt: Há»§y / XÃ³a ngay
+            // 2 Nút: Hủy / Xóa ngay
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -3204,7 +3204,7 @@ private fun DeleteConfirmBottomSheet(
                         .height(46.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Há»§y", color = TextSecondary, fontWeight = FontWeight.Medium)
+                    Text("Hủy", color = TextSecondary, fontWeight = FontWeight.Medium)
                 }
 
                 Button(
@@ -3217,7 +3217,7 @@ private fun DeleteConfirmBottomSheet(
                 ) {
                     Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("XÃ³a ngay", fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("Xóa ngay", fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
 
@@ -3246,7 +3246,7 @@ private fun ErrorDetailBottomSheet(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
-            // Header: Dáº¥u cháº¥m than cáº£nh bÃ¡o
+            // Header: Dấu chấm than cảnh báo
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -3268,13 +3268,13 @@ private fun ErrorDetailBottomSheet(
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
-                        "Chi tiáº¿t lá»—i",
+                        "Chi tiết lỗi",
                         fontWeight = FontWeight.Bold,
                         fontSize = 17.sp,
                         color = TextPrimary
                     )
                     Text(
-                        "TÃ i khoáº£n: $accountName",
+                        "Tài khoản: $accountName",
                         fontSize = 12.5.sp,
                         color = TextSecondary
                     )
@@ -3283,10 +3283,10 @@ private fun ErrorDetailBottomSheet(
 
             Spacer(Modifier.height(16.dp))
 
-            Text("Chi tiáº¿t nguyÃªn nhÃ¢n pháº£n há»“i:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Text("Chi tiết nguyên nhân phản hồi:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Spacer(Modifier.height(8.dp))
 
-            // Ná»™i dung chi tiáº¿t lá»—i
+            // Nội dung chi tiết lỗi
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)),
@@ -3311,7 +3311,7 @@ private fun ErrorDetailBottomSheet(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(46.dp)
             ) {
-                Text("ÄÃ£ hiá»ƒu & ÄÃ³ng", fontWeight = FontWeight.Bold, color = Color.White)
+                Text("Đã hiểu & Đóng", fontWeight = FontWeight.Bold, color = Color.White)
             }
 
             Spacer(Modifier.height(16.dp))
@@ -3326,9 +3326,9 @@ private data class XsmmTikTokTypeOption(
 )
 
 private val xsmmTikTokOptions = listOf(
-    XsmmTikTokTypeOption(TikTokAppVariant.STANDARD, "TikTok", "PhiÃªn báº£n tiÃªu chuáº©n"),
-    XsmmTikTokTypeOption(TikTokAppVariant.LITE, "TikTok Lite", "PhiÃªn báº£n rÃºt gá»n, nháº¹ hÆ¡n"),
-    XsmmTikTokTypeOption(TikTokAppVariant.STUDIO, "TikTok Studio", "DÃ nh cho nhÃ  sÃ¡ng táº¡o ná»™i dung")
+    XsmmTikTokTypeOption(TikTokAppVariant.STANDARD, "TikTok", "Phiên bản tiêu chuẩn"),
+    XsmmTikTokTypeOption(TikTokAppVariant.LITE, "TikTok Lite", "Phiên bản rút gọn, nhẹ hơn"),
+    XsmmTikTokTypeOption(TikTokAppVariant.STUDIO, "TikTok Studio", "Dành cho nhà sáng tạo nội dung")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -3364,35 +3364,35 @@ fun XsmmTikTokCheckSheet(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
-            Text("Kiá»ƒm tra tÃ i khoáº£n TikTok", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text("Kiểm tra tài khoản TikTok", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             Spacer(Modifier.height(4.dp))
             Text(
-                "MÃ n hÃ¬nh ná»•i & Trá»£ nÄƒng cáº§n Ä‘Æ°á»£c cáº¥p quyá»n Ä‘á»ƒ tá»± Ä‘á»™ng má»Ÿ TikTok vÃ  kiá»ƒm tra tráº¡ng thÃ¡i nick.",
+                "Màn hình nổi & Trợ năng cần được cấp quyền để tự động mở TikTok và kiểm tra trạng thái nick.",
                 fontSize = 12.sp,
                 color = TextSecondary
             )
             Spacer(Modifier.height(16.dp))
 
-            // 1. Quyá»n hiá»ƒn thá»‹ trÃªn á»©ng dá»¥ng khÃ¡c
+            // 1. Quyền hiển thị trên ứng dụng khác
             XsmmTikTokPermissionCard(
-                title = "Hiá»ƒn thá»‹ trÃªn á»©ng dá»¥ng khÃ¡c",
-                desc = "Äá»ƒ hiá»‡n mÃ n ná»•i (overlay) kiá»ƒm tra vÃ  Ä‘iá»u khiá»ƒn trÃªn TikTok",
+                title = "Hiển thị trên ứng dụng khác",
+                desc = "Để hiện màn nổi (overlay) kiểm tra và điều khiển trên TikTok",
                 granted = overlayGranted,
                 onClick = { com.cayxu.app.automation.tiktok.TikTokAppLauncher.openOverlayPermissionSettings(context) }
             )
 
             Spacer(Modifier.height(10.dp))
 
-            // 2. Quyá»n Trá»£ nÄƒng
+            // 2. Quyền Trợ năng
             XsmmTikTokPermissionCard(
-                title = "Dá»‹ch vá»¥ Trá»£ nÄƒng (Accessibility)",
-                desc = "Äá»ƒ tá»± Ä‘á»™ng báº¥m tab \"TÃ´i\" vÃ  kiá»ƒm tra @username TikTok",
+                title = "Dịch vụ Trợ năng (Accessibility)",
+                desc = "Để tự động bấm tab \"Tôi\" và kiểm tra @username TikTok",
                 granted = accessibilityGranted,
                 onClick = { com.cayxu.app.automation.tiktok.TikTokAppLauncher.openAccessibilitySettings(context) }
             )
 
             Spacer(Modifier.height(18.dp))
-            Text("Chá»n á»©ng dá»¥ng cáº§n kiá»ƒm tra:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Text("Chọn ứng dụng cần kiểm tra:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Spacer(Modifier.height(8.dp))
 
             // Variant selector chips
@@ -3420,7 +3420,7 @@ fun XsmmTikTokCheckSheet(
                                 color = if (isSel) Color.White else TextPrimary
                             )
                             Text(
-                                if (isInstalled) "ÄÃ£ cÃ i" else "ChÆ°a cÃ i",
+                                if (isInstalled) "Đã cài" else "Chưa cài",
                                 fontSize = 10.sp,
                                 color = if (isSel) Color(0xFF94A3B8) else TextSecondary
                             )
@@ -3431,16 +3431,16 @@ fun XsmmTikTokCheckSheet(
 
             Spacer(Modifier.height(22.dp))
 
-            // NÃºt "Kiá»ƒm tra tÃ i khoáº£n"
+            // Nút "Kiểm tra tài khoản"
             Button(
                 onClick = {
                     if (!com.cayxu.app.automation.tiktok.TikTokAppLauncher.isInstalled(context, selectedVariant)) {
                         val variantName = xsmmTikTokOptions.first { it.variant == selectedVariant }.title
-                        android.widget.Toast.makeText(context, "ChÆ°a cÃ i Ä‘áº·t $variantName trÃªn mÃ¡y nÃ y", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, "Chưa cài đặt $variantName trên máy này", android.widget.Toast.LENGTH_SHORT).show()
                         return@Button
                     }
                     if (!overlayGranted || !accessibilityGranted) {
-                        android.widget.Toast.makeText(context, "Vui lÃ²ng cáº¥p Ä‘á»§ 2 quyá»n á»Ÿ trÃªn trÆ°á»›c khi kiá»ƒm tra", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, "Vui lòng cấp đủ 2 quyền ở trên trước khi kiểm tra", android.widget.Toast.LENGTH_SHORT).show()
                         return@Button
                     }
 
@@ -3452,7 +3452,7 @@ fun XsmmTikTokCheckSheet(
                     val launched = com.cayxu.app.automation.tiktok.TikTokAppLauncher.launch(context, selectedVariant, forceStopFirst = true)
                     if (!launched) {
                         val variantName = xsmmTikTokOptions.first { it.variant == selectedVariant }.title
-                        android.widget.Toast.makeText(context, "KhÃ´ng má»Ÿ Ä‘Æ°á»£c $variantName", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, "Không mở được $variantName", android.widget.Toast.LENGTH_SHORT).show()
                     }
                     onDismiss()
                 },
@@ -3467,7 +3467,7 @@ fun XsmmTikTokCheckSheet(
             ) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Kiá»ƒm tra tÃ i khoáº£n", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text("Kiểm tra tài khoản", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
 
             Spacer(Modifier.height(16.dp))
@@ -3503,7 +3503,7 @@ private fun XsmmTikTokPermissionCard(
                     .background(SuccessGreen.copy(alpha = 0.15f))
                     .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
-                Text("ÄÃ£ cáº¥p", color = SuccessGreen, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("Đã cấp", color = SuccessGreen, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         } else {
             Button(
@@ -3513,7 +3513,7 @@ private fun XsmmTikTokPermissionCard(
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                 modifier = Modifier.height(34.dp)
             ) {
-                Text("Cáº¥p quyá»n", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("Cấp quyền", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

@@ -44,6 +44,10 @@ object XsmmFacebookTaskRunner {
         .followRedirects(true)
         .build()
 
+    private fun currentTime(): String {
+        return java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+    }
+
     suspend fun run(
         context: Context,
         accountUids: List<String>,
@@ -157,7 +161,7 @@ object XsmmFacebookTaskRunner {
         }
 
         if (fbToken.isBlank() && !account.note.contains("c_user=")) {
-            val msg = "[$cleanUid] Thiếu Token và Cookie Facebook"
+            val msg = "[${currentTime()}] [$cleanUid] Thiếu Token và Cookie Facebook"
             onStatusUpdate?.invoke(msg)
             onProgressUpdate?.invoke(msg, 0, 1)
             onErrorDetail?.invoke(cleanUid, msg)
@@ -305,7 +309,7 @@ object XsmmFacebookTaskRunner {
 
             val (isNoTask, errorMsg) = when (taskResult) {
                 is XsmmTasks2Result.Error -> {
-                    val xsmmDetail = "Lỗi lấy nhiệm vụ từ XSMM:\n• Server phản hồi: ${taskResult.message}"
+                    val xsmmDetail = "[${currentTime()}] Lỗi lấy nhiệm vụ từ XSMM:\n• Server phản hồi: ${taskResult.message}"
                     onErrorDetail?.invoke(cleanUid, xsmmDetail)
                     if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, xsmmDetail)
                     Pair(true, taskResult.message)
@@ -418,9 +422,10 @@ object XsmmFacebookTaskRunner {
                     val fbErr = taskRes.message ?: "Thao tác Facebook thất bại"
                     notify("$pos Lỗi FB: $fbErr ($consecutiveErrors/${config.failJobCountToSwitchAccount})")
                     val detailMsg = buildString {
-                        append("Nhiệm vụ: ${task.type.ifBlank { currentActiveTaskType }}\n")
-                        append("Target: $target\n")
-                        append("Lỗi từ Facebook: $fbErr")
+                        append("[${currentTime()}] Thao tác Facebook thất bại:\n")
+                        append("• Nhiệm vụ: ${task.type.ifBlank { currentActiveTaskType }}\n")
+                        append("• Target: $target\n")
+                        append("• Chi tiết: $fbErr")
                     }
                     onErrorDetail?.invoke(cleanUid, detailMsg)
                     if (cleanUid != targetUidForXsmm) {
@@ -445,6 +450,9 @@ object XsmmFacebookTaskRunner {
 
                     // Riêng job Comment (đặc biệt là Page FB): Cần đợi 60s để Facebook hiển thị và server XSMM quét duyệt comment rồi mới gửi hoàn thành
                     if (isCommentTaskType) {
+                        val cmtNotice = "[${currentTime()}] Đang đợi 60s để Facebook hiển thị comment và XSMM quét duyệt trước khi gửi hoàn thành..."
+                        onErrorDetail?.invoke(cleanUid, cmtNotice)
+                        if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, cmtNotice)
                         for (sec in 60 downTo 1) {
                             if (!coroutineContext.isActive) break
                             notify("$pos Đã cmt xong. Đợi ${sec}s gửi hoàn thành...")
@@ -464,16 +472,19 @@ object XsmmFacebookTaskRunner {
                         taskIds = pendingBatchTaskIds.toList()
                     )
 
-                    // Nếu XSMM phản hồi 502 Bad Gateway / timeout / server chậm -> đếm ngược từng giây để người dùng thấy rõ đang thử lại, không bị đơ
+                    // Nếu XSMM phản hồi 502 Bad Gateway / timeout / server chậm / quá tải -> báo ngay vào dấu chấm than và thử lại
                     val isRetryableError = !compRes.success && (
                         compRes.retry ||
+                        compRes.countdown > 0 ||
                         compRes.message.contains("502", ignoreCase = true) ||
                         compRes.message.contains("500", ignoreCase = true) ||
                         compRes.message.contains("503", ignoreCase = true) ||
                         compRes.message.contains("504", ignoreCase = true) ||
                         compRes.message.contains("chưa hoàn thành", ignoreCase = true) ||
                         compRes.message.contains("timeout", ignoreCase = true) ||
-                        compRes.message.contains("kết nối", ignoreCase = true)
+                        compRes.message.contains("kết nối", ignoreCase = true) ||
+                        compRes.message.contains("quá nhiều", ignoreCase = true) ||
+                        compRes.message.contains("quay lại sau", ignoreCase = true)
                     )
 
                     // Đợi tối đa 60 giây để duyệt nhận xu nếu server báo retry hoặc chưa duyệt xong
@@ -481,6 +492,10 @@ object XsmmFacebookTaskRunner {
                         for (retryCount in 1..6) {
                             if (!coroutineContext.isActive) break
                             val retryWait = if (compRes.countdown in 1..15) compRes.countdown else 10
+                            val retryNotice = "[${currentTime()}] Đang duyệt nhận xu ($bSize job):\n• Server phản hồi: ${compRes.message.ifBlank { "Chờ duyệt (countdown ${compRes.countdown}s)" }}\n• Trạng thái: Chờ ${retryWait}s gửi lại (lần $retryCount/6, tối đa 60s)..."
+                            onErrorDetail?.invoke(cleanUid, retryNotice)
+                            if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, retryNotice)
+
                             for (sec in retryWait downTo 1) {
                                 if (!coroutineContext.isActive) break
                                 notify("Đang duyệt nhận xu. Đợi ${sec}s gửi lại (lần $retryCount/6, tối đa 60s)...")
@@ -508,6 +523,10 @@ object XsmmFacebookTaskRunner {
 
                     if (compRes.success || pts > 0) {
                         val succText = if (pts > 0) "+$pts xu ($bSize job)" else (compRes.message.ifBlank { "Thành công $bSize job" })
+                        val succDetail = "[${currentTime()}] Nhận xu thành công:\n• Nhận được: +$pts xu ($bSize nhiệm vụ)\n• Server phản hồi: ${compRes.message.ifBlank { "Hoàn thành" }}"
+                        onErrorDetail?.invoke(cleanUid, succDetail)
+                        if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, succDetail)
+
                         // Đã nhận xu: dùng ĐÚNG cấu hình người dùng (fetchTaskIntervalSeconds)
                         // Countdown server chỉ là fallback khi chưa cấu hình (= 0)
                         val waitSec = if (config.fetchTaskIntervalSeconds > 0) {
@@ -526,7 +545,7 @@ object XsmmFacebookTaskRunner {
                     } else {
                         val errMsg = compRes.message.ifBlank { "Không nhận được xu" }
                         notify("Lỗi nhận xu: $errMsg")
-                        val compErr = "Lỗi nhận xu từ XSMM:\n• Server phản hồi: $errMsg"
+                        val compErr = "[${currentTime()}] Lỗi nhận xu từ XSMM:\n• Server phản hồi: $errMsg\n• Đã thử lại nhiều lần nhưng server chưa duyệt xu."
                         onErrorDetail?.invoke(cleanUid, compErr)
                         if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, compErr)
                         delay(3000L)
