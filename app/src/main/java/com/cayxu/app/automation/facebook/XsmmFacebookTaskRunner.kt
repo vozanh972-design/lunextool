@@ -471,15 +471,17 @@ object XsmmFacebookTaskRunner {
                         compRes.message.contains("kết nối", ignoreCase = true)
                     )
 
+                    // Đợi tối đa 60 giây để duyệt nhận xu nếu server báo retry hoặc chưa duyệt xong
                     if (isRetryableError) {
-                        for (retryCount in 1..4) {
+                        for (retryCount in 1..6) {
                             if (!coroutineContext.isActive) break
-                            for (sec in 10 downTo 1) {
+                            val retryWait = if (compRes.countdown in 1..15) compRes.countdown else 10
+                            for (sec in retryWait downTo 1) {
                                 if (!coroutineContext.isActive) break
-                                notify("Server 502/chậm. Thử lại sau ${sec}s (lần $retryCount/4)...")
+                                notify("Đang duyệt nhận xu. Đợi ${sec}s gửi lại (lần $retryCount/6, tối đa 60s)...")
                                 delay(1000L)
                             }
-                            notify("Đang gửi lại nhận xu (lần $retryCount/4)...")
+                            notify("Đang gửi lại nhận xu (lần $retryCount/6)...")
                             compRes = XsmmTasksRepository.completeTasks2(
                                 rawToken = token,
                                 type = apiCompleteType,
@@ -502,12 +504,13 @@ object XsmmFacebookTaskRunner {
 
                     if (compRes.success || pts > 0) {
                         val succText = if (pts > 0) "+$pts xu ($bSize job)" else (compRes.message.ifBlank { "Thành công $bSize job" })
-                        // Logic Cảm xúc: Giữ nguyên làm xong gửi nhận xu ngay rồi mới đợi 60s
-                        // Logic Comment: Đã đợi 60s trước khi gửi hoàn thành rồi nên chỉ cần đợi countdown ngắn của server (mặc định 3s)
-                        val waitSec = if (isLikeTaskType) {
-                            compRes.countdown.coerceAtLeast(60)
+                        // Đã nhận được xu rồi: chỉ đợi theo cấu hình người dùng (fetchTaskIntervalSeconds) hoặc countdown của server, KHÔNG ép đợi 60s
+                        val waitSec = if (compRes.countdown > 0) {
+                            compRes.countdown
+                        } else if (config.fetchTaskIntervalSeconds > 0) {
+                            config.fetchTaskIntervalSeconds
                         } else {
-                            compRes.countdown.coerceAtLeast(3)
+                            5
                         }
 
                         for (sec in waitSec downTo 1) {
