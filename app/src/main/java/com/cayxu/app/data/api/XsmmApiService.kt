@@ -32,6 +32,15 @@ interface XsmmApiService {
         @Query("account_type") accountType: String? = null
     ): Response<JsonObject>
 
+    /** Lấy danh sách tài khoản đa luồng (GET /api/taskapi/accounts2) */
+    @GET("api/taskapi/accounts2")
+    suspend fun getAccounts2(
+        @Header("Authorization") authorization: String,
+        @Query("search") search: String? = null,
+        @Query("page") page: Int? = null,
+        @Query("account_type") accountType: String? = null
+    ): Response<JsonObject>
+
     /** Lấy tài khoản đang active (GET /api/taskapi/accounts/active) */
     @GET("api/taskapi/accounts/active")
     suspend fun getActiveAccount(@Header("Authorization") authorization: String): Response<JsonObject>
@@ -39,6 +48,13 @@ interface XsmmApiService {
     /** Thêm tài khoản mới (POST /api/taskapi/accounts) */
     @POST("api/taskapi/accounts")
     suspend fun addAccount(
+        @Header("Authorization") authorization: String,
+        @Body body: JsonObject
+    ): Response<JsonObject>
+
+    /** Thêm tài khoản mới đa luồng (POST /api/taskapi/accounts2) */
+    @POST("api/taskapi/accounts2")
+    suspend fun addAccount2(
         @Header("Authorization") authorization: String,
         @Body body: JsonObject
     ): Response<JsonObject>

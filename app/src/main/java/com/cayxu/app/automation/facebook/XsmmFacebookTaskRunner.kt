@@ -227,25 +227,21 @@ object XsmmFacebookTaskRunner {
             }
         }
 
-        // Đồng bộ và đặt làm nick chạy mặc định trên XSMM theo đúng 4 API chuẩn:
-        // 1. GET /api/taskapi/accounts/active
-        // 2. GET /api/taskapi/accounts?account_type=facebook
-        // 3. PUT /api/taskapi/accounts/{id}/set-active
-        // 4. POST /api/taskapi/accounts (active: true)
+        // Đồng bộ và đảm bảo nick Facebook / Page đã tồn tại trên XSMM theo chuẩn ĐA LUỒNG (GET/POST /api/taskapi/accounts2)
+        // Cơ chế đa luồng không cần gọi set-active vì mỗi request tasks2 đều truyền trực tiếp UID.
         notify("Kiểm tra nick [$targetUidForXsmm] trên XSMM...")
-        val syncResult = XsmmAccountsRepository.syncAndActivateFacebookAccount(token, targetUidForXsmm)
-        val internalId = syncResult.internalId
+        val syncResult = XsmmAccountsRepository.ensureFacebookAccountLinked2(token, targetUidForXsmm)
         val xsmmUidToRun = syncResult.uid.ifBlank { targetUidForXsmm }
 
         if (syncResult.isSuccess) {
-            notify("Nick [$xsmmUidToRun] đã sẵn sàng trên XSMM")
-            if (internalId.isNotBlank()) {
+            notify("Nick [$xsmmUidToRun] đã sẵn sàng trên XSMM (đa luồng)")
+            if (syncResult.internalId.isNotBlank()) {
                 val internalMap = XsmmAccountStore.getInternalIdMap(context).toMutableMap()
-                internalMap[targetUidForXsmm] = internalId
+                internalMap[targetUidForXsmm] = syncResult.internalId
                 XsmmAccountStore.saveInternalIdMap(context, internalMap)
             }
         } else {
-            val errMsg = "Lỗi kích hoạt nick [$targetUidForXsmm] trên XSMM: ${syncResult.message}"
+            val errMsg = "Lỗi liên kết nick [$targetUidForXsmm] lên XSMM: ${syncResult.message}"
             notify(errMsg)
             onErrorDetail?.invoke(cleanUid, errMsg)
             if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, errMsg)
@@ -287,20 +283,18 @@ object XsmmFacebookTaskRunner {
             val currentTaskLabel = getTaskName(currentActiveTaskType)
 
             notify("Lấy nhiệm vụ Facebook ($currentTaskLabel)...")
-            var taskResult = XsmmTasksRepository.getTasks(token, currentActiveTaskType)
+            var taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, targetUidForXsmm)
 
-            if (taskResult is XsmmTasks2Result.Error && taskResult.message.contains("cần thêm tài khoản", ignoreCase = true)) {
-                notify("Kích hoạt lại nick [$xsmmUidToRun] trên XSMM...")
-                if (internalId.isNotBlank()) {
-                    XsmmAccountsRepository.setActiveAccount(token, internalId)
-                }
-                val reSync = XsmmAccountsRepository.syncAndActivateFacebookAccount(token, targetUidForXsmm)
-                val newInternalId = reSync.internalId.ifBlank { internalId }
-                if (newInternalId.isNotBlank()) {
-                    XsmmAccountsRepository.setActiveAccount(token, newInternalId)
-                }
-                delay(1200L)
-                taskResult = XsmmTasksRepository.getTasks(token, currentActiveTaskType)
+            if (taskResult is XsmmTasks2Result.Error && (
+                taskResult.message.contains("cần thêm tài khoản", ignoreCase = true) ||
+                taskResult.message.contains("chưa thêm", ignoreCase = true) ||
+                taskResult.message.contains("không tìm thấy", ignoreCase = true) ||
+                taskResult.message.contains("not found", ignoreCase = true)
+            )) {
+                notify("Đồng bộ lại nick [$xsmmUidToRun] lên XSMM (accounts2)...")
+                XsmmAccountsRepository.addFacebookAccount2(token, targetUidForXsmm)
+                delay(1500L)
+                taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, targetUidForXsmm)
             }
 
             val (isNoTask, errorMsg) = when (taskResult) {
@@ -454,14 +448,15 @@ object XsmmFacebookTaskRunner {
 
                     notify("Gửi nhận xu $bSize job...")
 
-                    // Chuẩn API XSMM: type khi complete luôn là loại nhiệm vụ Facebook (VD: facebook_like, facebook_follow, facebook_comment...)
+                    // Chuẩn API XSMM đa luồng: tasks2/complete (Body: {"type": ..., "task_id": [...], "uid": targetUidForXsmm})
                     val apiCompleteType = if (currentActiveTaskType.startsWith("facebook_")) currentActiveTaskType else "facebook_like"
 
-                    // GỌI HOÀN THÀNH JOB
-                    var compRes = XsmmTasksRepository.completeTasks(
-                        token,
-                        apiCompleteType,
-                        pendingBatchTaskIds.toList()
+                    // GỌI HOÀN THÀNH JOB ĐA LUỒNG
+                    var compRes = XsmmTasksRepository.completeTasks2(
+                        rawToken = token,
+                        type = apiCompleteType,
+                        taskIds = pendingBatchTaskIds.toList(),
+                        uid = targetUidForXsmm
                     )
 
                     // Nếu XSMM phản hồi 502 Bad Gateway / timeout / server chậm -> đếm ngược từng giây để người dùng thấy rõ đang thử lại, không bị đơ
@@ -485,10 +480,11 @@ object XsmmFacebookTaskRunner {
                                 delay(1000L)
                             }
                             notify("Đang gửi lại nhận xu (lần $retryCount/4)...")
-                            compRes = XsmmTasksRepository.completeTasks(
-                                token,
-                                apiCompleteType,
-                                pendingBatchTaskIds.toList()
+                            compRes = XsmmTasksRepository.completeTasks2(
+                                rawToken = token,
+                                type = apiCompleteType,
+                                taskIds = pendingBatchTaskIds.toList(),
+                                uid = targetUidForXsmm
                             )
                             if (compRes.success || compRes.points > 0) break
                         }
