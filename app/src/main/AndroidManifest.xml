@@ -4,6 +4,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Quyền chạy Foreground Service (bắt buộc từ Android 9+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- Quyền hiển thị notification (bắt buộc từ Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Chỉ dùng cho tính năng thêm tài khoản TikTok: hiển thị lớp nổi (nút "Lưu @")
          trong lúc người dùng đang ở app TikTok/TikTok Lite/TikTok Studio. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -69,5 +75,11 @@
         <service
             android:name=".ui.overlay.xsmm.XsmmJobRunnerOverlayService"
             android:exported="false" />
+
+        <!-- Foreground Service chạy ngầm - hiển thị notification khi vuốt màn hình xuống -->
+        <service
+            android:name=".worker.AppBackgroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

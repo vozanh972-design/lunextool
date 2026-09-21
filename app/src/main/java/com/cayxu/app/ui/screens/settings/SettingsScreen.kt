@@ -35,6 +35,7 @@ import com.cayxu.app.ui.theme.Primary
 import com.cayxu.app.ui.theme.SuccessGreen
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
+import com.cayxu.app.worker.AppBackgroundService
 
 @Composable
 fun SettingsScreen(navController: NavController) {
@@ -45,12 +46,15 @@ fun SettingsScreen(navController: NavController) {
     // (không phải mock) - bật/tắt FLAG_KEEP_SCREEN_ON ngay khi gạt.
     var keepScreenOn by remember { mutableStateOf(false) }
 
-    // TODO: các mục dưới đây (thông báo đẩy, email, ngôn ngữ...) hiện chưa có hệ thống
+    // TODO: các mục dưới đây (thông báo đẩy, ngôn ngữ...) hiện chưa có hệ thống
     // backend/tuỳ chỉnh tương ứng, chỉ là công tắc UI cục bộ để hoàn thiện màn hình theo
     // ảnh mẫu, chưa lưu lại hay tác động thật. Riêng "Chế độ tối" bên dưới là công tắc THẬT,
     // đổi màu toàn app ngay lập tức (xem ThemeState.kt).
     var pushNotifications by remember { mutableStateOf(true) }
-    var emailNotifications by remember { mutableStateOf(true) }
+
+    // "Chạy ngầm" - công tắc THẬT: bật/tắt AppBackgroundService (Foreground Service)
+    // Trạng thái được đọc từ SharedPrefs và phản ánh service thực sự đang chạy hay không
+    var backgroundServiceEnabled by remember { mutableStateOf(AppBackgroundService.isEnabled(context)) }
 
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
@@ -87,11 +91,28 @@ fun SettingsScreen(navController: NavController) {
                     onCheckedChange = { pushNotifications = it }
                 )
                 SettingsSwitchRow(
-                    icon = Icons.Filled.Email,
-                    iconColor = Primary,
-                    title = "Email",
-                    checked = emailNotifications,
-                    onCheckedChange = { emailNotifications = it }
+                    icon = Icons.Filled.Sync,
+                    iconColor = Color(0xFF16A34A),
+                    title = "Chạy ngầm",
+                    checked = backgroundServiceEnabled,
+                    onCheckedChange = { checked ->
+                        backgroundServiceEnabled = checked
+                        if (checked) {
+                            AppBackgroundService.start(context)
+                            android.widget.Toast.makeText(
+                                context,
+                                "Đã bật chạy ngầm - app tiếp tục chạy khi đóng",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            AppBackgroundService.stop(context)
+                            android.widget.Toast.makeText(
+                                context,
+                                "Đã tắt chạy ngầm",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
                 )
             }
 
