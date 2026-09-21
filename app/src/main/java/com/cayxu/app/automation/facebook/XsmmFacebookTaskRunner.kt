@@ -610,7 +610,7 @@ object XsmmFacebookTaskRunner {
                     httpClient.newCall(req).execute().use { res ->
                         if (res.isSuccessful) return FbTaskResult(true, "Thành công")
                         val b = res.body?.string().orEmpty()
-                        if (b.isNotBlank()) fallbackErrMsg = b
+                        if (b.isNotBlank()) fallbackErrMsg = cleanFbError(b)
                     }
                 }
                 lower.contains("follow") || lower.contains("sub") -> {
@@ -619,7 +619,7 @@ object XsmmFacebookTaskRunner {
                     httpClient.newCall(req).execute().use { res ->
                         if (res.isSuccessful) return FbTaskResult(true, "Thành công")
                         val b = res.body?.string().orEmpty()
-                        if (b.isNotBlank()) fallbackErrMsg = b
+                        if (b.isNotBlank()) fallbackErrMsg = cleanFbError(b)
                     }
                 }
                 lower.contains("comment") -> {
@@ -629,7 +629,7 @@ object XsmmFacebookTaskRunner {
                     httpClient.newCall(req).execute().use { res ->
                         if (res.isSuccessful) return FbTaskResult(true, "Thành công")
                         val b = res.body?.string().orEmpty()
-                        if (b.isNotBlank()) fallbackErrMsg = b
+                        if (b.isNotBlank()) fallbackErrMsg = cleanFbError(b)
                     }
                 }
             }
@@ -638,5 +638,27 @@ object XsmmFacebookTaskRunner {
         }
 
         return FbTaskResult(false, fallbackErrMsg ?: "Lỗi thực hiện tương tác Facebook")
+    }
+
+    private fun cleanFbError(body: String): String {
+        try {
+            val json = org.json.JSONObject(body)
+            if (json.has("error")) {
+                val err = json.optJSONObject("error")
+                val title = err?.optString("error_user_title")?.takeIf { it.isNotBlank() }
+                val userMsg = err?.optString("error_user_msg")?.takeIf { it.isNotBlank() }
+                if (!title.isNullOrBlank() || !userMsg.isNullOrBlank()) {
+                    return listOfNotNull(title, userMsg).joinToString(": ")
+                }
+                val code = err?.optInt("code", 0) ?: 0
+                val subcode = err?.optInt("error_subcode", 0) ?: 0
+                if (code == 368 || subcode == 1390008) {
+                    return "Tài khoản bị Facebook giới hạn tính năng tạm thời (Spam Block - Mã 368)"
+                }
+                val msg = err?.optString("message")
+                if (!msg.isNullOrBlank()) return msg
+            }
+        } catch (_: Exception) {}
+        return body
     }
 }

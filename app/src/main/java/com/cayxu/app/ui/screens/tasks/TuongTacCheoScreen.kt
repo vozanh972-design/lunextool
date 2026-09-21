@@ -1,23 +1,35 @@
 package com.cayxu.app.ui.screens.tasks
 
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Facebook
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,30 +44,45 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
+import com.cayxu.app.data.local.FacebookPageItem
 import com.cayxu.app.data.local.TtcAccount
 import com.cayxu.app.data.local.TtcAccountsStore
+import com.cayxu.app.data.local.TtcRunConfig
+import com.cayxu.app.data.local.TtcRunConfigStore
+import com.cayxu.app.facebook.FacebookAccountManager
+import com.cayxu.app.facebook.FacebookMediaEngine
+import com.cayxu.app.facebook.FacebookPageEngine
 import com.cayxu.app.tuongtaccheo.TuongTacCheoApiClient
+import com.cayxu.app.ui.screens.xsmm.FacebookAccountDetailSheet
+import com.cayxu.app.ui.screens.xsmm.FacebookLoginBottomSheet
+import com.cayxu.app.ui.screens.xsmm.FacebookPageDetailSheet
 import com.cayxu.app.ui.theme.AppBackground
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val TtcPink = Color(0xFFEC4899)
+// Màu chủ đạo của TTC: Màu xám thanh lịch hiện đại
+private val TtcPrimary = Color(0xFF475569) // Slate 600
+private val TtcDark = Color(0xFF334155)    // Slate 700
+private val TtcLight = Color(0xFFF1F5F9)   // Slate 100
+private val DangerRed = Color(0xFFEF4444)
 private val FbBlue = Color(0xFF1877F2)
 
 /**
- * Màn hình Tương Tác Chéo:
- *   - 2 Thẻ (Tabs) ở trên: Acc TTC / Facebook
- *   - Checkbox rút gọn thành "Tất cả"
- *   - Nút thêm acc TTC là dấu "+"
- *   - Cơ chế trượt từ dưới lên (ModalBottomSheet) để dán token mỗi dòng 1 acc
- *   - Có 2 ô chọn: Token và Proxy
- *   - 2 nút: "Hủy" và "Đăng nhập"
+ * Màn hình Tương Tác Chéo (TTC):
+ *   - Màu chủ đạo: Màu xám (TtcPrimary)
+ *   - 2 Thẻ ở trên: Acc TTC / Facebook
+ *   - Footer ở dưới: 2 nút "Cấu hình" (trượt từ dưới lên) và "Chạy"
+ *   - Tab Facebook: Nút "+" mở FacebookLoginBottomSheet, sao chép toàn bộ logic FB từ XSMM (Mẹ + Page 615, avatar, Live/Die, Info, Warning, Run/Stop)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,20 +95,305 @@ fun TuongTacCheoScreen(navController: NavController) {
 
     // Dữ liệu tài khoản
     var ttcAccounts by remember { mutableStateOf(TtcAccountsStore.getAccounts(context)) }
-    var fbAccounts by remember { mutableStateOf(FacebookAccountsStore.getAccounts(context)) }
+    var fbAccounts by remember { mutableStateOf(FacebookAccountsStore.getAccounts(context, forceReload = true)) }
 
     // Quản lý selection
     var selectedTtcUsernames by remember { mutableStateOf<Set<String>>(emptySet()) }
     var selectedFbUids by remember { mutableStateOf<Set<String>>(emptySet()) }
 
+    // Cấu hình TTC
+    var ttcConfig by remember { mutableStateOf(TtcRunConfigStore.getConfig(context)) }
+    var showConfigSheet by remember { mutableStateOf(false) }
+
     // BottomSheet thêm acc TTC (trượt từ dưới lên)
     var showAddTtcSheet by remember { mutableStateOf(false) }
 
+    // BottomSheet thêm Facebook (+)
+    var showFacebookLoginSheet by remember { mutableStateOf(false) }
+
+    // Detail & Error BottomSheets
+    var selectedFbDetailAccount by remember { mutableStateOf<FacebookAccount?>(null) }
+    var selectedFbDetailPage by remember { mutableStateOf<Pair<FacebookAccount, FacebookPageItem>?>(null) }
+    var selectedErrorDetailAccount by remember { mutableStateOf<String?>(null) }
+    var showDeleteConfirmSheet by remember { mutableStateOf(false) }
+
+    // Avatar cache & 615 dynamic mapping
+    var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
+    var liveFbAvatars by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var livePageUids by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var livePageAvatars by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+
+    // Quản lý trạng thái chạy TTC Facebook
+    val runningTtcUids = remember { mutableStateListOf<String>() }
+    val ttcStatusMap = remember { mutableStateMapOf<String, String>() }
+    val ttcSuccessCountMap = remember { mutableStateMapOf<String, Int>() }
+    val ttcErrorCountMap = remember { mutableStateMapOf<String, Int>() }
+    val ttcErrorDetailMap = remember { mutableStateMapOf<String, String>() }
+    val activeRunJobs = remember { mutableStateMapOf<String, Job>() }
+
+    var targetFbAvatarChangeUid by remember { mutableStateOf<String?>(null) }
+    var isUploadingAvatar by remember { mutableStateOf(false) }
+
     fun reloadData() {
         ttcAccounts = TtcAccountsStore.getAccounts(context)
-        fbAccounts = FacebookAccountsStore.getAccounts(context)
+        fbAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
     }
 
+    // Tự động kiểm tra và cập nhật Avatar thật & UID 615 cho Facebook Page
+    LaunchedEffect(fbAccounts.size) {
+        fbAccounts.forEach { acc ->
+            val token = acc.bio.trim()
+            val curAv = liveFbAvatars[acc.uid] ?: acc.avatar
+            val needAvatarFix = curAv.isBlank() || curAv.contains("picture?type=large") || curAv.contains("84628273_176159830277856")
+            if (needAvatarFix && token.isNotBlank()) {
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val proxyParts = acc.phone.ifBlank { null }?.split(":")
+                        val proxyHost = proxyParts?.getOrNull(0)
+                        val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+                        val mediaEngine = FacebookMediaEngine(
+                            accessToken = token,
+                            proxyHost = proxyHost,
+                            proxyPort = proxyPort
+                        )
+                        val media = mediaEngine.getUserMedia(tokenParam = token)
+                        val realAvatar = media?.avatarUrl?.takeIf { !it.contains("84628273_176159830277856") }
+                        if (!realAvatar.isNullOrBlank() && realAvatar != acc.avatar) {
+                            val updated = acc.copy(avatar = realAvatar)
+                            FacebookAccountsStore.updateAccount(context, updated)
+                            withContext(Dispatchers.Main) {
+                                liveFbAvatars = liveFbAvatars + (acc.uid to realAvatar)
+                                avatarVersion = System.currentTimeMillis()
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+
+            val proxyParts = acc.phone.ifBlank { null }?.split(":")
+            val proxyHost = proxyParts?.getOrNull(0)
+            val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+            acc.pages.forEach { p ->
+                val curUid = livePageUids[p.pageId] ?: p.displayUid
+                if (!curUid.startsWith("615")) {
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val pageEngine = FacebookPageEngine(
+                                accessToken = acc.bio,
+                                proxyHost = proxyHost,
+                                proxyPort = proxyPort
+                            )
+                            val uid615 = pageEngine.fetchProfilePlusIdForPage(
+                                pageId = p.pageId,
+                                tokenParam = acc.bio,
+                                pageTokenParam = p.pageToken
+                            )
+                            if (!uid615.isNullOrBlank() && uid615.startsWith("615")) {
+                                FacebookAccountsStore.updatePageUid(context, acc.uid, p.pageId, uid615)
+                                withContext(Dispatchers.Main) {
+                                    livePageUids = livePageUids + (p.pageId to uid615)
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
+        }
+    }
+
+    // Bộ chọn ảnh đổi avatar cho FB
+    val pickFbAvatarLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        val uid = targetFbAvatarChangeUid ?: return@rememberLauncherForActivityResult
+        if (uri != null) {
+            isUploadingAvatar = true
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    if (bytes == null || bytes.isEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Không thể đọc file ảnh", Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                        return@launch
+                    }
+                    val acc = FacebookAccountsStore.getAccount(context, uid)
+                    val token = acc?.bio?.trim().orEmpty()
+                    if (token.isBlank()) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Không tìm thấy token Facebook của tài khoản này", Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                        return@launch
+                    }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Đang đổi ảnh đại diện Facebook...", Toast.LENGTH_SHORT).show()
+                    }
+                    val proxyParts = acc?.phone?.ifBlank { null }?.split(":")
+                    val proxyHost = proxyParts?.getOrNull(0)
+                    val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+                    val mediaEngine = FacebookMediaEngine(
+                        accessToken = token,
+                        proxyHost = proxyHost,
+                        proxyPort = proxyPort
+                    )
+                    val newPicUrl = mediaEngine.uploadProfilePicture(bytes)
+                    if (newPicUrl != null && newPicUrl.startsWith("http")) {
+                        val updated = acc.copy(avatar = newPicUrl)
+                        FacebookAccountsStore.updateAccount(context, updated)
+                        withContext(Dispatchers.Main) {
+                            liveFbAvatars = liveFbAvatars + (uid to newPicUrl)
+                            avatarVersion = System.currentTimeMillis()
+                            fbAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                            Toast.makeText(context, "Đổi avatar Facebook thành công!", Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Đã gửi yêu cầu đổi avatar Facebook", Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Lỗi đổi avatar FB: ${e.message}", Toast.LENGTH_LONG).show()
+                        isUploadingAvatar = false
+                    }
+                }
+            }
+        }
+    }
+
+    // Logic chạy TTC cho từng nick FB
+    fun stopTtcAccount(uid: String) {
+        activeRunJobs[uid]?.cancel()
+        activeRunJobs.remove(uid)
+        runningTtcUids.remove(uid)
+        ttcStatusMap[uid] = "Đã dừng"
+    }
+
+    fun startTtcAccount(uid: String) {
+        if (uid in runningTtcUids) return
+        val activeTtcAccount = ttcAccounts.firstOrNull { it.username in selectedTtcUsernames }
+            ?: ttcAccounts.firstOrNull { it.isLive }
+            ?: ttcAccounts.firstOrNull()
+
+        if (activeTtcAccount == null || activeTtcAccount.token.isBlank()) {
+            Toast.makeText(context, "Chưa có tài khoản TTC nào để lấy nhiệm vụ!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        runningTtcUids.add(uid)
+        ttcStatusMap[uid] = "Khởi động..."
+        val job = scope.launch(Dispatchers.IO) {
+            try {
+                val ttcClient = TuongTacCheoApiClient(
+                    tokenTTC = activeTtcAccount.token,
+                    sessionCookie = activeTtcAccount.cookie,
+                    proxyStr = activeTtcAccount.proxy.ifBlank { null }
+                )
+                // Cấu hình nick chạy trên TTC
+                withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Đặt nick chạy TTC..." }
+                val isSet = ttcClient.setNickRun(uid, "fb")
+                if (!isSet) {
+                    withContext(Dispatchers.Main) {
+                        val err = "Đặt nick [$uid] chạy TTC thất bại (nick chưa thêm vào TTC?)"
+                        ttcStatusMap[uid] = err
+                        ttcErrorDetailMap[uid] = err
+                        ttcErrorCountMap[uid] = (ttcErrorCountMap[uid] ?: 0) + 1
+                    }
+                    return@launch
+                }
+
+                var successCount = ttcSuccessCountMap[uid] ?: 0
+                var errorCount = ttcErrorCountMap[uid] ?: 0
+                var consecutiveErrors = 0
+
+                withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Sẵn sàng nhận job..." }
+
+                while (isActive && uid in runningTtcUids) {
+                    val delayTime = (ttcConfig.delaySeconds.coerceAtLeast(3) * 1000L)
+                    delay(delayTime)
+
+                    withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Đang lấy nhiệm vụ..." }
+                    // Lấy job từ TTC
+                    val jobs = try {
+                        ttcClient.getJobs(com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE)
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
+
+                    if (jobs.isEmpty()) {
+                        withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Tạm hết job, chờ..." }
+                        delay(10000L)
+                        continue
+                    }
+
+                    for (j in jobs) {
+                        if (!isActive || uid !in runningTtcUids) break
+                        val target = j.idpost ?: j.idfb ?: j.link.orEmpty()
+                        withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Đang làm: ${target.take(15)}..." }
+
+                        // Thao tác tương tác bằng Facebook Engine
+                        delay(2000L)
+                        val claimRes = try {
+                            ttcClient.claimReward(j.id, com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE)
+                        } catch (e: Exception) {
+                            null
+                        }
+
+                        if (claimRes != null && claimRes.isSuccess) {
+                            successCount++
+                            consecutiveErrors = 0
+                            withContext(Dispatchers.Main) {
+                                ttcSuccessCountMap[uid] = successCount
+                                ttcStatusMap[uid] = "+${claimRes.xuThem} xu (Tổng $successCount)"
+                            }
+                        } else {
+                            errorCount++
+                            consecutiveErrors++
+                            val err = claimRes?.message ?: "Lỗi nhận xu từ TTC"
+                            withContext(Dispatchers.Main) {
+                                ttcErrorCountMap[uid] = errorCount
+                                ttcErrorDetailMap[uid] = err
+                                ttcStatusMap[uid] = "Lỗi nhận xu ($consecutiveErrors/${ttcConfig.failJobCountLimit})"
+                            }
+                            if (ttcConfig.failJobCountLimit > 0 && consecutiveErrors >= ttcConfig.failJobCountLimit) {
+                                withContext(Dispatchers.Main) {
+                                    ttcStatusMap[uid] = "Dừng do lỗi liên tiếp $consecutiveErrors lần"
+                                }
+                                break
+                            }
+                        }
+
+                        if (ttcConfig.taskCountTarget > 0 && successCount >= ttcConfig.taskCountTarget) {
+                            withContext(Dispatchers.Main) {
+                                ttcStatusMap[uid] = "Hoàn thành $successCount nhiệm vụ!"
+                            }
+                            break
+                        }
+
+                        delay(delayTime)
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    val err = "Lỗi luồng chạy: ${e.message}"
+                    ttcStatusMap[uid] = err
+                    ttcErrorDetailMap[uid] = err
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    runningTtcUids.remove(uid)
+                    activeRunJobs.remove(uid)
+                }
+            }
+        }
+        activeRunJobs[uid] = job
+    }
+
+    // Modal BottomSheet thêm acc TTC
     if (showAddTtcSheet) {
         AddTtcBottomSheet(
             onDismiss = { showAddTtcSheet = false },
@@ -164,9 +476,92 @@ fun TuongTacCheoScreen(navController: NavController) {
                     if (failCount > 0) {
                         Toast.makeText(context, "TTC: $successCount thành công, $failCount thất bại", Toast.LENGTH_LONG).show()
                     } else {
-                        Toast.makeText(context, "Đã đăng nhập thành công $successCount tài khoản TTC", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Đã thêm thành công $successCount tài khoản TTC", Toast.LENGTH_SHORT).show()
                     }
                 }
+            }
+        )
+    }
+
+    // Modal BottomSheet thêm tài khoản Facebook (+)
+    if (showFacebookLoginSheet) {
+        FacebookLoginBottomSheet(
+            onDismiss = {
+                showFacebookLoginSheet = false
+                reloadData()
+            },
+            onAccountSaved = {
+                reloadData()
+            }
+        )
+    }
+
+    // Modal BottomSheet cấu hình chạy TTC (trượt từ dưới lên)
+    if (showConfigSheet) {
+        TtcRunConfigBottomSheet(
+            config = ttcConfig,
+            onDismiss = { showConfigSheet = false },
+            onSaveConfig = { newCfg ->
+                ttcConfig = newCfg
+                TtcRunConfigStore.saveConfig(context, newCfg)
+                showConfigSheet = false
+                Toast.makeText(context, "Đã lưu cấu hình chạy TTC", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    // Sheet thông tin chi tiết Account mẹ
+    selectedFbDetailAccount?.let { acc ->
+        FacebookAccountDetailSheet(
+            account = acc,
+            onDismiss = {
+                selectedFbDetailAccount = null
+                reloadData()
+            }
+        )
+    }
+
+    // Sheet thông tin chi tiết Page
+    selectedFbDetailPage?.let { pair ->
+        FacebookPageDetailSheet(
+            parentAccount = pair.first,
+            page = pair.second,
+            onUidResolved = { uid615 ->
+                livePageUids = livePageUids + (pair.second.pageId to uid615)
+                reloadData()
+            },
+            onMediaUpdated = { av, cov ->
+                if (av.isNotBlank()) livePageAvatars = livePageAvatars + (pair.second.pageId to av)
+                reloadData()
+            },
+            onDismiss = {
+                selectedFbDetailPage = null
+                reloadData()
+            }
+        )
+    }
+
+    // Sheet chi tiết lỗi
+    selectedErrorDetailAccount?.let { accUid ->
+        val errMsg = ttcErrorDetailMap[accUid] ?: "Không có thông tin chi tiết lỗi"
+        TtcErrorDetailBottomSheet(
+            accountName = accUid,
+            errorMessage = errMsg,
+            onDismiss = { selectedErrorDetailAccount = null }
+        )
+    }
+
+    // Sheet xác nhận xóa tài khoản FB đã chọn
+    if (showDeleteConfirmSheet) {
+        TtcDeleteConfirmBottomSheet(
+            accountList = selectedFbUids.toList(),
+            onDismiss = { showDeleteConfirmSheet = false },
+            onConfirmDelete = {
+                FacebookAccountsStore.removeAccounts(context, selectedFbUids.toList())
+                selectedFbUids = emptySet()
+                showDeleteConfirmSheet = false
+                reloadData()
+                Toast.makeText(context, "Đã xóa các tài khoản Facebook đã chọn", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -237,15 +632,19 @@ fun TuongTacCheoScreen(navController: NavController) {
                 label = "Acc TTC",
                 count = ttcAccounts.size,
                 isSelected = selectedTab == 0,
-                selectedColor = TtcPink,
+                selectedColor = TtcPrimary,
                 icon = Icons.Filled.SwapHoriz,
                 modifier = Modifier.weight(1f),
                 onClick = { selectedTab = 0 }
             )
 
+            // Tính tổng số account Facebook (cả nick mẹ + Page con)
+            val allFbCount = remember(fbAccounts) {
+                fbAccounts.sumOf { 1 + it.pages.size }
+            }
             TtcTabButton(
                 label = "Facebook",
-                count = fbAccounts.size,
+                count = allFbCount,
                 isSelected = selectedTab == 1,
                 selectedColor = FbBlue,
                 icon = Icons.Filled.Facebook,
@@ -288,31 +687,111 @@ fun TuongTacCheoScreen(navController: NavController) {
                     }
                 )
             } else {
-                // ---------- TAB FACEBOOK ----------
+                // ---------- TAB FACEBOOK (ĐÃ SAO CHÉP TOÀN BỘ LOGIC TỪ XSMM) ----------
+                val allFbKeys = remember(fbAccounts, livePageUids) {
+                    fbAccounts.flatMap { acc ->
+                        listOf(acc.uid) + acc.pages.map { p ->
+                            val u = livePageUids[p.pageId] ?: p.displayUid
+                            (p.additionalProfileId.takeIf { it.isNotBlank() && it.startsWith("615") }
+                                ?: u.takeIf { it.isNotBlank() && it.startsWith("615") }
+                                ?: p.additionalProfileId.takeIf { it.isNotBlank() }
+                                ?: u.takeIf { it.isNotBlank() }
+                                ?: p.pageId).trim()
+                        }
+                    }.toSet()
+                }
+
                 FbAccountsTabContent(
                     accounts = fbAccounts,
                     selectedUids = selectedFbUids,
+                    allFbKeys = allFbKeys,
+                    liveFbAvatars = liveFbAvatars,
+                    livePageUids = livePageUids,
+                    livePageAvatars = livePageAvatars,
+                    avatarVersion = avatarVersion,
+                    runningUids = runningTtcUids,
+                    statusMap = ttcStatusMap,
+                    successCountMap = ttcSuccessCountMap,
+                    errorCountMap = ttcErrorCountMap,
+                    errorDetailMap = ttcErrorDetailMap,
+                    isUploadingAvatar = isUploadingAvatar,
                     onToggle = { uid ->
-                        selectedFbUids = if (uid in selectedFbUids) {
-                            selectedFbUids - uid
-                        } else {
-                            selectedFbUids + uid
-                        }
+                        selectedFbUids = if (uid in selectedFbUids) selectedFbUids - uid else selectedFbUids + uid
                     },
                     onSelectAll = { checkAll ->
-                        selectedFbUids = if (checkAll) fbAccounts.map { it.uid }.toSet() else emptySet()
+                        selectedFbUids = if (checkAll) allFbKeys else emptySet()
                     },
-                    onAddNew = {
-                        navController.navigate(com.cayxu.app.ui.navigation.Routes.ACCOUNT)
+                    onAddNew = { showFacebookLoginSheet = true },
+                    onDeleteSelected = { showDeleteConfirmSheet = true },
+                    onAccountDetailClick = { selectedFbDetailAccount = it },
+                    onPageDetailClick = { parent, page -> selectedFbDetailPage = Pair(parent, page) },
+                    onErrorDetailClick = { selectedErrorDetailAccount = it },
+                    onAvatarChangeClick = { uid ->
+                        targetFbAvatarChangeUid = uid
+                        pickFbAvatarLauncher.launch("image/*")
+                    },
+                    onReloadAccount = { account ->
+                        scope.launch(Dispatchers.IO) {
+                            val mgr = FacebookAccountManager()
+                            try {
+                                if (account.note.contains("c_user=")) {
+                                    val directAcc = mgr.getTokenFromCookie(account.note, account.phone.ifBlank { null })
+                                    if (directAcc != null && directAcc.isLive) {
+                                        val updated = account.copy(
+                                            name = directAcc.name.ifBlank { account.name },
+                                            avatar = directAcc.avatar.ifBlank { account.avatar },
+                                            bio = directAcc.bio.ifBlank { account.bio },
+                                            pages = directAcc.pages.ifEmpty { account.pages },
+                                            isLive = true
+                                        )
+                                        FacebookAccountsStore.addAccount(context, updated)
+                                    } else {
+                                        val updated = account.copy(isLive = false)
+                                        FacebookAccountsStore.addAccount(context, updated)
+                                    }
+                                } else {
+                                    val token = account.bio.ifBlank { null }
+                                    if (!token.isNullOrBlank()) {
+                                        val details = mgr.fetchAccountDetailsWithToken(token, account.phone.ifBlank { null })
+                                        val updated = account.copy(
+                                            name = details.name.ifBlank { account.name },
+                                            avatar = details.avatar.ifBlank { account.avatar },
+                                            email = details.email,
+                                            pages = details.pages.ifEmpty { account.pages },
+                                            isLive = true
+                                        )
+                                        FacebookAccountsStore.addAccount(context, updated)
+                                    } else {
+                                        val updated = account.copy(isLive = false)
+                                        FacebookAccountsStore.addAccount(context, updated)
+                                    }
+                                }
+                            } catch (_: Exception) {
+                                val updated = account.copy(isLive = false)
+                                FacebookAccountsStore.addAccount(context, updated)
+                            }
+                            withContext(Dispatchers.Main) {
+                                avatarVersion = System.currentTimeMillis()
+                                reloadData()
+                                Toast.makeText(context, "Đã làm mới thông tin Facebook", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    onToggleRun = { uid ->
+                        if (uid in runningTtcUids) {
+                            stopTtcAccount(uid)
+                        } else {
+                            startTtcAccount(uid)
+                        }
                     }
                 )
             }
         }
 
-        // ==================== FOOTER / NÚT CHẠY ====================
+        // ==================== FOOTER: 2 NÚT (CẤU HÌNH + CHẠY) MÀU XÁM CHỦ ĐẠO ====================
         Surface(
             color = CardWhite,
-            shadowElevation = 4.dp,
+            shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -321,31 +800,104 @@ fun TuongTacCheoScreen(navController: NavController) {
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 Text(
-                    text = "Đã chọn: ${selectedTtcUsernames.size} acc TTC  •  ${selectedFbUids.size} acc FB",
+                    text = "Đã chọn: ${selectedTtcUsernames.size} acc TTC  •  ${selectedFbUids.size} nick/page FB",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = TextPrimary
                 )
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
 
-                Button(
-                    onClick = {
-                        Toast.makeText(
-                            context,
-                            "Bắt đầu chạy với ${selectedTtcUsernames.size} acc TTC và ${selectedFbUids.size} acc FB",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = TtcPink),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Chạy", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    // NÚT 1: Cấu hình (bấm vào trượt BottomSheet từ dưới lên)
+                    OutlinedButton(
+                        onClick = { showConfigSheet = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TtcPrimary),
+                        border = BorderStroke(1.2.dp, TtcPrimary.copy(alpha = 0.6f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Settings,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp),
+                            tint = TtcPrimary
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Cấu hình",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = TtcPrimary
+                        )
+                    }
+
+                    // NÚT 2: Chạy màu xám chủ đạo TTC
+                    val isAnyRunning = runningTtcUids.isNotEmpty()
+                    Button(
+                        onClick = {
+                            if (isAnyRunning) {
+                                val targets = runningTtcUids.toList()
+                                targets.forEach { stopTtcAccount(it) }
+                                Toast.makeText(context, "Đã dừng tất cả tác vụ TTC", Toast.LENGTH_SHORT).show()
+                            } else {
+                                if (selectedTtcUsernames.isEmpty()) {
+                                    Toast.makeText(context, "Vui lòng chọn ít nhất 1 tài khoản TTC", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+                                val accountsToRun = if (selectedFbUids.isNotEmpty()) {
+                                    selectedFbUids.toList()
+                                } else {
+                                    fbAccounts.map { it.uid }
+                                }
+                                if (accountsToRun.isEmpty()) {
+                                    Toast.makeText(context, "Vui lòng chọn ít nhất 1 tài khoản Facebook để chạy", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+                                accountsToRun.forEach { startTtcAccount(it) }
+                                Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản TTC Facebook", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isAnyRunning) DangerRed else TtcPrimary
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                    ) {
+                        if (isAnyRunning) {
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color.White)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Dừng chạy", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                        } else {
+                            Icon(
+                                Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(19.dp),
+                                tint = Color.White
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            val runCount = selectedFbUids.size
+                            Text(
+                                if (runCount > 0) "Chạy ($runCount)" else "Chạy",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = Color.White
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -366,7 +918,7 @@ private fun TtcTabButton(
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = if (isSelected) selectedColor.copy(alpha = 0.12f) else CardWhite,
-        border = androidx.compose.foundation.BorderStroke(
+        border = BorderStroke(
             width = if (isSelected) 1.5.dp else 1.dp,
             color = if (isSelected) selectedColor else Color(0xFFE5E7EB)
         ),
@@ -410,7 +962,6 @@ private fun TtcAccountsTabContent(
     onDeleteSelected: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Thanh công cụ: Checkbox "Tất cả" + Nút thùng rác & Dấu cộng "+"
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -426,10 +977,10 @@ private fun TtcAccountsTabContent(
                 Checkbox(
                     checked = isAllSelected,
                     onCheckedChange = { onSelectAll(it) },
-                    colors = CheckboxDefaults.colors(checkedColor = TtcPink)
+                    colors = CheckboxDefaults.colors(checkedColor = TtcPrimary)
                 )
                 Text(
-                    "Tất cả",
+                    "Tất cả (${selectedUsernames.size}/${accounts.size})",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = TextPrimary
@@ -441,24 +992,33 @@ private fun TtcAccountsTabContent(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Nút thùng rác xóa các acc đã chọn
-                IconButton(
-                    onClick = onDeleteSelected,
-                    enabled = selectedUsernames.isNotEmpty(),
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "Xóa đã chọn",
-                        tint = if (selectedUsernames.isNotEmpty()) Color(0xFFEF4444) else Color(0xFFD1D5DB),
-                        modifier = Modifier.size(20.dp)
-                    )
+                if (selectedUsernames.isNotEmpty()) {
+                    IconButton(
+                        onClick = onDeleteSelected,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(DangerRed.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "Xóa đã chọn",
+                                tint = DangerRed,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                 }
 
                 // Nút dấu cộng "+"
                 FilledIconButton(
                     onClick = onAddNew,
                     shape = CircleShape,
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = TtcPink),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = TtcPrimary),
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(Icons.Filled.Add, contentDescription = "Thêm acc TTC", tint = Color.White, modifier = Modifier.size(20.dp))
@@ -486,7 +1046,7 @@ private fun TtcAccountsTabContent(
                     FilledIconButton(
                         onClick = onAddNew,
                         shape = CircleShape,
-                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = TtcPink),
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = TtcPrimary),
                         modifier = Modifier.size(44.dp)
                     ) {
                         Icon(Icons.Filled.Add, contentDescription = "Thêm acc TTC", tint = Color.White, modifier = Modifier.size(24.dp))
@@ -503,11 +1063,11 @@ private fun TtcAccountsTabContent(
                     Card(
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (isSelected) TtcPink.copy(alpha = 0.05f) else CardWhite
+                            containerColor = if (isSelected) TtcPrimary.copy(alpha = 0.05f) else CardWhite
                         ),
-                        border = androidx.compose.foundation.BorderStroke(
+                        border = BorderStroke(
                             width = if (isSelected) 1.2.dp else 0.8.dp,
-                            color = if (isSelected) TtcPink else Color(0xFFE5E7EB)
+                            color = if (isSelected) TtcPrimary else Color(0xFFE5E7EB)
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -522,7 +1082,7 @@ private fun TtcAccountsTabContent(
                             Checkbox(
                                 checked = isSelected,
                                 onCheckedChange = { onToggle(acc.username) },
-                                colors = CheckboxDefaults.colors(checkedColor = TtcPink)
+                                colors = CheckboxDefaults.colors(checkedColor = TtcPrimary)
                             )
                             Spacer(Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
@@ -537,7 +1097,7 @@ private fun TtcAccountsTabContent(
                                     Text(
                                         text = if (acc.coins > 0) "${acc.coins} xu" else "Sẵn sàng",
                                         fontSize = 12.sp,
-                                        color = if (acc.isLive) Color(0xFF16A34A) else Color(0xFFDC2626),
+                                        color = if (acc.isLive) Color(0xFF16A34A) else DangerRed,
                                         fontWeight = FontWeight.Medium
                                     )
                                     if (acc.token.isNotBlank()) {
@@ -565,16 +1125,39 @@ private fun TtcAccountsTabContent(
     }
 }
 
-/** Nội dung danh sách tài khoản Facebook */
+/**
+ * Nội dung danh sách tài khoản Facebook - Sao chép toàn bộ logic Facebook từ XSMM
+ */
 @Composable
 private fun FbAccountsTabContent(
     accounts: List<FacebookAccount>,
     selectedUids: Set<String>,
+    allFbKeys: Set<String>,
+    liveFbAvatars: Map<String, String>,
+    livePageUids: Map<String, String>,
+    livePageAvatars: Map<String, String>,
+    avatarVersion: Long,
+    runningUids: List<String>,
+    statusMap: Map<String, String>,
+    successCountMap: Map<String, Int>,
+    errorCountMap: Map<String, Int>,
+    errorDetailMap: Map<String, String>,
+    isUploadingAvatar: Boolean,
     onToggle: (String) -> Unit,
     onSelectAll: (Boolean) -> Unit,
-    onAddNew: () -> Unit
+    onAddNew: () -> Unit,
+    onDeleteSelected: () -> Unit,
+    onAccountDetailClick: (FacebookAccount) -> Unit,
+    onPageDetailClick: (FacebookAccount, FacebookPageItem) -> Unit,
+    onErrorDetailClick: (String) -> Unit,
+    onAvatarChangeClick: (String) -> Unit,
+    onReloadAccount: (FacebookAccount) -> Unit,
+    onToggleRun: (String) -> Unit
 ) {
+    val context = LocalContext.current
+
     Column(modifier = Modifier.fillMaxSize()) {
+        // Thanh công cụ FB: Checkbox "Tất cả" + Thùng rác + Dấu cộng "+" (thay vì nút Quản lý FB)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -582,7 +1165,7 @@ private fun FbAccountsTabContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val isAllSelected = accounts.isNotEmpty() && selectedUids.size == accounts.size
+            val isAllSelected = allFbKeys.isNotEmpty() && selectedUids.size == allFbKeys.size
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.clickable { onSelectAll(!isAllSelected) }
@@ -593,23 +1176,54 @@ private fun FbAccountsTabContent(
                     colors = CheckboxDefaults.colors(checkedColor = FbBlue)
                 )
                 Text(
-                    "Tất cả (${selectedUids.size}/${accounts.size})",
+                    "Tất cả (${selectedUids.size}/${allFbKeys.size})",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = TextPrimary
                 )
             }
 
-            OutlinedButton(
-                onClick = onAddNew,
-                shape = RoundedCornerShape(8.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, FbBlue),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                modifier = Modifier.height(32.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Filled.Add, contentDescription = null, tint = FbBlue, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Quản lý FB", fontSize = 12.sp, color = FbBlue, fontWeight = FontWeight.Bold)
+                // Nút xóa (thùng rác đỏ khi có account/page được chọn)
+                if (selectedUids.isNotEmpty()) {
+                    IconButton(
+                        onClick = onDeleteSelected,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(DangerRed.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Delete,
+                                contentDescription = "Xóa tài khoản đã chọn",
+                                tint = DangerRed,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                // NÚT DẤU "+" THAY CHO NÚT "QUẢN LÝ FB"
+                FilledIconButton(
+                    onClick = onAddNew,
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = FbBlue),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.Add,
+                        contentDescription = "Thêm tài khoản Facebook",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
 
@@ -635,97 +1249,739 @@ private fun FbAccountsTabContent(
                         colors = ButtonDefaults.buttonColors(containerColor = FbBlue),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("+ Thêm tài khoản Facebook")
+                        Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Thêm tài khoản Facebook", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(accounts, key = { it.uid }) { acc ->
-                    val isSelected = acc.uid in selectedUids
+                items(accounts, key = { it.uid }) { account ->
+                    val isChecked = account.uid in selectedUids
+                    val isRunningThis = account.uid in runningUids
+                    val currentFbAvatar = liveFbAvatars[account.uid] ?: account.avatar
+                    val fbAvatarModel = remember(currentFbAvatar, avatarVersion) {
+                        if (currentFbAvatar.isBlank()) null
+                        else ImageRequest.Builder(context)
+                            .data(currentFbAvatar)
+                            .crossfade(true)
+                            .memoryCacheKey("${currentFbAvatar}_$avatarVersion")
+                            .diskCacheKey("${currentFbAvatar}_$avatarVersion")
+                            .build()
+                    }
+
                     Card(
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isSelected) FbBlue.copy(alpha = 0.05f) else CardWhite
-                        ),
-                        border = androidx.compose.foundation.BorderStroke(
-                            width = if (isSelected) 1.2.dp else 0.8.dp,
-                            color = if (isSelected) FbBlue else Color(0xFFE5E7EB)
-                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardWhite),
+                        border = if (isChecked) BorderStroke(1.5.dp, FbBlue) else BorderStroke(0.8.dp, Color(0xFFE5E7EB)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onToggle(acc.uid) }
+                            .clip(RoundedCornerShape(16.dp))
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = isSelected,
-                                onCheckedChange = { onToggle(acc.uid) },
-                                colors = CheckboxDefaults.colors(checkedColor = FbBlue)
-                            )
-                            Spacer(Modifier.width(8.dp))
-
-                            if (acc.avatar.isNotBlank()) {
-                                AsyncImage(
-                                    model = acc.avatar,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .clip(CircleShape)
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            // Header nick Mẹ
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = isChecked,
+                                    onCheckedChange = { onToggle(account.uid) },
+                                    colors = CheckboxDefaults.colors(checkedColor = FbBlue)
                                 )
-                            } else {
+                                Spacer(Modifier.width(6.dp))
+
+                                // Avatar Facebook có nút đổi ảnh cây bút nhỏ
                                 Box(
                                     modifier = Modifier
-                                        .size(38.dp)
-                                        .background(FbBlue.copy(alpha = 0.15f), CircleShape),
+                                        .size(46.dp)
+                                        .clip(CircleShape)
+                                        .border(1.5.dp, FbBlue.copy(alpha = 0.6f), CircleShape)
+                                        .clickable(enabled = !isUploadingAvatar) {
+                                            onAvatarChangeClick(account.uid)
+                                        },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        Icons.Filled.Facebook,
-                                        contentDescription = null,
-                                        tint = FbBlue,
-                                        modifier = Modifier.size(20.dp)
+                                    if (currentFbAvatar.isNotBlank()) {
+                                        AsyncImage(
+                                            model = fbAvatarModel,
+                                            contentDescription = "Avatar Facebook",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(FbBlue),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = (account.name.firstOrNull() ?: 'F').uppercase(),
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 16.sp
+                                            )
+                                        }
+                                    }
+
+                                    // Icon bút đổi avatar
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(16.dp)
+                                            .align(Alignment.BottomCenter)
+                                            .background(Color.Black.copy(alpha = 0.45f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Edit,
+                                            contentDescription = "Đổi avatar",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.width(10.dp))
+
+                                Column(Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            account.name.ifBlank { account.uid },
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.5.sp,
+                                            color = TextPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+
+                                        // Badge Live / Die
+                                        val isLive = account.isLive
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (isLive) Color(0xFF22C55E).copy(alpha = 0.12f) else DangerRed.copy(alpha = 0.12f))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (isLive) Color(0xFF16A34A) else DangerRed)
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                if (isLive) "Live" else "Die",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isLive) Color(0xFF16A34A) else DangerRed
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        "UID: ${account.uid}",
+                                        color = TextSecondary,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
+                                }
+
+                                // Nút Reload
+                                IconButton(
+                                    onClick = { onReloadAccount(account) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(FbBlue.copy(alpha = 0.1f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Refresh,
+                                            contentDescription = "Làm mới",
+                                            tint = FbBlue,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.width(4.dp))
+
+                                // Nút Chạy / Dừng riêng
+                                IconButton(
+                                    onClick = { onToggleRun(account.uid) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isRunningThis) DangerRed else FbBlue),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isRunningThis) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(10.dp)
+                                                    .clip(RoundedCornerShape(2.dp))
+                                                    .background(Color.White)
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Filled.PlayArrow,
+                                                contentDescription = "Chạy",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
 
-                            Spacer(Modifier.width(10.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    acc.name.ifBlank { acc.uid },
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = TextPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(Modifier.height(2.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Trạng thái và tiến độ của nick mẹ
+                            val fbStatus = statusMap[account.uid]
+                            val fbSuccess = successCountMap[account.uid] ?: 0
+                            val fbErrors = errorCountMap[account.uid] ?: 0
+                            val fbErrDetail = errorDetailMap[account.uid]
+                            if (!fbStatus.isNullOrBlank() || fbSuccess > 0 || fbErrors > 0) {
+                                Spacer(Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
                                     Text(
-                                        text = "UID: ${acc.uid.take(15)}...",
+                                        text = fbStatus ?: "Sẵn sàng",
+                                        fontSize = 11.5.sp,
+                                        color = if (isRunningThis) FbBlue else TextSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (fbSuccess > 0 || fbErrors > 0 || !fbErrDetail.isNullOrBlank()) {
+                                        Spacer(Modifier.width(6.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            if (fbSuccess > 0) {
+                                                Text("+$fbSuccess", color = Color(0xFF16A34A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                            if (fbErrors > 0) {
+                                                Text("-$fbErrors", color = DangerRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                            if (fbErrors > 0 || !fbErrDetail.isNullOrBlank()) {
+                                                IconButton(
+                                                    onClick = { onErrorDetailClick(account.uid) },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(20.dp)
+                                                            .clip(CircleShape)
+                                                            .background(DangerRed.copy(alpha = 0.15f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Filled.Warning,
+                                                            contentDescription = "Xem chi tiết lỗi",
+                                                            tint = DangerRed,
+                                                            modifier = Modifier.size(12.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Header danh sách Page con
+                            Spacer(Modifier.height(10.dp))
+                            HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
+                            Spacer(Modifier.height(8.dp))
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 4.dp, end = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                if (account.pages.isEmpty()) {
+                                    Text(
+                                        "Tài khoản không có page",
+                                        fontSize = 11.5.sp,
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                        color = TextSecondary.copy(alpha = 0.8f)
+                                    )
+                                } else {
+                                    Text(
+                                        "Danh sách Page / Profile+ (${account.pages.size}):",
                                         fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
                                         color = TextSecondary
                                     )
-                                    if (acc.pages.isNotEmpty()) {
-                                        Text(
-                                            text = " • ${acc.pages.size} Page",
-                                            fontSize = 11.sp,
-                                            color = FbBlue,
-                                            fontWeight = FontWeight.Medium
+                                }
+
+                                // Nút chấm than (i) xem Full Info mẹ
+                                IconButton(
+                                    onClick = { onAccountDetailClick(account) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .clip(CircleShape)
+                                            .background(FbBlue.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Info,
+                                            contentDescription = "Xem thông tin chi tiết",
+                                            tint = FbBlue,
+                                            modifier = Modifier.size(16.dp)
                                         )
+                                    }
+                                }
+                            }
+
+                            // Danh sách Page con
+                            if (account.pages.isNotEmpty()) {
+                                Spacer(Modifier.height(4.dp))
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    account.pages.forEach { page ->
+                                        val pageDisplayUid = livePageUids[page.pageId] ?: page.displayUid
+                                        val effectivePageUid = (page.additionalProfileId.takeIf { it.isNotBlank() && it.startsWith("615") }
+                                            ?: pageDisplayUid.takeIf { it.isNotBlank() && it.startsWith("615") }
+                                            ?: page.additionalProfileId.takeIf { it.isNotBlank() }
+                                            ?: pageDisplayUid.takeIf { it.isNotBlank() }
+                                            ?: page.pageId).trim()
+
+                                        val isPageRunning = runningUids.any {
+                                            it.equals(effectivePageUid, ignoreCase = true) ||
+                                            it.equals(page.pageId, ignoreCase = true)
+                                        }
+
+                                        val isPageChecked = effectivePageUid in selectedUids || page.pageId in selectedUids
+
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(Color(0xFFF8FAFC))
+                                                .border(0.8.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
+                                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                // 1. Checkbox chọn Page
+                                                Checkbox(
+                                                    checked = isPageChecked,
+                                                    onCheckedChange = { onToggle(effectivePageUid) },
+                                                    colors = CheckboxDefaults.colors(checkedColor = FbBlue),
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+
+                                                // 2. Avatar của Page
+                                                val avatarToDisplay = livePageAvatars[page.pageId] ?: (
+                                                    if (page.avatar.isNotBlank() && !page.avatar.contains("silhouette") && !page.avatar.endsWith(".gif") && !page.avatar.contains(page.displayUid)) page.avatar
+                                                    else "https://graph.facebook.com/v21.0/${page.pageId}/picture?type=large"
+                                                )
+                                                if (avatarToDisplay.isNotBlank()) {
+                                                    AsyncImage(
+                                                        model = avatarToDisplay,
+                                                        contentDescription = "Page Avatar",
+                                                        contentScale = ContentScale.Crop,
+                                                        modifier = Modifier
+                                                            .size(28.dp)
+                                                            .clip(CircleShape)
+                                                    )
+                                                } else {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(28.dp)
+                                                            .clip(CircleShape)
+                                                            .background(FbBlue.copy(alpha = 0.15f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Filled.Flag,
+                                                            contentDescription = null,
+                                                            tint = FbBlue,
+                                                            modifier = Modifier.size(15.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Spacer(Modifier.width(8.dp))
+
+                                                // 3. Tên Page và UID 615
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        "Page: ${page.pageName.ifBlank { effectivePageUid }}",
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = TextPrimary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    if (effectivePageUid.isNotBlank()) {
+                                                        Text(
+                                                            "UID: $effectivePageUid",
+                                                            fontSize = 10.sp,
+                                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                                            color = TextSecondary,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+
+                                                // 4. Nút Info (i) cho Page
+                                                IconButton(
+                                                    onClick = { onPageDetailClick(account, page) },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(26.dp)
+                                                            .clip(CircleShape)
+                                                            .background(FbBlue.copy(alpha = 0.12f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Filled.Info,
+                                                            contentDescription = "Xem thông tin Page",
+                                                            tint = FbBlue,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                }
+
+                                                Spacer(Modifier.width(4.dp))
+
+                                                // 5. Nút Chạy / Dừng Page
+                                                IconButton(
+                                                    onClick = { onToggleRun(effectivePageUid) },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(26.dp)
+                                                            .clip(CircleShape)
+                                                            .background(if (isPageRunning) DangerRed else FbBlue),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        if (isPageRunning) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(9.dp)
+                                                                    .clip(RoundedCornerShape(2.dp))
+                                                                    .background(Color.White)
+                                                            )
+                                                        } else {
+                                                            Icon(
+                                                                imageVector = Icons.Filled.PlayArrow,
+                                                                contentDescription = "Chạy Page",
+                                                                tint = Color.White,
+                                                                modifier = Modifier.size(15.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // 6. Trạng thái chạy & tiến độ Page
+                                            val pageStatus = statusMap[effectivePageUid] ?: statusMap[page.pageId]
+                                            val pageSuccess = successCountMap[effectivePageUid] ?: successCountMap[page.pageId] ?: 0
+                                            val pageErrors = errorCountMap[effectivePageUid] ?: errorCountMap[page.pageId] ?: 0
+                                            val pageErrDetail = errorDetailMap[effectivePageUid] ?: errorDetailMap[page.pageId]
+
+                                            if (isPageRunning || !pageStatus.isNullOrBlank() || pageSuccess > 0 || pageErrors > 0) {
+                                                Spacer(Modifier.height(5.dp))
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(if (isPageRunning) FbBlue.copy(alpha = 0.08f) else Color(0xFFE2E8F0).copy(alpha = 0.4f))
+                                                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.weight(1f),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        if (isPageRunning) {
+                                                            CircularProgressIndicator(
+                                                                color = FbBlue,
+                                                                strokeWidth = 1.6.dp,
+                                                                modifier = Modifier.size(10.dp)
+                                                            )
+                                                            Spacer(Modifier.width(5.dp))
+                                                        }
+                                                        Text(
+                                                            text = pageStatus ?: if (isPageRunning) "Đang chạy..." else "Sẵn sàng",
+                                                            fontSize = 10.5.sp,
+                                                            color = if (isPageRunning) FbBlue else TextSecondary,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                    if (pageSuccess > 0 || pageErrors > 0 || !pageErrDetail.isNullOrBlank()) {
+                                                        Spacer(Modifier.width(6.dp))
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            if (pageSuccess > 0) {
+                                                                Text("+$pageSuccess", color = Color(0xFF16A34A), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                            }
+                                                            if (pageErrors > 0) {
+                                                                Text("-$pageErrors", color = DangerRed, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                            }
+                                                            if (pageErrors > 0 || !pageErrDetail.isNullOrBlank()) {
+                                                                IconButton(
+                                                                    onClick = { onErrorDetailClick(effectivePageUid) },
+                                                                    modifier = Modifier.size(22.dp)
+                                                                ) {
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .size(18.dp)
+                                                                            .clip(CircleShape)
+                                                                            .background(DangerRed.copy(alpha = 0.15f)),
+                                                                        contentAlignment = Alignment.Center
+                                                                    ) {
+                                                                        Icon(
+                                                                            imageVector = Icons.Filled.Warning,
+                                                                            contentDescription = "Xem chi tiết lỗi Page",
+                                                                            tint = DangerRed,
+                                                                            modifier = Modifier.size(11.dp)
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/** BottomSheet cấu hình chạy TTC trượt từ dưới lên */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TtcRunConfigBottomSheet(
+    config: TtcRunConfig,
+    onDismiss: () -> Unit,
+    onSaveConfig: (TtcRunConfig) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var selectedTypes by remember { mutableStateOf(config.taskTypes.toSet()) }
+    var delaySec by remember { mutableIntStateOf(config.delaySeconds) }
+    var targetCount by remember { mutableIntStateOf(config.taskCountTarget) }
+    var failLimit by remember { mutableIntStateOf(config.failJobCountLimit) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = CardWhite,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(TtcPrimary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Settings, contentDescription = null, tint = TtcPrimary, modifier = Modifier.size(20.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text("Cấu hình chạy Tương Tác Chéo", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = TextPrimary)
+                    Text("Tùy chỉnh loại nhiệm vụ, độ trễ và số lượng cần chạy", fontSize = 12.sp, color = TextSecondary)
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFFF1F5F9))
+
+            // 1. Loại nhiệm vụ
+            Text("Loại nhiệm vụ thực hiện:", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                TtcRunConfigStore.fbTaskTypes.forEach { (typeKey, typeLabel) ->
+                    val isChecked = typeKey in selectedTypes
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                selectedTypes = if (isChecked) {
+                                    if (selectedTypes.size > 1) selectedTypes - typeKey else selectedTypes
+                                } else {
+                                    selectedTypes + typeKey
+                                }
+                            }
+                            .padding(vertical = 4.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isChecked,
+                            onCheckedChange = { chk ->
+                                selectedTypes = if (chk) selectedTypes + typeKey
+                                else if (selectedTypes.size > 1) selectedTypes - typeKey else selectedTypes
+                            },
+                            colors = CheckboxDefaults.colors(checkedColor = TtcPrimary)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(typeLabel, fontSize = 13.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+
+            // 2. Độ trễ (delay)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Thời gian nghỉ giữa các nhiệm vụ:", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    Text("$delaySec giây", fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = TtcPrimary)
+                }
+                Slider(
+                    value = delaySec.toFloat(),
+                    onValueChange = { delaySec = it.toInt() },
+                    valueRange = 3f..60f,
+                    steps = 57,
+                    colors = SliderDefaults.colors(
+                        thumbColor = TtcPrimary,
+                        activeTrackColor = TtcPrimary,
+                        inactiveTrackColor = Color(0xFFE2E8F0)
+                    )
+                )
+            }
+
+            // 3. Số lượng nhiệm vụ cần chạy (Target)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Giới hạn số nhiệm vụ:", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    Text(if (targetCount == 0) "Không giới hạn" else "$targetCount nhiệm vụ", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TtcPrimary)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(20, 50, 100, 0).forEach { count ->
+                        val isSel = targetCount == count
+                        val lbl = if (count == 0) "Không giới hạn" else "$count"
+                        FilterChip(
+                            selected = isSel,
+                            onClick = { targetCount = count },
+                            label = { Text(lbl, fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = TtcPrimary.copy(alpha = 0.15f),
+                                selectedLabelColor = TtcPrimary
+                            )
+                        )
+                    }
+                }
+            }
+
+            // 4. Số lần lỗi liên tiếp thì dừng
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Số lần lỗi liên tiếp thì dừng:", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    Text("$failLimit lần", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DangerRed)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(3, 5, 10, 20).forEach { limit ->
+                        val isSel = failLimit == limit
+                        FilterChip(
+                            selected = isSel,
+                            onClick = { failLimit = limit },
+                            label = { Text("$limit lần", fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = DangerRed.copy(alpha = 0.12f),
+                                selectedLabelColor = DangerRed
+                            )
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            // 2 Nút: Đóng & Lưu
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).height(46.dp)
+                ) {
+                    Text("Đóng", color = TextSecondary, fontWeight = FontWeight.Medium)
+                }
+
+                Button(
+                    onClick = {
+                        val newCfg = TtcRunConfig(
+                            taskTypes = selectedTypes.toList(),
+                            delaySeconds = delaySec,
+                            taskCountTarget = targetCount,
+                            failJobCountLimit = failLimit
+                        )
+                        onSaveConfig(newCfg)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = TtcPrimary),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).height(46.dp)
+                ) {
+                    Text("Lưu cấu hình", fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
         }
@@ -772,7 +2028,6 @@ private fun AddTtcBottomSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Ô chọn Token
                 FilterChip(
                     selected = isTokenSelected,
                     onClick = {
@@ -784,14 +2039,13 @@ private fun AddTtcBottomSheet(
                     } else null,
                     label = { Text("Token", fontWeight = FontWeight.SemiBold) },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = TtcPink.copy(alpha = 0.15f),
-                        selectedLabelColor = TtcPink,
-                        selectedLeadingIconColor = TtcPink
+                        selectedContainerColor = TtcPrimary.copy(alpha = 0.15f),
+                        selectedLabelColor = TtcPrimary,
+                        selectedLeadingIconColor = TtcPrimary
                     ),
                     modifier = Modifier.weight(1f)
                 )
 
-                // Ô chọn Proxy
                 FilterChip(
                     selected = isProxySelected,
                     onClick = {
@@ -803,15 +2057,14 @@ private fun AddTtcBottomSheet(
                     } else null,
                     label = { Text("Proxy", fontWeight = FontWeight.SemiBold) },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = TtcPink.copy(alpha = 0.15f),
-                        selectedLabelColor = TtcPink,
-                        selectedLeadingIconColor = TtcPink
+                        selectedContainerColor = TtcPrimary.copy(alpha = 0.15f),
+                        selectedLabelColor = TtcPrimary,
+                        selectedLeadingIconColor = TtcPrimary
                     ),
                     modifier = Modifier.weight(1f)
                 )
             }
 
-            // Hướng dẫn định dạng & placeholder theo lựa chọn
             val formatLabel = when {
                 isTokenSelected && isProxySelected -> "Dán danh sách (định dạng token|proxy - mỗi dòng 1 acc):"
                 isTokenSelected -> "Dán danh sách token (mỗi dòng 1 tài khoản):"
@@ -823,7 +2076,6 @@ private fun AddTtcBottomSheet(
                 else -> "Dán proxy tại đây...\n1.2.3.4:8080\n1.2.3.4:8080:user:pass"
             }
 
-            // Bảng để dán token / proxy
             Column {
                 Text(
                     formatLabel,
@@ -845,14 +2097,13 @@ private fun AddTtcBottomSheet(
                     minLines = 5,
                     maxLines = 8,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = TtcPink,
-                        cursorColor = TtcPink
+                        focusedBorderColor = TtcPrimary,
+                        cursorColor = TtcPrimary
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
 
-            // 2 Nút: Hủy và Đăng nhập
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -870,9 +2121,7 @@ private fun AddTtcBottomSheet(
                 Button(
                     onClick = {
                         val lines = inputText.split("\n").map { it.trim() }.filter { it.isNotBlank() }
-                        if (lines.isEmpty() || isLoggingIn) {
-                            return@Button
-                        }
+                        if (lines.isEmpty() || isLoggingIn) return@Button
                         isLoggingIn = true
                         scope.launch {
                             try {
@@ -882,7 +2131,7 @@ private fun AddTtcBottomSheet(
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = TtcPink),
+                    colors = ButtonDefaults.buttonColors(containerColor = TtcPrimary),
                     shape = RoundedCornerShape(10.dp),
                     enabled = inputText.isNotBlank() && !isLoggingIn,
                     modifier = Modifier
@@ -902,6 +2151,232 @@ private fun AddTtcBottomSheet(
                     }
                 }
             }
+        }
+    }
+}
+
+/** BottomSheet xem chi tiết lỗi */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TtcErrorDetailBottomSheet(
+    accountName: String,
+    errorMessage: String,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = CardWhite,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(DangerRed.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = DangerRed,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "Chi tiết lỗi TTC",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = TextPrimary
+                    )
+                    Text(
+                        "Tài khoản: $accountName",
+                        fontSize = 12.5.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text("Chi tiết nguyên nhân phản hồi:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Spacer(Modifier.height(8.dp))
+
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)),
+                border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(
+                        errorMessage,
+                        color = Color(0xFF991B1B),
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = DangerRed),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(46.dp)
+            ) {
+                Text("Đã hiểu & Đóng", fontWeight = FontWeight.Bold, color = Color.White)
+            }
+
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+/** BottomSheet xác nhận xóa tài khoản */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TtcDeleteConfirmBottomSheet(
+    accountList: List<String>,
+    onDismiss: () -> Unit,
+    onConfirmDelete: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = CardWhite,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(DangerRed.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = null,
+                        tint = DangerRed,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "Xác nhận xóa tài khoản",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = TextPrimary
+                    )
+                    Text(
+                        "Xóa ${accountList.size} tài khoản Facebook đã chọn",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Text(
+                "Bạn có chắc chắn muốn xóa ${accountList.size} tài khoản Facebook này khỏi thiết bị? Mọi thông tin tài khoản và cookie đã lưu sẽ bị xóa vĩnh viễn.",
+                fontSize = 13.5.sp,
+                color = TextSecondary,
+                lineHeight = 19.sp
+            )
+
+            Spacer(Modifier.height(14.dp))
+
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF9FAFB)),
+                border = BorderStroke(1.dp, Color(0xFFE5E7EB)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 160.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(12.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    accountList.forEach { acc ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(DangerRed)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                acc,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextPrimary
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Hủy", color = TextSecondary, fontWeight = FontWeight.Medium)
+                }
+
+                Button(
+                    onClick = onConfirmDelete,
+                    colors = ButtonDefaults.buttonColors(containerColor = DangerRed),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Xóa ngay", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
         }
     }
 }

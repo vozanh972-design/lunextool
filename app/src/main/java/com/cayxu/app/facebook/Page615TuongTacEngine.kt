@@ -154,6 +154,60 @@ import java.util.concurrent.TimeUnit
         val token = getCleanToken(overrideToken)
         if (token.isEmpty()) return InteractionResult(false, postId, "COMMENT", null, "Page token required", "")
 
+        val cleanTargetId = if (!postId.startsWith("http")) postId.trim() else FacebookTuongTacEngine.extractId(postId)
+
+        // 1. ƯU TIÊN 1: GraphQL Mutation chuẩn của Facebook Katana (CommentCreateMutation)
+        // Tránh bị Facebook Sentry quét lỗi "action deemed abusive (Code 368)" do gọi REST API v21.0
+        try {
+            val actor = pageId615?.takeIf { it.isNotBlank() } ?: ""
+            val input = JSONObject().apply {
+                put("client_mutation_id", java.util.UUID.randomUUID().toString())
+                if (actor.isNotEmpty()) put("actor_id", actor)
+                put("feedback_id", cleanTargetId)
+                put("message", JSONObject().put("text", message))
+            }
+            val fdi = FbVault.fieldDocId()
+            val fv  = FbVault.fieldVariables()
+            val fat = FbVault.fieldAccessToken()
+
+            val formBody = FormBody.Builder()
+                .add(fdi, "6739921102758190")
+                .add(fv, JSONObject().put("input", input).toString())
+                .add(fat, token)
+                .build()
+
+            val gqlReq = Request.Builder()
+                .url(graphql())
+                .post(formBody)
+                .header("User-Agent", ua())
+                .header("X-FB-Friendly-Name", "CommentCreateMutation")
+                .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+                .header("Authorization", "OAuth $token")
+                .build()
+
+            val gqlRes = httpClient.newCall(gqlReq).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val isOk = res.isSuccessful && !body.contains("\"errors\":") && !body.contains("\"error\":")
+                if (isOk) {
+                    val json = try { JSONObject(body) } catch (_: Exception) { null }
+                    val commentId = json?.optJSONObject("data")
+                        ?.optJSONObject("comment_create")
+                        ?.optJSONObject("comment")
+                        ?.optString("id", null)
+                    InteractionResult(true, cleanTargetId, "COMMENT", commentId, "Success", body)
+                } else {
+                    val parsedErr = parseErrorMessage(body)
+                    if (body.contains("368") || body.contains("1390008") || body.contains("abusive", ignoreCase = true)) {
+                        InteractionResult(false, cleanTargetId, "COMMENT", null, parsedErr, body)
+                    } else {
+                        null
+                    }
+                }
+            }
+            if (gqlRes != null) return gqlRes
+        } catch (_: Exception) {}
+
+        // 2. FALLBACK: Graph API REST nếu GraphQL không hỗ trợ đối tượng này
         val fm  = FbVault.fieldMessage()
         val fat = FbVault.fieldAccessToken()
         val fai = FbVault.fieldAttachmentId()
@@ -164,9 +218,8 @@ import java.util.concurrent.TimeUnit
 
         if (!attachmentId.isNullOrEmpty()) formBuilder.add(fai, attachmentId)
 
-        // Thử gửi trực tiếp với postId mục tiêu trước
         val request = Request.Builder()
-            .url("${graphApi()}/$postId${FbVault.pathComments()}")
+            .url("${graphApi()}/$cleanTargetId${FbVault.pathComments()}")
             .post(formBuilder.build())
             .header("User-Agent", ua())
             .build()
@@ -178,12 +231,11 @@ import java.util.concurrent.TimeUnit
                 val commentId = json?.optString("id", null)
                 val isOk = res.isSuccessful && !commentId.isNullOrEmpty()
                 if (isOk) {
-                    return InteractionResult(true, postId, "COMMENT", commentId, "Success", body)
+                    return InteractionResult(true, cleanTargetId, "COMMENT", commentId, "Success", body)
                 }
 
-                // Nếu lỗi và postId chưa có prefix pageId, thử lại với scopedPostId (pageId_postId)
-                val scopedPostId = scopePost(postId)
-                if (scopedPostId != postId) {
+                val scopedPostId = scopePost(cleanTargetId)
+                if (scopedPostId != cleanTargetId) {
                     val fallbackReq = Request.Builder()
                         .url("${graphApi()}/$scopedPostId${FbVault.pathComments()}")
                         .post(formBuilder.build())
@@ -194,15 +246,49 @@ import java.util.concurrent.TimeUnit
                         val json2 = try { JSONObject(body2) } catch (_: Exception) { null }
                         val commentId2 = json2?.optString("id", null)
                         val isOk2 = res2.isSuccessful && !commentId2.isNullOrEmpty()
-                        InteractionResult(isOk2, scopedPostId, "COMMENT", commentId2, if (isOk2) "Success" else body2, body2)
+                        val errMsg = if (isOk2) "Success" else parseErrorMessage(body2)
+                        InteractionResult(isOk2, scopedPostId, "COMMENT", commentId2, errMsg, body2)
                     }
                 } else {
-                    InteractionResult(false, postId, "COMMENT", null, body, body)
+                    InteractionResult(false, cleanTargetId, "COMMENT", null, parseErrorMessage(body), body)
                 }
             }
         } catch (e: Exception) {
-            InteractionResult(false, postId, "COMMENT", null, e.message, "")
+            InteractionResult(false, cleanTargetId, "COMMENT", null, e.message, "")
         }
+    }
+
+    private fun parseErrorMessage(body: String): String {
+        try {
+            val json = JSONObject(body)
+            if (json.has("errors")) {
+                val errs = json.optJSONArray("errors")
+                if (errs != null && errs.length() > 0) {
+                    val first = errs.optJSONObject(0)
+                    val msg = first?.optString("message")
+                    val summary = first?.optString("summary")
+                    if (!msg.isNullOrBlank()) return if (!summary.isNullOrBlank()) "$summary: $msg" else msg
+                }
+            }
+            if (json.has("error")) {
+                val err = json.optJSONObject("error")
+                val code = err?.optInt("code", 0) ?: 0
+                val subcode = err?.optInt("error_subcode", 0) ?: 0
+                val title = err?.optString("error_user_title")?.takeIf { it.isNotBlank() }
+                val userMsg = err?.optString("error_user_msg")?.takeIf { it.isNotBlank() }
+                if (!title.isNullOrBlank() || !userMsg.isNullOrBlank()) {
+                    return listOfNotNull(title, userMsg).joinToString(": ")
+                }
+                if (code == 368 || subcode == 1390008) {
+                    return "Tài khoản bị Facebook giới hạn tính năng tạm thời (Spam Block - Mã 368)"
+                }
+                val msg = err?.optString("message")
+                if (!msg.isNullOrBlank()) return msg
+                val errStr = json.optString("error")
+                if (errStr.isNotBlank()) return errStr
+            }
+        } catch (_: Exception) {}
+        return if (body.isNotBlank()) body.take(300) else "Phản hồi lỗi không xác định từ Facebook"
     }
 
     fun replyComment(
