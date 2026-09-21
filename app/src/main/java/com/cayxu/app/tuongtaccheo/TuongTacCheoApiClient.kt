@@ -199,7 +199,10 @@ class TuongTacCheoApiClient(
                             idpost = obj.optString("idpost", null),
                             link = obj.optString("link", null),
                             loaicx = obj.optString("loaicx", null),
-                            cmt = obj.optString("nd", null),
+                            cmt = obj.optString("nd").takeIf { it.isNotBlank() }
+                                ?: obj.optString("noidung").takeIf { it.isNotBlank() }
+                                ?: obj.optString("cmt").takeIf { it.isNotBlank() }
+                                ?: obj.optString("comment", null),
                             uid = obj.optString("uid", null)
                         )
                     )

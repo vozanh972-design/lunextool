@@ -3,7 +3,7 @@ package com.cayxu.app.data.local
 import android.content.Context
 
 data class TtcRunConfig(
-    val taskTypes: List<String> = listOf("like", "follow", "comment", "page", "cxvip", "subvip", "cmtvip"),
+    val taskTypes: List<String> = listOf("likevip", "like", "cxvip", "cx", "cmt", "sub", "subvip", "page"),
     val delaySeconds: Int = 10,
     val taskCountTarget: Int = 50,
     val failJobCountLimit: Int = 5,
@@ -21,30 +21,41 @@ object TtcRunConfigStore {
     private const val KEY_PAIR_TARGET_TYPE = "pair_target_type"
 
     val fbTaskTypes = listOf(
-        "like" to "Cảm xúc (Like / Love)",
-        "follow" to "Theo dõi (Follow)",
-        "comment" to "Bình luận (Comment)",
-        "page" to "Like Page",
-        "member" to "Tham gia nhóm",
-        "cxvip" to "Cảm xúc VIP",
-        "subvip" to "Theo dõi VIP",
-        "cmtvip" to "Bình luận VIP"
+        "likevip" to "Like chéo VIP",
+        "like" to "Like chéo",
+        "cxvip" to "Cảm xúc chéo VIP",
+        "cx" to "Cảm xúc chéo thường",
+        "cxcmt" to "Cảm xúc chéo bình luận",
+        "cmt" to "Bình luận chéo",
+        "sub" to "Theo dõi chéo",
+        "subvip" to "Theo dõi chéo vip",
+        "share" to "Share chéo",
+        "sharend" to "Share chéo kèm nội dung",
+        "page" to "Like page chéo",
+        "member" to "Tham gia nhóm chéo",
+        "danhgia" to "Đánh giá page chéo"
     )
 
     fun getConfig(context: Context): TtcRunConfig {
         val sp = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val typesStr = sp.getString(KEY_TASK_TYPES, null)
         val types = if (typesStr != null) {
-            var rawList = typesStr.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            if ("vip" in rawList) {
-                rawList = (rawList - "vip") + listOf("cxvip", "subvip", "cmtvip")
-            }
+            var rawList = typesStr.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
+            // Tự động map các key cũ sang key mới chuẩn TTC
+            rawList = rawList.map { k ->
+                when (k) {
+                    "follow" -> "sub"
+                    "comment" -> "cmt"
+                    "cmtvip" -> "cmt"
+                    else -> k
+                }
+            }.distinct()
             val validKeys = fbTaskTypes.map { it.first }
             rawList.filter { it in validKeys }.ifEmpty {
-                listOf("like", "follow", "comment", "page", "cxvip", "subvip", "cmtvip")
+                listOf("likevip", "like", "cxvip", "cx", "cmt", "sub", "subvip", "page")
             }
         } else {
-            listOf("like", "follow", "comment", "page", "cxvip", "subvip", "cmtvip")
+            listOf("likevip", "like", "cxvip", "cx", "cmt", "sub", "subvip", "page")
         }
         val delay = sp.getInt(KEY_DELAY_SECONDS, 10)
         val target = sp.getInt(KEY_TASK_COUNT_TARGET, 50)

@@ -681,4 +681,56 @@ import java.util.concurrent.TimeUnit
             InteractionResult(false, targetPageId, "REVIEW_PAGE", null, e.message, "")
         }
     }
+
+    fun sharePost(
+        targetPostId: String,
+        message: String? = null,
+        overrideToken: String? = null
+    ): InteractionResult {
+        val token = getCleanToken(overrideToken)
+        if (token.isEmpty()) return InteractionResult(false, targetPostId, "SHARE", null, "Page token required", "")
+
+        val cleanId = if (!targetPostId.startsWith("http")) targetPostId.trim() else FacebookTuongTacEngine.extractId(targetPostId)
+        val pId = pageId615?.takeIf { it.isNotBlank() } ?: "me"
+
+        val formBuilder = FormBody.Builder()
+            .add("link", "https://www.facebook.com/$cleanId")
+            .add(FbVault.fieldAccessToken(), token)
+        if (!message.isNullOrBlank()) {
+            formBuilder.add(FbVault.fieldMessage(), message)
+        }
+
+        val request = Request.Builder()
+            .url("${graphApi()}/$pId/feed")
+            .post(formBuilder.build())
+            .header("User-Agent", ua())
+            .build()
+
+        return try {
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val isOk = res.isSuccessful && (body.contains("\"id\":") || body.contains("\"success\":true") || !body.contains("\"error\""))
+                if (isOk) {
+                    val shareId = try { JSONObject(body).optString("id", null) } catch (_: Exception) { null }
+                    InteractionResult(true, cleanId, "SHARE", shareId, "Success", body)
+                } else {
+                    val fb2 = FormBody.Builder().add(FbVault.fieldAccessToken(), token)
+                    if (!message.isNullOrBlank()) fb2.add(FbVault.fieldMessage(), message)
+                    val req2 = Request.Builder()
+                        .url("${graphApi()}/$cleanId/sharedposts")
+                        .post(fb2.build())
+                        .header("User-Agent", ua())
+                        .build()
+                    val res2 = httpClient.newCall(req2).execute().use { r2 ->
+                        val b2 = r2.body?.string() ?: ""
+                        val ok2 = r2.isSuccessful && (b2.contains("\"id\":") || !b2.contains("\"error\""))
+                        InteractionResult(ok2, cleanId, "SHARE", null, if (ok2) "Success" else parseErrorMessage(b2), b2)
+                    }
+                    if (res2.isSuccess) res2 else InteractionResult(false, cleanId, "SHARE", null, parseErrorMessage(body), body)
+                }
+            }
+        } catch (e: Exception) {
+            InteractionResult(false, cleanId, "SHARE", null, e.message ?: "Lỗi mạng", "")
+        }
+    }
 }

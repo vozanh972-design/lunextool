@@ -24,28 +24,37 @@ enum class TTCJobType(
     val displayName: String,
     val alternateApiType: String? = null
 ) {
-    FB_LIKE("like", "Facebook Cảm xúc", "cx"),
-    FB_FOLLOW("sub", "Facebook Theo dõi", "follow"),
-    FB_COMMENT("cmt", "Facebook Bình luận", "comment"),
-    FB_SHARE("share", "Facebook Share"),
-    FB_PAGE("page", "Facebook Like Page"),
-    FB_MEMBER("member", "Facebook Tham gia nhóm"),
-    FB_CX_VIP("cxvip", "Facebook Cảm xúc VIP", "likevip"),
-    FB_SUB_VIP("subvip", "Facebook Theo dõi VIP"),
-    FB_CMT_VIP("cmtvip", "Facebook Bình luận VIP"),
+    FB_LIKE_VIP("likevip", "Like chéo VIP"),
+    FB_LIKE("like", "Like chéo"),
+    FB_CX_VIP("cxvip", "Cảm xúc chéo VIP", "camxucvip"),
+    FB_CX("cx", "Cảm xúc chéo thường", "camxuc"),
+    FB_CX_CMT("cxcmt", "Cảm xúc chéo bình luận", "camxuccmt"),
+    FB_COMMENT("cmt", "Bình luận chéo", "comment"),
+    FB_FOLLOW("sub", "Theo dõi chéo", "follow"),
+    FB_SUB_VIP("subvip", "Theo dõi chéo VIP", "followvip"),
+    FB_SHARE("share", "Share chéo"),
+    FB_SHARE_ND("sharend", "Share chéo kèm nội dung", "sharent"),
+    FB_PAGE("page", "Like page chéo", "likepage"),
+    FB_MEMBER("member", "Tham gia nhóm chéo", "group"),
+    FB_REVIEW("danhgia", "Đánh giá page chéo", "review"),
     TIKTOK_LIKE("tiktok_like", "TikTok Like"),
     TIKTOK_FOLLOW("tiktok_follow", "TikTok Follow");
 
     companion object {
         fun fromKey(key: String): TTCJobType = when (key.lowercase()) {
+            "likevip" -> FB_LIKE_VIP
             "like" -> FB_LIKE
-            "follow", "sub" -> FB_FOLLOW
-            "comment", "cmt" -> FB_COMMENT
-            "page" -> FB_PAGE
-            "member" -> FB_MEMBER
-            "cxvip", "likevip" -> FB_CX_VIP
+            "cxvip", "camxucvip" -> FB_CX_VIP
+            "cx", "camxuc" -> FB_CX
+            "cxcmt", "camxuccmt" -> FB_CX_CMT
+            "cmt", "comment", "cmtvip" -> FB_COMMENT
+            "sub", "follow" -> FB_FOLLOW
             "subvip", "followvip" -> FB_SUB_VIP
-            "cmtvip" -> FB_CMT_VIP
+            "share" -> FB_SHARE
+            "sharend", "sharent" -> FB_SHARE_ND
+            "page", "likepage" -> FB_PAGE
+            "member", "group" -> FB_MEMBER
+            "danhgia", "review" -> FB_REVIEW
             else -> FB_LIKE
         }
     }

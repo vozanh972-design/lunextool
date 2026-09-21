@@ -399,8 +399,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                                 proxyPort = proxyPort
                             )
                             val res = when (currentJobType) {
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_COMMENT,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CMT_VIP -> {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_COMMENT -> {
                                     val cmtText = j.cmt.orEmpty()
                                     if (cmtText.isNotBlank()) pageEngine.commentPost(target, cmtText)
                                     else com.cayxu.app.facebook.Page615TuongTacEngine.InteractionResult(false, target, "COMMENT", null, "Nội dung comment trống")
@@ -415,7 +414,24 @@ fun TuongTacCheoScreen(navController: NavController) {
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_MEMBER -> {
                                     pageEngine.joinGroup(target)
                                 }
-                                else -> {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE -> {
+                                    pageEngine.sharePost(target, message = null)
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_ND -> {
+                                    val shareMsg = j.cmt?.takeIf { it.isNotBlank() } ?: "Hay quá!"
+                                    pageEngine.sharePost(target, message = shareMsg)
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW -> {
+                                    val reviewText = j.cmt?.takeIf { it.isNotBlank() } ?: "Dịch vụ rất tuyệt vời!"
+                                    pageEngine.reviewOtherPage(target, reviewText = reviewText, recommendationType = "positive")
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE_VIP -> {
+                                    pageEngine.reactPost(target, com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE)
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_VIP,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_CMT -> {
                                     val rxType = when (j.loaicx?.uppercase()) {
                                         "LOVE", "TYM" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LOVE
                                         "CARE", "THUONGTHUONG" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.CARE
@@ -426,6 +442,9 @@ fun TuongTacCheoScreen(navController: NavController) {
                                         else -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE
                                     }
                                     pageEngine.reactPost(target, rxType)
+                                }
+                                else -> {
+                                    pageEngine.reactPost(target, com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE)
                                 }
                             }
                             fbOk = res.isSuccess
@@ -438,8 +457,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                                 proxyPort = proxyPort
                             )
                             val res = when (currentJobType) {
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_COMMENT,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CMT_VIP -> {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_COMMENT -> {
                                     val cmtText = j.cmt.orEmpty()
                                     if (cmtText.isNotBlank()) engine.comment(target, cmtText)
                                     else com.cayxu.app.facebook.FacebookTuongTacEngine.EngineResult(isSuccess = false, action = "COMMENT", targetId = target, message = "Nội dung comment trống")
@@ -454,7 +472,24 @@ fun TuongTacCheoScreen(navController: NavController) {
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_MEMBER -> {
                                     engine.joinGroup(target)
                                 }
-                                else -> {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE -> {
+                                    engine.share(target, message = null)
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_ND -> {
+                                    val shareMsg = j.cmt?.takeIf { it.isNotBlank() } ?: "Hay quá!"
+                                    engine.share(target, message = shareMsg)
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW -> {
+                                    val reviewText = j.cmt?.takeIf { it.isNotBlank() } ?: "Dịch vụ rất tuyệt vời!"
+                                    engine.reviewPage(target, isPositive = true, reviewText = reviewText)
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE_VIP -> {
+                                    engine.react(target, com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE)
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_VIP,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_CMT -> {
                                     val rxType = when (j.loaicx?.uppercase()) {
                                         "LOVE", "TYM" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LOVE
                                         "CARE", "THUONGTHUONG" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.CARE
@@ -465,6 +500,9 @@ fun TuongTacCheoScreen(navController: NavController) {
                                         else -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE
                                     }
                                     engine.react(target, rxType)
+                                }
+                                else -> {
+                                    engine.react(target, com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE)
                                 }
                             }
                             fbOk = res.isSuccess

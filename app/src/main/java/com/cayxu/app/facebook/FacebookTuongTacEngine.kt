@@ -319,5 +319,55 @@ class FacebookTuongTacEngine(
     fun reactPost(postId: String, reaction: ReactionType = ReactionType.LIKE): EngineResult = react(postId, reaction)
     fun commentPost(postId: String, messageText: String): EngineResult = comment(postId, messageText)
     fun followUser(targetUserId: String): EngineResult = follow(targetUserId)
+
+    /**
+     * 9. Chia sẻ bài viết (Share feed / sharedposts)
+     */
+    fun share(targetPostId: String, message: String? = null): EngineResult {
+        val token = (accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        if (token.isEmpty()) return EngineResult(false, "SHARE", targetPostId, "Access token required", "")
+
+        val cleanId = extractId(targetPostId)
+        val formBuilder = FormBody.Builder()
+            .add("link", "https://www.facebook.com/$cleanId")
+            .add(FbVault.fieldAccessToken(), token)
+        if (!message.isNullOrBlank()) {
+            formBuilder.add(FbVault.fieldMessage(), message)
+        }
+
+        val request = Request.Builder()
+            .url("${graphApi()}/me/feed")
+            .post(formBuilder.build())
+            .header("User-Agent", ua())
+            .header("Authorization", "OAuth $token")
+            .build()
+
+        return try {
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val isOk = res.isSuccessful && (body.contains("\"id\":") || body.contains("\"success\":true") || !body.contains("\"error\""))
+                if (isOk) {
+                    EngineResult(true, "SHARE", cleanId, "Success", body)
+                } else {
+                    val fb2 = FormBody.Builder().add(FbVault.fieldAccessToken(), token)
+                    if (!message.isNullOrBlank()) fb2.add(FbVault.fieldMessage(), message)
+                    val req2 = Request.Builder()
+                        .url("${graphApi()}/$cleanId/sharedposts")
+                        .post(fb2.build())
+                        .header("User-Agent", ua())
+                        .header("Authorization", "OAuth $token")
+                        .build()
+                    val res2 = httpClient.newCall(req2).execute().use { r2 ->
+                        val b2 = r2.body?.string() ?: ""
+                        val ok2 = r2.isSuccessful && (b2.contains("\"id\":") || !b2.contains("\"error\""))
+                        EngineResult(ok2, "SHARE", cleanId, if (ok2) "Success" else parseErrorMessage(b2), b2)
+                    }
+                    if (res2.isSuccess) res2 else EngineResult(false, "SHARE", cleanId, parseErrorMessage(body), body)
+                }
+            }
+        } catch (e: Exception) {
+            EngineResult(false, "SHARE", cleanId, e.message ?: "Lỗi mạng", "")
+        }
+    }
 }
 
