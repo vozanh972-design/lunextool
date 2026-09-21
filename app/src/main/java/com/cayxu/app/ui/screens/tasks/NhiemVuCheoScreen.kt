@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -90,6 +91,7 @@ fun NhiemVuCheoScreen(navController: NavController) {
     var isRefreshingNvc by remember { mutableStateOf(false) }
     var showNvcLoginDialog by remember { mutableStateOf(false) }
     var showNvcLogoutConfirm by remember { mutableStateOf(false) }
+    var showNvcConfigSheet by remember { mutableStateOf(false) }
     var inputTokenText by remember { mutableStateOf("") }
     var isLoggingInNvc by remember { mutableStateOf(false) }
     var nvcLoginError by remember { mutableStateOf<String?>(null) }
@@ -387,6 +389,11 @@ fun NhiemVuCheoScreen(navController: NavController) {
         )
     }
 
+    // BottomSheet Cấu hình Nhiệm Vụ Chéo
+    if (showNvcConfigSheet) {
+        NvcConfigBottomSheet(onDismiss = { showNvcConfigSheet = false })
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         // ---- Header ----
         Row(
@@ -454,12 +461,6 @@ fun NhiemVuCheoScreen(navController: NavController) {
                                 fontSize = 14.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = "Chưa kết nối API Token • Chạm để đăng nhập",
-                                fontSize = 12.sp,
-                                color = TextSecondary
                             )
                         }
                         Button(
@@ -1335,31 +1336,44 @@ fun NhiemVuCheoScreen(navController: NavController) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Nút Tất cả
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable {
-                            selectedForRunUids = if (allSelected) selectedForRunUids - allFbKeys
-                            else selectedForRunUids + allFbKeys
-                        }
-                        .padding(horizontal = 6.dp, vertical = 6.dp)
+                // Nút Cấu hình (giống XSMM FB)
+                OutlinedButton(
+                    onClick = { showNvcConfigSheet = true },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NvcFbBlue),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, NvcFbBlue.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.height(42.dp)
                 ) {
-                    Checkbox(
-                        checked = allSelected,
-                        onCheckedChange = null,
-                        colors = CheckboxDefaults.colors(checkedColor = NvcFbBlue),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text("Tất cả", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp), tint = NvcFbBlue)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Cấu hình", fontSize = 13.sp, color = NvcFbBlue)
                 }
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Nút Tất cả
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                selectedForRunUids = if (allSelected) selectedForRunUids - allFbKeys
+                                else selectedForRunUids + allFbKeys
+                            }
+                            .padding(horizontal = 6.dp, vertical = 6.dp)
+                    ) {
+                        Checkbox(
+                            checked = allSelected,
+                            onCheckedChange = null,
+                            colors = CheckboxDefaults.colors(checkedColor = NvcFbBlue),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Tất cả", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    }
+
                     // Nút Xóa (khi có chọn)
                     if (selectedForRunUids.isNotEmpty()) {
                         IconButton(
@@ -1710,6 +1724,69 @@ private fun NvcLogoutBottomSheet(
             }
 
             Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NvcConfigBottomSheet(
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = CardWhite,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(NvcFbBlue.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Settings, contentDescription = null, tint = NvcFbBlue, modifier = Modifier.size(20.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Text("Cấu hình Nhiệm Vụ Chéo", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = TextPrimary)
+            }
+
+            HorizontalDivider(color = Color(0xFFF1F5F9))
+
+            // Nội dung cấu hình — placeholder cho đến khi API sẵn sàng
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Tính năng cấu hình chi tiết sẽ được bổ sung sau khi API Nhiệm Vụ Chéo chính thức sẵn sàng.", fontSize = 13.sp, color = TextSecondary, lineHeight = 20.sp)
+                }
+            }
+
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = NvcFbBlue),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(46.dp)
+            ) {
+                Text("Đóng", fontWeight = FontWeight.Bold, color = Color.White)
+            }
         }
     }
 }
