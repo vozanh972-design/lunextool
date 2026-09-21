@@ -35,6 +35,7 @@ import com.cayxu.app.ui.theme.Primary
 import com.cayxu.app.ui.theme.SuccessGreen
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
+import com.cayxu.app.worker.AppAlertNotifier
 import com.cayxu.app.worker.AppBackgroundService
 
 @Composable
@@ -46,11 +47,8 @@ fun SettingsScreen(navController: NavController) {
     // (không phải mock) - bật/tắt FLAG_KEEP_SCREEN_ON ngay khi gạt.
     var keepScreenOn by remember { mutableStateOf(false) }
 
-    // TODO: các mục dưới đây (thông báo đẩy, ngôn ngữ...) hiện chưa có hệ thống
-    // backend/tuỳ chỉnh tương ứng, chỉ là công tắc UI cục bộ để hoàn thiện màn hình theo
-    // ảnh mẫu, chưa lưu lại hay tác động thật. Riêng "Chế độ tối" bên dưới là công tắc THẬT,
-    // đổi màu toàn app ngay lập tức (xem ThemeState.kt).
-    var pushNotifications by remember { mutableStateOf(true) }
+    // "Thông báo đẩy" - công tắc THẬT: cảnh báo lên thanh thông báo khi tài khoản chạy bị lỗi
+    var pushNotifications by remember { mutableStateOf(AppAlertNotifier.isPushEnabled(context)) }
 
     // "Chạy ngầm" - công tắc THẬT: bật/tắt AppBackgroundService (Foreground Service)
     // Trạng thái được đọc từ SharedPrefs và phản ánh service thực sự đang chạy hay không
@@ -88,7 +86,16 @@ fun SettingsScreen(navController: NavController) {
                     iconColor = Primary,
                     title = "Thông báo đẩy",
                     checked = pushNotifications,
-                    onCheckedChange = { pushNotifications = it }
+                    onCheckedChange = { checked ->
+                        pushNotifications = checked
+                        AppAlertNotifier.setPushEnabled(context, checked)
+                        if (checked) {
+                            AppAlertNotifier.createChannel(context)
+                            android.widget.Toast.makeText(context, "Đã bật cảnh báo khi tài khoản lỗi", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            android.widget.Toast.makeText(context, "Đã tắt cảnh báo khi tài khoản lỗi", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 )
                 SettingsSwitchRow(
                     icon = Icons.Filled.Sync,

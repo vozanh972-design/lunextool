@@ -561,10 +561,30 @@ fun TuongTacCheoScreen(navController: NavController) {
                                 ttcErrorDetailMap[uid] = err
                                 ttcStatusMap[uid] = "Lỗi FB ($consecutiveErrors/${ttcConfig.failJobCountLimit})"
                             }
+                            if (consecutiveErrors >= 3) {
+                                val accName = fbAccounts.firstOrNull { it.uid == uid }?.name.orEmpty().ifBlank { uid }
+                                com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                                    context = context,
+                                    platform = "Tương Tác Chéo",
+                                    accountName = accName,
+                                    accountUid = uid,
+                                    consecutiveErrors = consecutiveErrors,
+                                    errorDetail = err
+                                )
+                            }
                             if (ttcConfig.failJobCountLimit > 0 && consecutiveErrors >= ttcConfig.failJobCountLimit) {
                                 withContext(Dispatchers.Main) {
                                     ttcStatusMap[uid] = "Dừng do lỗi FB liên tiếp $consecutiveErrors lần"
                                 }
+                                val accName = fbAccounts.firstOrNull { it.uid == uid }?.name.orEmpty().ifBlank { uid }
+                                com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                                    context = context,
+                                    platform = "Tương Tác Chéo",
+                                    accountName = accName,
+                                    accountUid = uid,
+                                    consecutiveErrors = consecutiveErrors,
+                                    errorDetail = "Đã dừng chạy: Đạt giới hạn $consecutiveErrors job lỗi liên tiếp"
+                                )
                                 break
                             }
                             continue
@@ -594,10 +614,30 @@ fun TuongTacCheoScreen(navController: NavController) {
                                 ttcErrorDetailMap[uid] = err
                                 ttcStatusMap[uid] = "Lỗi nhận xu ($consecutiveErrors/${ttcConfig.failJobCountLimit})"
                             }
+                            if (consecutiveErrors >= 3) {
+                                val accName = fbAccounts.firstOrNull { it.uid == uid }?.name.orEmpty().ifBlank { uid }
+                                com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                                    context = context,
+                                    platform = "Tương Tác Chéo",
+                                    accountName = accName,
+                                    accountUid = uid,
+                                    consecutiveErrors = consecutiveErrors,
+                                    errorDetail = "Lỗi nhận xu: $err"
+                                )
+                            }
                             if (ttcConfig.failJobCountLimit > 0 && consecutiveErrors >= ttcConfig.failJobCountLimit) {
                                 withContext(Dispatchers.Main) {
                                     ttcStatusMap[uid] = "Dừng do lỗi nhận xu liên tiếp $consecutiveErrors lần"
                                 }
+                                val accName = fbAccounts.firstOrNull { it.uid == uid }?.name.orEmpty().ifBlank { uid }
+                                com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                                    context = context,
+                                    platform = "Tương Tác Chéo",
+                                    accountName = accName,
+                                    accountUid = uid,
+                                    consecutiveErrors = consecutiveErrors,
+                                    errorDetail = "Đã dừng chạy: Đạt giới hạn $consecutiveErrors job lỗi liên tiếp"
+                                )
                                 break
                             }
                         }

@@ -319,6 +319,16 @@ object XsmmInstagramTaskRunner {
                         soloitym++
                         notify("Tym lỗi: ${chayfl.message}")
                         reportError(cleanUsername, "Tym lỗi: ${chayfl.message}")
+                        if (soloitym >= 3) {
+                            com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                                context = context,
+                                platform = "Instagram",
+                                accountName = account.fullName.ifBlank { cleanUsername },
+                                accountUid = cleanUsername,
+                                consecutiveErrors = soloitym,
+                                errorDetail = "Tym lỗi: ${chayfl.message ?: "Thất bại"}"
+                            )
+                        }
                     }
 
                     // Delay
@@ -409,6 +419,16 @@ object XsmmInstagramTaskRunner {
                         soloisub++
                         notify("Follow lỗi: ${chaySub.message}")
                         reportError(cleanUsername, "Follow thất bại: ${chaySub.message}")
+                        if (soloisub >= 3) {
+                            com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                                context = context,
+                                platform = "Instagram",
+                                accountName = account.fullName.ifBlank { cleanUsername },
+                                accountUid = cleanUsername,
+                                consecutiveErrors = soloisub,
+                                errorDetail = "Follow lỗi: ${chaySub.message ?: "Thất bại"}"
+                            )
+                        }
                     }
 
                     // Delay

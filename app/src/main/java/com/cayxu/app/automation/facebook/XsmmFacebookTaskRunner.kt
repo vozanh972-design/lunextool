@@ -120,6 +120,7 @@ object XsmmFacebookTaskRunner {
         } else {
             cleanUid
         }
+        val displayName = (matchedPage?.pageName?.takeIf { it.isNotBlank() } ?: account.name).ifBlank { cleanUid }
 
         var fbToken = (matchedPage?.pageToken?.takeIf { it.isNotBlank() } ?: account.bio.trim()).orEmpty()
         if (matchedPage != null && (matchedPage.pageToken.isBlank() || fbToken.isBlank())) {
@@ -443,8 +444,26 @@ object XsmmFacebookTaskRunner {
                     if (cleanUid != targetUidForXsmm) {
                         onErrorDetail?.invoke(targetUidForXsmm, detailMsg)
                     }
+                    if (consecutiveErrors >= 3) {
+                        com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                            context = context,
+                            platform = "Facebook",
+                            accountName = displayName,
+                            accountUid = cleanUid,
+                            consecutiveErrors = consecutiveErrors,
+                            errorDetail = fbErr
+                        )
+                    }
                     if (config.failJobCountToSwitchAccount > 0 && consecutiveErrors >= config.failJobCountToSwitchAccount) {
                         notify("Nick $cleanUid lỗi liên tiếp $consecutiveErrors job. Dừng.")
+                        com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                            context = context,
+                            platform = "Facebook",
+                            accountName = displayName,
+                            accountUid = cleanUid,
+                            consecutiveErrors = consecutiveErrors,
+                            errorDetail = "Đã dừng chạy: Đạt giới hạn $consecutiveErrors job lỗi liên tiếp"
+                        )
                         break
                     }
                 }
@@ -523,6 +542,16 @@ object XsmmFacebookTaskRunner {
                         val compErr = "[${currentTime()}] Lỗi nhận xu từ XSMM:\n• Server phản hồi: $errMsg"
                         onErrorDetail?.invoke(cleanUid, compErr)
                         if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, compErr)
+                        if (consecutiveErrors >= 3) {
+                            com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                                context = context,
+                                platform = "Facebook",
+                                accountName = displayName,
+                                accountUid = cleanUid,
+                                consecutiveErrors = consecutiveErrors,
+                                errorDetail = "Lỗi nhận xu: $errMsg"
+                            )
+                        }
                         delay(2000L)
                     }
                     pendingBatchTaskIds.clear()
