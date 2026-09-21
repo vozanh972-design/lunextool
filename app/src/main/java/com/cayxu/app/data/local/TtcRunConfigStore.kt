@@ -3,7 +3,7 @@ package com.cayxu.app.data.local
 import android.content.Context
 
 data class TtcRunConfig(
-    val taskTypes: List<String> = listOf("like", "follow", "comment", "page", "vip"),
+    val taskTypes: List<String> = listOf("like", "follow", "comment", "page", "cxvip", "subvip", "cmtvip"),
     val delaySeconds: Int = 10,
     val taskCountTarget: Int = 50,
     val failJobCountLimit: Int = 5,
@@ -26,16 +26,25 @@ object TtcRunConfigStore {
         "comment" to "Bình luận (Comment)",
         "page" to "Like Page",
         "member" to "Tham gia nhóm",
-        "vip" to "Nhiệm vụ VIP"
+        "cxvip" to "Cảm xúc VIP",
+        "subvip" to "Theo dõi VIP",
+        "cmtvip" to "Bình luận VIP"
     )
 
     fun getConfig(context: Context): TtcRunConfig {
         val sp = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val typesStr = sp.getString(KEY_TASK_TYPES, null)
         val types = if (typesStr != null) {
-            typesStr.split(",").map { it.trim() }.filter { it.isNotBlank() }
+            var rawList = typesStr.split(",").map { it.trim() }.filter { it.isNotBlank() }
+            if ("vip" in rawList) {
+                rawList = (rawList - "vip") + listOf("cxvip", "subvip", "cmtvip")
+            }
+            val validKeys = fbTaskTypes.map { it.first }
+            rawList.filter { it in validKeys }.ifEmpty {
+                listOf("like", "follow", "comment", "page", "cxvip", "subvip", "cmtvip")
+            }
         } else {
-            listOf("like", "follow", "comment", "page", "vip")
+            listOf("like", "follow", "comment", "page", "cxvip", "subvip", "cmtvip")
         }
         val delay = sp.getInt(KEY_DELAY_SECONDS, 10)
         val target = sp.getInt(KEY_TASK_COUNT_TARGET, 50)

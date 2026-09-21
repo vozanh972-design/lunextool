@@ -322,12 +322,22 @@ object XsmmFacebookTaskRunner {
                     break
                 }
 
-                if (activeTaskTypes.size > 1) {
+                val isServerError = taskResult is XsmmTasks2Result.Error
+                if (isServerError) {
+                    for (sec in 5 downTo 1) {
+                        if (!coroutineContext.isActive) break
+                        notify("Lỗi server XSMM: ${taskResult.message} (${sec}s)...")
+                        delay(1000L)
+                    }
+                } else if (activeTaskTypes.size > 1) {
                     if (currentTypeRetryCount == 0) {
                         // Lần đầu hết NV của loại này: chờ 5s tự reload lại đúng loại đó
                         currentTypeRetryCount++
-                        notify("Hết NV ($currentTaskLabel). Chờ 5s reload lại...")
-                        delay(5_000L)
+                        for (sec in 5 downTo 1) {
+                            if (!coroutineContext.isActive) break
+                            notify("Hết NV ($currentTaskLabel). Chờ reload (${sec}s)...")
+                            delay(1000L)
+                        }
                     } else {
                         // Đã reload sau 5s mà vẫn hết NV -> chuyển sang loại nhiệm vụ khác trong danh sách
                         currentTypeRetryCount = 0
@@ -340,8 +350,11 @@ object XsmmFacebookTaskRunner {
                 } else {
                     // Chỉ chọn 1 loại nhiệm vụ: chờ 5s rồi thử lại
                     val waitSec = if (config.fetchTaskIntervalSeconds in 1..5) config.fetchTaskIntervalSeconds else 5
-                    notify("Hết NV ($currentTaskLabel). Chờ ${waitSec}s...")
-                    delay(waitSec * 1000L)
+                    for (sec in waitSec downTo 1) {
+                        if (!coroutineContext.isActive) break
+                        notify("Hết NV ($currentTaskLabel). Chờ ${sec}s...")
+                        delay(1000L)
+                    }
                 }
                 continue
             }
@@ -402,11 +415,12 @@ object XsmmFacebookTaskRunner {
                 } else {
                     consecutiveErrors++
                     totalErrors++
-                    notify("$pos Lỗi tác vụ ($consecutiveErrors/${config.failJobCountToSwitchAccount})")
+                    val fbErr = taskRes.message ?: "Thao tác Facebook thất bại"
+                    notify("$pos Lỗi FB: $fbErr ($consecutiveErrors/${config.failJobCountToSwitchAccount})")
                     val detailMsg = buildString {
                         append("Nhiệm vụ: ${task.type.ifBlank { currentActiveTaskType }}\n")
                         append("Target: $target\n")
-                        append("Lỗi từ Facebook: ${taskRes.message ?: "Thao tác không thành công"}")
+                        append("Lỗi từ Facebook: $fbErr")
                     }
                     onErrorDetail?.invoke(cleanUid, detailMsg)
                     if (cleanUid != targetUidForXsmm) {
@@ -430,35 +444,16 @@ object XsmmFacebookTaskRunner {
                 val isLast = (idx == taskList.size - 1)
                 if (pendingBatchTaskIds.size >= batchLimit || (isLast && pendingBatchTaskIds.isNotEmpty())) {
                     val bSize = pendingBatchTaskIds.size
-                    if (isFollowTask) {
-                        notify("Gửi nhận xu $bSize job follow...")
-                    } else if (isCommentTaskType) {
-                        // XSMM cần khoảng 60s để hệ thống quét và xác minh comment đã xuất hiện trên Facebook
-                        for (sec in 60 downTo 1) {
-                            if (!coroutineContext.isActive) break
-                            notify("$pos Đã cmt xong. Chờ XSMM quét duyệt (${sec}s)...")
-                            delay(1000L)
-                        }
-                        notify("Gửi nhận xu job comment...")
-                    } else if (isLikeTaskType) {
-                        // XSMM cần khoảng 60s để hệ thống quét và xác minh cảm xúc đã xuất hiện trên Facebook
-                        for (sec in 60 downTo 1) {
-                            if (!coroutineContext.isActive) break
-                            notify("$pos Đã thả cảm xúc xong. Chờ XSMM quét duyệt (${sec}s)...")
-                            delay(1000L)
-                        }
-                        notify("Gửi nhận xu job cảm xúc...")
-                    } else {
-                        notify("Gửi nhận xu job...")
-                    }
+                    notify("Gửi nhận xu $bSize job...")
 
+                    // GỌI HOÀN THÀNH JOB NGAY LẬP TỨC TRÊN SERVER XSMM
                     var compRes = XsmmTasksRepository.completeTasks(
                         token,
                         task.type.ifBlank { currentActiveTaskType },
                         pendingBatchTaskIds.toList()
                     )
 
-                    // Nếu XSMM phản hồi 502 Bad Gateway / chưa quét kịp / timeout / server chậm, tự động chờ 15s và thử lại tối đa 4 lần
+                    // Nếu XSMM phản hồi 502 Bad Gateway / timeout / server chậm -> đếm ngược từng giây để người dùng thấy rõ đang thử lại, không bị đơ
                     val isRetryableError = !compRes.success && (
                         compRes.message.contains("502", ignoreCase = true) ||
                         compRes.message.contains("500", ignoreCase = true) ||
@@ -466,14 +461,19 @@ object XsmmFacebookTaskRunner {
                         compRes.message.contains("504", ignoreCase = true) ||
                         compRes.message.contains("chưa hoàn thành", ignoreCase = true) ||
                         compRes.message.contains("timeout", ignoreCase = true) ||
-                        compRes.message.contains("kết nối", ignoreCase = true)
+                        compRes.message.contains("kết nối", ignoreCase = true) ||
+                        compRes.message.contains("chậm", ignoreCase = true)
                     )
 
                     if (isRetryableError) {
                         for (retryCount in 1..4) {
                             if (!coroutineContext.isActive) break
-                            notify("Server XSMM phản hồi chậm (mã 502/chưa duyệt xong). Đang chờ 15s gửi lại (lần $retryCount/4)...")
-                            delay(15_000L)
+                            for (sec in 10 downTo 1) {
+                                if (!coroutineContext.isActive) break
+                                notify("Server 502/chậm. Thử lại sau ${sec}s (lần $retryCount/4)...")
+                                delay(1000L)
+                            }
+                            notify("Đang gửi lại nhận xu (lần $retryCount/4)...")
                             compRes = XsmmTasksRepository.completeTasks(
                                 token,
                                 task.type.ifBlank { currentActiveTaskType },
@@ -494,15 +494,25 @@ object XsmmFacebookTaskRunner {
                     }
 
                     if (compRes.success && pts > 0) {
-                        notify("+$pts xu ($bSize job) (Tổng $totalCompleted NV)")
-                        if (compRes.countdown > 0) {
-                            delay(compRes.countdown * 1000L)
+                        // LÀM XONG GỌI HOÀN THÀNH XONG RỒI MỚI ĐỢI 60 GIÂY CHO JOB CẢM XÚC / COMMENT
+                        val waitSec = if (isLikeTaskType || isCommentTaskType) {
+                            compRes.countdown.coerceAtLeast(60)
+                        } else {
+                            compRes.countdown.coerceAtLeast(3)
+                        }
+
+                        for (sec in waitSec downTo 1) {
+                            if (!coroutineContext.isActive) break
+                            notify("+$pts xu ($bSize job). Đợi ${sec}s nhận job tiếp...")
+                            delay(1000L)
                         }
                     } else {
-                        notify("Nhận xu: ${compRes.message}")
-                        val compErr = "Lỗi nhận xu từ XSMM:\n• Server phản hồi: ${compRes.message}"
+                        val errMsg = compRes.message.ifBlank { "Không nhận được xu" }
+                        notify("Lỗi nhận xu: $errMsg")
+                        val compErr = "Lỗi nhận xu từ XSMM:\n• Server phản hồi: $errMsg"
                         onErrorDetail?.invoke(cleanUid, compErr)
                         if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, compErr)
+                        delay(3000L)
                     }
                     pendingBatchTaskIds.clear()
                 }

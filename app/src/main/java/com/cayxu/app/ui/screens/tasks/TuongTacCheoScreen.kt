@@ -295,9 +295,34 @@ fun TuongTacCheoScreen(navController: NavController) {
 
     fun startTtcAccount(uid: String) {
         if (uid in runningTtcUids) return
-        val activeTtcAccount = ttcAccounts.firstOrNull { it.username in selectedTtcUsernames }
-            ?: ttcAccounts.firstOrNull { it.isLive }
-            ?: ttcAccounts.firstOrNull()
+        val fbAccount = fbAccounts.firstOrNull { it.uid == uid }
+        val usePage = ttcConfig.pairTargetType == "page"
+        val pageItem = if (usePage) fbAccount?.pages?.firstOrNull() else null
+        val runUid = if (usePage && pageItem != null && pageItem.id.isNotBlank()) pageItem.id else uid
+        val runToken = if (usePage && pageItem != null && pageItem.token.isNotBlank()) pageItem.token else (fbAccount?.bio ?: "")
+        val cleanToken = runToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
+
+        val proxyParts = (fbAccount?.phone ?: "").trim().split(":")
+        val proxyHost = proxyParts.getOrNull(0)?.takeIf { it.isNotBlank() }
+        val proxyPort = proxyParts.getOrNull(1)?.toIntOrNull()
+
+        val activeTtcAccount = if (ttcConfig.pairModeEnabled) {
+            val fbIndex = fbAccounts.indexOfFirst { it.uid == uid }
+            val availableTtc = if (selectedTtcUsernames.isNotEmpty()) {
+                ttcAccounts.filter { it.username in selectedTtcUsernames }
+            } else {
+                ttcAccounts.filter { it.isLive }.ifEmpty { ttcAccounts }
+            }
+            if (fbIndex >= 0 && availableTtc.isNotEmpty()) {
+                availableTtc[fbIndex % availableTtc.size]
+            } else {
+                availableTtc.firstOrNull()
+            }
+        } else {
+            ttcAccounts.firstOrNull { it.username in selectedTtcUsernames }
+                ?: ttcAccounts.firstOrNull { it.isLive }
+                ?: ttcAccounts.firstOrNull()
+        }
 
         if (activeTtcAccount == null || activeTtcAccount.token.isBlank()) {
             Toast.makeText(context, "Chưa có tài khoản TTC nào để lấy nhiệm vụ!", Toast.LENGTH_SHORT).show()
@@ -310,15 +335,15 @@ fun TuongTacCheoScreen(navController: NavController) {
             try {
                 val ttcClient = TuongTacCheoApiClient(
                     tokenTTC = activeTtcAccount.token,
-                    sessionCookie = activeTtcAccount.cookie,
+                    sessionCookie = activeTtcAccount.cookie.orEmpty(),
                     proxyStr = activeTtcAccount.proxy.ifBlank { null }
                 )
-                // Cấu hình nick chạy trên TTC
-                withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Đặt nick chạy TTC..." }
-                val isSet = ttcClient.setNickRun(uid, "fb")
+                // Cấu hình nick chạy trên TTC (nếu dùng page thì đặt ID page, profile thì đặt UID fb)
+                withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Đặt nick [$runUid] chạy TTC..." }
+                val isSet = ttcClient.setNickRun(runUid, "fb")
                 if (!isSet) {
                     withContext(Dispatchers.Main) {
-                        val err = "Đặt nick [$uid] chạy TTC thất bại (nick chưa thêm vào TTC?)"
+                        val err = "Đặt nick [$runUid] chạy TTC thất bại (nick chưa thêm vào TTC?)"
                         ttcStatusMap[uid] = err
                         ttcErrorDetailMap[uid] = err
                         ttcErrorCountMap[uid] = (ttcErrorCountMap[uid] ?: 0) + 1
@@ -330,35 +355,144 @@ fun TuongTacCheoScreen(navController: NavController) {
                 var errorCount = ttcErrorCountMap[uid] ?: 0
                 var consecutiveErrors = 0
 
+                val activeTypes = ttcConfig.taskTypes.filter { it.isNotBlank() }.ifEmpty { listOf("like") }
+                var typeIndex = 0
+
                 withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Sẵn sàng nhận job..." }
 
                 while (isActive && uid in runningTtcUids) {
                     val delayTime = (ttcConfig.delaySeconds.coerceAtLeast(3) * 1000L)
                     delay(delayTime)
 
-                    withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Đang lấy nhiệm vụ..." }
+                    val currentKey = activeTypes[typeIndex % activeTypes.size]
+                    val currentJobType = com.cayxu.app.tuongtaccheo.TTCJobType.fromKey(currentKey)
+
+                    withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Lấy job ${currentJobType.displayName}..." }
                     // Lấy job từ TTC
                     val jobs = try {
-                        ttcClient.getJobs(com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE)
+                        ttcClient.getJobs(currentJobType)
                     } catch (e: Exception) {
                         emptyList()
                     }
 
                     if (jobs.isEmpty()) {
-                        withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Tạm hết job, chờ..." }
-                        delay(10000L)
+                        withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Hết job ${currentJobType.displayName}, đổi..." }
+                        typeIndex++
+                        delay(5000L)
                         continue
                     }
 
                     for (j in jobs) {
                         if (!isActive || uid !in runningTtcUids) break
-                        val target = j.idpost ?: j.idfb ?: j.link.orEmpty()
-                        withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Đang làm: ${target.take(15)}..." }
+                        val target = j.idpost?.takeIf { it.isNotBlank() } ?: j.idfb?.takeIf { it.isNotBlank() } ?: j.link.orEmpty()
+                        withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Làm [${currentJobType.displayName}]: ${target.take(12)}..." }
 
-                        // Thao tác tương tác bằng Facebook Engine
-                        delay(2000L)
+                        // Thao tác tương tác bằng Facebook Engine (Page615 hoặc Profile)
+                        var fbOk = true
+                        var fbErr: String? = null
+
+                        if (usePage && pageItem != null) {
+                            val pageEngine = com.cayxu.app.facebook.Page615TuongTacEngine(
+                                pageToken = cleanToken,
+                                pageId615 = runUid,
+                                proxyHost = proxyHost,
+                                proxyPort = proxyPort
+                            )
+                            val res = when (currentJobType) {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_COMMENT,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CMT_VIP -> {
+                                    val cmtText = j.cmt.orEmpty()
+                                    if (cmtText.isNotBlank()) pageEngine.commentPost(target, cmtText)
+                                    else com.cayxu.app.facebook.Page615TuongTacEngine.InteractionResult(false, target, "COMMENT", null, "Nội dung comment trống")
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_FOLLOW,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SUB_VIP -> {
+                                    pageEngine.followTarget(target)
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_PAGE -> {
+                                    pageEngine.likeOtherPage(target)
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_MEMBER -> {
+                                    pageEngine.joinGroup(target)
+                                }
+                                else -> {
+                                    val rxType = when (j.loaicx?.uppercase()) {
+                                        "LOVE", "TYM" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LOVE
+                                        "CARE", "THUONGTHUONG" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.CARE
+                                        "HAHA" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.HAHA
+                                        "WOW" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.WOW
+                                        "SAD" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.SAD
+                                        "ANGRY" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.ANGRY
+                                        else -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE
+                                    }
+                                    pageEngine.reactPost(target, rxType)
+                                }
+                            }
+                            fbOk = res.isSuccess
+                            if (!res.isSuccess) fbErr = res.message ?: res.rawResponse
+                        } else {
+                            val engine = com.cayxu.app.facebook.FacebookTuongTacEngine(
+                                accessToken = cleanToken,
+                                userId = uid,
+                                proxyHost = proxyHost,
+                                proxyPort = proxyPort
+                            )
+                            val res = when (currentJobType) {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_COMMENT,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CMT_VIP -> {
+                                    val cmtText = j.cmt.orEmpty()
+                                    if (cmtText.isNotBlank()) engine.comment(target, cmtText)
+                                    else com.cayxu.app.facebook.FacebookTuongTacEngine.InteractionResult(false, target, "COMMENT", null, "Nội dung comment trống")
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_FOLLOW,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SUB_VIP -> {
+                                    engine.follow(target)
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_PAGE -> {
+                                    engine.likePage(target)
+                                }
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_MEMBER -> {
+                                    engine.joinGroup(target)
+                                }
+                                else -> {
+                                    val rxType = when (j.loaicx?.uppercase()) {
+                                        "LOVE", "TYM" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LOVE
+                                        "CARE", "THUONGTHUONG" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.CARE
+                                        "HAHA" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.HAHA
+                                        "WOW" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.WOW
+                                        "SAD" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.SAD
+                                        "ANGRY" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.ANGRY
+                                        else -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE
+                                    }
+                                    engine.react(target, rxType)
+                                }
+                            }
+                            fbOk = res.isSuccess
+                            if (!res.isSuccess) fbErr = res.message ?: res.rawResponse
+                        }
+
+                        if (!fbOk) {
+                            errorCount++
+                            consecutiveErrors++
+                            val err = fbErr ?: "Tương tác Facebook thất bại"
+                            withContext(Dispatchers.Main) {
+                                ttcErrorCountMap[uid] = errorCount
+                                ttcErrorDetailMap[uid] = err
+                                ttcStatusMap[uid] = "Lỗi FB ($consecutiveErrors/${ttcConfig.failJobCountLimit})"
+                            }
+                            if (ttcConfig.failJobCountLimit > 0 && consecutiveErrors >= ttcConfig.failJobCountLimit) {
+                                withContext(Dispatchers.Main) {
+                                    ttcStatusMap[uid] = "Dừng do lỗi FB liên tiếp $consecutiveErrors lần"
+                                }
+                                break
+                            }
+                            continue
+                        }
+
+                        // Đợi trước khi nhận xu
+                        delay(3000L)
                         val claimRes = try {
-                            ttcClient.claimReward(j.id, com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE)
+                            ttcClient.claimReward(j.id, currentJobType)
                         } catch (e: Exception) {
                             null
                         }
@@ -381,7 +515,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                             }
                             if (ttcConfig.failJobCountLimit > 0 && consecutiveErrors >= ttcConfig.failJobCountLimit) {
                                 withContext(Dispatchers.Main) {
-                                    ttcStatusMap[uid] = "Dừng do lỗi liên tiếp $consecutiveErrors lần"
+                                    ttcStatusMap[uid] = "Dừng do lỗi nhận xu liên tiếp $consecutiveErrors lần"
                                 }
                                 break
                             }
@@ -396,6 +530,9 @@ fun TuongTacCheoScreen(navController: NavController) {
 
                         delay(delayTime)
                     }
+
+                    // Chuyển sang loại nhiệm vụ tiếp theo sau mỗi đợt lấy
+                    typeIndex++
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {

@@ -166,14 +166,22 @@ class TuongTacCheoApiClient(
      */
     @Throws(Exception::class)
     fun getJobs(jobType: TTCJobType): List<TTCJob> {
-        val url = "$BASE_URL/kiemtien/getpost.php?type=${jobType.apiType}"
+        val jobs = fetchJobsForType(jobType.apiType)
+        if (jobs.isEmpty() && !jobType.alternateApiType.isNullOrBlank()) {
+            return fetchJobsForType(jobType.alternateApiType)
+        }
+        return jobs
+    }
+
+    private fun fetchJobsForType(apiType: String): List<TTCJob> {
+        val url = "$BASE_URL/kiemtien/getpost.php?type=$apiType"
         val request = Request.Builder()
             .url(url)
             .headers(buildHeaders())
             .get()
             .build()
 
-        httpClient.newCall(request).execute().use { response ->
+        return httpClient.newCall(request).execute().use { response ->
             val body = response.body?.string() ?: ""
             if (body.contains("Hết Job") || body.contains("countdown") || body.contains("\"error\"")) {
                 return emptyList()
@@ -197,7 +205,7 @@ class TuongTacCheoApiClient(
                     )
                 }
             }
-            return jobList
+            jobList
         }
     }
 
@@ -206,9 +214,18 @@ class TuongTacCheoApiClient(
      */
     @Throws(Exception::class)
     fun claimReward(jobId: String, jobType: TTCJobType): TTCNhanTienResult {
+        val res = claimRewardForType(jobId, jobType.apiType)
+        if (!res.isSuccess && !jobType.alternateApiType.isNullOrBlank()) {
+            val res2 = claimRewardForType(jobId, jobType.alternateApiType)
+            if (res2.isSuccess) return res2
+        }
+        return res
+    }
+
+    private fun claimRewardForType(jobId: String, apiType: String): TTCNhanTienResult {
         val formBody = FormBody.Builder()
             .add("id", jobId)
-            .add("loai", jobType.apiType)
+            .add("loai", apiType)
             .build()
 
         val request = Request.Builder()
@@ -217,7 +234,7 @@ class TuongTacCheoApiClient(
             .post(formBody)
             .build()
 
-        httpClient.newCall(request).execute().use { response ->
+        return httpClient.newCall(request).execute().use { response ->
             val body = response.body?.string() ?: ""
             val isSuccess = response.isSuccessful && (body.contains("\"success\"") || body.contains("\"status\":\"success\"") || body.contains("Thành công"))
             
@@ -227,7 +244,7 @@ class TuongTacCheoApiClient(
             val xuThem = json.optLong("xu", json.optLong("xu_them", 0L))
             val msg = json.optString("mess", if (isSuccess) "Nhận xu thành công!" else "Nhận xu thất bại: $body")
 
-            return TTCNhanTienResult(
+            TTCNhanTienResult(
                 isSuccess = isSuccess,
                 sodu = sodu,
                 xuThem = xuThem,

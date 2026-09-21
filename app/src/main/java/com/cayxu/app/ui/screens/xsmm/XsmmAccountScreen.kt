@@ -1528,53 +1528,80 @@ fun XsmmAccountScreen(navController: NavController) {
                                     val fbErrDetail = fbErrorDetailMap[account.uid]
                                     if (!fbStatus.isNullOrBlank() || fbSuccess > 0 || fbErrors > 0) {
                                         Spacer(Modifier.height(6.dp))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
                                         ) {
-                                            Text(
-                                                text = fbStatus ?: "Sẵn sàng",
-                                                fontSize = 11.5.sp,
-                                                color = if (isRunningFbThis) Color(0xFF1877F2) else TextSecondary,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            if (fbSuccess > 0 || fbErrors > 0 || !fbErrDetail.isNullOrBlank()) {
-                                                Spacer(Modifier.width(6.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
                                                 Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                    modifier = Modifier.weight(1f),
+                                                    verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    if (fbSuccess > 0) {
-                                                        Text("+$fbSuccess", color = Color(0xFF16A34A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    if (isRunningFbThis) {
+                                                        CircularProgressIndicator(
+                                                            color = Color(0xFF1877F2),
+                                                            strokeWidth = 1.6.dp,
+                                                            modifier = Modifier.size(10.dp)
+                                                        )
+                                                        Spacer(Modifier.width(5.dp))
                                                     }
-                                                    if (fbErrors > 0) {
-                                                        Text("-$fbErrors", color = DangerRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                    }
-                                                    if (fbErrors > 0 || !fbErrDetail.isNullOrBlank()) {
-                                                        IconButton(
-                                                            onClick = { selectedErrorDetailAccount = account.uid },
-                                                            modifier = Modifier.size(24.dp)
-                                                        ) {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .size(20.dp)
-                                                                    .clip(CircleShape)
-                                                                    .background(DangerRed.copy(alpha = 0.15f)),
-                                                                contentAlignment = Alignment.Center
+                                                    Text(
+                                                        text = fbStatus ?: "Sẵn sàng",
+                                                        fontSize = 11.5.sp,
+                                                        color = if (isRunningFbThis) Color(0xFF1877F2) else TextSecondary,
+                                                        maxLines = 2,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                                if (fbSuccess > 0 || fbErrors > 0 || !fbErrDetail.isNullOrBlank()) {
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                    ) {
+                                                        if (fbSuccess > 0) {
+                                                            Text("+$fbSuccess", color = Color(0xFF16A34A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                        }
+                                                        if (fbErrors > 0) {
+                                                            Text("-$fbErrors", color = DangerRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                        }
+                                                        if (fbErrors > 0 || !fbErrDetail.isNullOrBlank()) {
+                                                            IconButton(
+                                                                onClick = { selectedErrorDetailAccount = account.uid },
+                                                                modifier = Modifier.size(24.dp)
                                                             ) {
-                                                                Icon(
-                                                                    imageVector = Icons.Filled.Warning,
-                                                                    contentDescription = "Xem chi tiết lỗi",
-                                                                    tint = DangerRed,
-                                                                    modifier = Modifier.size(12.dp)
-                                                                )
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .size(20.dp)
+                                                                        .clip(CircleShape)
+                                                                        .background(DangerRed.copy(alpha = 0.15f)),
+                                                                    contentAlignment = Alignment.Center
+                                                                ) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Filled.Warning,
+                                                                        contentDescription = "Xem chi tiết lỗi",
+                                                                        tint = DangerRed,
+                                                                        modifier = Modifier.size(12.dp)
+                                                                    )
+                                                                }
                                                             }
                                                         }
                                                     }
                                                 }
+                                            }
+                                            if (!fbErrDetail.isNullOrBlank()) {
+                                                Spacer(Modifier.height(3.dp))
+                                                Text(
+                                                    text = fbErrDetail.trim(),
+                                                    fontSize = 10.sp,
+                                                    color = DangerRed,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 3,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
                                             }
                                         }
                                     }
@@ -1929,69 +1956,84 @@ fun XsmmAccountScreen(navController: NavController) {
 
                                                     if (isPageRunning || !pageStatus.isNullOrBlank() || pageSuccess > 0 || pageErrors > 0 || !pageErrorDetail.isNullOrBlank()) {
                                                         Spacer(Modifier.height(5.dp))
-                                                        Row(
+                                                        Column(
                                                             modifier = Modifier
                                                                 .fillMaxWidth()
                                                                 .clip(RoundedCornerShape(6.dp))
                                                                 .background(if (isPageRunning) Color(0xFF1877F2).copy(alpha = 0.08f) else Color(0xFFE2E8F0).copy(alpha = 0.4f))
-                                                                .padding(horizontal = 6.dp, vertical = 4.dp),
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                                .padding(horizontal = 6.dp, vertical = 4.dp)
                                                         ) {
                                                             Row(
-                                                                modifier = Modifier.weight(1f),
-                                                                verticalAlignment = Alignment.CenterVertically
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.SpaceBetween
                                                             ) {
-                                                                if (isPageRunning) {
-                                                                    CircularProgressIndicator(
-                                                                        color = Color(0xFF1877F2),
-                                                                        strokeWidth = 1.6.dp,
-                                                                        modifier = Modifier.size(10.dp)
-                                                                    )
-                                                                    Spacer(Modifier.width(5.dp))
-                                                                }
-                                                                Text(
-                                                                    text = pageStatus ?: if (isPageRunning) "Đang chạy..." else "Sẵn sàng",
-                                                                    fontSize = 10.5.sp,
-                                                                    color = if (isPageRunning) Color(0xFF1877F2) else TextSecondary,
-                                                                    maxLines = 1,
-                                                                    overflow = TextOverflow.Ellipsis
-                                                                )
-                                                            }
-                                                            if (pageSuccess > 0 || pageErrors > 0 || !pageErrorDetail.isNullOrBlank()) {
-                                                                Spacer(Modifier.width(6.dp))
                                                                 Row(
-                                                                    verticalAlignment = Alignment.CenterVertically,
-                                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                                    modifier = Modifier.weight(1f),
+                                                                    verticalAlignment = Alignment.CenterVertically
                                                                 ) {
-                                                                    if (pageSuccess > 0) {
-                                                                        Text("+$pageSuccess", color = Color(0xFF16A34A), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                                    if (isPageRunning) {
+                                                                        CircularProgressIndicator(
+                                                                            color = Color(0xFF1877F2),
+                                                                            strokeWidth = 1.6.dp,
+                                                                            modifier = Modifier.size(10.dp)
+                                                                        )
+                                                                        Spacer(Modifier.width(5.dp))
                                                                     }
-                                                                    if (pageErrors > 0) {
-                                                                        Text("-$pageErrors", color = DangerRed, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                                                                    }
-                                                                    if (pageErrors > 0 || !pageErrorDetail.isNullOrBlank()) {
-                                                                        IconButton(
-                                                                            onClick = { selectedErrorDetailAccount = effectivePageUid },
-                                                                            modifier = Modifier.size(22.dp)
-                                                                        ) {
-                                                                            Box(
-                                                                                modifier = Modifier
-                                                                                    .size(18.dp)
-                                                                                    .clip(CircleShape)
-                                                                                    .background(DangerRed.copy(alpha = 0.15f)),
-                                                                                contentAlignment = Alignment.Center
+                                                                    Text(
+                                                                        text = pageStatus ?: if (isPageRunning) "Đang chạy..." else "Sẵn sàng",
+                                                                        fontSize = 11.sp,
+                                                                        color = if (isPageRunning) Color(0xFF1877F2) else TextSecondary,
+                                                                        maxLines = 2,
+                                                                        overflow = TextOverflow.Ellipsis
+                                                                    )
+                                                                }
+                                                                if (pageSuccess > 0 || pageErrors > 0 || !pageErrorDetail.isNullOrBlank()) {
+                                                                    Spacer(Modifier.width(6.dp))
+                                                                    Row(
+                                                                        verticalAlignment = Alignment.CenterVertically,
+                                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                                    ) {
+                                                                        if (pageSuccess > 0) {
+                                                                            Text("+$pageSuccess", color = Color(0xFF16A34A), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                                        }
+                                                                        if (pageErrors > 0) {
+                                                                            Text("-$pageErrors", color = DangerRed, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                                        }
+                                                                        if (pageErrors > 0 || !pageErrorDetail.isNullOrBlank()) {
+                                                                            IconButton(
+                                                                                onClick = { selectedErrorDetailAccount = effectivePageUid },
+                                                                                modifier = Modifier.size(22.dp)
                                                                             ) {
-                                                                                Icon(
-                                                                                    imageVector = Icons.Filled.Warning,
-                                                                                    contentDescription = "Xem chi tiết lỗi Page",
-                                                                                    tint = DangerRed,
-                                                                                    modifier = Modifier.size(11.dp)
-                                                                                )
+                                                                                Box(
+                                                                                    modifier = Modifier
+                                                                                        .size(18.dp)
+                                                                                        .clip(CircleShape)
+                                                                                        .background(DangerRed.copy(alpha = 0.15f)),
+                                                                                    contentAlignment = Alignment.Center
+                                                                                ) {
+                                                                                    Icon(
+                                                                                        imageVector = Icons.Filled.Warning,
+                                                                                        contentDescription = "Xem chi tiết lỗi Page",
+                                                                                        tint = DangerRed,
+                                                                                        modifier = Modifier.size(11.dp)
+                                                                                    )
+                                                                                }
                                                                             }
                                                                         }
                                                                     }
                                                                 }
+                                                            }
+                                                            if (!pageErrorDetail.isNullOrBlank()) {
+                                                                Spacer(Modifier.height(3.dp))
+                                                                Text(
+                                                                    text = pageErrorDetail.trim(),
+                                                                    fontSize = 10.sp,
+                                                                    color = DangerRed,
+                                                                    fontWeight = FontWeight.Medium,
+                                                                    maxLines = 3,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
                                                             }
                                                         }
                                                     }
