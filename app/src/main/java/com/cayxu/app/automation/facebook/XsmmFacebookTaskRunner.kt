@@ -434,11 +434,9 @@ object XsmmFacebookTaskRunner {
 
                 // follow → gom đủ 10 rồi mới nhận xu
                 // comment / like (cảm xúc) / các loại khác → nhận xu ngay sau mỗi job
-                val actualType = (task.type.ifBlank { currentActiveTaskType }).lowercase()
-                val isFollowTask = actualType.contains("follow") || actualType.contains("sub")
-                val isCommentTaskType = actualType.contains("comment")
-                val isLikeTaskType = actualType.contains("like") || actualType.contains("love") || actualType.contains("care") ||
-                    actualType.contains("haha") || actualType.contains("wow") || actualType.contains("sad") || actualType.contains("angry") || actualType.contains("tym")
+                val isFollowTask = currentActiveTaskType.contains("follow") || currentActiveTaskType.contains("sub")
+                val isCommentTaskType = currentActiveTaskType.contains("comment")
+                val isLikeTaskType = currentActiveTaskType.contains("like")
 
                 val batchLimit = if (isFollowTask) 10 else 1
                 val isLast = (idx == taskList.size - 1)
@@ -446,23 +444,26 @@ object XsmmFacebookTaskRunner {
                     val bSize = pendingBatchTaskIds.size
                     notify("Gửi nhận xu $bSize job...")
 
+                    // Chuẩn API XSMM: type khi complete luôn là loại nhiệm vụ Facebook (VD: facebook_like, facebook_follow, facebook_comment...)
+                    val apiCompleteType = if (currentActiveTaskType.startsWith("facebook_")) currentActiveTaskType else "facebook_like"
+
                     // GỌI HOÀN THÀNH JOB NGAY LẬP TỨC TRÊN SERVER XSMM
                     var compRes = XsmmTasksRepository.completeTasks(
                         token,
-                        task.type.ifBlank { currentActiveTaskType },
+                        apiCompleteType,
                         pendingBatchTaskIds.toList()
                     )
 
                     // Nếu XSMM phản hồi 502 Bad Gateway / timeout / server chậm -> đếm ngược từng giây để người dùng thấy rõ đang thử lại, không bị đơ
                     val isRetryableError = !compRes.success && (
+                        compRes.retry ||
                         compRes.message.contains("502", ignoreCase = true) ||
                         compRes.message.contains("500", ignoreCase = true) ||
                         compRes.message.contains("503", ignoreCase = true) ||
                         compRes.message.contains("504", ignoreCase = true) ||
                         compRes.message.contains("chưa hoàn thành", ignoreCase = true) ||
                         compRes.message.contains("timeout", ignoreCase = true) ||
-                        compRes.message.contains("kết nối", ignoreCase = true) ||
-                        compRes.message.contains("chậm", ignoreCase = true)
+                        compRes.message.contains("kết nối", ignoreCase = true)
                     )
 
                     if (isRetryableError) {
@@ -476,7 +477,7 @@ object XsmmFacebookTaskRunner {
                             notify("Đang gửi lại nhận xu (lần $retryCount/4)...")
                             compRes = XsmmTasksRepository.completeTasks(
                                 token,
-                                task.type.ifBlank { currentActiveTaskType },
+                                apiCompleteType,
                                 pendingBatchTaskIds.toList()
                             )
                             if (compRes.success || compRes.points > 0) break
@@ -493,7 +494,8 @@ object XsmmFacebookTaskRunner {
                         }
                     }
 
-                    if (compRes.success && pts > 0) {
+                    if (compRes.success || pts > 0) {
+                        val succText = if (pts > 0) "+$pts xu ($bSize job)" else (compRes.message.ifBlank { "Thành công $bSize job" })
                         // LÀM XONG GỌI HOÀN THÀNH XONG RỒI MỚI ĐỢI 60 GIÂY CHO JOB CẢM XÚC / COMMENT
                         val waitSec = if (isLikeTaskType || isCommentTaskType) {
                             compRes.countdown.coerceAtLeast(60)
@@ -503,7 +505,7 @@ object XsmmFacebookTaskRunner {
 
                         for (sec in waitSec downTo 1) {
                             if (!coroutineContext.isActive) break
-                            notify("+$pts xu ($bSize job). Đợi ${sec}s nhận job tiếp...")
+                            notify("$succText. Đợi ${sec}s nhận job tiếp...")
                             delay(1000L)
                         }
                     } else {
