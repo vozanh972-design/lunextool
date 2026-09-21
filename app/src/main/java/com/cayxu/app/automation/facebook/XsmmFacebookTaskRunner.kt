@@ -442,12 +442,22 @@ object XsmmFacebookTaskRunner {
                 val isLast = (idx == taskList.size - 1)
                 if (pendingBatchTaskIds.size >= batchLimit || (isLast && pendingBatchTaskIds.isNotEmpty())) {
                     val bSize = pendingBatchTaskIds.size
+
+                    // Riêng job Comment (đặc biệt là Page FB): Cần đợi 60s để Facebook hiển thị và server XSMM quét duyệt comment rồi mới gửi hoàn thành
+                    if (isCommentTaskType) {
+                        for (sec in 60 downTo 1) {
+                            if (!coroutineContext.isActive) break
+                            notify("$pos Đã cmt xong. Đợi ${sec}s gửi hoàn thành...")
+                            delay(1000L)
+                        }
+                    }
+
                     notify("Gửi nhận xu $bSize job...")
 
                     // Chuẩn API XSMM: type khi complete luôn là loại nhiệm vụ Facebook (VD: facebook_like, facebook_follow, facebook_comment...)
                     val apiCompleteType = if (currentActiveTaskType.startsWith("facebook_")) currentActiveTaskType else "facebook_like"
 
-                    // GỌI HOÀN THÀNH JOB NGAY LẬP TỨC TRÊN SERVER XSMM
+                    // GỌI HOÀN THÀNH JOB
                     var compRes = XsmmTasksRepository.completeTasks(
                         token,
                         apiCompleteType,
@@ -496,8 +506,9 @@ object XsmmFacebookTaskRunner {
 
                     if (compRes.success || pts > 0) {
                         val succText = if (pts > 0) "+$pts xu ($bSize job)" else (compRes.message.ifBlank { "Thành công $bSize job" })
-                        // LÀM XONG GỌI HOÀN THÀNH XONG RỒI MỚI ĐỢI 60 GIÂY CHO JOB CẢM XÚC / COMMENT
-                        val waitSec = if (isLikeTaskType || isCommentTaskType) {
+                        // Logic Cảm xúc: Giữ nguyên làm xong gửi nhận xu ngay rồi mới đợi 60s
+                        // Logic Comment: Đã đợi 60s trước khi gửi hoàn thành rồi nên chỉ cần đợi countdown ngắn của server (mặc định 3s)
+                        val waitSec = if (isLikeTaskType) {
                             compRes.countdown.coerceAtLeast(60)
                         } else {
                             compRes.countdown.coerceAtLeast(3)
