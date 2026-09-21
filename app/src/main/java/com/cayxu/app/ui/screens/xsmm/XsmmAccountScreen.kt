@@ -1592,17 +1592,6 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     }
                                                 }
                                             }
-                                            if (!fbErrDetail.isNullOrBlank()) {
-                                                Spacer(Modifier.height(3.dp))
-                                                Text(
-                                                    text = fbErrDetail.trim(),
-                                                    fontSize = 10.sp,
-                                                    color = DangerRed,
-                                                    fontWeight = FontWeight.Medium,
-                                                    maxLines = 3,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
                                         }
                                     }
 
@@ -2023,18 +2012,6 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                         }
                                                                     }
                                                                 }
-                                                            }
-                                                            if (!pageErrorDetail.isNullOrBlank()) {
-                                                                Spacer(Modifier.height(3.dp))
-                                                                Text(
-                                                                    text = pageErrorDetail.trim(),
-                                                                    fontSize = 10.sp,
-                                                                    color = DangerRed,
-                                                                    fontWeight = FontWeight.Medium,
-                                                                    maxLines = 3,
-                                                                    overflow = TextOverflow.Ellipsis
-                                                                )
-                                                            }
                                                         }
                                                     }
                                                 }

@@ -181,6 +181,9 @@ object XsmmTasksRepository {
                     retry = false,
                     isTimeout = true
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // CancellationException PHẢI được re-throw, không được bắt nhầm như Exception thường
+                throw e
             } catch (e: Exception) {
                 lastException = e
                 attempt++
@@ -354,6 +357,9 @@ object XsmmTasksRepository {
                     retry = false,
                     isTimeout = true
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // CancellationException PHẢI được re-throw, không được bắt nhầm như Exception thường
+                throw e
             } catch (e: Exception) {
                 lastException = e
                 attempt++
