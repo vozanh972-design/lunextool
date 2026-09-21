@@ -320,143 +320,69 @@ fun NhiemVuCheoScreen(navController: NavController) {
         )
     }
 
-    // Dialog đăng nhập / nhập API Token Nhiệm Vụ Chéo
+    // BottomSheet đăng nhập / nhập API Token Nhiệm Vụ Chéo (trượt từ dưới lên)
     if (showNvcLoginDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                if (!isLoggingInNvc) {
-                    showNvcLoginDialog = false
-                    nvcLoginError = null
-                }
+        NvcLoginBottomSheet(
+            tokenText = inputTokenText,
+            onTokenChange = {
+                inputTokenText = it
+                nvcLoginError = null
             },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.AccountCircle,
-                        contentDescription = null,
-                        tint = NvcAccent,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text("Đăng nhập Nhiệm Vụ Chéo", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                }
+            errorMessage = nvcLoginError,
+            isLoading = isLoggingInNvc,
+            onDismiss = {
+                showNvcLoginDialog = false
+                nvcLoginError = null
             },
-            text = {
-                Column {
-                    Text(
-                        "Nhập API Token của bạn (bắt đầu bằng nvc_sk_...). Tạo hoặc lấy token tại website nhiemvucheo.com (yêu cầu quyền account:read, account:write):",
-                        fontSize = 13.sp,
-                        color = TextSecondary,
-                        lineHeight = 18.sp
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    OutlinedTextField(
-                        value = inputTokenText,
-                        onValueChange = {
-                            inputTokenText = it
-                            nvcLoginError = null
-                        },
-                        placeholder = { Text("nvc_sk_...", fontSize = 13.sp, color = TextSecondary.copy(alpha = 0.6f)) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        isError = nvcLoginError != null
-                    )
-                    if (nvcLoginError != null) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = nvcLoginError.orEmpty(),
-                            color = NvcDangerRed,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+            onConfirm = {
+                val token = inputTokenText.trim()
+                if (token.isBlank()) {
+                    nvcLoginError = "Vui lòng nhập API Token"
+                    return@NvcLoginBottomSheet
                 }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val token = inputTokenText.trim()
-                        if (token.isBlank()) {
-                            nvcLoginError = "Vui lòng nhập API Token"
-                            return@Button
+                isLoggingInNvc = true
+                nvcLoginError = null
+                scope.launch {
+                    when (val res = NhiemVuCheoApiClient.fetchProfile(token)) {
+                        is NvcProfileResult.Success -> {
+                            NhiemVuCheoStore.saveLogin(
+                                context = context,
+                                token = token,
+                                id = res.user.id,
+                                username = res.user.username,
+                                displayName = res.user.displayName,
+                                coinBalance = res.user.coinBalance,
+                                status = res.user.status
+                            )
+                            nvcToken = token
+                            nvcUser = NhiemVuCheoStore.getUser(context)
+                            showNvcLoginDialog = false
+                            android.widget.Toast.makeText(
+                                context,
+                                "Đăng nhập thành công: ${res.user.displayName.ifBlank { res.user.username }}",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
                         }
-                        isLoggingInNvc = true
-                        nvcLoginError = null
-                        scope.launch {
-                            when (val res = NhiemVuCheoApiClient.fetchProfile(token)) {
-                                is NvcProfileResult.Success -> {
-                                    NhiemVuCheoStore.saveLogin(
-                                        context = context,
-                                        token = token,
-                                        id = res.user.id,
-                                        username = res.user.username,
-                                        displayName = res.user.displayName,
-                                        coinBalance = res.user.coinBalance,
-                                        status = res.user.status
-                                    )
-                                    nvcToken = token
-                                    nvcUser = NhiemVuCheoStore.getUser(context)
-                                    showNvcLoginDialog = false
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "Đăng nhập thành công: ${res.user.displayName.ifBlank { res.user.username }}",
-                                        android.widget.Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                                is NvcProfileResult.Error -> {
-                                    nvcLoginError = res.message
-                                }
-                            }
-                            isLoggingInNvc = false
+                        is NvcProfileResult.Error -> {
+                            nvcLoginError = res.message
                         }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = NvcAccent),
-                    shape = RoundedCornerShape(8.dp),
-                    enabled = !isLoggingInNvc && inputTokenText.isNotBlank()
-                ) {
-                    if (isLoggingInNvc) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                    } else {
-                        Text("Xác nhận", fontWeight = FontWeight.Bold, color = Color.White)
                     }
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showNvcLoginDialog = false
-                        nvcLoginError = null
-                    },
-                    enabled = !isLoggingInNvc
-                ) {
-                    Text("Hủy", color = TextSecondary)
+                    isLoggingInNvc = false
                 }
             }
         )
     }
 
-    // Dialog xác nhận đăng xuất NVC
+    // BottomSheet xác nhận đăng xuất NVC (trượt từ dưới lên)
     if (showNvcLogoutConfirm) {
-        AlertDialog(
-            onDismissRequest = { showNvcLogoutConfirm = false },
-            title = { Text("Đăng xuất Nhiệm Vụ Chéo", fontWeight = FontWeight.Bold, color = TextPrimary) },
-            text = { Text("Bạn có chắc muốn đăng xuất tài khoản Nhiệm Vụ Chéo? Token đã lưu trên máy sẽ bị xóa.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    NhiemVuCheoStore.clear(context)
-                    nvcToken = null
-                    nvcUser = NhiemVuCheoStore.getUser(context)
-                    showNvcLogoutConfirm = false
-                    android.widget.Toast.makeText(context, "Đã đăng xuất Nhiệm Vụ Chéo", android.widget.Toast.LENGTH_SHORT).show()
-                }) {
-                    Text("Đăng xuất", color = NvcDangerRed, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNvcLogoutConfirm = false }) {
-                    Text("Hủy", color = TextSecondary)
-                }
+        NvcLogoutBottomSheet(
+            onDismiss = { showNvcLogoutConfirm = false },
+            onConfirmLogout = {
+                NhiemVuCheoStore.clear(context)
+                nvcToken = null
+                nvcUser = NhiemVuCheoStore.getUser(context)
+                showNvcLogoutConfirm = false
+                android.widget.Toast.makeText(context, "Đã đăng xuất Nhiệm Vụ Chéo", android.widget.Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -1646,6 +1572,140 @@ private fun NvcDeleteConfirmBottomSheet(
                     Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Xóa ngay", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NvcLoginBottomSheet(
+    tokenText: String,
+    onTokenChange: (String) -> Unit,
+    errorMessage: String?,
+    isLoading: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = CardWhite,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            Text(
+                "Đăng nhập Nhiệm Vụ Chéo",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                color = TextPrimary
+            )
+            Spacer(Modifier.height(14.dp))
+
+            OutlinedTextField(
+                value = tokenText,
+                onValueChange = onTokenChange,
+                placeholder = { Text("Nhập API Token (nvc_sk_...)", fontSize = 13.5.sp, color = TextSecondary.copy(alpha = 0.6f)) },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+                isError = errorMessage != null
+            )
+
+            if (errorMessage != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = errorMessage,
+                    color = NvcDangerRed,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    enabled = !isLoading,
+                    modifier = Modifier.weight(1f).height(46.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Hủy", color = TextSecondary, fontWeight = FontWeight.Medium)
+                }
+
+                Button(
+                    onClick = onConfirm,
+                    enabled = !isLoading && tokenText.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = NvcAccent),
+                    modifier = Modifier.weight(1f).height(46.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                    } else {
+                        Text("Xác nhận", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NvcLogoutBottomSheet(
+    onDismiss: () -> Unit,
+    onConfirmLogout: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = CardWhite,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp)
+        ) {
+            Text(
+                "Bạn có chắc chắn muốn đăng xuất?",
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                color = TextPrimary
+            )
+            Spacer(Modifier.height(20.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f).height(46.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Hủy", color = TextSecondary, fontWeight = FontWeight.Medium)
+                }
+
+                Button(
+                    onClick = onConfirmLogout,
+                    colors = ButtonDefaults.buttonColors(containerColor = NvcDangerRed),
+                    modifier = Modifier.weight(1f).height(46.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Đăng xuất", fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
 
