@@ -324,12 +324,12 @@ object XsmmFacebookTaskRunner {
 
                 if (activeTaskTypes.size > 1) {
                     if (currentTypeRetryCount == 0) {
-                        // Lần đầu hết NV của loại này: chờ 10s tự reload lại đúng loại đó
+                        // Lần đầu hết NV của loại này: chờ 5s tự reload lại đúng loại đó
                         currentTypeRetryCount++
-                        notify("Hết NV ($currentTaskLabel). Chờ 10s reload lại...")
-                        delay(10_000L)
+                        notify("Hết NV ($currentTaskLabel). Chờ 5s reload lại...")
+                        delay(5_000L)
                     } else {
-                        // Đã reload sau 10s mà vẫn hết NV -> chuyển sang loại nhiệm vụ khác trong danh sách
+                        // Đã reload sau 5s mà vẫn hết NV -> chuyển sang loại nhiệm vụ khác trong danh sách
                         currentTypeRetryCount = 0
                         currentTypeIndex = (currentTypeIndex + 1) % activeTaskTypes.size
                         val nextTaskType = activeTaskTypes[currentTypeIndex]
@@ -338,8 +338,8 @@ object XsmmFacebookTaskRunner {
                         delay(1_000L)
                     }
                 } else {
-                    // Chỉ chọn 1 loại nhiệm vụ: chờ theo cấu hình (mặc định 10s) rồi thử lại
-                    val waitSec = if (config.fetchTaskIntervalSeconds > 0) config.fetchTaskIntervalSeconds else 10
+                    // Chỉ chọn 1 loại nhiệm vụ: chờ 5s rồi thử lại
+                    val waitSec = if (config.fetchTaskIntervalSeconds in 1..5) config.fetchTaskIntervalSeconds else 5
                     notify("Hết NV ($currentTaskLabel). Chờ ${waitSec}s...")
                     delay(waitSec * 1000L)
                 }
@@ -423,6 +423,9 @@ object XsmmFacebookTaskRunner {
                 val actualType = (task.type.ifBlank { currentActiveTaskType }).lowercase()
                 val isFollowTask = actualType.contains("follow") || actualType.contains("sub")
                 val isCommentTaskType = actualType.contains("comment")
+                val isLikeTaskType = actualType.contains("like") || actualType.contains("love") || actualType.contains("care") ||
+                    actualType.contains("haha") || actualType.contains("wow") || actualType.contains("sad") || actualType.contains("angry") || actualType.contains("tym")
+
                 val batchLimit = if (isFollowTask) 10 else 1
                 val isLast = (idx == taskList.size - 1)
                 if (pendingBatchTaskIds.size >= batchLimit || (isLast && pendingBatchTaskIds.isNotEmpty())) {
@@ -437,6 +440,14 @@ object XsmmFacebookTaskRunner {
                             delay(1000L)
                         }
                         notify("Gửi nhận xu job comment...")
+                    } else if (isLikeTaskType) {
+                        // XSMM cần khoảng 60s để hệ thống quét và xác minh cảm xúc đã xuất hiện trên Facebook
+                        for (sec in 60 downTo 1) {
+                            if (!coroutineContext.isActive) break
+                            notify("$pos Đã thả cảm xúc xong. Chờ XSMM quét duyệt (${sec}s)...")
+                            delay(1000L)
+                        }
+                        notify("Gửi nhận xu job cảm xúc...")
                     } else {
                         notify("Gửi nhận xu job...")
                     }
@@ -447,11 +458,21 @@ object XsmmFacebookTaskRunner {
                         pendingBatchTaskIds.toList()
                     )
 
-                    // Nếu XSMM phản hồi chưa quét kịp comment, tự động thử lại sau 15s (tối đa 2 lần)
-                    if (!compRes.success && isCommentTaskType && compRes.message.contains("chưa hoàn thành", ignoreCase = true)) {
-                        for (retryCount in 1..2) {
+                    // Nếu XSMM phản hồi 502 Bad Gateway / chưa quét kịp / timeout / server chậm, tự động chờ 15s và thử lại tối đa 4 lần
+                    val isRetryableError = !compRes.success && (
+                        compRes.message.contains("502", ignoreCase = true) ||
+                        compRes.message.contains("500", ignoreCase = true) ||
+                        compRes.message.contains("503", ignoreCase = true) ||
+                        compRes.message.contains("504", ignoreCase = true) ||
+                        compRes.message.contains("chưa hoàn thành", ignoreCase = true) ||
+                        compRes.message.contains("timeout", ignoreCase = true) ||
+                        compRes.message.contains("kết nối", ignoreCase = true)
+                    )
+
+                    if (isRetryableError) {
+                        for (retryCount in 1..4) {
                             if (!coroutineContext.isActive) break
-                            notify("XSMM đang quét lại comment (chờ 15s lần $retryCount/2)...")
+                            notify("Server XSMM phản hồi chậm (mã 502/chưa duyệt xong). Đang chờ 15s gửi lại (lần $retryCount/4)...")
                             delay(15_000L)
                             compRes = XsmmTasksRepository.completeTasks(
                                 token,

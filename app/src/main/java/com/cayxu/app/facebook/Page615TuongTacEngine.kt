@@ -264,13 +264,13 @@ import java.util.concurrent.TimeUnit
             .header("User-Agent", ua())
             .build()
 
-        var restErrorMsg = ""
-        var restBody = ""
+        var lastErrorMsg = ""
+        var lastBody = ""
 
         try {
             httpClient.newCall(request).execute().use { res ->
                 val body = res.body?.string() ?: ""
-                restBody = body
+                lastBody = body
                 val json = try { JSONObject(body) } catch (_: Exception) { null }
                 val commentId = json?.optString("id", null)
                 val isOk = res.isSuccessful && !commentId.isNullOrEmpty()
@@ -278,76 +278,89 @@ import java.util.concurrent.TimeUnit
                     return InteractionResult(true, cleanTargetId, "COMMENT", commentId, "Success", body)
                 }
 
-                restErrorMsg = parseErrorMessage(body)
+                lastErrorMsg = parseErrorMessage(body)
             }
         } catch (e: Exception) {
-            restErrorMsg = e.message ?: "Lỗi kết nối mạng"
+            lastErrorMsg = e.message ?: "Lỗi kết nối mạng"
         }
 
-        // Fallback sang Katana GraphQL độc lập của chính Page615 bằng pageToken
-        // Xử lý triệt để lỗi "(#12) singular statuses API is deprecated for versions v2.4 and higher"
-        val actor = pageId615?.takeIf { it.isNotBlank() } ?: ""
-        val gqlRes = commentGraphQLPage(cleanTargetId, message, token, actor)
-        if (gqlRes.isSuccess) {
-            return gqlRes
-        }
+        // Nếu gặp lỗi (#12) singular statuses API is deprecated hoặc không tìm thấy:
+        if (lastErrorMsg.contains("deprecated") || lastErrorMsg.contains("(#12)") || lastErrorMsg.contains("does not exist") || lastErrorMsg.contains("missing permissions")) {
+            // 2. Phân giải Node ID đầy đủ {author_id}_{post_id} qua Graph API
+            try {
+                val resolveReq = Request.Builder()
+                    .url("${graphApi()}/$cleanTargetId?fields=id&access_token=$token")
+                    .get()
+                    .header("User-Agent", ua())
+                    .build()
+                val scopedId = httpClient.newCall(resolveReq).execute().use { res ->
+                    val body = res.body?.string() ?: ""
+                    val json = try { JSONObject(body) } catch (_: Exception) { null }
+                    json?.optString("id", null)
+                }
+                if (!scopedId.isNullOrBlank() && scopedId != cleanTargetId && scopedId.contains("_")) {
+                    val scopedReq = Request.Builder()
+                        .url("${graphApi()}/$scopedId${FbVault.pathComments()}")
+                        .post(formBuilder.build())
+                        .header("User-Agent", ua())
+                        .build()
+                    val scopedRes = httpClient.newCall(scopedReq).execute().use { res ->
+                        val body = res.body?.string() ?: ""
+                        val json = try { JSONObject(body) } catch (_: Exception) { null }
+                        val commentId = json?.optString("id", null)
+                        val isOk = res.isSuccessful && !commentId.isNullOrEmpty()
+                        if (isOk) {
+                            InteractionResult(true, scopedId, "COMMENT", commentId, "Success", body)
+                        } else null
+                    }
+                    if (scopedRes != null) return scopedRes
+                }
+            } catch (_: Exception) {}
 
-        val finalErrMsg = if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)")) {
-            gqlRes.message ?: restErrorMsg
-        } else {
-            restErrorMsg.ifBlank { gqlRes.message ?: "Bình luận không thành công" }
-        }
+            // 3. Thử gọi unversioned Graph API endpoint (https://graph.facebook.com/{id}/comments)
+            // Endpoint unversioned không áp dụng hạn chế v2.4+ cho status
+            try {
+                val unversionedReq = Request.Builder()
+                    .url("https://graph.facebook.com/$cleanTargetId${FbVault.pathComments()}")
+                    .post(formBuilder.build())
+                    .header("User-Agent", ua())
+                    .build()
+                val unversionedRes = httpClient.newCall(unversionedReq).execute().use { res ->
+                    val body = res.body?.string() ?: ""
+                    val json = try { JSONObject(body) } catch (_: Exception) { null }
+                    val commentId = json?.optString("id", null)
+                    val isOk = res.isSuccessful && !commentId.isNullOrEmpty()
+                    if (isOk) {
+                        InteractionResult(true, cleanTargetId, "COMMENT", commentId, "Success", body)
+                    } else null
+                }
+                if (unversionedRes != null) return unversionedRes
+            } catch (_: Exception) {}
 
-        return InteractionResult(false, cleanTargetId, "COMMENT", null, finalErrMsg, gqlRes.rawResponse.ifBlank { restBody })
-    }
-
-    fun commentGraphQLPage(
-        cleanTargetId: String,
-        message: String,
-        token: String,
-        pageActorId: String = pageId615 ?: ""
-    ): InteractionResult {
-        val actor = pageActorId.ifBlank { pageId615 ?: "" }
-        val input = JSONObject().apply {
-            put("client_mutation_id", java.util.UUID.randomUUID().toString())
-            if (actor.isNotBlank()) put("actor_id", actor)
-            put("feedback_id", cleanTargetId)
-            put("message", JSONObject().put("text", message))
-        }
-
-        val fv  = FbVault.fieldVariables()
-        val fdi = FbVault.fieldDocId()
-        val fat = FbVault.fieldAccessToken()
-
-        val formBody = FormBody.Builder()
-            .add(fdi, "6739921102758190")
-            .add(fv, JSONObject().put("input", input).toString())
-            .add(fat, token)
-            .build()
-
-        val request = Request.Builder()
-            .url(graphql())
-            .post(formBody)
-            .header("User-Agent", ua())
-            .header("Authorization", "OAuth $token")
-            .header("X-FB-Friendly-Name", "CommentCreateMutation")
-            .build()
-
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && !body.contains("\"errors\":")
-                val json = try { JSONObject(body) } catch (_: Exception) { null }
-                val commentId = json?.optJSONObject("data")
-                    ?.optJSONObject("comment_create")
-                    ?.optJSONObject("comment")
-                    ?.optString("id", null)
-                val errMsg = if (isOk) "Success" else parseErrorMessage(body)
-                InteractionResult(isOk, cleanTargetId, "COMMENT_GQL", commentId, errMsg, body)
+            // 4. Thử ghép ID Page nếu là bài viết trên trang
+            val pId = pageId615
+            if (!pId.isNullOrBlank() && !cleanTargetId.contains("_")) {
+                try {
+                    val pageScopedReq = Request.Builder()
+                        .url("${graphApi()}/${pId}_$cleanTargetId${FbVault.pathComments()}")
+                        .post(formBuilder.build())
+                        .header("User-Agent", ua())
+                        .build()
+                    val pageRes = httpClient.newCall(pageScopedReq).execute().use { res ->
+                        val body = res.body?.string() ?: ""
+                        val json = try { JSONObject(body) } catch (_: Exception) { null }
+                        val commentId = json?.optString("id", null)
+                        val isOk = res.isSuccessful && !commentId.isNullOrEmpty()
+                        if (isOk) {
+                            InteractionResult(true, "${pId}_$cleanTargetId", "COMMENT", commentId, "Success", body)
+                        } else null
+                    }
+                    if (pageRes != null) return pageRes
+                } catch (_: Exception) {}
             }
-        } catch (e: Exception) {
-            InteractionResult(false, cleanTargetId, "COMMENT_GQL", null, e.message ?: "Lỗi kết nối", "")
         }
+
+        return InteractionResult(false, cleanTargetId, "COMMENT", null, lastErrorMsg.ifBlank { "Bình luận không thành công" }, lastBody)
     }
 
     private fun parseErrorMessage(body: String): String {
