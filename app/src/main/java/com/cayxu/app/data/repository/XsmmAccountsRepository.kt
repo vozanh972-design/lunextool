@@ -217,10 +217,8 @@ object XsmmAccountsRepository {
         return allList
     }
 
-    /** Lấy danh sách tài khoản Facebook từ XSMM (ưu tiên accounts2 đa luồng, fallback accounts). */
+    /** Lấy toàn bộ danh sách tài khoản Facebook từ XSMM đơn luồng (GET /api/taskapi/accounts?account_type=facebook). */
     suspend fun getFacebookAccounts(rawToken: String): List<XsmmAccount> {
-        val list2 = getFacebookAccounts2(rawToken)
-        if (list2.isNotEmpty()) return list2
         return getAllAccounts(rawToken, accountType = "facebook")
     }
 
@@ -290,10 +288,10 @@ object XsmmAccountsRepository {
                         )
                     } else {
                         XsmmSyncAccountResult(
-                            isSuccess = false,
+                            isSuccess = true,
                             uid = cleanUid,
                             internalId = "",
-                            message = addRes.message
+                            message = "Sử dụng UID $cleanUid (${addRes.message})"
                         )
                     }
                 }
