@@ -357,11 +357,8 @@ object XsmmFacebookTaskRunner {
                 if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) break
                 if (config.stopAfterCompletedCount > 0 && totalCompleted >= config.stopAfterCompletedCount) break
 
-                val target = if (task.idorlink.contains("_")) {
-                    task.idorlink
-                } else {
-                    task.targetId.ifBlank { task.idorlink }.ifBlank { task.targetUrl }
-                }
+                val target = task.targetId.takeIf { it.isNotBlank() }
+                    ?: com.cayxu.app.facebook.FacebookTuongTacEngine.extractId(task.idorlink.ifBlank { task.targetUrl })
                 val shortTarget = if (target.length > 20) target.take(17) + "..." else target
                 val pos = "[${idx + 1}/${taskList.size}]"
 
@@ -425,18 +422,45 @@ object XsmmFacebookTaskRunner {
                 // comment / like (cảm xúc) / các loại khác → nhận xu ngay sau mỗi job
                 val actualType = (task.type.ifBlank { currentActiveTaskType }).lowercase()
                 val isFollowTask = actualType.contains("follow") || actualType.contains("sub")
+                val isCommentTaskType = actualType.contains("comment")
                 val batchLimit = if (isFollowTask) 10 else 1
                 val isLast = (idx == taskList.size - 1)
                 if (pendingBatchTaskIds.size >= batchLimit || (isLast && pendingBatchTaskIds.isNotEmpty())) {
                     val bSize = pendingBatchTaskIds.size
-                    if (isFollowTask) notify("Gửi nhận xu $bSize job follow...")
-                    else notify("Gửi nhận xu job...")
+                    if (isFollowTask) {
+                        notify("Gửi nhận xu $bSize job follow...")
+                    } else if (isCommentTaskType) {
+                        // XSMM cần khoảng 60s để hệ thống quét và xác minh comment đã xuất hiện trên Facebook
+                        for (sec in 60 downTo 1) {
+                            if (!coroutineContext.isActive) break
+                            notify("$pos Đã cmt xong. Chờ XSMM quét duyệt (${sec}s)...")
+                            delay(1000L)
+                        }
+                        notify("Gửi nhận xu job comment...")
+                    } else {
+                        notify("Gửi nhận xu job...")
+                    }
 
-                    val compRes = XsmmTasksRepository.completeTasks(
+                    var compRes = XsmmTasksRepository.completeTasks(
                         token,
                         task.type.ifBlank { currentActiveTaskType },
                         pendingBatchTaskIds.toList()
                     )
+
+                    // Nếu XSMM phản hồi chưa quét kịp comment, tự động thử lại sau 15s (tối đa 2 lần)
+                    if (!compRes.success && isCommentTaskType && compRes.message.contains("chưa hoàn thành", ignoreCase = true)) {
+                        for (retryCount in 1..2) {
+                            if (!coroutineContext.isActive) break
+                            notify("XSMM đang quét lại comment (chờ 15s lần $retryCount/2)...")
+                            delay(15_000L)
+                            compRes = XsmmTasksRepository.completeTasks(
+                                token,
+                                task.type.ifBlank { currentActiveTaskType },
+                                pendingBatchTaskIds.toList()
+                            )
+                            if (compRes.success || compRes.points > 0) break
+                        }
+                    }
 
                     val pts = if (compRes.points > 0) compRes.points else 0
                     if (pts > 0) {

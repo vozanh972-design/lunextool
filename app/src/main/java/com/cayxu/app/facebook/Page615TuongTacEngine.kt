@@ -63,9 +63,6 @@ import java.util.concurrent.TimeUnit
     private fun getCleanToken(overrideToken: String?): String =
         (overrideToken ?: pageToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
 
-    private fun scopePost(postId: String): String =
-        if (!postId.contains("_") && !pageId615.isNullOrBlank()) "${pageId615}_$postId" else postId
-
     fun reactPost(
         postId: String,
         reactionType: ReactionType = ReactionType.LIKE,
@@ -74,9 +71,10 @@ import java.util.concurrent.TimeUnit
         val token = getCleanToken(overrideToken)
         if (token.isEmpty()) return InteractionResult(false, postId, "REACT", null, "Page token required", "")
 
+        val cleanTargetId = if (!postId.startsWith("http")) postId.trim() else FacebookTuongTacEngine.extractId(postId)
+
         val ft = FbVault.fieldType()
         val fat = FbVault.fieldAccessToken()
-        val scopedPostId = scopePost(postId)
 
         val formBody = FormBody.Builder()
             .add(ft, reactionType.value)
@@ -84,7 +82,7 @@ import java.util.concurrent.TimeUnit
             .build()
 
         val request = Request.Builder()
-            .url("${graphApi()}/$scopedPostId${FbVault.pathReactions()}")
+            .url("${graphApi()}/$cleanTargetId${FbVault.pathReactions()}")
             .post(formBody)
             .header("User-Agent", ua())
             .build()
@@ -93,10 +91,36 @@ import java.util.concurrent.TimeUnit
             httpClient.newCall(request).execute().use { res ->
                 val body = res.body?.string() ?: ""
                 val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
-                InteractionResult(isOk, scopedPostId, "REACT_${reactionType.value}", null, if (isOk) "Success" else body, body)
+                if (isOk) {
+                    return InteractionResult(true, cleanTargetId, "REACT_${reactionType.value}", null, "Success", body)
+                }
+
+                // Fallback nếu gọi /reactions thất bại: thử gọi /likes nếu là LIKE
+                if (reactionType == ReactionType.LIKE) {
+                    val likeBody = FormBody.Builder()
+                        .add(fat, token)
+                        .build()
+                    val likeReq = Request.Builder()
+                        .url("${graphApi()}/$cleanTargetId${FbVault.pathLikes()}")
+                        .post(likeBody)
+                        .header("User-Agent", ua())
+                        .build()
+                    try {
+                        httpClient.newCall(likeReq).execute().use { res2 ->
+                            val body2 = res2.body?.string() ?: ""
+                            val isOk2 = res2.isSuccessful && (body2.contains("\"success\":true") || !body2.contains("\"error\""))
+                            val errMsg = if (isOk2) "Success" else parseErrorMessage(body2)
+                            if (isOk2) {
+                                return InteractionResult(true, cleanTargetId, "REACT_LIKE_FALLBACK", null, errMsg, body2)
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+
+                InteractionResult(false, cleanTargetId, "REACT_${reactionType.value}", null, parseErrorMessage(body), body)
             }
         } catch (e: Exception) {
-            InteractionResult(false, scopedPostId, "REACT", null, e.message, "")
+            InteractionResult(false, cleanTargetId, "REACT", null, e.message, "")
         }
     }
 
@@ -182,24 +206,7 @@ import java.util.concurrent.TimeUnit
                     return InteractionResult(true, cleanTargetId, "COMMENT", commentId, "Success", body)
                 }
 
-                val scopedPostId = scopePost(cleanTargetId)
-                if (scopedPostId != cleanTargetId) {
-                    val fallbackReq = Request.Builder()
-                        .url("${graphApi()}/$scopedPostId${FbVault.pathComments()}")
-                        .post(formBuilder.build())
-                        .header("User-Agent", ua())
-                        .build()
-                    httpClient.newCall(fallbackReq).execute().use { res2 ->
-                        val body2 = res2.body?.string() ?: ""
-                        val json2 = try { JSONObject(body2) } catch (_: Exception) { null }
-                        val commentId2 = json2?.optString("id", null)
-                        val isOk2 = res2.isSuccessful && !commentId2.isNullOrEmpty()
-                        val errMsg = if (isOk2) "Success" else parseErrorMessage(body2)
-                        InteractionResult(isOk2, scopedPostId, "COMMENT", commentId2, errMsg, body2)
-                    }
-                } else {
-                    InteractionResult(false, cleanTargetId, "COMMENT", null, parseErrorMessage(body), body)
-                }
+                InteractionResult(false, cleanTargetId, "COMMENT", null, parseErrorMessage(body), body)
             }
         } catch (e: Exception) {
             InteractionResult(false, cleanTargetId, "COMMENT", null, e.message, "")
