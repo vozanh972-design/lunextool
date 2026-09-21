@@ -49,6 +49,10 @@ fun SimpleTaskPlatformScreen(navController: NavController, service: String) {
         TuongTacCheoScreen(navController)
         return
     }
+    if (service.equals("Nhiemvucheo", ignoreCase = true)) {
+        NhiemVuCheoScreen(navController)
+        return
+    }
 
     val context = LocalContext.current
     val accent = accentColorFor(service)
