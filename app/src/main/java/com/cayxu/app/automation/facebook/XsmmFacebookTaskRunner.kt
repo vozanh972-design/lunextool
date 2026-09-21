@@ -390,6 +390,17 @@ object XsmmFacebookTaskRunner {
                 if (isCommentTask) {
                     val displayCmt = if (task.comment.length > 25) task.comment.take(22) + "..." else task.comment
                     notify("$pos Đang làm ($currentTaskLabel): \"$displayCmt\"")
+                } else if (currentActiveTaskType.contains("like") || task.type.contains("like") || task.reaction.isNotBlank()) {
+                    val reactName = when (task.reaction.uppercase()) {
+                        "LOVE" -> "Thả Tim (Love)"
+                        "CARE" -> "Thương thương (Care)"
+                        "HAHA" -> "Haha"
+                        "WOW" -> "Wow"
+                        "SAD" -> "Buồn (Sad)"
+                        "ANGRY" -> "Phẫn nộ (Angry)"
+                        else -> "Thích (Like)"
+                    }
+                    notify("$pos Đang làm [$reactName]: $shortTarget")
                 } else {
                     notify("$pos Đang làm ($currentTaskLabel): $shortTarget")
                 }
@@ -398,6 +409,7 @@ object XsmmFacebookTaskRunner {
                     taskType = task.type.ifBlank { currentActiveTaskType },
                     targetId = target,
                     comment = task.comment,
+                    reactionStr = task.reaction,
                     token = fbToken,
                     cookie = account.note,
                     proxyStr = account.phone.ifBlank { null },
@@ -465,51 +477,12 @@ object XsmmFacebookTaskRunner {
                     // Chuẩn API XSMM đơn luồng: POST /api/taskapi/tasks/complete (Body: {"type": ..., "task_id": [...]})
                     val apiCompleteType = if (currentActiveTaskType.startsWith("facebook_")) currentActiveTaskType else "facebook_like"
 
-                    // GỌI HOÀN THÀNH JOB ĐƠN LUỒNG
-                    var compRes = XsmmTasksRepository.completeTasks(
+                    // GỌI HOÀN THÀNH JOB ĐƠN LUỒNG (1 lần duy nhất, không thử lại)
+                    val compRes = XsmmTasksRepository.completeTasks(
                         rawToken = token,
                         type = apiCompleteType,
                         taskIds = pendingBatchTaskIds.toList()
                     )
-
-                    // Nếu XSMM phản hồi 502 Bad Gateway / timeout / server chậm / quá tải -> báo ngay vào dấu chấm than và thử lại
-                    val isRetryableError = !compRes.success && (
-                        compRes.retry ||
-                        compRes.countdown > 0 ||
-                        compRes.message.contains("502", ignoreCase = true) ||
-                        compRes.message.contains("500", ignoreCase = true) ||
-                        compRes.message.contains("503", ignoreCase = true) ||
-                        compRes.message.contains("504", ignoreCase = true) ||
-                        compRes.message.contains("chưa hoàn thành", ignoreCase = true) ||
-                        compRes.message.contains("timeout", ignoreCase = true) ||
-                        compRes.message.contains("kết nối", ignoreCase = true) ||
-                        compRes.message.contains("quá nhiều", ignoreCase = true) ||
-                        compRes.message.contains("quay lại sau", ignoreCase = true)
-                    )
-
-                    // Đợi tối đa 60 giây để duyệt nhận xu nếu server báo retry hoặc chưa duyệt xong
-                    if (isRetryableError) {
-                        for (retryCount in 1..6) {
-                            if (!coroutineContext.isActive) break
-                            val retryWait = if (compRes.countdown in 1..15) compRes.countdown else 10
-                            val retryNotice = "[${currentTime()}] Đang duyệt nhận xu ($bSize job):\n• Server phản hồi: ${compRes.message.ifBlank { "Chờ duyệt (countdown ${compRes.countdown}s)" }}\n• Trạng thái: Chờ ${retryWait}s gửi lại (lần $retryCount/6, tối đa 60s)..."
-                            onErrorDetail?.invoke(cleanUid, retryNotice)
-                            if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, retryNotice)
-
-                            for (sec in retryWait downTo 1) {
-                                if (!coroutineContext.isActive) break
-                                notify("Đang duyệt nhận xu. Đợi ${sec}s gửi lại (lần $retryCount/6, tối đa 60s)...")
-                                delay(1000L)
-                            }
-                            notify("Đang gửi lại nhận xu (lần $retryCount/6)...")
-                            compRes = XsmmTasksRepository.completeTasks(
-                                rawToken = token,
-                                type = apiCompleteType,
-                                taskIds = pendingBatchTaskIds.toList()
-                            )
-                            if (compRes.success || compRes.points > 0) break
-                        }
-                    }
 
                     val pts = if (compRes.points > 0) compRes.points else 0
                     if (pts > 0) {
@@ -543,12 +516,14 @@ object XsmmFacebookTaskRunner {
                             delay(1000L)
                         }
                     } else {
+                        consecutiveErrors++
+                        totalErrors++
                         val errMsg = compRes.message.ifBlank { "Không nhận được xu" }
                         notify("Lỗi nhận xu: $errMsg")
-                        val compErr = "[${currentTime()}] Lỗi nhận xu từ XSMM:\n• Server phản hồi: $errMsg\n• Đã thử lại nhiều lần nhưng server chưa duyệt xu."
+                        val compErr = "[${currentTime()}] Lỗi nhận xu từ XSMM:\n• Server phản hồi: $errMsg"
                         onErrorDetail?.invoke(cleanUid, compErr)
                         if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, compErr)
-                        delay(3000L)
+                        delay(2000L)
                     }
                     pendingBatchTaskIds.clear()
                 }
@@ -566,6 +541,7 @@ object XsmmFacebookTaskRunner {
         taskType: String,
         targetId: String,
         comment: String,
+        reactionStr: String = "",
         token: String,
         cookie: String,
         proxyStr: String?,
@@ -584,6 +560,28 @@ object XsmmFacebookTaskRunner {
         val lower = taskType.lowercase()
         if (lower.contains("comment") && comment.isBlank()) {
             return FbTaskResult(false, "Không có nội dung bình luận từ nhiệm vụ XSMM")
+        }
+
+        // Xác định chính xác loại cảm xúc cần tương tác (LOVE, CARE, HAHA, WOW, SAD, ANGRY, LIKE)
+        val reactTarget = (if (reactionStr.isNotBlank()) reactionStr else taskType).uppercase()
+        val pageReaction = when {
+            reactTarget.contains("LOVE") || reactTarget.contains("TYM") || reactTarget.contains("TIM") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LOVE
+            reactTarget.contains("CARE") || reactTarget.contains("THUONGTHUONG") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.CARE
+            reactTarget.contains("HAHA") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.HAHA
+            reactTarget.contains("WOW") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.WOW
+            reactTarget.contains("SAD") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.SAD
+            reactTarget.contains("ANGRY") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.ANGRY
+            else -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE
+        }
+
+        val profileReaction = when {
+            reactTarget.contains("LOVE") || reactTarget.contains("TYM") || reactTarget.contains("TIM") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LOVE
+            reactTarget.contains("CARE") || reactTarget.contains("THUONGTHUONG") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.CARE
+            reactTarget.contains("HAHA") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.HAHA
+            reactTarget.contains("WOW") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.WOW
+            reactTarget.contains("SAD") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.SAD
+            reactTarget.contains("ANGRY") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.ANGRY
+            else -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE
         }
 
         // =========================================================================
@@ -614,20 +612,11 @@ object XsmmFacebookTaskRunner {
                     pageEngine.reviewOtherPage(targetId, reviewText = comment.ifBlank { "Tuyệt vời!" }, recommendationType = "positive")
                 }
                 lower.contains("like") || lower.contains("love") || lower.contains("care") ||
-                lower.contains("haha") || lower.contains("wow") || lower.contains("sad") || lower.contains("angry") || lower.contains("tym") -> {
-                    val reaction = when {
-                        lower.contains("love") || lower.contains("tym") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LOVE
-                        lower.contains("care") || lower.contains("thuongthuong") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.CARE
-                        lower.contains("haha") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.HAHA
-                        lower.contains("wow") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.WOW
-                        lower.contains("sad") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.SAD
-                        lower.contains("angry") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.ANGRY
-                        else -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE
-                    }
-                    pageEngine.reactPost(targetId, reaction)
+                lower.contains("haha") || lower.contains("wow") || lower.contains("sad") || lower.contains("angry") || lower.contains("tym") || reactionStr.isNotBlank() -> {
+                    pageEngine.reactPost(targetId, pageReaction)
                 }
                 else -> {
-                    pageEngine.reactPost(targetId, com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE)
+                    pageEngine.reactPost(targetId, pageReaction)
                 }
             }
             val msg = if (res.isSuccess) "Thành công" else (res.message ?: res.rawResponse)
@@ -667,20 +656,11 @@ object XsmmFacebookTaskRunner {
                 engine.reviewPage(targetId, isPositive = true, reviewText = comment.ifBlank { "Tuyệt vời!" })
             }
             lower.contains("like") || lower.contains("love") || lower.contains("care") ||
-            lower.contains("haha") || lower.contains("wow") || lower.contains("sad") || lower.contains("angry") || lower.contains("tym") -> {
-                val reaction = when {
-                    lower.contains("love") || lower.contains("tym") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LOVE
-                    lower.contains("care") || lower.contains("thuongthuong") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.CARE
-                    lower.contains("haha") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.HAHA
-                    lower.contains("wow") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.WOW
-                    lower.contains("sad") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.SAD
-                    lower.contains("angry") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.ANGRY
-                    else -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE
-                }
-                engine.react(targetId, reaction)
+            lower.contains("haha") || lower.contains("wow") || lower.contains("sad") || lower.contains("angry") || lower.contains("tym") || reactionStr.isNotBlank() -> {
+                engine.react(targetId, profileReaction)
             }
             else -> {
-                engine.react(targetId, com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE)
+                engine.react(targetId, profileReaction)
             }
         }
 
@@ -695,8 +675,22 @@ object XsmmFacebookTaskRunner {
                     if (fRes.isSuccess) return FbTaskResult(true, "Thành công")
                     fallbackErrMsg = fRes.message ?: fallbackErrMsg
                 }
-                lower.contains("like") -> {
-                    val url = "https://graph.facebook.com/v21.0/$targetId/likes?access_token=$cleanToken"
+                lower.contains("like") || lower.contains("love") || lower.contains("care") ||
+                lower.contains("haha") || lower.contains("wow") || lower.contains("sad") || lower.contains("angry") || lower.contains("tym") || reactionStr.isNotBlank() -> {
+                    val reactName = when (profileReaction) {
+                        com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LOVE -> "LOVE"
+                        com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.CARE -> "CARE"
+                        com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.HAHA -> "HAHA"
+                        com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.WOW -> "WOW"
+                        com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.SAD -> "SAD"
+                        com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.ANGRY -> "ANGRY"
+                        else -> "LIKE"
+                    }
+                    val url = if (reactName == "LIKE") {
+                        "https://graph.facebook.com/v21.0/$targetId/likes?access_token=$cleanToken"
+                    } else {
+                        "https://graph.facebook.com/v21.0/$targetId/reactions?type=$reactName&access_token=$cleanToken"
+                    }
                     val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
                     httpClient.newCall(req).execute().use { res ->
                         if (res.isSuccessful) return FbTaskResult(true, "Thành công")

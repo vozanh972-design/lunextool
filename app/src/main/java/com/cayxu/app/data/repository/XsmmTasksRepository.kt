@@ -15,7 +15,8 @@ data class XsmmTask2(
     val targetId: String = "",
     val idorlink: String,
     val points: Int,
-    val comment: String = ""
+    val comment: String = "",
+    val reaction: String = ""
 )
 
 sealed class XsmmTasks2Result {
@@ -81,7 +82,8 @@ object XsmmTasksRepository {
                     targetId = obj.get("target_id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     idorlink = obj.get("idorlink")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     points = obj.get("points")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                    comment = extractComment(obj)
+                    comment = extractComment(obj),
+                    reaction = extractReaction(obj)
                 )
             }
             XsmmTasks2Result.Success(tasks)
@@ -235,7 +237,8 @@ object XsmmTasksRepository {
                     targetId = obj.get("target_id")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     idorlink = obj.get("idorlink")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
                     points = obj.get("points")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
-                    comment = extractComment(obj)
+                    comment = extractComment(obj),
+                    reaction = extractReaction(obj)
                 )
             }
             XsmmTasks2Result.Success(tasks)
@@ -427,5 +430,75 @@ object XsmmTasksRepository {
         }
 
         return ""
+    }
+
+    /**
+     * Tự động trích xuất loại cảm xúc (reaction) từ phản hồi nhiệm vụ của XSMM.
+     * Hỗ trợ mọi định dạng: reaction, reaction_type, react, action, sub_type, camxuc...
+     */
+    private fun extractReaction(obj: JsonObject): String {
+        val candidateKeys = listOf(
+            "reaction", "reactions", "reaction_type", "react", "type_reaction",
+            "action", "action_type", "sub_type", "subtype",
+            "camxuc", "cam_xuc", "loaicx", "loai_cx", "loai",
+            "emotion", "feeling"
+        )
+
+        fun normalizeReaction(raw: String?): String? {
+            if (raw.isNullOrBlank()) return null
+            val lower = raw.trim().lowercase()
+            return when {
+                lower.contains("love") || lower.contains("tym") || lower.contains("tim") ||
+                lower.contains("yeuthich") || lower.contains("yêu thích") || lower.contains("heart") -> "LOVE"
+                lower.contains("care") || lower.contains("thuongthuong") || lower.contains("thương thương") || lower.contains("om") -> "CARE"
+                lower.contains("haha") || lower.contains("cuoi") || lower.contains("cười") -> "HAHA"
+                lower.contains("wow") || lower.contains("ngacnhien") || lower.contains("ngạc nhiên") -> "WOW"
+                lower.contains("sad") || lower.contains("buon") || lower.contains("buồn") || lower.contains("khoc") || lower.contains("khóc") -> "SAD"
+                lower.contains("angry") || lower.contains("phanno") || lower.contains("phẫn nộ") || lower.contains("gian") || lower.contains("giận") -> "ANGRY"
+                lower == "like" || lower == "facebook_like" || lower.contains("thich") || lower.contains("thích") -> "LIKE"
+                else -> null
+            }
+        }
+
+        // 1. Kiểm tra các key trực tiếp trong object
+        for (k in candidateKeys) {
+            val el = obj.get(k)
+            if (el != null && el.isJsonPrimitive) {
+                val norm = normalizeReaction(el.asString)
+                if (norm != null) return norm
+            }
+        }
+
+        // 2. Kiểm tra trong trường type của task (ví dụ: type = "facebook_love", "love", "facebook_care"...)
+        val typeStr = obj.get("type")?.takeIf { it.isJsonPrimitive }?.asString
+        val normType = normalizeReaction(typeStr)
+        if (normType != null && normType != "LIKE") return normType
+
+        // 3. Kiểm tra các container con: data, task, job, params
+        for (containerKey in listOf("data", "task", "job", "params")) {
+            val container = obj.get(containerKey)
+            if (container != null && container.isJsonObject) {
+                val innerObj = container.asJsonObject
+                for (k in candidateKeys) {
+                    val el = innerObj.get(k)
+                    if (el != null && el.isJsonPrimitive) {
+                        val norm = normalizeReaction(el.asString)
+                        if (norm != null) return norm
+                    }
+                }
+                val innerType = innerObj.get("type")?.takeIf { it.isJsonPrimitive }?.asString
+                val normInnerType = normalizeReaction(innerType)
+                if (normInnerType != null && normInnerType != "LIKE") return normInnerType
+            }
+        }
+
+        // 4. Kiểm tra trong description / title / note
+        for (descKey in listOf("description", "title", "note", "name")) {
+            val desc = obj.get(descKey)?.takeIf { it.isJsonPrimitive }?.asString
+            val normDesc = normalizeReaction(desc)
+            if (normDesc != null) return normDesc
+        }
+
+        return normType ?: "LIKE"
     }
 }
