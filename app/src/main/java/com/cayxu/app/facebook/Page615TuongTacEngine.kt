@@ -126,15 +126,87 @@ import java.util.concurrent.TimeUnit
             restErrorMsg = e.message ?: "Lỗi kết nối mạng"
         }
 
-        // Fallback sang Katana GraphQL độc lập của chính Page615 bằng pageToken
-        // Xử lý triệt để lỗi "Object with ID does not exist, cannot be loaded due to missing permissions" cho bài viết cá nhân/status/photo/reel
+        // 1. Phân giải Node ID đầy đủ {author_id}_{post_id} nếu gặp lỗi (#12) singular status hoặc ID not exist
+        if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)") || restErrorMsg.contains("does not exist") || restErrorMsg.contains("missing permissions")) {
+            try {
+                val resolveReq = Request.Builder()
+                    .url("${graphApi()}/$cleanTargetId?fields=id&access_token=$token")
+                    .get()
+                    .header("User-Agent", ua())
+                    .build()
+                val scopedId = httpClient.newCall(resolveReq).execute().use { res ->
+                    val body = res.body?.string() ?: ""
+                    val json = try { JSONObject(body) } catch (_: Exception) { null }
+                    json?.optString("id", null)
+                }
+                if (!scopedId.isNullOrBlank() && scopedId != cleanTargetId && scopedId.contains("_")) {
+                    val scopedReq = Request.Builder()
+                        .url("${graphApi()}/$scopedId${FbVault.pathReactions()}")
+                        .post(formBody)
+                        .header("User-Agent", ua())
+                        .build()
+                    val scopedRes = httpClient.newCall(scopedReq).execute().use { res ->
+                        val body = res.body?.string() ?: ""
+                        val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
+                        if (isOk) InteractionResult(true, scopedId, "REACT_${reactionType.value}", null, "Success", body) else null
+                    }
+                    if (scopedRes != null) return scopedRes
+
+                    // Thử /likes với scoped ID nếu là LIKE
+                    if (reactionType == ReactionType.LIKE) {
+                        val scopedLikeReq = Request.Builder()
+                            .url("${graphApi()}/$scopedId${FbVault.pathLikes()}")
+                            .post(FormBody.Builder().add(fat, token).build())
+                            .header("User-Agent", ua())
+                            .build()
+                        val scopedLikeRes = httpClient.newCall(scopedLikeReq).execute().use { res ->
+                            val body = res.body?.string() ?: ""
+                            val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
+                            if (isOk) InteractionResult(true, scopedId, "REACT_LIKE_FALLBACK", null, "Success", body) else null
+                        }
+                        if (scopedLikeRes != null) return scopedLikeRes
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // 2. Thử endpoint Graph API không version (bỏ qua hạn chế v2.4+ cho status)
+            try {
+                val unversionedReq = Request.Builder()
+                    .url("https://graph.facebook.com/$cleanTargetId${FbVault.pathReactions()}")
+                    .post(formBody)
+                    .header("User-Agent", ua())
+                    .build()
+                val unversionedRes = httpClient.newCall(unversionedReq).execute().use { res ->
+                    val body = res.body?.string() ?: ""
+                    val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
+                    if (isOk) InteractionResult(true, cleanTargetId, "REACT_${reactionType.value}", null, "Success", body) else null
+                }
+                if (unversionedRes != null) return unversionedRes
+
+                if (reactionType == ReactionType.LIKE) {
+                    val unversionedLikeReq = Request.Builder()
+                        .url("https://graph.facebook.com/$cleanTargetId${FbVault.pathLikes()}")
+                        .post(FormBody.Builder().add(fat, token).build())
+                        .header("User-Agent", ua())
+                        .build()
+                    val unversionedLikeRes = httpClient.newCall(unversionedLikeReq).execute().use { res ->
+                        val body = res.body?.string() ?: ""
+                        val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
+                        if (isOk) InteractionResult(true, cleanTargetId, "REACT_LIKE_FALLBACK", null, "Success", body) else null
+                    }
+                    if (unversionedLikeRes != null) return unversionedLikeRes
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 3. Fallback sang Katana GraphQL độc lập của chính Page615 bằng pageToken
         val actor = pageId615?.takeIf { it.isNotBlank() } ?: ""
         val gqlRes = reactGraphQLPage(cleanTargetId, token, reactionType, actor)
         if (gqlRes.isSuccess) {
             return gqlRes
         }
 
-        val finalErrMsg = if (restErrorMsg.contains("does not exist") || restErrorMsg.contains("missing permissions") || restErrorMsg.contains("Unsupported post request")) {
+        val finalErrMsg = if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)") || restErrorMsg.contains("does not exist") || restErrorMsg.contains("missing permissions") || restErrorMsg.contains("Unsupported post request")) {
             gqlRes.message ?: restErrorMsg
         } else {
             restErrorMsg.ifBlank { gqlRes.message ?: "Lỗi tương tác cảm xúc" }
@@ -165,30 +237,42 @@ import java.util.concurrent.TimeUnit
         val fdi = FbVault.fieldDocId()
         val fat = FbVault.fieldAccessToken()
 
-        val formBody = FormBody.Builder()
-            .add(fdi, "5411782298894101")
-            .add(fv, variables.toString())
-            .add(fat, token)
-            .build()
+        // Thử các doc_id GraphQL của Katana (Page React và Profile React)
+        val docIds = listOf(FbVault.docIdPageReact(), "4715426135182900", FbVault.docIdProfileReact(), "5411782298894101").distinct()
+        var lastErr = ""
+        var lastBody = ""
 
-        val request = Request.Builder()
-            .url(graphql())
-            .post(formBody)
-            .header("User-Agent", ua())
-            .header("Authorization", "OAuth $token")
-            .header("X-FB-Friendly-Name", "UFIFeedbackReactMutation")
-            .build()
+        for (docId in docIds) {
+            val formBody = FormBody.Builder()
+                .add(fdi, docId)
+                .add(fv, variables.toString())
+                .add(fat, token)
+                .build()
 
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && !body.contains("\"errors\":")
-                val errMsg = if (isOk) "Success" else parseErrorMessage(body)
-                InteractionResult(isOk, cleanFeedbackId, "REACT_GQL_${reactionType.value}", null, errMsg, body)
+            val request = Request.Builder()
+                .url(graphql())
+                .post(formBody)
+                .header("User-Agent", ua())
+                .header("Authorization", "OAuth $token")
+                .header("X-FB-Friendly-Name", "UFIFeedbackReactMutation")
+                .build()
+
+            try {
+                httpClient.newCall(request).execute().use { res ->
+                    val body = res.body?.string() ?: ""
+                    lastBody = body
+                    val isOk = res.isSuccessful && !body.contains("\"errors\":")
+                    if (isOk) {
+                        return InteractionResult(true, cleanFeedbackId, "REACT_GQL_${reactionType.value}", null, "Success", body)
+                    }
+                    lastErr = parseErrorMessage(body)
+                }
+            } catch (e: Exception) {
+                lastErr = e.message ?: "Lỗi mạng"
             }
-        } catch (e: Exception) {
-            InteractionResult(false, cleanFeedbackId, "REACT_GQL", null, e.message ?: "Lỗi mạng", "")
         }
+
+        return InteractionResult(false, cleanFeedbackId, "REACT_GQL", null, lastErr, lastBody)
     }
 
     fun reactGraphQLVoice(
