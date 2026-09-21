@@ -326,7 +326,7 @@ object XsmmFacebookTaskRunner {
                 if (isServerError) {
                     for (sec in 5 downTo 1) {
                         if (!coroutineContext.isActive) break
-                        notify("Lỗi server XSMM: ${taskResult.message} (${sec}s)...")
+                        notify("Lỗi server XSMM: $errorMsg (${sec}s)...")
                         delay(1000L)
                     }
                 } else if (activeTaskTypes.size > 1) {

@@ -298,8 +298,8 @@ fun TuongTacCheoScreen(navController: NavController) {
         val fbAccount = fbAccounts.firstOrNull { it.uid == uid }
         val usePage = ttcConfig.pairTargetType == "page"
         val pageItem = if (usePage) fbAccount?.pages?.firstOrNull() else null
-        val runUid = if (usePage && pageItem != null && pageItem.id.isNotBlank()) pageItem.id else uid
-        val runToken = if (usePage && pageItem != null && pageItem.token.isNotBlank()) pageItem.token else (fbAccount?.bio ?: "")
+        val runUid = if (usePage && pageItem != null && pageItem.pageId.isNotBlank()) pageItem.pageId else uid
+        val runToken = if (usePage && pageItem != null && pageItem.pageToken.isNotBlank()) pageItem.pageToken else (fbAccount?.bio ?: "")
         val cleanToken = runToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
 
         val proxyParts = (fbAccount?.phone ?: "").trim().split(":")
@@ -442,7 +442,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_CMT_VIP -> {
                                     val cmtText = j.cmt.orEmpty()
                                     if (cmtText.isNotBlank()) engine.comment(target, cmtText)
-                                    else com.cayxu.app.facebook.FacebookTuongTacEngine.InteractionResult(false, target, "COMMENT", null, "Nội dung comment trống")
+                                    else com.cayxu.app.facebook.FacebookTuongTacEngine.EngineResult(isSuccess = false, action = "COMMENT", targetId = target, message = "Nội dung comment trống")
                                 }
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_FOLLOW,
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_SUB_VIP -> {
