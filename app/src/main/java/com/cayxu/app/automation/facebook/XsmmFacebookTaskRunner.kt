@@ -228,7 +228,6 @@ object XsmmFacebookTaskRunner {
         }
 
         // Đồng bộ và đảm bảo nick Facebook / Page đã tồn tại trên XSMM theo chuẩn ĐA LUỒNG (GET/POST /api/taskapi/accounts2)
-        // Cơ chế đa luồng không cần gọi set-active vì mỗi request tasks2 đều truyền trực tiếp UID.
         notify("Kiểm tra nick [$targetUidForXsmm] trên XSMM...")
         val syncResult = XsmmAccountsRepository.ensureFacebookAccountLinked2(token, targetUidForXsmm)
         val xsmmUidToRun = syncResult.uid.ifBlank { targetUidForXsmm }
@@ -241,11 +240,7 @@ object XsmmFacebookTaskRunner {
                 XsmmAccountStore.saveInternalIdMap(context, internalMap)
             }
         } else {
-            val errMsg = "Lỗi liên kết nick [$targetUidForXsmm] lên XSMM: ${syncResult.message}"
-            notify(errMsg)
-            onErrorDetail?.invoke(cleanUid, errMsg)
-            if (cleanUid != targetUidForXsmm) onErrorDetail?.invoke(targetUidForXsmm, errMsg)
-            return RunResult(0, 1, 0, errMsg)
+            notify("Cảnh báo: ${syncResult.message}. Vẫn tiếp tục thử chạy với UID [$xsmmUidToRun]...")
         }
 
 
@@ -283,18 +278,39 @@ object XsmmFacebookTaskRunner {
             val currentTaskLabel = getTaskName(currentActiveTaskType)
 
             notify("Lấy nhiệm vụ Facebook ($currentTaskLabel)...")
-            var taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, targetUidForXsmm)
+            var taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, xsmmUidToRun)
 
             if (taskResult is XsmmTasks2Result.Error && (
                 taskResult.message.contains("cần thêm tài khoản", ignoreCase = true) ||
                 taskResult.message.contains("chưa thêm", ignoreCase = true) ||
+                taskResult.message.contains("chưa kích hoạt", ignoreCase = true) ||
                 taskResult.message.contains("không tìm thấy", ignoreCase = true) ||
-                taskResult.message.contains("not found", ignoreCase = true)
+                taskResult.message.contains("not found", ignoreCase = true) ||
+                taskResult.message.contains("502", ignoreCase = true) ||
+                taskResult.message.contains("500", ignoreCase = true)
             )) {
-                notify("Đồng bộ lại nick [$xsmmUidToRun] lên XSMM (accounts2)...")
-                XsmmAccountsRepository.addFacebookAccount2(token, targetUidForXsmm)
-                delay(1500L)
-                taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, targetUidForXsmm)
+                val internalId = XsmmAccountStore.getInternalIdMap(context)[targetUidForXsmm] ?: syncResult.internalId
+                if (internalId.isNotBlank()) {
+                    notify("Kích hoạt lại phiên nick trên XSMM...")
+                    XsmmAccountsRepository.setActiveAccount(token, internalId)
+                    delay(1000L)
+                } else {
+                    notify("Đồng bộ lại nick [$xsmmUidToRun] lên XSMM...")
+                    XsmmAccountsRepository.addFacebookAccount(token, xsmmUidToRun, setActive = true)
+                    delay(1500L)
+                }
+                taskResult = XsmmTasksRepository.getTasks2(token, currentActiveTaskType, xsmmUidToRun)
+
+                // Nếu tasks2 vẫn báo lỗi 502/server error sau khi thử lại:
+                // Fallback gọi getTasks (v1) để không bị đơ hoặc kẹt luồng
+                if (taskResult is XsmmTasks2Result.Error && (
+                    taskResult.message.contains("502", ignoreCase = true) ||
+                    taskResult.message.contains("cần thêm", ignoreCase = true) ||
+                    taskResult.message.contains("chưa kích hoạt", ignoreCase = true)
+                )) {
+                    notify("Thử lấy nhiệm vụ qua cổng tasks chuẩn...")
+                    taskResult = XsmmTasksRepository.getTasks(token, currentActiveTaskType)
+                }
             }
 
             val (isNoTask, errorMsg) = when (taskResult) {
@@ -456,8 +472,22 @@ object XsmmFacebookTaskRunner {
                         rawToken = token,
                         type = apiCompleteType,
                         taskIds = pendingBatchTaskIds.toList(),
-                        uid = targetUidForXsmm
+                        uid = xsmmUidToRun
                     )
+
+                    // Nếu tasks2/complete bị lỗi 502 hoặc chưa kích hoạt -> fallback qua completeTasks chuẩn
+                    if (!compRes.success && (
+                        compRes.message.contains("502", ignoreCase = true) ||
+                        compRes.message.contains("chưa kích hoạt", ignoreCase = true) ||
+                        compRes.message.contains("cần thêm", ignoreCase = true)
+                    )) {
+                        notify("Thử báo cáo qua cổng hoàn thành chuẩn...")
+                        compRes = XsmmTasksRepository.completeTasks(
+                            rawToken = token,
+                            type = apiCompleteType,
+                            taskIds = pendingBatchTaskIds.toList()
+                        )
+                    }
 
                     // Nếu XSMM phản hồi 502 Bad Gateway / timeout / server chậm -> đếm ngược từng giây để người dùng thấy rõ đang thử lại, không bị đơ
                     val isRetryableError = !compRes.success && (
@@ -486,8 +516,15 @@ object XsmmFacebookTaskRunner {
                                 rawToken = token,
                                 type = apiCompleteType,
                                 taskIds = pendingBatchTaskIds.toList(),
-                                uid = targetUidForXsmm
+                                uid = xsmmUidToRun
                             )
+                            if (!compRes.success && (compRes.message.contains("502", ignoreCase = true) || compRes.message.contains("chưa kích hoạt", ignoreCase = true))) {
+                                compRes = XsmmTasksRepository.completeTasks(
+                                    rawToken = token,
+                                    type = apiCompleteType,
+                                    taskIds = pendingBatchTaskIds.toList()
+                                )
+                            }
                             if (compRes.success || compRes.points > 0) break
                         }
                     }
