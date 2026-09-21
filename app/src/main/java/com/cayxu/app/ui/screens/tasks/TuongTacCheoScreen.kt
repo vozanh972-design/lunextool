@@ -218,11 +218,18 @@ fun TuongTacCheoScreen(navController: NavController) {
                         }
                         return@launch
                     }
-                    val acc = FacebookAccountsStore.getAccount(context, uid)
-                    val token = acc?.bio?.trim().orEmpty()
+                    val acc = FacebookAccountsStore.getAccounts(context).firstOrNull { it.uid == uid }
+                    if (acc == null) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Không tìm thấy tài khoản Facebook $uid", Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                        return@launch
+                    }
+                    val token = acc.bio.ifBlank { "" }
                     if (token.isBlank()) {
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(context, "Không tìm thấy token Facebook của tài khoản này", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Tài khoản cần có Access Token để đổi Avatar", Toast.LENGTH_SHORT).show()
                             isUploadingAvatar = false
                         }
                         return@launch
@@ -230,7 +237,8 @@ fun TuongTacCheoScreen(navController: NavController) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(context, "Đang đổi ảnh đại diện Facebook...", Toast.LENGTH_SHORT).show()
                     }
-                    val proxyParts = acc?.phone?.ifBlank { null }?.split(":")
+                    val proxy = acc.phone.ifBlank { null }
+                    val proxyParts = proxy?.split(":")
                     val proxyHost = proxyParts?.getOrNull(0)
                     val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
                     val mediaEngine = FacebookMediaEngine(
@@ -238,12 +246,24 @@ fun TuongTacCheoScreen(navController: NavController) {
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
-                    val newPicUrl = mediaEngine.uploadProfilePicture(bytes)
-                    if (newPicUrl != null && newPicUrl.startsWith("http")) {
-                        val updated = acc.copy(avatar = newPicUrl)
-                        FacebookAccountsStore.updateAccount(context, updated)
+                    val result = mediaEngine.updateUserAvatar(
+                        imageBytes = bytes,
+                        tokenParam = token
+                    )
+                    if (result.isSuccess) {
+                        var directUrl: String? = null
+                        if (!result.mediaId.isNullOrBlank()) {
+                            directUrl = mediaEngine.getPhotoDirectUrl(result.mediaId, tokenParam = token)
+                        }
+                        if (directUrl.isNullOrBlank()) {
+                            val updatedMedia = mediaEngine.getUserMedia(tokenParam = token)
+                            directUrl = updatedMedia?.avatarUrl?.takeIf { !it.contains("84628273_176159830277856") }
+                        }
+                        val finalAvatar = directUrl ?: "https://graph.facebook.com/v21.0/me/picture?type=large&access_token=$token&t=${System.currentTimeMillis()}"
+                        val updatedAcc = acc.copy(avatar = finalAvatar)
+                        FacebookAccountsStore.updateAccount(context, updatedAcc)
                         withContext(Dispatchers.Main) {
-                            liveFbAvatars = liveFbAvatars + (uid to newPicUrl)
+                            liveFbAvatars = liveFbAvatars + (acc.uid to finalAvatar)
                             avatarVersion = System.currentTimeMillis()
                             fbAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
                             Toast.makeText(context, "Đổi avatar Facebook thành công!", Toast.LENGTH_SHORT).show()
@@ -251,7 +271,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                         }
                     } else {
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(context, "Đã gửi yêu cầu đổi avatar Facebook", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Lỗi đổi avatar: ${result.message}", Toast.LENGTH_LONG).show()
                             isUploadingAvatar = false
                         }
                     }
