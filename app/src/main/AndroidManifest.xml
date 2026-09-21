@@ -10,6 +10,12 @@
     <!-- Quyền hiển thị notification (bắt buộc từ Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Quyền tự khởi động lại sau khi điện thoại reboot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Quyền dùng AlarmManager setExactAndAllowWhileIdle (watchdog restart) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
     <!-- Chỉ dùng cho tính năng thêm tài khoản TikTok: hiển thị lớp nổi (nút "Lưu @")
          trong lúc người dùng đang ở app TikTok/TikTok Lite/TikTok Studio. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -81,5 +87,20 @@
             android:name=".worker.AppBackgroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!--
+            BroadcastReceiver cho 2 việc:
+            1. BOOT_COMPLETED: tự bật lại service sau khi điện thoại reboot
+            2. ACTION_WATCHDOG_RESTART: AlarmManager ping để restart service bị kill/vuốt
+        -->
+        <receiver
+            android:name=".worker.AppRestartReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.cayxu.app.ACTION_WATCHDOG_RESTART" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
