@@ -54,6 +54,14 @@ fun SettingsScreen(navController: NavController) {
     // Trạng thái được đọc từ SharedPrefs và phản ánh service thực sự đang chạy hay không
     var backgroundServiceEnabled by remember { mutableStateOf(AppBackgroundService.isEnabled(context)) }
 
+    val notificationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            AppBackgroundService.start(context)
+        }
+    }
+
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
     Column(
@@ -90,6 +98,15 @@ fun SettingsScreen(navController: NavController) {
                         pushNotifications = checked
                         AppAlertNotifier.setPushEnabled(context, checked)
                         if (checked) {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context,
+                                    android.Manifest.permission.POST_NOTIFICATIONS
+                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                if (!hasPerm) {
+                                    notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            }
                             AppAlertNotifier.createChannel(context)
                             android.widget.Toast.makeText(context, "Đã bật cảnh báo khi tài khoản lỗi", android.widget.Toast.LENGTH_SHORT).show()
                         } else {
@@ -105,6 +122,15 @@ fun SettingsScreen(navController: NavController) {
                     onCheckedChange = { checked ->
                         backgroundServiceEnabled = checked
                         if (checked) {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context,
+                                    android.Manifest.permission.POST_NOTIFICATIONS
+                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                if (!hasPerm) {
+                                    notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            }
                             AppBackgroundService.start(context)
                             android.widget.Toast.makeText(
                                 context,

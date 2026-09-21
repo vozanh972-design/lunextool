@@ -140,7 +140,7 @@ object AppAlertNotifier {
         }
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_sync)
             .setContentTitle(title)
             .setContentText(summaryText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))

@@ -8,15 +8,17 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.cayxu.app.MainActivity
 import com.cayxu.app.R
 
 /**
- * Foreground Service chạy ngầm — CỰC KỲ BỀN.
+ * Foreground Service chạy ngầm — CỰC KỲ BỀN, KHÔNG VĂNG APP.
  *
  * Chỉ có thể dừng bằng 1 trong 2 cách:
  *   1. Tắt toggle "Chạy ngầm" trong Cài đặt  (gọi stop() → saveEnabled(false))
@@ -47,59 +49,92 @@ class AppBackgroundService : Service() {
 
         fun stop(context: Context) {
             saveEnabled(context, false)
-            // Hủy alarm watchdog (nếu có)
             cancelWatchdog(context)
-            context.stopService(Intent(context, AppBackgroundService::class.java))
+            try {
+                context.stopService(Intent(context, AppBackgroundService::class.java))
+            } catch (_: Exception) {}
         }
 
         fun isEnabled(context: Context): Boolean {
-            return context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-                .getBoolean(KEY_ENABLED, false)
+            return try {
+                context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+                    .getBoolean(KEY_ENABLED, false)
+            } catch (_: Exception) {
+                false
+            }
         }
 
         fun saveEnabled(context: Context, enabled: Boolean) {
-            context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-                .edit().putBoolean(KEY_ENABLED, enabled).apply()
+            try {
+                context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+                    .edit().putBoolean(KEY_ENABLED, enabled).apply()
+            } catch (_: Exception) {}
         }
 
         fun launchService(context: Context) {
-            val intent = Intent(context, AppBackgroundService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                val intent = Intent(context, AppBackgroundService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                // Fallback nếu startForegroundService bị hạn chế bởi hệ điều hành
+                try {
+                    val intent = Intent(context, AppBackgroundService::class.java)
+                    context.startService(intent)
+                } catch (_: Exception) {}
             }
         }
 
         // Đặt AlarmManager sẽ restart service sau delayMs milliseconds
         fun scheduleWatchdog(context: Context, delayMs: Long = 5_000L) {
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val pi = getWatchdogPendingIntent(context) ?: return
-            val triggerAt = SystemClock.elapsedRealtime() + delayMs
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+                val pi = getWatchdogPendingIntent(context) ?: return
+                val triggerAt = SystemClock.elapsedRealtime() + delayMs
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    // Trên Android 12+, kiểm tra quyền exact alarm trước để tránh SecurityException
+                    if (alarmManager.canScheduleExactAlarms()) {
+                        alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+                    } else {
+                        alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+                    }
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
                 } else {
                     alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
                 }
             } catch (_: Exception) {
-                alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+                try {
+                    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+                    val pi = getWatchdogPendingIntent(context) ?: return
+                    alarmManager?.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + delayMs, pi)
+                } catch (_: Exception) {}
             }
         }
 
         private fun cancelWatchdog(context: Context) {
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            getWatchdogPendingIntent(context)?.let { alarmManager.cancel(it) }
+            try {
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+                getWatchdogPendingIntent(context)?.let { alarmManager?.cancel(it) }
+            } catch (_: Exception) {}
         }
 
         private fun getWatchdogPendingIntent(context: Context): PendingIntent? {
-            val intent = Intent(context, AppRestartReceiver::class.java).apply {
-                action = ACTION_WATCHDOG_RESTART
+            return try {
+                val intent = Intent(context, AppRestartReceiver::class.java).apply {
+                    action = ACTION_WATCHDOG_RESTART
+                }
+                PendingIntent.getBroadcast(
+                    context, 0, intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            } catch (_: Exception) {
+                null
             }
-            return PendingIntent.getBroadcast(
-                context, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
         }
     }
 
@@ -109,14 +144,33 @@ class AppBackgroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        try {
+            createNotificationChannel()
+            val notification = buildNotification()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            // Fallback an toàn tuyệt đối
+            try {
+                startForeground(NOTIFICATION_ID, buildNotification())
+            } catch (_: Exception) {}
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Refresh notification
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIFICATION_ID, buildNotification())
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.notify(NOTIFICATION_ID, buildNotification())
+        } catch (_: Exception) {}
         // [A] START_STICKY: Android tự restart sau khi kill
         return START_STICKY
     }
@@ -137,8 +191,10 @@ class AppBackgroundService : Service() {
         }
         // Xóa notification khi stop() được gọi thủ công (isEnabled=false)
         if (!isEnabled(this)) {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.cancel(NOTIFICATION_ID)
+            try {
+                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                nm?.cancel(NOTIFICATION_ID)
+            } catch (_: Exception) {}
         }
     }
 
@@ -146,16 +202,18 @@ class AppBackgroundService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Chạy ngầm",
-                NotificationManager.IMPORTANCE_LOW   // không phát âm thanh
-            ).apply {
-                description = "App đang chạy nền để duy trì tác vụ tự động"
-                setShowBadge(false)
-            }
-            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(channel)
+            try {
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    "Chạy ngầm",
+                    NotificationManager.IMPORTANCE_LOW   // không phát âm thanh
+                ).apply {
+                    description = "App đang chạy nền để duy trì tác vụ tự động"
+                    setShowBadge(false)
+                }
+                (getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)
+                    ?.createNotificationChannel(channel)
+            } catch (_: Exception) {}
         }
     }
 
@@ -173,7 +231,7 @@ class AppBackgroundService : Service() {
         } catch (_: Exception) { "CayXu" }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_sync)      // Vector drawable chuẩn, không bị crash do adaptive-icon
             .setContentTitle(appName)
             .setContentText("Đang chạy nền – chạm để mở lại ứng dụng")
             .setSubText("Chạy ngầm đang bật")
