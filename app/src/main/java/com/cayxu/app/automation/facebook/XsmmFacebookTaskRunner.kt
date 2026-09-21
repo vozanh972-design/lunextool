@@ -508,11 +508,12 @@ object XsmmFacebookTaskRunner {
 
                     if (compRes.success || pts > 0) {
                         val succText = if (pts > 0) "+$pts xu ($bSize job)" else (compRes.message.ifBlank { "Thành công $bSize job" })
-                        // Đã nhận được xu rồi: chỉ đợi theo cấu hình người dùng (fetchTaskIntervalSeconds) hoặc countdown của server, KHÔNG ép đợi 60s
-                        val waitSec = if (compRes.countdown > 0) {
-                            compRes.countdown
-                        } else if (config.fetchTaskIntervalSeconds > 0) {
+                        // Đã nhận xu: dùng ĐÚNG cấu hình người dùng (fetchTaskIntervalSeconds)
+                        // Countdown server chỉ là fallback khi chưa cấu hình (= 0)
+                        val waitSec = if (config.fetchTaskIntervalSeconds > 0) {
                             config.fetchTaskIntervalSeconds
+                        } else if (compRes.countdown > 0) {
+                            compRes.countdown
                         } else {
                             5
                         }
