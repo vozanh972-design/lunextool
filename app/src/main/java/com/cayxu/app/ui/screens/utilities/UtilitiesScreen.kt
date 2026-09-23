@@ -121,6 +121,19 @@ fun UtilitiesScreen(navController: NavController) {
                 }
             )
 
+            // Tool Card 4: test
+            HtmlToolCard(
+                title = "test",
+                subtitle = "Đăng nhập Facebook lấy Token (API Direct)",
+                icon = Icons.Outlined.Person,
+                iconGradient = listOf(Color(0xFFFEF3C7), Color(0xFFFDE68A)),
+                iconTint = Color(0xFFD97706),
+                isFeatured = false,
+                onClick = {
+                    navController.navigate(Routes.FB_TEST_LOGIN) { launchSingleTop = true }
+                }
+            )
+
             Spacer(Modifier.height(80.dp))
         }
     }
