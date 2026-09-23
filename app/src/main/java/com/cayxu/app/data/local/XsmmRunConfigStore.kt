@@ -59,7 +59,13 @@ object XsmmRunConfigStore {
     )
 
     val facebookTaskTypes = listOf(
-        "facebook_like"     to "Cảm xúc Facebook (Like / Love / Care / Haha / Wow / Sad / Angry)",
+        "facebook_like"     to "Like Facebook (Thích / LIKE)",
+        "facebook_love"     to "Love Facebook (Thả tim / LOVE)",
+        "facebook_care"     to "Care Facebook (Thương thương / CARE)",
+        "facebook_haha"     to "Haha Facebook (Cười / HAHA)",
+        "facebook_wow"      to "Wow Facebook (Bất ngờ / WOW)",
+        "facebook_sad"      to "Sad Facebook (Buồn / SAD)",
+        "facebook_angry"    to "Angry Facebook (Phẫn nộ / ANGRY)",
         "facebook_follow"   to "Theo dõi Facebook",
         "facebook_comment"  to "Comment Facebook (Bình luận)",
         "facebook_share"    to "Share Facebook (Chia sẻ)",
