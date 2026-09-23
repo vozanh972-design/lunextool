@@ -485,7 +485,12 @@ object XsmmFacebookTaskRunner {
                     notify("$pos Lỗi FB: $fbErr ($consecutiveErrors/${config.failJobCountToSwitchAccount})")
                     val detailMsg = buildString {
                         append("[${currentTime()}] Thao tác Facebook thất bại:\n")
-                        append("• Nhiệm vụ: ${task.type.ifBlank { currentActiveTaskType }}\n")
+                        val displayTaskType = if (effectiveReaction.isNotBlank()) {
+                            "facebook_reaction ($effectiveReaction)"
+                        } else {
+                            task.type.ifBlank { currentActiveTaskType }
+                        }
+                        append("• Nhiệm vụ: $displayTaskType\n")
                         append("• Target: $target\n")
                         append("• Chi tiết: $fbErr")
                     }
@@ -645,26 +650,9 @@ object XsmmFacebookTaskRunner {
         }
 
         // Xác định chính xác loại cảm xúc cần tương tác (LOVE, CARE, HAHA, WOW, SAD, ANGRY, LIKE)
-        val reactTarget = (if (reactionStr.isNotBlank()) reactionStr else taskType).uppercase()
-        val pageReaction = when {
-            reactTarget.contains("LOVE") || reactTarget.contains("TYM") || reactTarget.contains("TIM") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LOVE
-            reactTarget.contains("CARE") || reactTarget.contains("THUONGTHUONG") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.CARE
-            reactTarget.contains("HAHA") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.HAHA
-            reactTarget.contains("WOW") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.WOW
-            reactTarget.contains("SAD") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.SAD
-            reactTarget.contains("ANGRY") -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.ANGRY
-            else -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE
-        }
-
-        val profileReaction = when {
-            reactTarget.contains("LOVE") || reactTarget.contains("TYM") || reactTarget.contains("TIM") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LOVE
-            reactTarget.contains("CARE") || reactTarget.contains("THUONGTHUONG") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.CARE
-            reactTarget.contains("HAHA") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.HAHA
-            reactTarget.contains("WOW") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.WOW
-            reactTarget.contains("SAD") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.SAD
-            reactTarget.contains("ANGRY") -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.ANGRY
-            else -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE
-        }
+        val reactTarget = if (reactionStr.isNotBlank()) reactionStr else taskType
+        val pageReaction = com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.fromString(reactTarget)
+        val profileReaction = com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.fromString(reactTarget)
 
         // =========================================================================
         // 1. NẾU LÀ TÀI KHOẢN PAGE (PROFILE+ / 615):

@@ -33,7 +33,23 @@ import java.util.concurrent.TimeUnit
         HAHA("HAHA", 4),
         SAD("SAD", 7),
         ANGRY("ANGRY", 8),
-        CARE("CARE", 16)
+        CARE("CARE", 16);
+
+        companion object {
+            fun fromString(str: String): ReactionType {
+                val upper = str.uppercase().trim()
+                return when {
+                    upper.contains("CARE") || upper.contains("THUONG") || upper.contains("THƯƠNG") -> CARE
+                    upper.contains("LOVE") || upper.contains("TYM") || upper.contains("TIM") || upper.contains("YÊU") || upper.contains("YEU") -> LOVE
+                    upper.contains("HAHA") || upper.contains("CUOI") || upper.contains("CƯỜI") -> HAHA
+                    upper.contains("WOW") || upper.contains("NGAC") || upper.contains("NGẠC") || upper.contains("BAT_NGO") || upper.contains("NGO") || upper.contains("NGỜ") -> WOW
+                    upper.contains("SAD") || upper.contains("BUON") || upper.contains("BUỒN") -> SAD
+                    upper.contains("ANGRY") || upper.contains("PHAN_NO") || upper.contains("PHẪN") || upper.contains("PHANNO") -> ANGRY
+                    upper.contains("LIKE") || upper.contains("THICH") || upper.contains("THÍCH") -> LIKE
+                    else -> LIKE
+                }
+            }
+        }
     }
 
     @Keep data class InteractionResult(
@@ -62,6 +78,48 @@ import java.util.concurrent.TimeUnit
 
     private fun getCleanToken(overrideToken: String?): String =
         (overrideToken ?: pageToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+
+    private fun resolveCanonicalTargetId(rawId: String): List<String> {
+        val candidates = mutableListOf<String>()
+        val clean = rawId.trim()
+        val url = if (clean.startsWith("http://") || clean.startsWith("https://")) {
+            clean
+        } else {
+            "https://www.facebook.com/$clean"
+        }
+
+        try {
+            val noRedirectClient = httpClient.newBuilder()
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build()
+
+            val headReq = Request.Builder()
+                .url(url)
+                .head()
+                .header("User-Agent", "curl/7.88.1")
+                .build()
+
+            noRedirectClient.newCall(headReq).execute().use { res ->
+                val location = res.header("Location")
+                if (!location.isNullOrBlank()) {
+                    val extracted = FacebookTuongTacEngine.extractId(location)
+                    if (extracted.isNotBlank() && extracted != clean && !candidates.contains(extracted)) {
+                        candidates.add(extracted)
+                    }
+                    val fbid = Regex("""(?:story_fbid=|fbid=)(\d+)""").find(location)?.groupValues?.getOrNull(1)
+                    val authorId = Regex("""(?:[?&]id=)(\d+)""").find(location)?.groupValues?.getOrNull(1)
+                    if (!fbid.isNullOrBlank() && !authorId.isNullOrBlank()) {
+                        val scoped = "${authorId}_$fbid"
+                        if (!candidates.contains(scoped)) candidates.add(scoped)
+                        if (!candidates.contains(fbid)) candidates.add(fbid)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        return candidates
+    }
 
     fun reactPost(
         postId: String,
@@ -126,8 +184,39 @@ import java.util.concurrent.TimeUnit
             restErrorMsg = e.message ?: "Lỗi kết nối mạng"
         }
 
-        // 1. Phân giải Node ID đầy đủ {author_id}_{post_id} nếu gặp lỗi (#12) singular status hoặc ID not exist
-        if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)") || restErrorMsg.contains("does not exist") || restErrorMsg.contains("missing permissions")) {
+        // 1. Phân giải Canonical Object ID hoặc Node ID đầy đủ {author_id}_{post_id} nếu gặp lỗi (#12) singular status hoặc ID not exist
+        if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)") || restErrorMsg.contains("does not exist") || restErrorMsg.contains("missing permissions") || restErrorMsg.contains("Unsupported post request")) {
+            val canonicalList = resolveCanonicalTargetId(cleanTargetId)
+            for (cId in canonicalList) {
+                try {
+                    val cReq = Request.Builder()
+                        .url("${graphApi()}/$cId${FbVault.pathReactions()}")
+                        .post(formBody)
+                        .header("User-Agent", ua())
+                        .build()
+                    val cRes = httpClient.newCall(cReq).execute().use { res ->
+                        val body = res.body?.string() ?: ""
+                        val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
+                        if (isOk) InteractionResult(true, cId, "REACT_${reactionType.value}", null, "Success", body) else null
+                    }
+                    if (cRes != null) return cRes
+
+                    if (reactionType == ReactionType.LIKE) {
+                        val cLikeReq = Request.Builder()
+                            .url("${graphApi()}/$cId${FbVault.pathLikes()}")
+                            .post(FormBody.Builder().add(fat, token).build())
+                            .header("User-Agent", ua())
+                            .build()
+                        val cLikeRes = httpClient.newCall(cLikeReq).execute().use { res ->
+                            val body = res.body?.string() ?: ""
+                            val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
+                            if (isOk) InteractionResult(true, cId, "REACT_LIKE_FALLBACK", null, "Success", body) else null
+                        }
+                        if (cLikeRes != null) return cLikeRes
+                    }
+                } catch (_: Exception) {}
+            }
+
             try {
                 val resolveReq = Request.Builder()
                     .url("${graphApi()}/$cleanTargetId?fields=id&access_token=$token")
@@ -206,7 +295,9 @@ import java.util.concurrent.TimeUnit
             return gqlRes
         }
 
-        val finalErrMsg = if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)") || restErrorMsg.contains("does not exist") || restErrorMsg.contains("missing permissions") || restErrorMsg.contains("Unsupported post request")) {
+        val finalErrMsg = if (gqlRes.message?.contains("not found", ignoreCase = true) == true) {
+            restErrorMsg.ifBlank { "Không thể tương tác bài viết ($cleanTargetId)" }
+        } else if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)") || restErrorMsg.contains("does not exist") || restErrorMsg.contains("missing permissions") || restErrorMsg.contains("Unsupported post request")) {
             gqlRes.message ?: restErrorMsg
         } else {
             restErrorMsg.ifBlank { gqlRes.message ?: "Lỗi tương tác cảm xúc" }

@@ -35,8 +35,8 @@ class FacebookTuongTacEngine(
                 return trimmed
             }
             val patterns = listOf(
-                Regex("""(?:\/posts\/|\/videos\/|\/reels\/|\/stories\/|story_fbid=|fbid=)(\d+)"""),
-                Regex("""(?:[?&]id=)(\d+)"""),
+                Regex("""(?:\/posts\/|\/videos\/|\/reels\/|\/reel\/|\/stories\/|story_fbid=|fbid=)(\d+)"""),
+                Regex("""(?:[?&](?:id|v)=)(\d+)"""),
                 Regex("""facebook\.com\/(\d{10,})"""),
                 Regex("""facebook\.com\/[^\/]+\/posts\/(\d+)""")
             )
@@ -44,7 +44,8 @@ class FacebookTuongTacEngine(
                 val match = p.find(trimmed)?.groupValues?.getOrNull(1)
                 if (!match.isNullOrBlank()) return match
             }
-            return trimmed.substringAfterLast("/").substringBefore("?").ifBlank { trimmed }
+            val cleanUrl = trimmed.trimEnd('/')
+            return cleanUrl.substringAfterLast("/").substringBefore("?").ifBlank { trimmed }
         }
     }
 
@@ -60,8 +61,17 @@ class FacebookTuongTacEngine(
 
         companion object {
             fun fromString(str: String): ReactionType {
-                val upper = str.uppercase()
-                return values().firstOrNull { upper.contains(it.name) } ?: LIKE
+                val upper = str.uppercase().trim()
+                return when {
+                    upper.contains("CARE") || upper.contains("THUONG") || upper.contains("THƯƠNG") -> CARE
+                    upper.contains("LOVE") || upper.contains("TYM") || upper.contains("TIM") || upper.contains("YÊU") || upper.contains("YEU") -> LOVE
+                    upper.contains("HAHA") || upper.contains("CUOI") || upper.contains("CƯỜI") -> HAHA
+                    upper.contains("WOW") || upper.contains("NGAC") || upper.contains("NGẠC") || upper.contains("BAT_NGO") || upper.contains("NGO") || upper.contains("NGỜ") -> WOW
+                    upper.contains("SAD") || upper.contains("BUON") || upper.contains("BUỒN") -> SAD
+                    upper.contains("ANGRY") || upper.contains("PHAN_NO") || upper.contains("PHẪN") || upper.contains("PHANNO") -> ANGRY
+                    upper.contains("LIKE") || upper.contains("THICH") || upper.contains("THÍCH") -> LIKE
+                    else -> LIKE
+                }
             }
         }
     }
