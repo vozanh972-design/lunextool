@@ -1012,9 +1012,8 @@ class TikTokAccessibilityService : AccessibilityService() {
         val hasNoBack = findTopLeftBackButton(root) == null
         val hasMenu = findMenuIcon(root) != null
         val hasHandle = findHandleNode(root) != null
-        val hasProfileStats = findNodeByText(root, setOf("follower", "người theo dõi", "đã follow", "following", "đang follow"), exact = false) != null
 
-        if (hasBottomBar && hasNoBack && hasMenu && (hasHandle || hasProfileStats)) {
+        if (hasBottomBar && hasNoBack && hasHandle) {
             return true
         }
 

@@ -28,6 +28,26 @@ fun startXsmmJobRunnerOverlay(context: Context, accountHandles: List<String>) {
     }
     com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, "tiktok")
     context.startService(Intent(context, XsmmJobRunnerOverlayService::class.java).apply {
+        putExtra(XsmmJobRunnerOverlayService.EXTRA_MODE, XsmmJobRunnerOverlayService.MODE_RUN_JOBS)
         putExtra(XsmmJobRunnerOverlayService.EXTRA_ACCOUNT_HANDLES, accountHandles.joinToString(","))
+    })
+}
+
+fun startXsmmVerifyTikTokAccount(context: Context, variant: TikTokAppVariant, handle: String = "") {
+    if (!TikTokAppLauncher.isOverlayPermissionGranted(context)) {
+        Toast.makeText(context, "Cần cấp quyền hiển thị trên ứng dụng khác để mở lớp nổi", Toast.LENGTH_LONG).show()
+        TikTokAppLauncher.openOverlayPermissionSettings(context)
+        return
+    }
+    if (!TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
+        Toast.makeText(context, "Cần bật quyền Trợ năng (Accessibility) cho CayXu để tự động kiểm tra", Toast.LENGTH_LONG).show()
+        TikTokAppLauncher.openAccessibilitySettings(context)
+        return
+    }
+    com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, "tiktok")
+    context.startService(Intent(context, XsmmJobRunnerOverlayService::class.java).apply {
+        putExtra(XsmmJobRunnerOverlayService.EXTRA_MODE, XsmmJobRunnerOverlayService.MODE_VERIFY_ONLY)
+        putExtra(XsmmJobRunnerOverlayService.EXTRA_VARIANT, variant.name)
+        putExtra(XsmmJobRunnerOverlayService.EXTRA_ACCOUNT_HANDLES, handle)
     })
 }

@@ -40,6 +40,10 @@ import kotlinx.coroutines.launch
 class XsmmJobRunnerOverlayService : Service() {
     companion object {
         const val EXTRA_ACCOUNT_HANDLES = "extra_account_handles"
+        const val EXTRA_MODE = "extra_mode"
+        const val EXTRA_VARIANT = "extra_variant"
+        const val MODE_RUN_JOBS = "run_jobs"
+        const val MODE_VERIFY_ONLY = "verify_only"
     }
 
     private lateinit var windowManager: WindowManager
@@ -76,6 +80,12 @@ class XsmmJobRunnerOverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (fullPanel == null && miniBubble == null) {
+            val mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_RUN_JOBS
+            val variantStr = intent?.getStringExtra(EXTRA_VARIANT)
+            val variant = variantStr?.let {
+                try { TikTokAppVariant.valueOf(it) } catch (_: Exception) { null }
+            } ?: TikTokAppVariant.STANDARD
+
             accountHandles = intent?.getStringExtra(EXTRA_ACCOUNT_HANDLES)
                 ?.split(",")
                 ?.map { it.trim().removePrefix("@") }
@@ -91,9 +101,50 @@ class XsmmJobRunnerOverlayService : Service() {
                 }
             }
 
-            startAutomationRunner()
+            if (mode == MODE_VERIFY_ONLY) {
+                startVerifyOnlyRunner(variant, accountHandles.firstOrNull().orEmpty())
+            } else {
+                startAutomationRunner()
+            }
         }
         return START_NOT_STICKY
+    }
+
+    private fun startVerifyOnlyRunner(variant: TikTokAppVariant, handle: String) {
+        runnerJob?.cancel()
+        runnerJob = serviceScope.launch(Dispatchers.IO) {
+            val cleanHandle = handle.trim().removePrefix("@").lowercase()
+            XsmmJobStatusBridge.update("Mở TikTok (${variant.name}) kiểm tra nick...")
+
+            // Thu nhỏ sang mini bubble để không che khuất màn hình TikTok
+            launch(Dispatchers.Main) {
+                if (fullPanel != null) showMiniBubble()
+            }
+
+            TikTokAppLauncher.launch(applicationContext, variant, forceStopFirst = true)
+            delay(1500L)
+
+            val verifyActionId = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.triggerVerifyAccount(cleanHandle, variant)
+            val verifyStartTime = System.currentTimeMillis()
+            val maxVerifyWait = 90000L // 90s để máy yếu mở app và tải chậm thoải mái
+
+            while (isActive && (System.currentTimeMillis() - verifyStartTime) < maxVerifyWait) {
+                val res = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.result.value
+                if (res is com.cayxu.app.automation.tiktok.XsmmTaskActionResult.InProgress) {
+                    XsmmJobStatusBridge.update(res.message)
+                } else if (res is com.cayxu.app.automation.tiktok.XsmmTaskActionResult.Completed && res.actionId == verifyActionId) {
+                    XsmmJobStatusBridge.update(res.message)
+                    delay(1500L)
+                    break
+                }
+                delay(400L)
+            }
+
+            XsmmJobStatusBridge.update("Hoàn tất kiểm tra!")
+            delay(1200L)
+            TikTokAppLauncher.bringToolToFront(applicationContext)
+            stopSelf()
+        }
     }
 
     private fun startAutomationRunner() {

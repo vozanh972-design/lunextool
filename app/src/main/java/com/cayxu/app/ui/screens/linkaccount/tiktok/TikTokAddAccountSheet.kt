@@ -104,15 +104,7 @@ fun TikTokAddAccountSheet(onDismiss: () -> Unit) {
                 variant = variant,
                 onBack = { showPermissionStep = false },
                 onGranted = {
-                    TikTokCaptureBridge.startWaiting(variant)
-                    context.startService(
-                        Intent(context, TikTokCaptureOverlayService::class.java)
-                            .putExtra(TikTokCaptureOverlayService.EXTRA_VARIANT, variant.name)
-                    )
-                    val launched = TikTokAppLauncher.launch(context, variant, forceStopFirst = true)
-                    if (!launched) {
-                        Toast.makeText(context, "Không mở được ${optionTitle(variant)}", Toast.LENGTH_SHORT).show()
-                    }
+                    com.cayxu.app.ui.overlay.xsmm.startXsmmVerifyTikTokAccount(context, variant)
                     onDismiss()
                 }
             )
