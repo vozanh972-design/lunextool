@@ -317,7 +317,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                 }
 
                 val handleNode = findHandleNode(root)
-                val handleText = handleNode?.text?.toString()?.trim().orEmpty()
+                val handleText = (handleNode?.text ?: handleNode?.contentDescription)?.toString()?.trim().orEmpty()
                 if (handleNode != null && handleText.length > 1 && isUserSelfProfileScreen(root)) {
                     TikTokCaptureBridge.updateProgress("Đã thấy @, đang lưu...")
                     val displayName = findDisplayNameNear(handleNode)
@@ -764,11 +764,15 @@ class TikTokAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Tìm node có text bắt đầu bằng "@" (định danh công khai, không phải thông tin đăng nhập). */
+    /** Tìm node có text hoặc contentDescription bắt đầu bằng "@" (định danh công khai, không phải thông tin đăng nhập). */
     private fun findHandleNode(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
         if (depth > 40) return null
-        val text = node.text?.toString()
-        if (!text.isNullOrBlank() && text.trim().startsWith("@") && text.trim().length > 2) {
+        val text = node.text?.toString()?.trim()
+        val desc = node.contentDescription?.toString()?.trim()
+        if (!text.isNullOrBlank() && text.startsWith("@") && text.length > 2) {
+            return node
+        }
+        if (!desc.isNullOrBlank() && desc.startsWith("@") && desc.length > 2) {
             return node
         }
         for (i in 0 until node.childCount) {
@@ -831,19 +835,39 @@ class TikTokAccessibilityService : AccessibilityService() {
 
     /**
      * Nhận diện màn hình Hồ sơ chính chủ (Profile) của người dùng:
-     * Phải có các đặc trưng như nút "Sửa hồ sơ" (Edit profile), "Chia sẻ hồ sơ", "Đơn hàng của bạn", "Thêm bạn bè"
-     * VÀ KHÔNG PHẢI là video feed hoặc trang của người khác.
+     * - Hỗ trợ cả bản cũ (có nút text "Sửa hồ sơ", "Chia sẻ hồ sơ"...)
+     * - Hỗ trợ cả bản mới (TikTok đổi nút sửa thành icon cây bút chì cạnh tên, hoặc icon chia sẻ):
+     *   Chỉ cần có thanh đáy (Bottom Navigation Bar) + KHÔNG có nút Back + có nút Menu (☰) ở góc trên bên phải + thấy @handle hoặc chỉ số follower/đã follow.
      */
     private fun isUserSelfProfileScreen(root: AccessibilityNodeInfo): Boolean {
-        // Nút chỉnh sửa hồ sơ / chia sẻ hồ sơ / đơn hàng của bạn chỉ có ở trang cá nhân của chính mình.
-        // Tuyệt đối không dùng "thêm bạn bè" / menu vì ở Trang chủ feed video cũng có tab "Bạn bè" và nút kính lúp.
+        // 1. Dấu hiệu text truyền thống: Sửa hồ sơ, chia sẻ hồ sơ, đơn hàng...
         val profileSelfMarkers = setOf(
             "sửa hồ sơ", "chỉnh sửa hồ sơ", "edit profile",
             "chia sẻ hồ sơ", "share profile",
             "đơn hàng của bạn", "your orders",
-            "phần trưng bày", "showcase"
+            "phần trưng bày", "showcase",
+            "thêm tiểu sử", "add bio"
         )
-        return findNodeByText(root, profileSelfMarkers, exact = false) != null
+        if (findNodeByText(root, profileSelfMarkers, exact = false) != null) {
+            return true
+        }
+
+        // 2. Nhận diện cấu trúc trang Hồ sơ chính chủ (áp dụng cho TikTok bản mới):
+        // - Có thanh đáy (Bottom Navigation Bar với tab Trang chủ/Hộp thư/Hồ sơ)
+        // - KHÔNG có nút Back (trang cá nhân người khác thì luôn có nút Quay lại ở góc trên bên trái)
+        // - Có icon Menu (☰) ở góc trên bên phải (chỉ trang cá nhân chính chủ mới có menu ☰, trang người khác là nút chia sẻ/3 chấm)
+        // - Có @handle hoặc chỉ số thống kê cá nhân (follower, đã follow, thích)
+        val hasBottomBar = hasBottomNavigationBar(root)
+        val hasNoBack = findTopLeftBackButton(root) == null
+        val hasMenu = findMenuIcon(root) != null
+        val hasHandle = findHandleNode(root) != null
+        val hasProfileStats = findNodeByText(root, setOf("follower", "người theo dõi", "đã follow", "following", "đang follow"), exact = false) != null
+
+        if (hasBottomBar && hasNoBack && hasMenu && (hasHandle || hasProfileStats)) {
+            return true
+        }
+
+        return false
     }
 
     /**
@@ -1370,7 +1394,7 @@ class TikTokAccessibilityService : AccessibilityService() {
 
                     val handleNode = findHandleNode(root)
                     if (handleNode != null && isUserSelfProfileScreen(root)) {
-                        val currentHandle = handleNode.text?.toString()?.trim()?.removePrefix("@")?.lowercase().orEmpty()
+                        val currentHandle = (handleNode.text ?: handleNode.contentDescription)?.toString()?.trim()?.removePrefix("@")?.lowercase().orEmpty()
                         if (currentHandle.isNotBlank()) {
                             if (currentHandle == target || currentHandle.contains(target) || target.contains(currentHandle)) {
                                 XsmmTaskAutomationBridge.updateProgress("Đã khớp tài khoản @$target")
