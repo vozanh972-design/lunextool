@@ -27,6 +27,7 @@ object FbVault {
 
     fun docIdPageReact()    = "54117" + "82298894101"
     fun docIdProfileReact() = "54117" + "82298894101"
+    fun docIdVoiceReact()   = "47154" + "26135182900"
 
     fun pathReactions()     = "/" + "reactions"
     fun pathComments()      = "/" + "comments"
