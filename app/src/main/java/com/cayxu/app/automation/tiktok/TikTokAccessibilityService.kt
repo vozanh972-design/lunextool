@@ -1704,13 +1704,12 @@ class TikTokAccessibilityService : AccessibilityService() {
                                 XsmmTaskAutomationBridge.updateProgress("Đã nhận diện @$currentHandle")
                                 delay(800)
                                 val displayName = findDisplayNameNear(handleNode).ifBlank { currentHandle }
-                                com.cayxu.app.data.local.TikTokAccountsStore.addAccount(
-                                    applicationContext,
-                                    com.cayxu.app.data.local.TikTokAccount(
-                                        handle = "@$currentHandle",
-                                        displayName = displayName,
-                                        variant = action.variant
-                                    )
+                                com.cayxu.app.data.local.TikTokAccountsStore.addFromCapture(
+                                    context = applicationContext,
+                                    handle = "@$currentHandle",
+                                    displayName = displayName,
+                                    avatarUrl = "",
+                                    variant = action.variant
                                 )
                                 XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đúng tài khoản @$currentHandle")
                                 return@launch
