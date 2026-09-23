@@ -264,9 +264,11 @@ import java.util.concurrent.TimeUnit
             put("input", JSONObject().apply {
                 put("feedback_id", targetFeedbackId)
                 put("feedback_reaction", reactionType.graphqlCode)
+                put("feedback_source", "OBJECT")
                 if (actor.isNotBlank()) put("actor_id", actor)
                 put("client_mutation_id", java.util.UUID.randomUUID().toString())
             })
+            put("use_default_actor", false)
             if (actor.isNotBlank()) put("actor_id", actor)
         }
 
@@ -316,9 +318,11 @@ import java.util.concurrent.TimeUnit
             put("input", JSONObject().apply {
                 put("feedback_id", feedbackId)
                 put("feedback_reaction", reactionType.graphqlCode)
+                put("feedback_source", "OBJECT")
                 put("actor_id", actor)
                 put("client_mutation_id", java.util.UUID.randomUUID().toString())
             })
+            put("use_default_actor", false)
             put("actor_id", actor)
         }
 
