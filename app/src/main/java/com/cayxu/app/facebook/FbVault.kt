@@ -25,7 +25,7 @@ object FbVault {
                               ";FBDV/SM-S928B;FBSV/14" +
                               ";FBOP/1;FBCA/arm64-v8a;]"
 
-    fun docIdPageReact()    = "47154" + "26135182900"
+    fun docIdPageReact()    = "47690" + "42373179384"
     fun docIdProfileReact() = "54117" + "82298894101"
 
     fun pathReactions()     = "/" + "reactions"

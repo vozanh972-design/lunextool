@@ -169,7 +169,7 @@ import java.util.concurrent.TimeUnit
                 }
             } catch (_: Exception) {}
 
-            // 2. Thử endpoint Graph API không version (bỏ qua hạn chế v2.4+ cho status)
+            // 2. Thử endpoint Graph API không version
             try {
                 val unversionedReq = Request.Builder()
                     .url("https://graph.facebook.com/$cleanTargetId${FbVault.pathReactions()}")
@@ -199,7 +199,7 @@ import java.util.concurrent.TimeUnit
             } catch (_: Exception) {}
         }
 
-        // 3. Fallback sang Katana GraphQL độc lập của chính Page615 bằng pageToken
+        // 3. Fallback sang GraphQL độc lập của chính Page 615 bằng pageToken và actor_id
         val actor = pageId615?.takeIf { it.isNotBlank() } ?: ""
         val gqlRes = reactGraphQLPage(cleanTargetId, token, reactionType, actor)
         if (gqlRes.isSuccess) {
@@ -215,6 +215,12 @@ import java.util.concurrent.TimeUnit
         return InteractionResult(false, cleanTargetId, "REACT_${reactionType.value}", null, finalErrMsg, gqlRes.rawResponse.ifBlank { restBody })
     }
 
+    /**
+     * Tương tác cảm xúc chuẩn Page 615 qua GraphQL:
+     * - actor_id là UID của Page 615 (Profile+)
+     * - Chỉ sử dụng doc_id hợp lệ của Page, KHÔNG sử dụng doc_id Profile (5411782298894101)
+     * - Chuẩn hóa feedback_id cho GraphQL nếu là Post ID dạng số
+     */
     fun reactGraphQLPage(
         feedbackId: String,
         token: String,
@@ -224,55 +230,77 @@ import java.util.concurrent.TimeUnit
         val cleanFeedbackId = if (!feedbackId.startsWith("http")) feedbackId.trim() else FacebookTuongTacEngine.extractId(feedbackId)
         val actor = pageActorId.ifBlank { pageId615 ?: "" }
 
+        // Chuẩn hóa feedback_id: Nếu là số numeric, query feedback node ID từ Graph API hoặc Base64
+        var targetFeedbackId = cleanFeedbackId
+        if (cleanFeedbackId.all { it.isDigit() }) {
+            try {
+                val fReq = Request.Builder()
+                    .url("${graphApi()}/$cleanFeedbackId?fields=feedback{id}&access_token=$token")
+                    .get()
+                    .header("User-Agent", ua())
+                    .build()
+                httpClient.newCall(fReq).execute().use { fRes ->
+                    val fBody = fRes.body?.string() ?: ""
+                    val fJson = try { JSONObject(fBody) } catch (_: Exception) { null }
+                    val resolvedId = fJson?.optJSONObject("feedback")?.optString("id")
+                    if (!resolvedId.isNullOrBlank()) {
+                        targetFeedbackId = resolvedId
+                    }
+                }
+            } catch (_: Exception) {}
+
+            if (targetFeedbackId == cleanFeedbackId) {
+                try {
+                    val encoded = android.util.Base64.encodeToString(
+                        "feedback:$cleanFeedbackId".toByteArray(Charsets.UTF_8),
+                        android.util.Base64.NO_WRAP
+                    )
+                    if (!encoded.isNullOrBlank()) targetFeedbackId = encoded
+                } catch (_: Exception) {}
+            }
+        }
+
         val variables = JSONObject().apply {
             put("input", JSONObject().apply {
-                put("feedback_id", cleanFeedbackId)
+                put("feedback_id", targetFeedbackId)
                 put("feedback_reaction", reactionType.graphqlCode)
                 if (actor.isNotBlank()) put("actor_id", actor)
                 put("client_mutation_id", java.util.UUID.randomUUID().toString())
             })
+            if (actor.isNotBlank()) put("actor_id", actor)
         }
 
         val fv  = FbVault.fieldVariables()
         val fdi = FbVault.fieldDocId()
         val fat = FbVault.fieldAccessToken()
 
-        // Thử các doc_id GraphQL của Katana (Page React và Profile React)
-        val docIds = listOf(FbVault.docIdPageReact(), "4715426135182900", FbVault.docIdProfileReact(), "5411782298894101").distinct()
-        var lastErr = ""
-        var lastBody = ""
+        // Sửa đúng bug: Dùng doc_id của Page 615 GraphQL, loại bỏ hoàn toàn docIdProfileReact (5411782298894101)
+        val pageDocId = FbVault.docIdPageReact()
 
-        for (docId in docIds) {
-            val formBody = FormBody.Builder()
-                .add(fdi, docId)
-                .add(fv, variables.toString())
-                .add(fat, token)
-                .build()
+        val formBody = FormBody.Builder()
+            .add(fdi, pageDocId)
+            .add(fv, variables.toString())
+            .add(fat, token)
+            .build()
 
-            val request = Request.Builder()
-                .url(graphql())
-                .post(formBody)
-                .header("User-Agent", ua())
-                .header("Authorization", "OAuth $token")
-                .header("X-FB-Friendly-Name", "UFIFeedbackReactMutation")
-                .build()
+        val request = Request.Builder()
+            .url(graphql())
+            .post(formBody)
+            .header("User-Agent", ua())
+            .header("Authorization", "OAuth $token")
+            .header("X-FB-Friendly-Name", "CometUFIFeedbackReactMutation")
+            .build()
 
-            try {
-                httpClient.newCall(request).execute().use { res ->
-                    val body = res.body?.string() ?: ""
-                    lastBody = body
-                    val isOk = res.isSuccessful && !body.contains("\"errors\":")
-                    if (isOk) {
-                        return InteractionResult(true, cleanFeedbackId, "REACT_GQL_${reactionType.value}", null, "Success", body)
-                    }
-                    lastErr = parseErrorMessage(body)
-                }
-            } catch (e: Exception) {
-                lastErr = e.message ?: "Lỗi mạng"
+        return try {
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val isOk = res.isSuccessful && !body.contains("\"errors\":")
+                val errMsg = if (isOk) "Success" else parseErrorMessage(body)
+                InteractionResult(isOk, cleanFeedbackId, "REACT_GQL_PAGE_${reactionType.value}", null, errMsg, body)
             }
+        } catch (e: Exception) {
+            InteractionResult(false, cleanFeedbackId, "REACT_GQL_PAGE", null, e.message ?: "Lỗi mạng", "")
         }
-
-        return InteractionResult(false, cleanFeedbackId, "REACT_GQL", null, lastErr, lastBody)
     }
 
     fun reactGraphQLVoice(
@@ -289,8 +317,9 @@ import java.util.concurrent.TimeUnit
                 put("feedback_id", feedbackId)
                 put("feedback_reaction", reactionType.graphqlCode)
                 put("actor_id", actor)
-                put("client_mutation_id", "1")
+                put("client_mutation_id", java.util.UUID.randomUUID().toString())
             })
+            put("actor_id", actor)
         }
 
         val fv  = FbVault.fieldVariables()
@@ -298,7 +327,7 @@ import java.util.concurrent.TimeUnit
 
         val formBody = FormBody.Builder()
             .add(fv, variables.toString())
-            .add(fdi, "4715426135182900")
+            .add(fdi, FbVault.docIdPageReact())
             .build()
 
         val cleanUserToken = userToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
@@ -307,6 +336,7 @@ import java.util.concurrent.TimeUnit
             .post(formBody)
             .header("User-Agent", ua())
             .header("Authorization", "OAuth $cleanUserToken")
+            .header("X-FB-Friendly-Name", "CometUFIFeedbackReactMutation")
             .build()
 
         return try {
