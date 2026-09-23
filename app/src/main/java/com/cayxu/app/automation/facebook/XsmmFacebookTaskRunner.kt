@@ -309,34 +309,7 @@ object XsmmFacebookTaskRunner {
                 taskResult = XsmmTasksRepository.getTasks(token, currentActiveTaskType)
             }
 
-            // Fallback lấy nhiệm vụ phụ nếu loại chính trả về danh sách rỗng (hết NV)
-            if (taskResult is XsmmTasks2Result.Success && taskResult.tasks.isEmpty()) {
-                if (currentActiveTaskType == "facebook_like") {
-                    val emotionSubTypes = listOf(
-                        "facebook_love",
-                        "facebook_care",
-                        "facebook_haha",
-                        "facebook_wow",
-                        "facebook_sad",
-                        "facebook_angry"
-                    )
-                    for (subType in emotionSubTypes) {
-                        if (!coroutineContext.isActive) break
-                        val subRes = XsmmTasksRepository.getTasks(token, subType)
-                        if (subRes is XsmmTasks2Result.Success && subRes.tasks.isNotEmpty()) {
-                            taskResult = subRes
-                            actualTaskType = subType
-                            break
-                        }
-                    }
-                } else if (currentActiveTaskType == "facebook_follow") {
-                    val subRes = XsmmTasksRepository.getTasks(token, "facebook_sub")
-                    if (subRes is XsmmTasks2Result.Success && subRes.tasks.isNotEmpty()) {
-                        taskResult = subRes
-                        actualTaskType = "facebook_sub"
-                    }
-                }
-            }
+
 
             val (isNoTask, errorMsg) = when (taskResult) {
                 is XsmmTasks2Result.Error -> {

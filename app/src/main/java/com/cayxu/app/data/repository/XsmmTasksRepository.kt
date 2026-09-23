@@ -437,68 +437,56 @@ object XsmmTasksRepository {
      * Hỗ trợ mọi định dạng: reaction, reaction_type, react, action, sub_type, camxuc...
      */
     private fun extractReaction(obj: JsonObject): String {
+        // Thu thập tất cả các chuỗi có thể chứa thông tin cảm xúc trong task của XSMM
+        val textSnippets = mutableListOf<String>()
+
         val candidateKeys = listOf(
             "reaction", "reactions", "reaction_type", "react", "type_reaction",
             "action", "action_type", "sub_type", "subtype",
             "camxuc", "cam_xuc", "loaicx", "loai_cx", "loai",
-            "emotion", "feeling"
+            "emotion", "feeling",
+            "name", "title", "note", "description", "task_name", "job_name", "type_job", "job_type",
+            "content", "text"
         )
 
-        fun normalizeReaction(raw: String?): String? {
-            if (raw.isNullOrBlank()) return null
-            val lower = raw.trim().lowercase()
-            return when {
-                lower.contains("love") || lower.contains("tym") || lower.contains("tim") ||
-                lower.contains("yeuthich") || lower.contains("yêu thích") || lower.contains("heart") -> "LOVE"
-                lower.contains("care") || lower.contains("thuongthuong") || lower.contains("thương thương") || lower.contains("om") -> "CARE"
-                lower.contains("haha") || lower.contains("cuoi") || lower.contains("cười") -> "HAHA"
-                lower.contains("wow") || lower.contains("ngacnhien") || lower.contains("ngạc nhiên") -> "WOW"
-                lower.contains("sad") || lower.contains("buon") || lower.contains("buồn") || lower.contains("khoc") || lower.contains("khóc") -> "SAD"
-                lower.contains("angry") || lower.contains("phanno") || lower.contains("phẫn nộ") || lower.contains("gian") || lower.contains("giận") -> "ANGRY"
-                lower == "like" || lower == "facebook_like" || lower.contains("thich") || lower.contains("thích") -> "LIKE"
-                else -> null
-            }
-        }
-
-        // 1. Kiểm tra các key trực tiếp trong object
         for (k in candidateKeys) {
             val el = obj.get(k)
             if (el != null && el.isJsonPrimitive) {
-                val norm = normalizeReaction(el.asString)
-                if (norm != null) return norm
+                textSnippets.add(el.asString)
             }
         }
 
-        // 2. Kiểm tra trong trường type của task (ví dụ: type = "facebook_love", "love", "facebook_care"...)
-        val typeStr = obj.get("type")?.takeIf { it.isJsonPrimitive }?.asString
-        val normType = normalizeReaction(typeStr)
-        if (normType != null) return normType
-
-        // 3. Kiểm tra các container con: data, task, job, params
         for (containerKey in listOf("data", "task", "job", "params")) {
             val container = obj.get(containerKey)
             if (container != null && container.isJsonObject) {
-                val innerObj = container.asJsonObject
+                val inner = container.asJsonObject
                 for (k in candidateKeys) {
-                    val el = innerObj.get(k)
+                    val el = inner.get(k)
                     if (el != null && el.isJsonPrimitive) {
-                        val norm = normalizeReaction(el.asString)
-                        if (norm != null) return norm
+                        textSnippets.add(el.asString)
                     }
                 }
-                val innerType = innerObj.get("type")?.takeIf { it.isJsonPrimitive }?.asString
-                val normInnerType = normalizeReaction(innerType)
-                if (normInnerType != null) return normInnerType
+                val innerType = inner.get("type")?.takeIf { it.isJsonPrimitive }?.asString
+                if (!innerType.isNullOrBlank()) textSnippets.add(innerType)
             }
         }
 
-        // 4. Kiểm tra trong description / title / note
-        for (descKey in listOf("description", "title", "note", "name")) {
-            val desc = obj.get(descKey)?.takeIf { it.isJsonPrimitive }?.asString
-            val normDesc = normalizeReaction(desc)
-            if (normDesc != null) return normDesc
-        }
+        val typeStr = obj.get("type")?.takeIf { it.isJsonPrimitive }?.asString
+        if (!typeStr.isNullOrBlank()) textSnippets.add(typeStr)
 
-        return ""
+        val allText = (textSnippets.joinToString(" ") + " " + obj.toString()).lowercase()
+
+        // Ưu tiên cao nhất: Kiểm tra các loại cảm xúc đặc thù (CARE, LOVE, HAHA, WOW, SAD, ANGRY)
+        // Tuyệt đối không để LIKE hay "facebook_like" ghi đè lên các cảm xúc này!
+        return when {
+            allText.contains("care") || allText.contains("thuongthuong") || allText.contains("thương thương") || allText.contains("thương") || allText.contains("om") -> "CARE"
+            allText.contains("love") || allText.contains("tym") || allText.contains("tim") || allText.contains("yeuthich") || allText.contains("yêu thích") || allText.contains("heart") -> "LOVE"
+            allText.contains("haha") || allText.contains("cuoi") || allText.contains("cười") -> "HAHA"
+            allText.contains("wow") || allText.contains("ngacnhien") || allText.contains("ngạc nhiên") -> "WOW"
+            allText.contains("sad") || allText.contains("buon") || allText.contains("buồn") || allText.contains("khoc") || allText.contains("khóc") -> "SAD"
+            allText.contains("angry") || allText.contains("phanno") || allText.contains("phẫn nộ") || allText.contains("gian") || allText.contains("giận") -> "ANGRY"
+            allText.contains("like") || allText.contains("thich") || allText.contains("thích") -> "LIKE"
+            else -> ""
+        }
     }
 }

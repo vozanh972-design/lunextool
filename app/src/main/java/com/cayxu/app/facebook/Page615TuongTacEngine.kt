@@ -262,21 +262,17 @@ import java.util.concurrent.TimeUnit
 
         val variables = JSONObject().apply {
             put("input", JSONObject().apply {
-                put("feedback_id", targetFeedbackId)
-                put("feedback_reaction", reactionType.graphqlCode)
-                put("feedback_source", "OBJECT")
-                if (actor.isNotBlank()) put("actor_id", actor)
                 put("client_mutation_id", java.util.UUID.randomUUID().toString())
+                if (actor.isNotBlank()) put("actor_id", actor)
+                put("feedback_id", cleanFeedbackId)
+                put("feedback_reaction", reactionType.graphqlCode)
             })
-            put("use_default_actor", false)
-            if (actor.isNotBlank()) put("actor_id", actor)
         }
 
         val fv  = FbVault.fieldVariables()
         val fdi = FbVault.fieldDocId()
         val fat = FbVault.fieldAccessToken()
 
-        // Sửa đúng bug: Dùng doc_id của Page 615 GraphQL, loại bỏ hoàn toàn docIdProfileReact (5411782298894101)
         val pageDocId = FbVault.docIdPageReact()
 
         val formBody = FormBody.Builder()
@@ -290,7 +286,7 @@ import java.util.concurrent.TimeUnit
             .post(formBody)
             .header("User-Agent", ua())
             .header("Authorization", "OAuth $token")
-            .header("X-FB-Friendly-Name", "CometUFIFeedbackReactMutation")
+            .header("X-FB-Friendly-Name", "UFIFeedbackReactMutation")
             .build()
 
         return try {
@@ -316,14 +312,11 @@ import java.util.concurrent.TimeUnit
 
         val variables = JSONObject().apply {
             put("input", JSONObject().apply {
+                put("client_mutation_id", java.util.UUID.randomUUID().toString())
+                put("actor_id", actor)
                 put("feedback_id", feedbackId)
                 put("feedback_reaction", reactionType.graphqlCode)
-                put("feedback_source", "OBJECT")
-                put("actor_id", actor)
-                put("client_mutation_id", java.util.UUID.randomUUID().toString())
             })
-            put("use_default_actor", false)
-            put("actor_id", actor)
         }
 
         val fv  = FbVault.fieldVariables()
@@ -340,7 +333,7 @@ import java.util.concurrent.TimeUnit
             .post(formBody)
             .header("User-Agent", ua())
             .header("Authorization", "OAuth $cleanUserToken")
-            .header("X-FB-Friendly-Name", "CometUFIFeedbackReactMutation")
+            .header("X-FB-Friendly-Name", "UFIFeedbackReactMutation")
             .build()
 
         return try {
