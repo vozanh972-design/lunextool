@@ -358,6 +358,50 @@ object XsmmAccountsRepository {
         }
     }
 
+    /**
+     * Thêm tài khoản TikTok mới vào hệ thống ĐA LUỒNG của XSMM (POST /api/taskapi/accounts2).
+     * Body: {"type": "tiktok", "link_account": "https://www.tiktok.com/@username"}
+     */
+    suspend fun addTikTokAccount2(rawToken: String, handle: String): XsmmAddAccountResult {
+        val normalizedHandle = handle.trim().removePrefix("@")
+        if (normalizedHandle.isBlank()) return XsmmAddAccountResult.Error("Thiếu @handle để thêm")
+
+        val body = JsonObject().apply {
+            addProperty("type", "tiktok")
+            addProperty("link_account", "https://www.tiktok.com/@$normalizedHandle")
+        }
+
+        return try {
+            val response = XsmmRetrofitClient.api.addAccount2(authHeader(rawToken), body)
+            if (!response.isSuccessful) {
+                return XsmmAddAccountResult.Error(readError(response.errorBody()?.string(), "Lỗi thêm tài khoản đa luồng (HTTP ${response.code()})"))
+            }
+            val json = response.body()
+            val errorField = json?.get("error")?.takeIf { it.isJsonPrimitive }?.asString
+            if (!errorField.isNullOrBlank()) return XsmmAddAccountResult.Error(errorField)
+
+            val accountObj = json?.takeIf { it.has("id") || it.has("account_id") }
+                ?: json?.get("account")?.takeIf { it.isJsonObject }?.asJsonObject
+
+            if (accountObj != null) {
+                XsmmAddAccountResult.Success(parseAccount(accountObj))
+            } else {
+                XsmmAddAccountResult.Success(
+                    XsmmAccount(
+                        id = "",
+                        type = "tiktok",
+                        accountId = "",
+                        name = normalizedHandle,
+                        linkAccount = "https://www.tiktok.com/@$normalizedHandle",
+                        isActive = true
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            XsmmAddAccountResult.Error(e.message ?: "Lỗi kết nối mạng")
+        }
+    }
+
     /** Thêm acc Instagram mới vào XSMM theo username/handle */
     suspend fun addInstagramAccount(rawToken: String, username: String): XsmmAddAccountResult {
         val cleanName = username.trim().removePrefix("@").trim('/')

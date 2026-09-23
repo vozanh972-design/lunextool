@@ -107,17 +107,18 @@ class XsmmJobRunnerOverlayService : Service() {
             val config = XsmmRunConfigStore.get(applicationContext, "tiktok")
             var noTaskConsecutiveCount = 0
 
-            // Ensure we have account IDs for all handles
+            // Ensure we have account IDs for all handles using accounts2 (ĐA LUỒNG 100%)
             val accountIdMap = XsmmAccountStore.getAccountIdMap(applicationContext).toMutableMap()
             val missingHandles = accountHandles.filter { !accountIdMap.containsKey(it.lowercase()) }
             if (missingHandles.isNotEmpty()) {
-                XsmmJobStatusBridge.update("Đang đồng bộ danh sách tài khoản...")
-                when (val res = XsmmAccountsRepository.getAccounts(token, "tiktok")) {
+                XsmmJobStatusBridge.update("Đang đồng bộ danh sách tài khoản đa luồng...")
+                when (val res = XsmmAccountsRepository.getAccounts2(token, accountType = "tiktok")) {
                     is XsmmAccountsResult.Success -> {
                         res.accounts.forEach { acc ->
                             val h = acc.linkAccount.substringAfterLast("@").trim('/').lowercase()
-                            if (h.isNotBlank() && !acc.accountId.isNullOrBlank()) {
-                                accountIdMap[h] = acc.accountId
+                            val accId = acc.accountId.ifBlank { acc.id }
+                            if (h.isNotBlank() && accId.isNotBlank()) {
+                                accountIdMap[h] = accId
                             }
                         }
                         XsmmAccountStore.saveAccountIdMap(applicationContext, accountIdMap)
@@ -144,7 +145,23 @@ class XsmmJobRunnerOverlayService : Service() {
                     }
 
                     val cleanHandle = handle.trim().removePrefix("@").lowercase()
-                    val uid = accountIdMap[cleanHandle] ?: cleanHandle
+                    var uid = accountIdMap[cleanHandle].orEmpty()
+
+                    // Nếu chưa có UID đa luồng -> Tự động thêm vào POST /api/taskapi/accounts2
+                    if (uid.isBlank()) {
+                        XsmmJobStatusBridge.update("Đồng bộ @$cleanHandle lên XSMM đa luồng...")
+                        val addRes = XsmmAccountsRepository.addTikTokAccount2(token, cleanHandle)
+                        if (addRes is XsmmAddAccountResult.Success) {
+                            val resolvedId = addRes.account.accountId.ifBlank { addRes.account.id }
+                            if (resolvedId.isNotBlank()) {
+                                uid = resolvedId
+                                accountIdMap[cleanHandle] = uid
+                                XsmmAccountStore.saveAccountIdMap(applicationContext, accountIdMap)
+                            }
+                        }
+                    }
+                    if (uid.isBlank()) uid = cleanHandle
+
                     var failedJobsThisAccount = 0
 
                     launch(Dispatchers.Main) {
@@ -184,7 +201,27 @@ class XsmmJobRunnerOverlayService : Service() {
 
                     checkPauseWait()
                     XsmmJobStatusBridge.update("Lấy nhiệm vụ @$cleanHandle...")
-                    val taskResult = XsmmTasksRepository.getTasks2(token, config.taskType, uid)
+                    var taskResult = XsmmTasksRepository.getTasks2(token, config.taskType, uid)
+
+                    // Nếu server báo cần thêm tài khoản -> Tự động thêm vào POST /api/taskapi/accounts2 và lấy lại job
+                    if (taskResult is XsmmTasks2Result.Error && (
+                        taskResult.message.contains("cần thêm tài khoản", ignoreCase = true) ||
+                        taskResult.message.contains("chưa thêm", ignoreCase = true)
+                    )) {
+                        XsmmJobStatusBridge.update("Thêm @$cleanHandle vào hệ thống đa luồng...")
+                        val addRes = XsmmAccountsRepository.addTikTokAccount2(token, cleanHandle)
+                        if (addRes is XsmmAddAccountResult.Success) {
+                            val newUid = addRes.account.accountId.ifBlank { addRes.account.id }
+                            if (newUid.isNotBlank()) {
+                                uid = newUid
+                                accountIdMap[cleanHandle] = uid
+                                XsmmAccountStore.saveAccountIdMap(applicationContext, accountIdMap)
+                            }
+                            delay(1200L)
+                            XsmmJobStatusBridge.update("Lấy lại nhiệm vụ @$cleanHandle...")
+                            taskResult = XsmmTasksRepository.getTasks2(token, config.taskType, uid)
+                        }
+                    }
 
                     when (taskResult) {
                         is XsmmTasks2Result.Error -> {

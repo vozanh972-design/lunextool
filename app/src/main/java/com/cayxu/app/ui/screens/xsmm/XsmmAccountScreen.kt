@@ -633,13 +633,18 @@ fun XsmmAccountScreen(navController: NavController) {
             XsmmAccountStore.saveAccountIdMap(context, accMap)
             XsmmAccountStore.saveInternalIdMap(context, internalMap)
         } else {
-            val allPlatformOnXsmm = XsmmAccountsRepository.getAllAccounts(token, accountType = selectedPlatform)
+            val allPlatformOnXsmm = if (selectedPlatform == "tiktok") {
+                XsmmAccountsRepository.getAllAccounts2(token, accountType = "tiktok")
+            } else {
+                XsmmAccountsRepository.getAllAccounts(token, accountType = selectedPlatform)
+            }
             val accMap = mutableMapOf<String, String>()
             val internalMap = mutableMapOf<String, String>()
             allPlatformOnXsmm.forEach { acc ->
                 val handle = acc.linkAccount.substringAfterLast("@").trim('/').lowercase()
+                val accId = acc.accountId.ifBlank { acc.id }
                 if (handle.isNotBlank()) {
-                    if (acc.accountId.isNotBlank()) accMap[handle] = acc.accountId
+                    if (accId.isNotBlank()) accMap[handle] = accId
                     if (acc.id.isNotBlank()) internalMap[handle] = acc.id
                 }
             }
@@ -1080,9 +1085,15 @@ fun XsmmAccountScreen(navController: NavController) {
                                     }
                                     addingUid = account.uid
                                     scope.launch {
-                                        when (val result = XsmmAccountsRepository.addTikTokAccount(token, account.handle)) {
+                                        when (val result = XsmmAccountsRepository.addTikTokAccount2(token, account.handle)) {
                                              is XsmmAddAccountResult.Success -> {
                                                 linkedHandles = linkedHandles + handleLower
+                                                val newId = result.account.accountId.ifBlank { result.account.id }
+                                                if (newId.isNotBlank()) {
+                                                    val currentMap = XsmmAccountStore.getAccountIdMap(context).toMutableMap()
+                                                    currentMap[handleLower] = newId
+                                                    XsmmAccountStore.saveAccountIdMap(context, currentMap)
+                                                }
                                                 android.widget.Toast.makeText(context, "Đã thêm @${account.handle} vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
                                             }
                                             is XsmmAddAccountResult.Error -> {
