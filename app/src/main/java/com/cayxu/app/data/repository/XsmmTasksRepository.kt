@@ -472,7 +472,7 @@ object XsmmTasksRepository {
         // 2. Kiểm tra trong trường type của task (ví dụ: type = "facebook_love", "love", "facebook_care"...)
         val typeStr = obj.get("type")?.takeIf { it.isJsonPrimitive }?.asString
         val normType = normalizeReaction(typeStr)
-        if (normType != null && normType != "LIKE") return normType
+        if (normType != null) return normType
 
         // 3. Kiểm tra các container con: data, task, job, params
         for (containerKey in listOf("data", "task", "job", "params")) {
@@ -488,7 +488,7 @@ object XsmmTasksRepository {
                 }
                 val innerType = innerObj.get("type")?.takeIf { it.isJsonPrimitive }?.asString
                 val normInnerType = normalizeReaction(innerType)
-                if (normInnerType != null && normInnerType != "LIKE") return normInnerType
+                if (normInnerType != null) return normInnerType
             }
         }
 
@@ -499,6 +499,6 @@ object XsmmTasksRepository {
             if (normDesc != null) return normDesc
         }
 
-        return normType ?: "LIKE"
+        return ""
     }
 }
