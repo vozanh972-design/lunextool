@@ -450,9 +450,21 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // 4. KIỂM TRA ĐANG Ở TRANG HỒ SƠ CHÍNH CHỦ (Có Sửa hồ sơ, Chia sẻ hồ sơ, Menu ☰)
+                    // 4. KIỂM TRA ĐANG Ở TRANG HỒ SƠ CHÍNH CHỦ (Ưu tiên bấm thẳng vào Tên người dùng phía trên @ để mở Chuyển đổi tài khoản)
                     val isProfileScreen = isUserSelfProfileScreen(root)
                     if (isProfileScreen) {
+                        val handleNode = findHandleNode(root)
+                        if (handleNode != null) {
+                            TikTokCaptureBridge.updateProgress("Bấm vào tên để mở Chuyển đổi tài khoản...")
+                            clickProfileName(root, handleNode)
+                            val sheetFound = waitForCondition(expectedPkg, maxSeconds = 4) { currentRoot ->
+                                findNodeByText(currentRoot, ADD_ACCOUNT_LABELS, exact = false) != null ||
+                                findNodeByText(currentRoot, SWITCH_SHEET_TITLE, exact = false) != null
+                            }
+                            if (sheetFound != null) continue
+                        }
+
+                        // Fallback nếu bấm tên không mở sheet (cho bản cũ): Mở menu (☰)
                         val menuNode = findMenuIcon(root)
                         if (menuNode != null) {
                             TikTokCaptureBridge.updateProgress("Đã vào Hồ sơ, đang mở menu (☰)...")
@@ -701,7 +713,13 @@ class TikTokAccessibilityService : AccessibilityService() {
                 ?: allTexts.first()
 
             val normalizedDisplayName = displayName.trim()
-            val uniqueKey = (if (handle.isNotBlank()) handle else normalizedDisplayName).lowercase()
+            val asciiCandidate = normalizeAscii(normalizedDisplayName)
+            val finalHandle = when {
+                handle.isNotBlank() -> handle
+                asciiCandidate.matches(usernameRegex) -> asciiCandidate
+                else -> ""
+            }
+            val uniqueKey = (if (finalHandle.isNotBlank()) finalHandle else normalizedDisplayName).lowercase()
             if (uniqueKey.isBlank() || !seen.add(uniqueKey)) continue
 
             val isActive = row.isSelected ||
@@ -711,7 +729,7 @@ class TikTokAccessibilityService : AccessibilityService() {
             entries.add(
                 CapturedAccountEntry(
                     displayName = normalizedDisplayName,
-                    handle = handle,
+                    handle = finalHandle,
                     isActive = isActive
                 )
             )
@@ -794,6 +812,94 @@ class TikTokAccessibilityService : AccessibilityService() {
             }
         }
         return ""
+    }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    private fun normalizeAscii(input: String): String {
+        return try {
+            val nfd = java.text.Normalizer.normalize(input, java.text.Normalizer.Form.NFD)
+            val pattern = java.util.regex.Pattern.compile("\\p{InCombiningDiacriticalMarks}+")
+            pattern.matcher(nfd)
+                .replaceAll("")
+                .replace("đ", "d")
+                .replace("Đ", "d")
+                .replace("[^A-Za-z0-9._]".toRegex(), "")
+                .lowercase()
+        } catch (_: Exception) {
+            input.replace("[^A-Za-z0-9._]".toRegex(), "").lowercase()
+        }
+    }
+
+    /**
+     * Tìm node Tên người dùng hiển thị nằm ngay phía trên / cạnh node @handle trên trang Hồ sơ TikTok
+     * (Ví dụ: "Trần Ngọc" nằm ngay phía trên "@hsisha.hssosu").
+     * Bấm vào node này sẽ mở ngay bottom sheet "Chuyển đổi tài khoản" (Ảnh 2) nhanh hơn menu ☰.
+     */
+    private fun findProfileNameNode(root: AccessibilityNodeInfo, handleNode: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val handleBounds = Rect()
+        handleNode.getBoundsInScreen(handleBounds)
+        if (handleBounds.isEmpty) return null
+
+        // 1. Kiểm tra các sibling của handleNode
+        val parent = handleNode.parent
+        if (parent != null) {
+            for (i in 0 until parent.childCount) {
+                val child = parent.getChild(i) ?: continue
+                if (child == handleNode) continue
+                val text = child.text?.toString()?.trim()
+                val desc = child.contentDescription?.toString()?.trim()
+                val label = if (!text.isNullOrBlank()) text else desc.orEmpty()
+                if (label.isNotBlank() && !label.startsWith("@")) {
+                    val b = Rect()
+                    child.getBoundsInScreen(b)
+                    if (b.bottom <= handleBounds.centerY() || (b.top <= handleBounds.top && b.height() > 0)) {
+                        return child
+                    }
+                }
+            }
+        }
+
+        // 2. Kiểm tra các node con của grandparent
+        val grandParent = parent?.parent
+        if (grandParent != null) {
+            for (i in 0 until grandParent.childCount) {
+                val child = grandParent.getChild(i) ?: continue
+                if (child == parent) continue
+                val text = child.text?.toString()?.trim()
+                val desc = child.contentDescription?.toString()?.trim()
+                val label = if (!text.isNullOrBlank()) text else desc.orEmpty()
+                if (label.isNotBlank() && !label.startsWith("@")) {
+                    val b = Rect()
+                    child.getBoundsInScreen(b)
+                    if (b.bottom <= handleBounds.top + dp(10) && b.top >= handleBounds.top - dp(100)) {
+                        return child
+                    }
+                }
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Bấm vào phần Tên người dùng phía trên @handle để mở ngay bottom sheet "Chuyển đổi tài khoản"
+     */
+    private fun clickProfileName(root: AccessibilityNodeInfo, handleNode: AccessibilityNodeInfo): Boolean {
+        val nameNode = findProfileNameNode(root, handleNode)
+        if (nameNode != null) {
+            clickNode(nameNode)
+            return true
+        }
+        val handleBounds = Rect()
+        handleNode.getBoundsInScreen(handleBounds)
+        if (!handleBounds.isEmpty) {
+            val tapX = handleBounds.exactCenterX()
+            val tapY = (handleBounds.top - dp(28)).toFloat().coerceAtLeast(10f)
+            tapAt(tapX, tapY)
+            return true
+        }
+        return false
     }
 
     /**
@@ -1301,7 +1407,9 @@ class TikTokAccessibilityService : AccessibilityService() {
                             collectAllTextsInNode(row, allTexts)
                             val matched = allTexts.any { text ->
                                 val clean = text.removePrefix("@").trim().lowercase()
-                                clean == target || clean.contains(target) || target.contains(clean)
+                                val cleanNoAccent = normalizeAscii(clean)
+                                clean == target || clean.contains(target) || target.contains(clean) ||
+                                cleanNoAccent == target || cleanNoAccent.contains(target) || target.contains(cleanNoAccent)
                             }
                             if (matched) {
                                 foundTargetRow = row
@@ -1402,7 +1510,16 @@ class TikTokAccessibilityService : AccessibilityService() {
                                 XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đúng tài khoản @$target")
                                 return@launch
                             } else {
-                                // Đang ở tài khoản khác -> Mở menu (☰)
+                                // Đang ở tài khoản khác -> Ưu tiên bấm vào Tên người dùng phía trên @ để mở Chuyển đổi tài khoản
+                                XsmmTaskAutomationBridge.updateProgress("Bấm tên đổi @$currentHandle sang @$target...")
+                                clickProfileName(root, handleNode)
+                                val sheetFound = waitForCondition(xsmmPkg, maxSeconds = 4) { currentRoot ->
+                                    findNodeByText(currentRoot, ADD_ACCOUNT_LABELS, exact = false) != null ||
+                                    findNodeByText(currentRoot, SWITCH_SHEET_TITLE, exact = false) != null
+                                }
+                                if (sheetFound != null) continue
+
+                                // Fallback: Mở menu (☰) nếu bấm tên không mở sheet (dành cho bản cũ)
                                 XsmmTaskAutomationBridge.updateProgress("Đổi @$currentHandle sang @$target...")
                                 val menuNode = findMenuIcon(root)
                                 if (menuNode != null) {

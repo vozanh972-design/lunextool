@@ -81,13 +81,36 @@ class TikTokProfileCheckerClient(
 
         // 1. Thử Mobile UA trước (tỷ lệ thành công cao nhất, không bị WAF)
         val profile = tryFetch(cleanUser, MOBILE_USER_AGENT)
-        if (profile != null) return@withContext profile
+        if (profile != null && profile.userId.isNotBlank()) return@withContext profile
 
         // 2. Fallback thử Desktop UA
         val fallback = tryFetch(cleanUser, DESKTOP_USER_AGENT)
-        if (fallback != null) return@withContext fallback
+        if (fallback != null && fallback.userId.isNotBlank()) return@withContext fallback
 
-        null
+        // 3. Nếu username có dấu tiếng Việt hoặc khoảng trắng (do nhận nhầm từ display name ở sheet chuyển đổi)
+        // -> Tự động chuẩn hóa bỏ dấu & khoảng trắng để gọi API lấy đúng thông tin chính xác nhất
+        val normalized = normalizeUsername(cleanUser)
+        if (normalized.isNotBlank() && normalized != cleanUser.lowercase()) {
+            val profNormalized = tryFetch(normalized, MOBILE_USER_AGENT) ?: tryFetch(normalized, DESKTOP_USER_AGENT)
+            if (profNormalized != null && profNormalized.userId.isNotBlank()) return@withContext profNormalized
+        }
+
+        profile ?: fallback
+    }
+
+    private fun normalizeUsername(input: String): String {
+        return try {
+            val nfd = java.text.Normalizer.normalize(input, java.text.Normalizer.Form.NFD)
+            val pattern = Pattern.compile("\\p{InCombiningDiacriticalMarks}+")
+            pattern.matcher(nfd)
+                .replaceAll("")
+                .replace("đ", "d")
+                .replace("Đ", "d")
+                .replace("[^A-Za-z0-9._]".toRegex(), "")
+                .lowercase()
+        } catch (_: Exception) {
+            input.replace("[^A-Za-z0-9._]".toRegex(), "").lowercase()
+        }
     }
 
     private fun tryFetch(cleanUser: String, userAgent: String): TikTokFullProfile? {
