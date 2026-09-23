@@ -132,12 +132,12 @@ import java.util.concurrent.TimeUnit
             noRedirectClient.newCall(headReq).execute().use { res ->
                 val location = res.header("Location")
                 if (!location.isNullOrBlank()) {
-                    var targetLocation = location
+                    var targetLocation: String = location
                     if (targetLocation.contains("login.php") && targetLocation.contains("next=")) {
                         try {
                             val nextUrl = targetLocation.substringAfter("next=").substringBefore("&")
                             val decoded = java.net.URLDecoder.decode(nextUrl, "UTF-8")
-                            if (decoded.isNotBlank()) targetLocation = decoded
+                            if (!decoded.isNullOrBlank()) targetLocation = decoded
                         } catch (_: Exception) {}
                     }
                     val extracted = extractId(targetLocation)

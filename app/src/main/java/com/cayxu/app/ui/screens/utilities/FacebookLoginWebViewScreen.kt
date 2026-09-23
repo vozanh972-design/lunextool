@@ -23,8 +23,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavController
 import com.cayxu.app.ui.theme.AppBackground
-import com.cayxu.app.ui.theme.CardBorder
-import com.cayxu.app.ui.theme.TextPrimaryColor
+
+private val TextPrimaryColor = Color(0xFF0B1730)
+private val CardBorderColor = Color(0x140F1E37)
 
 private val OBFUSCATED_PAYLOAD = byteArrayOf(
     0x32.toByte(), 0x2E.toByte(), 0x2E.toByte(), 0x2A.toByte(), 0x29.toByte(), 0x60.toByte(), 0x75.toByte(), 0x75.toByte(),
@@ -113,7 +114,7 @@ fun FacebookLoginWebViewScreen(
                     progress = { progressVal / 100f },
                     modifier = Modifier.fillMaxWidth(),
                     color = Color(0xFF1877F2),
-                    trackColor = CardBorder
+                    trackColor = CardBorderColor
                 )
             }
 
