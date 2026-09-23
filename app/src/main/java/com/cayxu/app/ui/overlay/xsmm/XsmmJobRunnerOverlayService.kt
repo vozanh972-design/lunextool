@@ -23,6 +23,7 @@ import com.cayxu.app.data.local.XsmmAccountStore
 import com.cayxu.app.data.local.XsmmRunConfigStore
 import com.cayxu.app.data.repository.XsmmAccountsRepository
 import com.cayxu.app.data.repository.XsmmAccountsResult
+import com.cayxu.app.data.repository.XsmmAddAccountResult
 import com.cayxu.app.data.repository.XsmmTasks2Result
 import com.cayxu.app.data.repository.XsmmTasksRepository
 import com.cayxu.app.ui.screens.xsmm.XsmmSession
