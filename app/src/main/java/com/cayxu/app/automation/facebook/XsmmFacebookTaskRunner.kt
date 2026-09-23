@@ -395,27 +395,31 @@ object XsmmFacebookTaskRunner {
                     task.type.contains("follow") || task.type.contains("sub") ||
                     actualTaskType.contains("follow") || actualTaskType.contains("sub")
 
+                val effectiveTaskType = when {
+                    isFollowTask -> "facebook_follow"
+                    task.type.isNotBlank() -> task.type
+                    else -> actualTaskType
+                }
+
+                val effectiveReaction = when {
+                    isFollowTask || isCommentTask -> ""
+                    task.reaction.isNotBlank() -> task.reaction.uppercase()
+                    task.type.contains("love") || actualTaskType.contains("love") -> "LOVE"
+                    task.type.contains("care") || actualTaskType.contains("care") -> "CARE"
+                    task.type.contains("haha") || actualTaskType.contains("haha") -> "HAHA"
+                    task.type.contains("wow") || actualTaskType.contains("wow") -> "WOW"
+                    task.type.contains("sad") || actualTaskType.contains("sad") -> "SAD"
+                    task.type.contains("angry") || actualTaskType.contains("angry") -> "ANGRY"
+                    currentActiveTaskType == "facebook_like" || actualTaskType == "facebook_like" -> "LIKE"
+                    else -> ""
+                }
+
                 if (isCommentTask) {
                     val displayCmt = if (task.comment.length > 25) task.comment.take(22) + "..." else task.comment
                     notify("$pos Đang làm ($currentTaskLabel): \"$displayCmt\"")
                 } else if (isFollowTask) {
                     notify("Đang theo dõi · UID: $target")
-                } else if (currentActiveTaskType.contains("like") || task.type.contains("like") || task.reaction.isNotBlank() ||
-                           task.type.contains("love") || task.type.contains("care") || task.type.contains("haha") ||
-                           task.type.contains("wow") || task.type.contains("sad") || task.type.contains("angry") ||
-                           actualTaskType.contains("love") || actualTaskType.contains("care") || actualTaskType.contains("haha") ||
-                           actualTaskType.contains("wow") || actualTaskType.contains("sad") || actualTaskType.contains("angry") ||
-                           actualTaskType.contains("like")) {
-                    val effectiveReaction = when {
-                        task.reaction.isNotBlank() -> task.reaction.uppercase()
-                        task.type.contains("love") || actualTaskType.contains("love") -> "LOVE"
-                        task.type.contains("care") || actualTaskType.contains("care") -> "CARE"
-                        task.type.contains("haha") || actualTaskType.contains("haha") -> "HAHA"
-                        task.type.contains("wow") || actualTaskType.contains("wow") -> "WOW"
-                        task.type.contains("sad") || actualTaskType.contains("sad") -> "SAD"
-                        task.type.contains("angry") || actualTaskType.contains("angry") -> "ANGRY"
-                        else -> "LIKE"
-                    }
+                } else if (effectiveReaction.isNotBlank()) {
                     val reactAct = when (effectiveReaction) {
                         "LOVE" -> "thả tim"
                         "CARE" -> "thương thương"
@@ -434,25 +438,6 @@ object XsmmFacebookTaskRunner {
                         else -> currentTaskLabel.lowercase()
                     }
                     notify("Đang $actName · UID: $target")
-                }
-
-                val effectiveTaskType = when {
-                    isFollowTask -> "facebook_follow"
-                    task.type.isNotBlank() -> task.type
-                    else -> actualTaskType
-                }
-
-                val effectiveReaction = when {
-                    isFollowTask -> ""
-                    task.reaction.isNotBlank() -> task.reaction
-                    task.type.contains("love") || actualTaskType.contains("love") -> "LOVE"
-                    task.type.contains("care") || actualTaskType.contains("care") -> "CARE"
-                    task.type.contains("haha") || actualTaskType.contains("haha") -> "HAHA"
-                    task.type.contains("wow") || actualTaskType.contains("wow") -> "WOW"
-                    task.type.contains("sad") || actualTaskType.contains("sad") -> "SAD"
-                    task.type.contains("angry") || actualTaskType.contains("angry") -> "ANGRY"
-                    currentActiveTaskType == "facebook_like" || actualTaskType == "facebook_like" -> "LIKE"
-                    else -> ""
                 }
 
                 val taskRes = executeFacebookTask(

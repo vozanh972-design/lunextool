@@ -434,25 +434,24 @@ object XsmmTasksRepository {
 
     /**
      * Tự động trích xuất loại cảm xúc (reaction) từ phản hồi nhiệm vụ của XSMM.
-     * Hỗ trợ mọi định dạng: reaction, reaction_type, react, action, sub_type, camxuc...
+     * Quy tắc chặt chẽ:
+     * 1. Ưu tiên 1: Đọc từ các field chuyên biệt của cảm xúc (reaction, reaction_type, type_reaction, react, camxuc, loaicx...).
+     * 2. Ưu tiên 2: Đọc từ các field sub-type / action (action, action_type, sub_type, subtype...).
+     * 3. Ưu tiên 3: Đọc từ tiêu đề / tên nhiệm vụ (name, title, task_name, job_name, description, note).
+     * 4. Ưu tiên 4: Đọc từ trường type (facebook_like, facebook_love, facebook_care...).
+     * Tuyệt đối KHÔNG gộp toàn bộ JSON string hay URL để tránh nhận nhầm ".com" thành cảm xúc.
      */
     private fun extractReaction(obj: JsonObject): String {
-        // Thu thập tất cả các chuỗi có thể chứa thông tin cảm xúc trong task của XSMM
-        val textSnippets = mutableListOf<String>()
-
-        val candidateKeys = listOf(
-            "reaction", "reactions", "reaction_type", "react", "type_reaction",
-            "action", "action_type", "sub_type", "subtype",
-            "camxuc", "cam_xuc", "loaicx", "loai_cx", "loai",
-            "emotion", "feeling",
-            "name", "title", "note", "description", "task_name", "job_name", "type_job", "job_type",
-            "content", "text"
+        val reactionKeys = listOf(
+            "reaction", "reactions", "reaction_type", "type_reaction",
+            "react", "type_react", "camxuc", "cam_xuc", "loaicx", "loai_cx",
+            "loai", "emotion", "feeling"
         )
-
-        for (k in candidateKeys) {
+        for (k in reactionKeys) {
             val el = obj.get(k)
             if (el != null && el.isJsonPrimitive) {
-                textSnippets.add(el.asString)
+                val parsed = parseReactionString(el.asString)
+                if (parsed != null) return parsed
             }
         }
 
@@ -460,33 +459,125 @@ object XsmmTasksRepository {
             val container = obj.get(containerKey)
             if (container != null && container.isJsonObject) {
                 val inner = container.asJsonObject
-                for (k in candidateKeys) {
+                for (k in reactionKeys) {
                     val el = inner.get(k)
                     if (el != null && el.isJsonPrimitive) {
-                        textSnippets.add(el.asString)
+                        val parsed = parseReactionString(el.asString)
+                        if (parsed != null) return parsed
                     }
                 }
-                val innerType = inner.get("type")?.takeIf { it.isJsonPrimitive }?.asString
-                if (!innerType.isNullOrBlank()) textSnippets.add(innerType)
+            }
+        }
+
+        val actionKeys = listOf("action", "action_type", "sub_type", "subtype", "type_job", "job_type")
+        for (k in actionKeys) {
+            val el = obj.get(k)
+            if (el != null && el.isJsonPrimitive) {
+                val parsed = parseReactionString(el.asString)
+                if (parsed != null) return parsed
+            }
+        }
+        for (containerKey in listOf("data", "task", "job", "params")) {
+            val container = obj.get(containerKey)
+            if (container != null && container.isJsonObject) {
+                val inner = container.asJsonObject
+                for (k in actionKeys) {
+                    val el = inner.get(k)
+                    if (el != null && el.isJsonPrimitive) {
+                        val parsed = parseReactionString(el.asString)
+                        if (parsed != null) return parsed
+                    }
+                }
+            }
+        }
+
+        val textKeys = listOf("name", "title", "task_name", "job_name", "note", "description")
+        for (k in textKeys) {
+            val el = obj.get(k)
+            if (el != null && el.isJsonPrimitive) {
+                val parsed = parseReactionString(el.asString)
+                if (parsed != null) return parsed
+            }
+        }
+        for (containerKey in listOf("data", "task", "job", "params")) {
+            val container = obj.get(containerKey)
+            if (container != null && container.isJsonObject) {
+                val inner = container.asJsonObject
+                for (k in textKeys) {
+                    val el = inner.get(k)
+                    if (el != null && el.isJsonPrimitive) {
+                        val parsed = parseReactionString(el.asString)
+                        if (parsed != null) return parsed
+                    }
+                }
             }
         }
 
         val typeStr = obj.get("type")?.takeIf { it.isJsonPrimitive }?.asString
-        if (!typeStr.isNullOrBlank()) textSnippets.add(typeStr)
-
-        val allText = (textSnippets.joinToString(" ") + " " + obj.toString()).lowercase()
-
-        // Ưu tiên cao nhất: Kiểm tra các loại cảm xúc đặc thù (CARE, LOVE, HAHA, WOW, SAD, ANGRY)
-        // Tuyệt đối không để LIKE hay "facebook_like" ghi đè lên các cảm xúc này!
-        return when {
-            allText.contains("care") || allText.contains("thuongthuong") || allText.contains("thương thương") || allText.contains("thương") || allText.contains("om") -> "CARE"
-            allText.contains("love") || allText.contains("tym") || allText.contains("tim") || allText.contains("yeuthich") || allText.contains("yêu thích") || allText.contains("heart") -> "LOVE"
-            allText.contains("haha") || allText.contains("cuoi") || allText.contains("cười") -> "HAHA"
-            allText.contains("wow") || allText.contains("ngacnhien") || allText.contains("ngạc nhiên") -> "WOW"
-            allText.contains("sad") || allText.contains("buon") || allText.contains("buồn") || allText.contains("khoc") || allText.contains("khóc") -> "SAD"
-            allText.contains("angry") || allText.contains("phanno") || allText.contains("phẫn nộ") || allText.contains("gian") || allText.contains("giận") -> "ANGRY"
-            allText.contains("like") || allText.contains("thich") || allText.contains("thích") -> "LIKE"
-            else -> ""
+            ?: obj.get("data")?.takeIf { it.isJsonObject }?.asJsonObject?.get("type")?.takeIf { it.isJsonPrimitive }?.asString
+        if (!typeStr.isNullOrBlank()) {
+            val parsed = parseReactionString(typeStr)
+            if (parsed != null) return parsed
         }
+
+        return ""
+    }
+
+    private fun parseReactionString(raw: String): String? {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return null
+        val upper = trimmed.uppercase()
+
+        when (upper) {
+            "LIKE", "THICH", "THÍCH" -> return "LIKE"
+            "LOVE", "TIM", "TYM", "YEU", "YÊU" -> return "LOVE"
+            "CARE", "THUONG", "THƯƠNG", "THUONGTHUONG", "THƯƠNG THƯƠNG" -> return "CARE"
+            "HAHA", "CUOI", "CƯỜI" -> return "HAHA"
+            "WOW", "NGAC", "NGẠC" -> return "WOW"
+            "SAD", "BUON", "BUỒN", "KHOC", "KHÓC" -> return "SAD"
+            "ANGRY", "PHANNO", "PHẪN NỘ", "GIAN", "GIẬN" -> return "ANGRY"
+        }
+
+        if (upper.contains("THUONGTHUONG") || upper.contains("THƯƠNG THƯƠNG") ||
+            upper.contains("THUONG_THUONG") || upper.contains("THƯƠNG_THƯƠNG") ||
+            Regex("""\bCARE\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed) ||
+            Regex("""\b(THUONG|THƯƠNG)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
+            return "CARE"
+        }
+
+        if (upper.contains("THẢ TIM") || upper.contains("THA TIM") ||
+            upper.contains("YÊU THÍCH") || upper.contains("YEU THICH") ||
+            Regex("""\b(LOVE|TYM|TIM|HEART)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
+            return "LOVE"
+        }
+
+        if (upper.contains("CƯỜI") || upper.contains("CUOI") ||
+            Regex("""\b(HAHA)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
+            return "HAHA"
+        }
+
+        if (upper.contains("NGẠC NHIÊN") || upper.contains("NGAC NHIEN") ||
+            upper.contains("BẤT NGỜ") || upper.contains("BAT NGO") ||
+            Regex("""\b(WOW)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
+            return "WOW"
+        }
+
+        if (upper.contains("BUỒN") || upper.contains("BUON") ||
+            upper.contains("KHÓC") || upper.contains("KHOC") ||
+            Regex("""\b(SAD)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
+            return "SAD"
+        }
+
+        if (upper.contains("PHẪN NỘ") || upper.contains("PHAN NO") || upper.contains("PHANNO") ||
+            Regex("""\b(ANGRY)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
+            return "ANGRY"
+        }
+
+        if (upper.contains("THÍCH") || upper.contains("THICH") ||
+            Regex("""\b(LIKE)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
+            return "LIKE"
+        }
+
+        return null
     }
 }
