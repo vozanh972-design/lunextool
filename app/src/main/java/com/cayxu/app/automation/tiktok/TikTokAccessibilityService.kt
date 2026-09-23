@@ -768,14 +768,21 @@ class TikTokAccessibilityService : AccessibilityService() {
         return null
     }
 
-    /** Ưu tiên cửa sổ đang active; nếu không đúng gói, dò qua windows() để tìm đúng gói TikTok. */
+    /** Ưu tiên cửa sổ đang active; nếu không đúng gói, dò qua windows() để tìm đúng gói TikTok bất kỳ (trill/musically/aweme). */
     private fun findRootForPackage(expectedPkg: String): AccessibilityNodeInfo? {
         val activeRoot = rootInActiveWindow
-        if (activeRoot?.packageName?.toString() == expectedPkg) return activeRoot
+        if (activeRoot != null) {
+            val pkg = activeRoot.packageName?.toString()
+            if (pkg == expectedPkg || isTikTokPackage(pkg)) return activeRoot
+        }
 
         return try {
             windows.firstNotNullOfOrNull { w ->
-                w.root?.takeIf { it.packageName?.toString() == expectedPkg }
+                val r = w.root
+                if (r != null) {
+                    val pkg = r.packageName?.toString()
+                    if (pkg == expectedPkg || isTikTokPackage(pkg)) r else null
+                } else null
             }
         } catch (_: Exception) {
             null
@@ -833,7 +840,7 @@ class TikTokAccessibilityService : AccessibilityService() {
 
     /**
      * Tìm node Tên người dùng hiển thị nằm ngay phía trên / cạnh node @handle trên trang Hồ sơ TikTok
-     * (Ví dụ: "Trần Ngọc" nằm ngay phía trên "@hsisha.hssosu").
+     * (Ví dụ: "Trần Ngọc", "gmn" nằm ngay phía trên "@theanhgmn").
      * Bấm vào node này sẽ mở ngay bottom sheet "Chuyển đổi tài khoản" (Ảnh 2) nhanh hơn menu ☰.
      */
     private fun findProfileNameNode(root: AccessibilityNodeInfo, handleNode: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -879,7 +886,45 @@ class TikTokAccessibilityService : AccessibilityService() {
             }
         }
 
+        // 3. Quét toàn bộ cây tìm text nằm ngay trên handleBounds theo toạ độ màn hình
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        collectTextNodesAbove(root, handleBounds, candidates)
+        if (candidates.isNotEmpty()) {
+            return candidates.minByOrNull {
+                val b = Rect()
+                it.getBoundsInScreen(b)
+                handleBounds.top - b.bottom
+            }
+        }
+
         return null
+    }
+
+    private fun collectTextNodesAbove(
+        node: AccessibilityNodeInfo,
+        handleBounds: Rect,
+        out: MutableList<AccessibilityNodeInfo>,
+        depth: Int = 0
+    ) {
+        if (depth > 30) return
+        val text = node.text?.toString()?.trim()
+        val desc = node.contentDescription?.toString()?.trim()
+        val label = if (!text.isNullOrBlank()) text else desc.orEmpty()
+        if (label.isNotBlank() && !label.startsWith("@") && !label.contains("follow", ignoreCase = true) && !label.contains("thích", ignoreCase = true)) {
+            val b = Rect()
+            node.getBoundsInScreen(b)
+            if (b.width() > 0 && b.height() > 0 &&
+                kotlin.math.abs(b.centerX() - handleBounds.centerX()) < dp(180) &&
+                b.bottom <= handleBounds.top + dp(10) &&
+                b.top >= handleBounds.top - dp(120)
+            ) {
+                out.add(node)
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectTextNodesAbove(child, handleBounds, out, depth + 1)
+        }
     }
 
     /**

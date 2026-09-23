@@ -102,6 +102,10 @@ class TikTokCaptureOverlayService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
+        val dm = resources.displayMetrics
+        val screenH = dm.heightPixels
+        val defaultY = (screenH * 0.65f).toInt().coerceAtLeast(400)
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -111,7 +115,7 @@ class TikTokCaptureOverlayService : Service() {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 24
-            y = 160
+            y = defaultY
         }
 
         val container = LinearLayout(this).apply {

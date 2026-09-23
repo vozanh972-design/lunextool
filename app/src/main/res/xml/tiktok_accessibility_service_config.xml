@@ -6,5 +6,5 @@
     android:canRetrieveWindowContent="true"
     android:canPerformGestures="true"
     android:notificationTimeout="200"
-    android:packageNames="com.zhiliaoapp.musically.go,com.ss.android.ugc.trill,com.ss.android.tt.creator"
+    android:packageNames="com.zhiliaoapp.musically,com.zhiliaoapp.musically.go,com.ss.android.ugc.trill,com.ss.android.ugc.aweme,com.ss.android.tt.creator"
     android:description="@string/tiktok_accessibility_service_description" />
