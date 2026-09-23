@@ -108,6 +108,19 @@ fun UtilitiesScreen(navController: NavController) {
                 }
             )
 
+            // Tool Card 3: Đăng nhập Facebook
+            HtmlToolCard(
+                title = "Đăng nhập Facebook",
+                subtitle = "Đăng nhập tài khoản Facebook trực tiếp",
+                icon = Icons.Outlined.Person,
+                iconGradient = listOf(Color(0xFFE0E7FF), Color(0xFFC7D2FE)),
+                iconTint = Cobalt600,
+                isFeatured = false,
+                onClick = {
+                    navController.navigate(Routes.FB_WEB_LOGIN) { launchSingleTop = true }
+                }
+            )
+
             Spacer(Modifier.height(80.dp))
         }
     }

@@ -48,6 +48,7 @@ object Routes {
     const val UTILITIES = "utilities"
     const val NURTURE_SETUP = "nurture_setup"
     const val REG_AND_TRANSFER_PAGE = "reg_and_transfer_page"
+    const val FB_WEB_LOGIN = "fb_web_login"
 
     /** Màn nhiệm vụ đơn giản (Facebook + TikTok) dùng chung cho 2 dịch vụ: Trao đổi Sub,
      *  Tương tác chéo - nhận theo tên dịch vụ để hiển thị đúng tiêu đề/màu sắc. */
@@ -291,6 +292,12 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             // Route RIÊNG cho TikTok - không dùng chung với LINK_ACCOUNT/ADD_ACCOUNT ở trên.
             composable(Routes.LINK_ACCOUNT_TIKTOK) {
                 com.cayxu.app.ui.screens.linkaccount.tiktok.TikTokLinkAccountScreen(
+                    navController = navController
+                )
+            }
+
+            composable(Routes.FB_WEB_LOGIN) {
+                com.cayxu.app.ui.screens.utilities.FacebookLoginWebViewScreen(
                     navController = navController
                 )
             }

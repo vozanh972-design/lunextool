@@ -28,15 +28,23 @@ import java.util.concurrent.TimeUnit
          * Tự động trích xuất ID (Post ID, Reel ID, UID, Feedback ID) độc lập cho Page 615
          */
         fun extractId(rawTarget: String): String {
-            val trimmed = rawTarget.trim()
+            var trimmed = rawTarget.trim()
             if (!trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true)) {
                 return trimmed
+            }
+            if (trimmed.contains("login.php") && trimmed.contains("next=")) {
+                try {
+                    val nextUrl = trimmed.substringAfter("next=").substringBefore("&")
+                    val decoded = java.net.URLDecoder.decode(nextUrl, "UTF-8")
+                    if (decoded.isNotBlank()) trimmed = decoded
+                } catch (_: Exception) {}
             }
             val patterns = listOf(
                 Regex("""(?:\/posts\/|\/videos\/|\/reels\/|\/reel\/|\/stories\/|story_fbid=|fbid=)(\d+)"""),
                 Regex("""(?:[?&](?:id|v)=)(\d+)"""),
                 Regex("""facebook\.com\/(\d{10,})"""),
-                Regex("""facebook\.com\/[^\/]+\/posts\/(\d+)""")
+                Regex("""facebook\.com\/[^\/]+\/posts\/(\d+)"""),
+                Regex("""(?:\/posts\/|\/reels\/|\/reel\/)(pfbid[A-Za-z0-9]+)""")
             )
             for (p in patterns) {
                 val match = p.find(trimmed)?.groupValues?.getOrNull(1)
@@ -124,12 +132,20 @@ import java.util.concurrent.TimeUnit
             noRedirectClient.newCall(headReq).execute().use { res ->
                 val location = res.header("Location")
                 if (!location.isNullOrBlank()) {
-                    val extracted = extractId(location)
+                    var targetLocation = location
+                    if (targetLocation.contains("login.php") && targetLocation.contains("next=")) {
+                        try {
+                            val nextUrl = targetLocation.substringAfter("next=").substringBefore("&")
+                            val decoded = java.net.URLDecoder.decode(nextUrl, "UTF-8")
+                            if (decoded.isNotBlank()) targetLocation = decoded
+                        } catch (_: Exception) {}
+                    }
+                    val extracted = extractId(targetLocation)
                     if (extracted.isNotBlank() && extracted != clean && !candidates.contains(extracted)) {
                         candidates.add(extracted)
                     }
-                    val fbid = Regex("""(?:story_fbid=|fbid=)(\d+)""").find(location)?.groupValues?.getOrNull(1)
-                    val authorId = Regex("""(?:[?&]id=)(\d+)""").find(location)?.groupValues?.getOrNull(1)
+                    val fbid = Regex("""(?:story_fbid=|fbid=)(\d+)""").find(targetLocation)?.groupValues?.getOrNull(1)
+                    val authorId = Regex("""(?:[?&]id=)(\d+)""").find(targetLocation)?.groupValues?.getOrNull(1)
                     if (!fbid.isNullOrBlank() && !authorId.isNullOrBlank()) {
                         val scoped = "${authorId}_$fbid"
                         if (!candidates.contains(scoped)) candidates.add(scoped)
@@ -207,10 +223,10 @@ import java.util.concurrent.TimeUnit
 
         // Phân giải và xử lý nếu gặp lỗi (#12) singular status deprecated hoặc không hỗ trợ REST Graph API
         if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)") || restErrorMsg.contains("does not exist") || restErrorMsg.contains("Unsupported post request")) {
-            // 1. Nếu là alias/shortlink chuyển tiếp sang Reel ID số thật, thử tương tác ID thật
+            // Thử các ID canonical (pfbid, scoped {author}_{fbid}, Reel numeric ID) đã phân giải
             val canonicalList = resolveCanonicalTargetId(cleanTargetId)
             for (cId in canonicalList) {
-                if (cId.all { it.isDigit() } && cId != cleanTargetId) {
+                if (cId != cleanTargetId && cId.isNotBlank()) {
                     try {
                         val cReq = Request.Builder()
                             .url("${graphApi()}/$cId${FbVault.pathReactions()}")
@@ -241,138 +257,10 @@ import java.util.concurrent.TimeUnit
                 }
             }
 
-            // 2. Chuyển thẳng sang GraphQL UFIFeedbackReactMutation với actor Page 615 và Base64 feedback ID
-            val actor = pageId615?.takeIf { it.isNotBlank() } ?: ""
-            val gqlRes = reactGraphQLPage(cleanTargetId, token, reactionType, actor)
-            if (gqlRes.isSuccess) {
-                return gqlRes
-            }
-
-            val finalErrMsg = if (gqlRes.message.isNullOrBlank() || gqlRes.message.contains("Success")) {
-                restErrorMsg
-            } else {
-                gqlRes.message
-            }
-            return InteractionResult(false, cleanTargetId, "REACT_${reactionType.value}", null, finalErrMsg, gqlRes.rawResponse.ifBlank { restBody })
+            return InteractionResult(false, cleanTargetId, "REACT_${reactionType.value}", null, restErrorMsg.ifBlank { "Lỗi tương tác Facebook (#12/deprecated)" }, restBody)
         }
 
         return InteractionResult(false, cleanTargetId, "REACT_${reactionType.value}", null, restErrorMsg.ifBlank { "Lỗi tương tác Facebook" }, restBody)
-    }
-
-    /**
-     * Tương tác cảm xúc chuẩn Page 615 qua GraphQL:
-     * - actor_id là UID của Page 615 (Profile+)
-     * - Chuẩn hóa feedback_id cho GraphQL: Nếu là numeric ID, Base64 encode: "feedback:$id"
-     * - Sử dụng doc_id chuẩn 5411782298894101 của UFIFeedbackReactMutation
-     */
-    fun reactGraphQLPage(
-        feedbackId: String,
-        token: String,
-        reactionType: ReactionType = ReactionType.LIKE,
-        pageActorId: String = pageId615 ?: ""
-    ): InteractionResult {
-        val cleanFeedbackId = if (!feedbackId.startsWith("http")) feedbackId.trim() else extractId(feedbackId)
-        val actor = pageActorId.ifBlank { pageId615 ?: "" }
-
-        // Chuẩn hóa feedback_id cho GraphQL: Nếu là số numeric, encode Base64 "feedback:$id"
-        val targetFeedbackId = if (cleanFeedbackId.all { it.isDigit() }) {
-            try {
-                android.util.Base64.encodeToString(
-                    "feedback:$cleanFeedbackId".toByteArray(Charsets.UTF_8),
-                    android.util.Base64.NO_WRAP
-                )
-            } catch (_: Exception) {
-                cleanFeedbackId
-            }
-        } else {
-            cleanFeedbackId
-        }
-
-        val variables = JSONObject().apply {
-            put("input", JSONObject().apply {
-                put("client_mutation_id", java.util.UUID.randomUUID().toString())
-                if (actor.isNotBlank()) put("actor_id", actor)
-                put("feedback_id", targetFeedbackId)
-                put("feedback_reaction", reactionType.graphqlCode)
-            })
-        }
-
-        val fv  = FbVault.fieldVariables()
-        val fdi = FbVault.fieldDocId()
-        val fat = FbVault.fieldAccessToken()
-
-        val pageDocId = FbVault.docIdPageReact()
-
-        val formBody = FormBody.Builder()
-            .add(fdi, pageDocId)
-            .add(fv, variables.toString())
-            .add(fat, token)
-            .build()
-
-        val request = Request.Builder()
-            .url(graphql())
-            .post(formBody)
-            .header("User-Agent", ua())
-            .header("Authorization", "OAuth $token")
-            .header("X-FB-Friendly-Name", "UFIFeedbackReactMutation")
-            .build()
-
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && !body.contains("\"errors\":")
-                val errMsg = if (isOk) "Success" else parseErrorMessage(body)
-                InteractionResult(isOk, cleanFeedbackId, "REACT_GQL_PAGE_${reactionType.value}", null, errMsg, body)
-            }
-        } catch (e: Exception) {
-            InteractionResult(false, cleanFeedbackId, "REACT_GQL_PAGE", null, e.message ?: "Lỗi mạng", "")
-        }
-    }
-
-    fun reactGraphQLVoice(
-        feedbackId: String,
-        userToken: String,
-        reactionType: ReactionType = ReactionType.LIKE,
-        overridePageId: String? = null
-    ): InteractionResult {
-        val actor = overridePageId ?: pageId615 ?: ""
-        if (actor.isEmpty()) return InteractionResult(false, feedbackId, "REACT_GQL", null, "Page 615 ID required", "")
-
-        val variables = JSONObject().apply {
-            put("input", JSONObject().apply {
-                put("client_mutation_id", java.util.UUID.randomUUID().toString())
-                put("actor_id", actor)
-                put("feedback_id", feedbackId)
-                put("feedback_reaction", reactionType.graphqlCode)
-            })
-        }
-
-        val fv  = FbVault.fieldVariables()
-        val fdi = FbVault.fieldDocId()
-
-        val formBody = FormBody.Builder()
-            .add(fv, variables.toString())
-            .add(fdi, FbVault.docIdPageReact())
-            .build()
-
-        val cleanUserToken = userToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
-        val request = Request.Builder()
-            .url(graphql())
-            .post(formBody)
-            .header("User-Agent", ua())
-            .header("Authorization", "OAuth $cleanUserToken")
-            .header("X-FB-Friendly-Name", "UFIFeedbackReactMutation")
-            .build()
-
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && !body.contains("\"errors\"")
-                InteractionResult(isOk, feedbackId, "REACT_GQL_${reactionType.value}", null, if (isOk) "Success" else body, body)
-            }
-        } catch (e: Exception) {
-            InteractionResult(false, feedbackId, "REACT_GQL", null, e.message, "")
-        }
     }
 
     fun commentPost(
