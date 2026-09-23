@@ -108,7 +108,7 @@ import java.util.concurrent.TimeUnit
     private fun getCleanToken(overrideToken: String?): String =
         (overrideToken ?: pageToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
 
-    private fun resolveCanonicalTargetId(rawId: String): List<String> {
+    private fun resolveCanonicalTargetId(rawId: String, overrideToken: String? = null): List<String> {
         val candidates = mutableListOf<String>()
         val clean = rawId.trim()
         val url = if (clean.startsWith("http://") || clean.startsWith("https://")) {
@@ -154,6 +154,29 @@ import java.util.concurrent.TimeUnit
                 }
             }
         } catch (_: Exception) {}
+
+        // Nếu có candidate là pfbid và có token, tra cứu Graph API để lấy Node ID {author_id}_{post_id}
+        val cleanToken = getCleanToken(overrideToken)
+        if (cleanToken.isNotBlank()) {
+            val pfbidCandidate = candidates.firstOrNull { it.startsWith("pfbid") }
+            if (pfbidCandidate != null) {
+                try {
+                    val resolveReq = Request.Builder()
+                        .url("${graphApi()}/$pfbidCandidate?fields=id&access_token=$cleanToken")
+                        .get()
+                        .header("User-Agent", ua())
+                        .build()
+                    httpClient.newCall(resolveReq).execute().use { res ->
+                        val body = res.body?.string() ?: ""
+                        val json = try { JSONObject(body) } catch (_: Exception) { null }
+                        val resolvedId = json?.optString("id", null)
+                        if (!resolvedId.isNullOrBlank() && !candidates.contains(resolvedId)) {
+                            candidates.add(0, resolvedId)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
 
         return candidates
     }
@@ -224,7 +247,7 @@ import java.util.concurrent.TimeUnit
         // Phân giải và xử lý nếu gặp lỗi (#12) singular status deprecated hoặc không hỗ trợ REST Graph API
         if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)") || restErrorMsg.contains("does not exist") || restErrorMsg.contains("Unsupported post request")) {
             // Thử các ID canonical (pfbid, scoped {author}_{fbid}, Reel numeric ID) đã phân giải
-            val canonicalList = resolveCanonicalTargetId(cleanTargetId)
+            val canonicalList = resolveCanonicalTargetId(cleanTargetId, overrideToken)
             for (cId in canonicalList) {
                 if (cId != cleanTargetId && cId.isNotBlank()) {
                     try {

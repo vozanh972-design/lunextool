@@ -477,28 +477,6 @@ object XsmmTasksRepository {
             }
         }
 
-        val actionKeys = listOf("action", "action_type", "sub_type", "subtype", "type_job", "job_type")
-        for (k in actionKeys) {
-            val el = obj.get(k)
-            if (el != null && el.isJsonPrimitive) {
-                val parsed = parseReactionString(el.asString)
-                if (parsed != null) return parsed
-            }
-        }
-        for (containerKey in listOf("data", "task", "job", "params")) {
-            val container = obj.get(containerKey)
-            if (container != null && container.isJsonObject) {
-                val inner = container.asJsonObject
-                for (k in actionKeys) {
-                    val el = inner.get(k)
-                    if (el != null && el.isJsonPrimitive) {
-                        val parsed = parseReactionString(el.asString)
-                        if (parsed != null) return parsed
-                    }
-                }
-            }
-        }
-
         val textKeys = listOf("name", "title", "task_name", "job_name", "note", "description")
         for (k in textKeys) {
             val el = obj.get(k)
@@ -521,6 +499,28 @@ object XsmmTasksRepository {
             }
         }
 
+        val actionKeys = listOf("action", "action_type", "sub_type", "subtype", "type_job", "job_type")
+        for (k in actionKeys) {
+            val el = obj.get(k)
+            if (el != null && el.isJsonPrimitive) {
+                val parsed = parseReactionString(el.asString)
+                if (parsed != null) return parsed
+            }
+        }
+        for (containerKey in listOf("data", "task", "job", "params")) {
+            val container = obj.get(containerKey)
+            if (container != null && container.isJsonObject) {
+                val inner = container.asJsonObject
+                for (k in actionKeys) {
+                    val el = inner.get(k)
+                    if (el != null && el.isJsonPrimitive) {
+                        val parsed = parseReactionString(el.asString)
+                        if (parsed != null) return parsed
+                    }
+                }
+            }
+        }
+
         val typeStr = obj.get("type")?.takeIf { it.isJsonPrimitive }?.asString
             ?: obj.get("data")?.takeIf { it.isJsonObject }?.asJsonObject?.get("type")?.takeIf { it.isJsonPrimitive }?.asString
         if (!typeStr.isNullOrBlank()) {
@@ -534,8 +534,21 @@ object XsmmTasksRepository {
     private fun parseReactionString(raw: String): String? {
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) return null
+
+        // 1. Kiểm tra mã số cảm xúc chuẩn Graph API / XSMM
+        when (trimmed) {
+            "1"  -> return "LIKE"
+            "2"  -> return "LOVE"
+            "3"  -> return "WOW"
+            "4"  -> return "HAHA"
+            "7"  -> return "SAD"
+            "8"  -> return "ANGRY"
+            "16" -> return "CARE"
+        }
+
         val upper = trimmed.uppercase()
 
+        // 2. Kiểm tra từ khóa đơn chính xác
         when (upper) {
             "LIKE", "THICH", "THÍCH" -> return "LIKE"
             "LOVE", "TIM", "TYM", "YEU", "YÊU" -> return "LOVE"
@@ -546,45 +559,35 @@ object XsmmTasksRepository {
             "ANGRY", "PHANNO", "PHẪN NỘ", "GIAN", "GIẬN" -> return "ANGRY"
         }
 
-        if (upper.contains("THUONGTHUONG") || upper.contains("THƯƠNG THƯƠNG") ||
-            upper.contains("THUONG_THUONG") || upper.contains("THƯƠNG_THƯƠNG") ||
-            Regex("""\bCARE\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed) ||
-            Regex("""\b(THUONG|THƯƠNG)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
-            return "CARE"
+        // 3. Kiểm tra từ đầu tiên (chuẩn định dạng nhiệm vụ XSMM: "LIKE bài viết...", "LOVE bài viết...", "CARE bài viết...")
+        val firstWord = upper.substringBefore(" ").substringBefore("_").trim()
+        when (firstWord) {
+            "LIKE" -> return "LIKE"
+            "LOVE" -> return "LOVE"
+            "CARE" -> return "CARE"
+            "HAHA" -> return "HAHA"
+            "WOW"  -> return "WOW"
+            "SAD"  -> return "SAD"
+            "ANGRY"-> return "ANGRY"
         }
 
-        if (upper.contains("THẢ TIM") || upper.contains("THA TIM") ||
-            upper.contains("YÊU THÍCH") || upper.contains("YEU THICH") ||
-            Regex("""\b(LOVE|TYM|TIM|HEART)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
-            return "LOVE"
-        }
+        // 4. Kiểm tra từ khóa biên giới từ (word boundary)
+        if (Regex("""\bLIKE\b""").containsMatchIn(upper)) return "LIKE"
+        if (Regex("""\bLOVE\b""").containsMatchIn(upper)) return "LOVE"
+        if (Regex("""\bCARE\b""").containsMatchIn(upper)) return "CARE"
+        if (Regex("""\bHAHA\b""").containsMatchIn(upper)) return "HAHA"
+        if (Regex("""\bWOW\b""").containsMatchIn(upper))  return "WOW"
+        if (Regex("""\bSAD\b""").containsMatchIn(upper))  return "SAD"
+        if (Regex("""\bANGRY\b""").containsMatchIn(upper))return "ANGRY"
 
-        if (upper.contains("CƯỜI") || upper.contains("CUOI") ||
-            Regex("""\b(HAHA)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
-            return "HAHA"
-        }
-
-        if (upper.contains("NGẠC NHIÊN") || upper.contains("NGAC NHIEN") ||
-            upper.contains("BẤT NGỜ") || upper.contains("BAT NGO") ||
-            Regex("""\b(WOW)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
-            return "WOW"
-        }
-
-        if (upper.contains("BUỒN") || upper.contains("BUON") ||
-            upper.contains("KHÓC") || upper.contains("KHOC") ||
-            Regex("""\b(SAD)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
-            return "SAD"
-        }
-
-        if (upper.contains("PHẪN NỘ") || upper.contains("PHAN NO") || upper.contains("PHANNO") ||
-            Regex("""\b(ANGRY)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
-            return "ANGRY"
-        }
-
-        if (upper.contains("THÍCH") || upper.contains("THICH") ||
-            Regex("""\b(LIKE)\b""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
-            return "LIKE"
-        }
+        // 5. Cụm từ tiếng Việt rõ ràng
+        if (upper.contains("THƯƠNG THƯƠNG") || upper.contains("THUONG THUONG") || upper.contains("THƯƠNG")) return "CARE"
+        if (upper.contains("THẢ TIM") || upper.contains("THA TIM") || upper.contains("YÊU THÍCH") || upper.contains("TYM")) return "LOVE"
+        if (upper.contains("CƯỜI") || upper.contains("CUOI")) return "HAHA"
+        if (upper.contains("NGẠC NHIÊN") || upper.contains("BẤT NGỜ")) return "WOW"
+        if (upper.contains("BUỒN") || upper.contains("KHÓC")) return "SAD"
+        if (upper.contains("PHẪN NỘ") || upper.contains("PHAN NO")) return "ANGRY"
+        if (upper.contains("THÍCH") || upper.contains("THICH")) return "LIKE"
 
         return null
     }
