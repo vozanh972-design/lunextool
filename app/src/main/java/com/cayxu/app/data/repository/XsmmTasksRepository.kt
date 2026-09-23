@@ -59,6 +59,9 @@ object XsmmTasksRepository {
             if (response.code() == 429) {
                 kotlinx.coroutines.delay(10000L)
                 response = XsmmRetrofitClient.api.getTasks(auth(rawToken), type, typejob ?: "normal,better,best")
+            } else if (response.code() in listOf(502, 503, 504)) {
+                kotlinx.coroutines.delay(2500L)
+                response = XsmmRetrofitClient.api.getTasks(auth(rawToken), type, typejob ?: "normal,better,best")
             }
             if (!response.isSuccessful) {
                 return XsmmTasks2Result.Error(errMsg(response.errorBody()?.string(), "Lỗi lấy nhiệm vụ (mã HTTP: ${response.code()})"))
@@ -120,6 +123,11 @@ object XsmmTasksRepository {
                 if (response.code() == 429 && attempt < maxRetries - 1) {
                     val retryWait = Random.nextLong(10L, 16L)
                     kotlinx.coroutines.delay(retryWait * 1000L)
+                    attempt++
+                    continue
+                }
+                if (response.code() in listOf(502, 503, 504) && attempt < maxRetries - 1) {
+                    kotlinx.coroutines.delay(3000L)
                     attempt++
                     continue
                 }

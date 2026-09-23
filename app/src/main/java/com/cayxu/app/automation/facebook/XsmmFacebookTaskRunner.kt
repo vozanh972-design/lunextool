@@ -292,9 +292,7 @@ object XsmmFacebookTaskRunner {
                 taskResult.message.contains("chưa kích hoạt", ignoreCase = true) ||
                 taskResult.message.contains("không tìm thấy", ignoreCase = true) ||
                 taskResult.message.contains("active", ignoreCase = true) ||
-                taskResult.message.contains("not found", ignoreCase = true) ||
-                taskResult.message.contains("502", ignoreCase = true) ||
-                taskResult.message.contains("500", ignoreCase = true)
+                taskResult.message.contains("not found", ignoreCase = true)
             )) {
                 val internalId = XsmmAccountStore.getInternalIdMap(context)[targetUidForXsmm] ?: syncResult.internalId
                 if (internalId.isNotBlank()) {
@@ -379,7 +377,11 @@ object XsmmFacebookTaskRunner {
                 if (config.stopAfterCompletedCount > 0 && totalCompleted >= config.stopAfterCompletedCount) break
 
                 val target = task.targetId.takeIf { it.isNotBlank() }
-                    ?: com.cayxu.app.facebook.FacebookTuongTacEngine.extractId(task.idorlink.ifBlank { task.targetUrl })
+                    ?: if (matchedPage != null) {
+                        com.cayxu.app.facebook.Page615TuongTacEngine.extractId(task.idorlink.ifBlank { task.targetUrl })
+                    } else {
+                        com.cayxu.app.facebook.FacebookTuongTacEngine.extractId(task.idorlink.ifBlank { task.targetUrl })
+                    }
                 val shortTarget = if (target.length > 20) target.take(17) + "..." else target
                 val pos = "[${idx + 1}/${taskList.size}]"
 

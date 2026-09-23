@@ -24,6 +24,27 @@ import java.util.concurrent.TimeUnit
         private fun graphql()  = GRAPHQL
         private fun ua()       = UA
 
+        /**
+         * Tự động trích xuất ID (Post ID, Reel ID, UID, Feedback ID) độc lập cho Page 615
+         */
+        fun extractId(rawTarget: String): String {
+            val trimmed = rawTarget.trim()
+            if (!trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true)) {
+                return trimmed
+            }
+            val patterns = listOf(
+                Regex("""(?:\/posts\/|\/videos\/|\/reels\/|\/reel\/|\/stories\/|story_fbid=|fbid=)(\d+)"""),
+                Regex("""(?:[?&](?:id|v)=)(\d+)"""),
+                Regex("""facebook\.com\/(\d{10,})"""),
+                Regex("""facebook\.com\/[^\/]+\/posts\/(\d+)""")
+            )
+            for (p in patterns) {
+                val match = p.find(trimmed)?.groupValues?.getOrNull(1)
+                if (!match.isNullOrBlank()) return match
+            }
+            val cleanUrl = trimmed.trimEnd('/')
+            return cleanUrl.substringAfterLast("/").substringBefore("?").ifBlank { trimmed }
+        }
     }
 
     @Keep enum class ReactionType(val value: String, val graphqlCode: Int) {
@@ -103,7 +124,7 @@ import java.util.concurrent.TimeUnit
             noRedirectClient.newCall(headReq).execute().use { res ->
                 val location = res.header("Location")
                 if (!location.isNullOrBlank()) {
-                    val extracted = FacebookTuongTacEngine.extractId(location)
+                    val extracted = extractId(location)
                     if (extracted.isNotBlank() && extracted != clean && !candidates.contains(extracted)) {
                         candidates.add(extracted)
                     }
@@ -129,7 +150,7 @@ import java.util.concurrent.TimeUnit
         val token = getCleanToken(overrideToken)
         if (token.isEmpty()) return InteractionResult(false, postId, "REACT", null, "Page token required", "")
 
-        val cleanTargetId = if (!postId.startsWith("http")) postId.trim() else FacebookTuongTacEngine.extractId(postId)
+        val cleanTargetId = if (!postId.startsWith("http")) postId.trim() else extractId(postId)
 
         val ft = FbVault.fieldType()
         val fat = FbVault.fieldAccessToken()
@@ -184,133 +205,65 @@ import java.util.concurrent.TimeUnit
             restErrorMsg = e.message ?: "Lỗi kết nối mạng"
         }
 
-        // 1. Phân giải Canonical Object ID hoặc Node ID đầy đủ {author_id}_{post_id} nếu gặp lỗi (#12) singular status hoặc ID not exist
-        if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)") || restErrorMsg.contains("does not exist") || restErrorMsg.contains("missing permissions") || restErrorMsg.contains("Unsupported post request")) {
+        // Phân giải và xử lý nếu gặp lỗi (#12) singular status deprecated hoặc không hỗ trợ REST Graph API
+        if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)") || restErrorMsg.contains("does not exist") || restErrorMsg.contains("Unsupported post request")) {
+            // 1. Nếu là alias/shortlink chuyển tiếp sang Reel ID số thật, thử tương tác ID thật
             val canonicalList = resolveCanonicalTargetId(cleanTargetId)
             for (cId in canonicalList) {
-                try {
-                    val cReq = Request.Builder()
-                        .url("${graphApi()}/$cId${FbVault.pathReactions()}")
-                        .post(formBody)
-                        .header("User-Agent", ua())
-                        .build()
-                    val cRes = httpClient.newCall(cReq).execute().use { res ->
-                        val body = res.body?.string() ?: ""
-                        val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
-                        if (isOk) InteractionResult(true, cId, "REACT_${reactionType.value}", null, "Success", body) else null
-                    }
-                    if (cRes != null) return cRes
-
-                    if (reactionType == ReactionType.LIKE) {
-                        val cLikeReq = Request.Builder()
-                            .url("${graphApi()}/$cId${FbVault.pathLikes()}")
-                            .post(FormBody.Builder().add(fat, token).build())
+                if (cId.all { it.isDigit() } && cId != cleanTargetId) {
+                    try {
+                        val cReq = Request.Builder()
+                            .url("${graphApi()}/$cId${FbVault.pathReactions()}")
+                            .post(formBody)
                             .header("User-Agent", ua())
                             .build()
-                        val cLikeRes = httpClient.newCall(cLikeReq).execute().use { res ->
+                        val cRes = httpClient.newCall(cReq).execute().use { res ->
                             val body = res.body?.string() ?: ""
                             val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
-                            if (isOk) InteractionResult(true, cId, "REACT_LIKE_FALLBACK", null, "Success", body) else null
+                            if (isOk) InteractionResult(true, cId, "REACT_${reactionType.value}", null, "Success", body) else null
                         }
-                        if (cLikeRes != null) return cLikeRes
-                    }
-                } catch (_: Exception) {}
+                        if (cRes != null) return cRes
+
+                        if (reactionType == ReactionType.LIKE) {
+                            val cLikeReq = Request.Builder()
+                                .url("${graphApi()}/$cId${FbVault.pathLikes()}")
+                                .post(FormBody.Builder().add(fat, token).build())
+                                .header("User-Agent", ua())
+                                .build()
+                            val cLikeRes = httpClient.newCall(cLikeReq).execute().use { res ->
+                                val body = res.body?.string() ?: ""
+                                val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
+                                if (isOk) InteractionResult(true, cId, "REACT_LIKE_FALLBACK", null, "Success", body) else null
+                            }
+                            if (cLikeRes != null) return cLikeRes
+                        }
+                    } catch (_: Exception) {}
+                }
             }
 
-            try {
-                val resolveReq = Request.Builder()
-                    .url("${graphApi()}/$cleanTargetId?fields=id&access_token=$token")
-                    .get()
-                    .header("User-Agent", ua())
-                    .build()
-                val scopedId = httpClient.newCall(resolveReq).execute().use { res ->
-                    val body = res.body?.string() ?: ""
-                    val json = try { JSONObject(body) } catch (_: Exception) { null }
-                    json?.optString("id", null)
-                }
-                if (!scopedId.isNullOrBlank() && scopedId != cleanTargetId && scopedId.contains("_")) {
-                    val scopedReq = Request.Builder()
-                        .url("${graphApi()}/$scopedId${FbVault.pathReactions()}")
-                        .post(formBody)
-                        .header("User-Agent", ua())
-                        .build()
-                    val scopedRes = httpClient.newCall(scopedReq).execute().use { res ->
-                        val body = res.body?.string() ?: ""
-                        val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
-                        if (isOk) InteractionResult(true, scopedId, "REACT_${reactionType.value}", null, "Success", body) else null
-                    }
-                    if (scopedRes != null) return scopedRes
+            // 2. Chuyển thẳng sang GraphQL UFIFeedbackReactMutation với actor Page 615 và Base64 feedback ID
+            val actor = pageId615?.takeIf { it.isNotBlank() } ?: ""
+            val gqlRes = reactGraphQLPage(cleanTargetId, token, reactionType, actor)
+            if (gqlRes.isSuccess) {
+                return gqlRes
+            }
 
-                    // Thử /likes với scoped ID nếu là LIKE
-                    if (reactionType == ReactionType.LIKE) {
-                        val scopedLikeReq = Request.Builder()
-                            .url("${graphApi()}/$scopedId${FbVault.pathLikes()}")
-                            .post(FormBody.Builder().add(fat, token).build())
-                            .header("User-Agent", ua())
-                            .build()
-                        val scopedLikeRes = httpClient.newCall(scopedLikeReq).execute().use { res ->
-                            val body = res.body?.string() ?: ""
-                            val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
-                            if (isOk) InteractionResult(true, scopedId, "REACT_LIKE_FALLBACK", null, "Success", body) else null
-                        }
-                        if (scopedLikeRes != null) return scopedLikeRes
-                    }
-                }
-            } catch (_: Exception) {}
-
-            // 2. Thử endpoint Graph API không version
-            try {
-                val unversionedReq = Request.Builder()
-                    .url("https://graph.facebook.com/$cleanTargetId${FbVault.pathReactions()}")
-                    .post(formBody)
-                    .header("User-Agent", ua())
-                    .build()
-                val unversionedRes = httpClient.newCall(unversionedReq).execute().use { res ->
-                    val body = res.body?.string() ?: ""
-                    val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
-                    if (isOk) InteractionResult(true, cleanTargetId, "REACT_${reactionType.value}", null, "Success", body) else null
-                }
-                if (unversionedRes != null) return unversionedRes
-
-                if (reactionType == ReactionType.LIKE) {
-                    val unversionedLikeReq = Request.Builder()
-                        .url("https://graph.facebook.com/$cleanTargetId${FbVault.pathLikes()}")
-                        .post(FormBody.Builder().add(fat, token).build())
-                        .header("User-Agent", ua())
-                        .build()
-                    val unversionedLikeRes = httpClient.newCall(unversionedLikeReq).execute().use { res ->
-                        val body = res.body?.string() ?: ""
-                        val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
-                        if (isOk) InteractionResult(true, cleanTargetId, "REACT_LIKE_FALLBACK", null, "Success", body) else null
-                    }
-                    if (unversionedLikeRes != null) return unversionedLikeRes
-                }
-            } catch (_: Exception) {}
+            val finalErrMsg = if (gqlRes.message.isNullOrBlank() || gqlRes.message.contains("Success")) {
+                restErrorMsg
+            } else {
+                gqlRes.message
+            }
+            return InteractionResult(false, cleanTargetId, "REACT_${reactionType.value}", null, finalErrMsg, gqlRes.rawResponse.ifBlank { restBody })
         }
 
-        // 3. Fallback sang GraphQL độc lập của chính Page 615 bằng pageToken và actor_id
-        val actor = pageId615?.takeIf { it.isNotBlank() } ?: ""
-        val gqlRes = reactGraphQLPage(cleanTargetId, token, reactionType, actor)
-        if (gqlRes.isSuccess) {
-            return gqlRes
-        }
-
-        val finalErrMsg = if (gqlRes.message?.contains("not found", ignoreCase = true) == true) {
-            restErrorMsg.ifBlank { "Không thể tương tác bài viết ($cleanTargetId)" }
-        } else if (restErrorMsg.contains("deprecated") || restErrorMsg.contains("(#12)") || restErrorMsg.contains("does not exist") || restErrorMsg.contains("missing permissions") || restErrorMsg.contains("Unsupported post request")) {
-            gqlRes.message ?: restErrorMsg
-        } else {
-            restErrorMsg.ifBlank { gqlRes.message ?: "Lỗi tương tác cảm xúc" }
-        }
-
-        return InteractionResult(false, cleanTargetId, "REACT_${reactionType.value}", null, finalErrMsg, gqlRes.rawResponse.ifBlank { restBody })
+        return InteractionResult(false, cleanTargetId, "REACT_${reactionType.value}", null, restErrorMsg.ifBlank { "Lỗi tương tác Facebook" }, restBody)
     }
 
     /**
      * Tương tác cảm xúc chuẩn Page 615 qua GraphQL:
      * - actor_id là UID của Page 615 (Profile+)
-     * - Chỉ sử dụng doc_id hợp lệ của Page, KHÔNG sử dụng doc_id Profile (5411782298894101)
-     * - Chuẩn hóa feedback_id cho GraphQL nếu là Post ID dạng số
+     * - Chuẩn hóa feedback_id cho GraphQL: Nếu là numeric ID, Base64 encode: "feedback:$id"
+     * - Sử dụng doc_id chuẩn 5411782298894101 của UFIFeedbackReactMutation
      */
     fun reactGraphQLPage(
         feedbackId: String,
@@ -318,44 +271,28 @@ import java.util.concurrent.TimeUnit
         reactionType: ReactionType = ReactionType.LIKE,
         pageActorId: String = pageId615 ?: ""
     ): InteractionResult {
-        val cleanFeedbackId = if (!feedbackId.startsWith("http")) feedbackId.trim() else FacebookTuongTacEngine.extractId(feedbackId)
+        val cleanFeedbackId = if (!feedbackId.startsWith("http")) feedbackId.trim() else extractId(feedbackId)
         val actor = pageActorId.ifBlank { pageId615 ?: "" }
 
-        // Chuẩn hóa feedback_id: Nếu là số numeric, query feedback node ID từ Graph API hoặc Base64
-        var targetFeedbackId = cleanFeedbackId
-        if (cleanFeedbackId.all { it.isDigit() }) {
+        // Chuẩn hóa feedback_id cho GraphQL: Nếu là số numeric, encode Base64 "feedback:$id"
+        val targetFeedbackId = if (cleanFeedbackId.all { it.isDigit() }) {
             try {
-                val fReq = Request.Builder()
-                    .url("${graphApi()}/$cleanFeedbackId?fields=feedback{id}&access_token=$token")
-                    .get()
-                    .header("User-Agent", ua())
-                    .build()
-                httpClient.newCall(fReq).execute().use { fRes ->
-                    val fBody = fRes.body?.string() ?: ""
-                    val fJson = try { JSONObject(fBody) } catch (_: Exception) { null }
-                    val resolvedId = fJson?.optJSONObject("feedback")?.optString("id")
-                    if (!resolvedId.isNullOrBlank()) {
-                        targetFeedbackId = resolvedId
-                    }
-                }
-            } catch (_: Exception) {}
-
-            if (targetFeedbackId == cleanFeedbackId) {
-                try {
-                    val encoded = android.util.Base64.encodeToString(
-                        "feedback:$cleanFeedbackId".toByteArray(Charsets.UTF_8),
-                        android.util.Base64.NO_WRAP
-                    )
-                    if (!encoded.isNullOrBlank()) targetFeedbackId = encoded
-                } catch (_: Exception) {}
+                android.util.Base64.encodeToString(
+                    "feedback:$cleanFeedbackId".toByteArray(Charsets.UTF_8),
+                    android.util.Base64.NO_WRAP
+                )
+            } catch (_: Exception) {
+                cleanFeedbackId
             }
+        } else {
+            cleanFeedbackId
         }
 
         val variables = JSONObject().apply {
             put("input", JSONObject().apply {
                 put("client_mutation_id", java.util.UUID.randomUUID().toString())
                 if (actor.isNotBlank()) put("actor_id", actor)
-                put("feedback_id", cleanFeedbackId)
+                put("feedback_id", targetFeedbackId)
                 put("feedback_reaction", reactionType.graphqlCode)
             })
         }
