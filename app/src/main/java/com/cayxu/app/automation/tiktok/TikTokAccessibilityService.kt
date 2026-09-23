@@ -316,7 +316,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                     continue
                 }
 
-                val handleNode = findHandleNode(root)
+                val handleNode = findProfileHandleNode(root) ?: findHandleNode(root)
                 val handleText = (handleNode?.text ?: handleNode?.contentDescription)?.toString()?.trim().orEmpty()
                 if (handleNode != null && handleText.length > 1 && isUserSelfProfileScreen(root)) {
                     TikTokCaptureBridge.updateProgress("Đã thấy @, đang lưu...")
@@ -808,6 +808,49 @@ class TikTokAccessibilityService : AccessibilityService() {
         return null
     }
 
+    /**
+     * Tìm node @handle CHÍNH XÁC trên trang Hồ sơ (nằm ở nửa trên màn hình, dưới avatar/tên người dùng).
+     * Tuyệt đối KHÔNG quét xuống nửa dưới màn hình để tránh nhận nhầm @mention trong bài viết/video feed.
+     */
+    private fun findProfileHandleNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val dm = resources.displayMetrics
+        val screenH = dm.heightPixels.toFloat()
+        if (screenH <= 0f) return null
+
+        val minTop = (screenH * 0.08f).toInt()
+        val maxBottom = (screenH * 0.50f).toInt()
+
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        collectHandleNodesInRegion(root, minTop, maxBottom, candidates)
+        return candidates.firstOrNull()
+    }
+
+    private fun collectHandleNodesInRegion(
+        node: AccessibilityNodeInfo,
+        minTop: Int,
+        maxBottom: Int,
+        out: MutableList<AccessibilityNodeInfo>,
+        depth: Int = 0
+    ) {
+        if (depth > 40) return
+        val text = node.text?.toString()?.trim()
+        val desc = node.contentDescription?.toString()?.trim()
+        val isHandle = (!text.isNullOrBlank() && text.startsWith("@") && text.length > 2) ||
+            (!desc.isNullOrBlank() && desc.startsWith("@") && desc.length > 2)
+        if (isHandle) {
+            val b = Rect()
+            node.getBoundsInScreen(b)
+            if (b.top >= minTop && b.bottom <= maxBottom && b.width() > 0 && b.height() > 0) {
+                out.add(node)
+                return
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectHandleNodesInRegion(child, minTop, maxBottom, out, depth + 1)
+        }
+    }
+
     /** Best-effort: tên hiển thị thường là dòng text anh em gần nhất với node @handle. */
     private fun findDisplayNameNear(handleNode: AccessibilityNodeInfo): String {
         val parent = handleNode.parent ?: return ""
@@ -985,13 +1028,89 @@ class TikTokAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Nhận diện màn hình Trang chủ (Home feed video):
+     * - Có các tab trên đỉnh màn hình: "Đề xuất", "Đã follow", "Bạn bè", "For You", "Following"
+     * - HOẶC tab "Trang chủ" ở thanh đáy đang được chọn
+     */
+    private fun isHomeFeedScreen(root: AccessibilityNodeInfo): Boolean {
+        val dm = resources.displayMetrics
+        val screenH = dm.heightPixels.toFloat()
+        if (screenH <= 0f) return false
+
+        // 1. Kiểm tra các tab đỉnh của Home Feed (nằm ở top 22% màn hình)
+        val topFeedKeywords = setOf("đề xuất", "for you", "dành cho bạn", "đã follow", "following", "bạn bè")
+        val topNode = findNodeByText(root, topFeedKeywords, exact = true)
+        if (topNode != null) {
+            val b = Rect()
+            topNode.getBoundsInScreen(b)
+            if (b.centerY() <= screenH * 0.22f) {
+                return true
+            }
+        }
+
+        // 2. Kiểm tra tab "Trang chủ" ở thanh đáy có đang được chọn không
+        val homeTabNode = findNodeByText(root, setOf("trang chủ", "home"), exact = true)
+        if (homeTabNode != null) {
+            val b = Rect()
+            homeTabNode.getBoundsInScreen(b)
+            if (b.centerY() >= screenH * 0.80f) {
+                val isSelected = homeTabNode.isSelected ||
+                    (homeTabNode.parent?.isSelected == true) ||
+                    (homeTabNode.contentDescription?.contains("đã chọn", ignoreCase = true) == true) ||
+                    (homeTabNode.contentDescription?.contains("selected", ignoreCase = true) == true)
+                if (isSelected) {
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
+
+    /** Kiểm tra xem tab "Hồ sơ" ở thanh đáy có đang được chọn không */
+    private fun isProfileTabSelected(root: AccessibilityNodeInfo): Boolean {
+        val dm = resources.displayMetrics
+        val screenH = dm.heightPixels.toFloat()
+        if (screenH <= 0f) return false
+
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        scanNodesForProfileTab(root, candidates)
+        val profileTab = candidates.filter { node ->
+            val b = Rect()
+            node.getBoundsInScreen(b)
+            b.bottom >= (screenH * 0.75f)
+        }.maxByOrNull { node ->
+            val b = Rect()
+            node.getBoundsInScreen(b)
+            b.bottom
+        }
+
+        if (profileTab != null) {
+            var curr: AccessibilityNodeInfo? = profileTab
+            for (i in 0..3) {
+                if (curr == null) break
+                if (curr.isSelected) return true
+                val desc = curr.contentDescription?.toString()?.lowercase().orEmpty()
+                if (desc.contains("đã chọn") || desc.contains("selected")) return true
+                curr = curr.parent
+            }
+        }
+        return false
+    }
+
+    /**
      * Nhận diện màn hình Hồ sơ chính chủ (Profile) của người dùng:
-     * - Hỗ trợ cả bản cũ (có nút text "Sửa hồ sơ", "Chia sẻ hồ sơ"...)
-     * - Hỗ trợ cả bản mới (TikTok đổi nút sửa thành icon cây bút chì cạnh tên, hoặc icon chia sẻ):
-     *   Chỉ cần có thanh đáy (Bottom Navigation Bar) + KHÔNG có nút Back + có nút Menu (☰) ở góc trên bên phải + thấy @handle hoặc chỉ số follower/đã follow.
+     * - TUYỆT ĐỐI KHÔNG nhận nhầm Trang chủ (Home feed) thành Hồ sơ.
+     * - Hỗ trợ cả bản cũ (có text "Sửa hồ sơ", "Chia sẻ hồ sơ"...)
+     * - Hỗ trợ cả bản mới: có thanh đáy + không có nút Back + có @handle ở nửa trên màn hình (dưới avatar) + (có chỉ số follower/đang follow HOẶC tab Hồ sơ đang được chọn).
      */
     private fun isUserSelfProfileScreen(root: AccessibilityNodeInfo): Boolean {
-        // 1. Dấu hiệu text truyền thống: Sửa hồ sơ, chia sẻ hồ sơ, đơn hàng...
+        // 1. Chắc chắn không phải là Home feed
+        if (isHomeFeedScreen(root)) {
+            return false
+        }
+
+        // 2. Dấu hiệu text truyền thống: Sửa hồ sơ, chia sẻ hồ sơ, đơn hàng...
         val profileSelfMarkers = setOf(
             "sửa hồ sơ", "chỉnh sửa hồ sơ", "edit profile",
             "chia sẻ hồ sơ", "share profile",
@@ -1003,18 +1122,21 @@ class TikTokAccessibilityService : AccessibilityService() {
             return true
         }
 
-        // 2. Nhận diện cấu trúc trang Hồ sơ chính chủ (áp dụng cho TikTok bản mới):
-        // - Có thanh đáy (Bottom Navigation Bar với tab Trang chủ/Hộp thư/Hồ sơ)
+        // 3. Nhận diện cấu trúc trang Hồ sơ chính chủ (áp dụng cho TikTok bản mới):
+        // - Có thanh đáy (Bottom Navigation Bar)
         // - KHÔNG có nút Back (trang cá nhân người khác thì luôn có nút Quay lại ở góc trên bên trái)
-        // - Có icon Menu (☰) ở góc trên bên phải (chỉ trang cá nhân chính chủ mới có menu ☰, trang người khác là nút chia sẻ/3 chấm)
-        // - Có @handle hoặc chỉ số thống kê cá nhân (follower, đã follow, thích)
+        // - Có @handle ở nửa trên màn hình (dưới avatar/tên)
+        // - Tab Hồ sơ đang được chọn HOẶC có chỉ số Follower / Đang follow
         val hasBottomBar = hasBottomNavigationBar(root)
         val hasNoBack = findTopLeftBackButton(root) == null
-        val hasMenu = findMenuIcon(root) != null
-        val hasHandle = findHandleNode(root) != null
+        val profileHandle = findProfileHandleNode(root)
 
-        if (hasBottomBar && hasNoBack && hasHandle) {
-            return true
+        if (hasBottomBar && hasNoBack && profileHandle != null) {
+            val hasStats = findNodeByText(root, setOf("follower", "người theo dõi", "đang follow", "following"), exact = false) != null
+            val isProfileSelected = isProfileTabSelected(root)
+            if (hasStats || isProfileSelected) {
+                return true
+            }
         }
 
         return false
@@ -1544,51 +1666,72 @@ class TikTokAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    val handleNode = findHandleNode(root)
+                    val handleNode = findProfileHandleNode(root) ?: findHandleNode(root)
                     if (handleNode != null && isUserSelfProfileScreen(root)) {
                         val currentHandle = (handleNode.text ?: handleNode.contentDescription)?.toString()?.trim()?.removePrefix("@")?.lowercase().orEmpty()
                         if (currentHandle.isNotBlank()) {
-                            if (currentHandle == target || currentHandle.contains(target) || target.contains(currentHandle)) {
-                                XsmmTaskAutomationBridge.updateProgress("Đã khớp tài khoản @$target")
-                                delay(800)
-                                XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đúng tài khoản @$target")
-                                return@launch
-                            } else {
-                                // Đang ở tài khoản khác -> Ưu tiên bấm vào Tên người dùng phía trên @ để mở Chuyển đổi tài khoản
-                                XsmmTaskAutomationBridge.updateProgress("Bấm tên đổi @$currentHandle sang @$target...")
-                                clickProfileName(root, handleNode)
-                                val sheetFound = waitForCondition(xsmmPkg, maxSeconds = 4) { currentRoot ->
-                                    findNodeByText(currentRoot, ADD_ACCOUNT_LABELS, exact = false) != null ||
-                                    findNodeByText(currentRoot, SWITCH_SHEET_TITLE, exact = false) != null
-                                }
-                                if (sheetFound != null) continue
-
-                                // Fallback: Mở menu (☰) nếu bấm tên không mở sheet (dành cho bản cũ)
-                                XsmmTaskAutomationBridge.updateProgress("Đổi @$currentHandle sang @$target...")
-                                val menuNode = findMenuIcon(root)
-                                if (menuNode != null) {
-                                    clickNode(menuNode)
-                                    menuTapAttempts++
-                                    delay(1000)
+                            if (target.isNotBlank()) {
+                                if (currentHandle == target || currentHandle.contains(target) || target.contains(currentHandle)) {
+                                    XsmmTaskAutomationBridge.updateProgress("Đã khớp tài khoản @$target")
+                                    delay(800)
+                                    XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đúng tài khoản @$target")
+                                    return@launch
                                 } else {
-                                    XsmmTaskAutomationBridge.updateProgress("Đang tìm nút menu (☰)...")
+                                    // Đang ở tài khoản khác -> Ưu tiên bấm vào Tên người dùng phía trên @ để mở Chuyển đổi tài khoản
+                                    XsmmTaskAutomationBridge.updateProgress("Bấm tên đổi @$currentHandle sang @$target...")
+                                    clickProfileName(root, handleNode)
+                                    val sheetFound = waitForCondition(xsmmPkg, maxSeconds = 4) { currentRoot ->
+                                        findNodeByText(currentRoot, ADD_ACCOUNT_LABELS, exact = false) != null ||
+                                        findNodeByText(currentRoot, SWITCH_SHEET_TITLE, exact = false) != null
+                                    }
+                                    if (sheetFound != null) continue
+
+                                    // Fallback: Mở menu (☰) nếu bấm tên không mở sheet (dành cho bản cũ)
+                                    XsmmTaskAutomationBridge.updateProgress("Đổi @$currentHandle sang @$target...")
+                                    val menuNode = findMenuIcon(root)
+                                    if (menuNode != null) {
+                                        clickNode(menuNode)
+                                        menuTapAttempts++
+                                        delay(1000)
+                                    } else {
+                                        XsmmTaskAutomationBridge.updateProgress("Đang tìm nút menu (☰)...")
+                                    }
+                                    delay(POLL_INTERVAL_MS)
+                                    continue
                                 }
-                                delay(POLL_INTERVAL_MS)
-                                continue
+                            } else {
+                                // target RỖNG: Luồng kiểm tra nick / nhận diện tài khoản hiện tại trên TikTok
+                                XsmmTaskAutomationBridge.updateProgress("Đã nhận diện @$currentHandle")
+                                delay(800)
+                                val displayName = findDisplayNameNear(handleNode).ifBlank { currentHandle }
+                                com.cayxu.app.data.local.TikTokAccountsStore.addAccount(
+                                    applicationContext,
+                                    com.cayxu.app.data.local.TikTokAccount(
+                                        handle = "@$currentHandle",
+                                        displayName = displayName,
+                                        variant = action.variant
+                                    )
+                                )
+                                XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đúng tài khoản @$currentHandle")
+                                return@launch
                             }
                         }
                     }
 
                     // 5. Nếu chưa ở trang Hồ sơ (đang ở Home/Trang chủ/Feed/Khám phá...)
                     XsmmTaskAutomationBridge.updateProgress("Bấm tab Hồ sơ...")
-                    clickProfileTab(root)
+                    val tabClicked = clickProfileTab(root)
+                    if (!tabClicked) {
+                        val dm = resources.displayMetrics
+                        tapAt(dm.widthPixels * 0.90f, dm.heightPixels * 0.96f)
+                    }
                     delay(1500)
                 } catch (e: Exception) {
                     delay(POLL_INTERVAL_MS)
                 }
             }
 
-            XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Hoàn tất kiểm tra")
+            XsmmTaskAutomationBridge.completeTask(action.actionId, false, "Hết thời gian chờ kiểm tra tài khoản")
         }
     }
 }

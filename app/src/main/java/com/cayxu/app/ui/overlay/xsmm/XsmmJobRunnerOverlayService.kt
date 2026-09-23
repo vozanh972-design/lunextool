@@ -128,11 +128,15 @@ class XsmmJobRunnerOverlayService : Service() {
             val verifyStartTime = System.currentTimeMillis()
             val maxVerifyWait = 90000L // 90s để máy yếu mở app và tải chậm thoải mái
 
+            var verifySuccess = false
+            var verifyMsg = ""
             while (isActive && (System.currentTimeMillis() - verifyStartTime) < maxVerifyWait) {
                 val res = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.result.value
                 if (res is com.cayxu.app.automation.tiktok.XsmmTaskActionResult.InProgress) {
                     XsmmJobStatusBridge.update(res.message)
                 } else if (res is com.cayxu.app.automation.tiktok.XsmmTaskActionResult.Completed && res.actionId == verifyActionId) {
+                    verifySuccess = res.success
+                    verifyMsg = res.message
                     XsmmJobStatusBridge.update(res.message)
                     delay(1500L)
                     break
@@ -140,8 +144,13 @@ class XsmmJobRunnerOverlayService : Service() {
                 delay(400L)
             }
 
-            XsmmJobStatusBridge.update("Hoàn tất kiểm tra!")
-            delay(1200L)
+            if (verifySuccess) {
+                XsmmJobStatusBridge.update("Hoàn tất kiểm tra!")
+                delay(1200L)
+            } else {
+                XsmmJobStatusBridge.update(verifyMsg.ifBlank { "Kiểm tra thất bại (hết thời gian)" })
+                delay(2500L)
+            }
             TikTokAppLauncher.bringToolToFront(applicationContext)
             stopSelf()
         }
