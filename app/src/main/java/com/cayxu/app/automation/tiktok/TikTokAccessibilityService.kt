@@ -982,6 +982,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         val handleBounds = Rect()
         handleNode.getBoundsInScreen(handleBounds)
         if (!handleBounds.isEmpty) {
+            clickNode(handleNode)
             val tapX = handleBounds.exactCenterX()
             val tapY = (handleBounds.top - dp(28)).toFloat().coerceAtLeast(10f)
             tapAt(tapX, tapY)
@@ -1564,36 +1565,66 @@ class TikTokAccessibilityService : AccessibilityService() {
                     val sheetTitleNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
                     val addAccountNode = findNodeByText(root, ADD_ACCOUNT_LABELS, exact = false)
                     if (sheetTitleNode != null && addAccountNode != null) {
-                        XsmmTaskAutomationBridge.updateProgress("Tìm @$target...")
-                        val rows = mutableListOf<AccessibilityNodeInfo>()
-                        findClickableRowsWithText(root, rows)
-                        var foundTargetRow: AccessibilityNodeInfo? = null
-                        for (row in rows) {
-                            val allTexts = mutableListOf<String>()
-                            collectAllTextsInNode(row, allTexts)
-                            val matched = allTexts.any { text ->
-                                val clean = text.removePrefix("@").trim().lowercase()
-                                val cleanNoAccent = normalizeAscii(clean)
-                                clean == target || clean.contains(target) || target.contains(clean) ||
-                                cleanNoAccent == target || cleanNoAccent.contains(target) || target.contains(cleanNoAccent)
+                        if (target.isNotBlank()) {
+                            XsmmTaskAutomationBridge.updateProgress("Tìm @$target...")
+                            val rows = mutableListOf<AccessibilityNodeInfo>()
+                            findClickableRowsWithText(root, rows)
+                            var foundTargetRow: AccessibilityNodeInfo? = null
+                            for (row in rows) {
+                                val allTexts = mutableListOf<String>()
+                                collectAllTextsInNode(row, allTexts)
+                                val matched = allTexts.any { text ->
+                                    val clean = text.removePrefix("@").trim().lowercase()
+                                    val cleanNoAccent = normalizeAscii(clean)
+                                    clean == target || clean.contains(target) || target.contains(clean) ||
+                                    cleanNoAccent == target || cleanNoAccent.contains(target) || target.contains(cleanNoAccent)
+                                }
+                                if (matched) {
+                                    foundTargetRow = row
+                                    break
+                                }
                             }
-                            if (matched) {
-                                foundTargetRow = row
-                                break
+                            if (foundTargetRow != null) {
+                                XsmmTaskAutomationBridge.updateProgress("Chọn @$target...")
+                                clickNode(foundTargetRow)
+                                delay(2500)
+                                XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đã chuyển sang tài khoản @$target")
+                                return@launch
+                            } else {
+                                XsmmTaskAutomationBridge.updateProgress("Không thấy @$target trong danh sách")
+                                delay(1500)
+                                performGlobalAction(GLOBAL_ACTION_BACK)
+                                XsmmTaskAutomationBridge.completeTask(action.actionId, false, "Không tìm thấy @$target")
+                                return@launch
                             }
-                        }
-                        if (foundTargetRow != null) {
-                            XsmmTaskAutomationBridge.updateProgress("Chọn @$target...")
-                            clickNode(foundTargetRow)
-                            delay(2500)
-                            XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đã chuyển sang tài khoản @$target")
-                            return@launch
                         } else {
-                            XsmmTaskAutomationBridge.updateProgress("Không thấy @$target trong danh sách")
-                            delay(1500)
-                            performGlobalAction(GLOBAL_ACTION_BACK)
-                            XsmmTaskAutomationBridge.completeTask(action.actionId, false, "Không tìm thấy @$target")
-                            return@launch
+                            // target RỖNG: Luồng kiểm tra TẤT CẢ các tài khoản đang đăng nhập trong danh sách!
+                            XsmmTaskAutomationBridge.updateProgress("Đang quét danh sách tài khoản...")
+                            val entries = collectSwitchAccountEntries(root)
+                            if (entries.isNotEmpty()) {
+                                XsmmTaskAutomationBridge.updateProgress("Đã quét ${entries.size} tài khoản, đang đồng bộ...")
+                                for (entry in entries) {
+                                    val handleToSave = entry.handle.ifBlank { entry.displayName }.trim().removePrefix("@")
+                                    if (handleToSave.isNotBlank()) {
+                                        com.cayxu.app.data.local.TikTokAccountsStore.addFromCapture(
+                                            context = applicationContext,
+                                            handle = handleToSave,
+                                            displayName = entry.displayName,
+                                            avatarUrl = "",
+                                            variant = action.variant
+                                        )
+                                    }
+                                }
+                                val activeEntry = entries.firstOrNull { it.isActive } ?: entries.first()
+                                val activeName = activeEntry.handle.ifBlank { activeEntry.displayName }.trim().removePrefix("@")
+                                delay(800)
+                                performGlobalAction(GLOBAL_ACTION_BACK)
+                                delay(600)
+                                XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đã kiểm tra ${entries.size} tài khoản (đang dùng @$activeName)")
+                                return@launch
+                            }
+                            delay(1000)
+                            continue
                         }
                     }
 
@@ -1700,19 +1731,41 @@ class TikTokAccessibilityService : AccessibilityService() {
                                     continue
                                 }
                             } else {
-                                // target RỖNG: Luồng kiểm tra nick / nhận diện tài khoản hiện tại trên TikTok
-                                XsmmTaskAutomationBridge.updateProgress("Đã nhận diện @$currentHandle")
-                                delay(800)
-                                val displayName = findDisplayNameNear(handleNode).ifBlank { currentHandle }
-                                com.cayxu.app.data.local.TikTokAccountsStore.addFromCapture(
-                                    context = applicationContext,
-                                    handle = "@$currentHandle",
-                                    displayName = displayName,
-                                    avatarUrl = "",
-                                    variant = action.variant
-                                )
-                                XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đúng tài khoản @$currentHandle")
-                                return@launch
+                                // target RỖNG: Bắt buộc mở danh sách tài khoản để quét toàn bộ các nick đang đăng nhập
+                                XsmmTaskAutomationBridge.updateProgress("Mở danh sách tài khoản...")
+                                clickProfileName(root, handleNode)
+                                val sheetFound = waitForCondition(xsmmPkg, maxSeconds = 4) { currentRoot ->
+                                    findNodeByText(currentRoot, ADD_ACCOUNT_LABELS, exact = false) != null ||
+                                    findNodeByText(currentRoot, SWITCH_SHEET_TITLE, exact = false) != null
+                                }
+                                if (sheetFound != null) continue
+
+                                // Fallback: Mở menu (☰) nếu bấm tên không mở sheet (dành cho bản cũ)
+                                val menuNode = findMenuIcon(root)
+                                if (menuNode != null && menuTapAttempts < 3) {
+                                    XsmmTaskAutomationBridge.updateProgress("Đang mở menu (☰) tìm Chuyển đổi...")
+                                    clickNode(menuNode)
+                                    menuTapAttempts++
+                                    delay(1000)
+                                } else if (menuTapAttempts >= 3) {
+                                    // Fallback tối hậu: App chỉ có 1 nick duy nhất và TikTok không hỗ trợ sheet chuyển đổi
+                                    XsmmTaskAutomationBridge.updateProgress("Đã nhận diện @$currentHandle")
+                                    delay(800)
+                                    val displayName = findDisplayNameNear(handleNode).ifBlank { currentHandle }
+                                    com.cayxu.app.data.local.TikTokAccountsStore.addFromCapture(
+                                        context = applicationContext,
+                                        handle = currentHandle,
+                                        displayName = displayName,
+                                        avatarUrl = "",
+                                        variant = action.variant
+                                    )
+                                    XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đúng tài khoản @$currentHandle")
+                                    return@launch
+                                } else {
+                                    XsmmTaskAutomationBridge.updateProgress("Đang tìm nút menu (☰)...")
+                                }
+                                delay(POLL_INTERVAL_MS)
+                                continue
                             }
                         }
                     }

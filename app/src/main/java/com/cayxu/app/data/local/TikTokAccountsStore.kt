@@ -60,15 +60,21 @@ object TikTokAccountsStore {
         avatarUrl: String = "",
         variant: TikTokAppVariant
     ): TikTokAccount {
-        val cleanHandle = handle.trim()
+        val cleanHandle = handle.trim().removePrefix("@")
+        val normIncoming = cleanHandle.lowercase()
         val current = getAccounts(context).toMutableList()
 
         // Nếu handle đã tồn tại thì cập nhật lại thay vì tạo bản ghi trùng.
-        val existingIndex = current.indexOfFirst { it.handle.equals(cleanHandle, ignoreCase = true) && cleanHandle.isNotBlank() }
+        val existingIndex = current.indexOfFirst {
+            val h = it.handle.trim().removePrefix("@").lowercase()
+            h == normIncoming && normIncoming.isNotBlank()
+        }
         val account = if (existingIndex >= 0) {
-            current[existingIndex].copy(
-                displayName = displayName.ifBlank { current[existingIndex].displayName },
-                avatarUrl = avatarUrl.ifBlank { current[existingIndex].avatarUrl },
+            val old = current[existingIndex]
+            old.copy(
+                handle = cleanHandle,
+                displayName = displayName.ifBlank { old.displayName },
+                avatarUrl = avatarUrl.ifBlank { old.avatarUrl },
                 status = TikTokAccountStatus.ACTIVE,
                 variant = variant
             ).also { current[existingIndex] = it }
@@ -82,7 +88,18 @@ object TikTokAccountsStore {
                 variant = variant
             ).also { current.add(it) }
         }
-        save(context, current)
+
+        // Tự động khử trùng lặp (Deduplicate) các tài khoản trùng handle trong database
+        val seen = mutableSetOf<String>()
+        val deduped = mutableListOf<TikTokAccount>()
+        for (item in current) {
+            val key = item.handle.trim().removePrefix("@").lowercase()
+            if (key.isBlank() || seen.add(key)) {
+                deduped.add(item)
+            }
+        }
+
+        save(context, deduped)
         return account
     }
 
