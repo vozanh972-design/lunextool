@@ -212,7 +212,6 @@ class FacebookTuongTacEngine(
             isSuccess = execRes.isSuccess,
             action = "REACT_${reaction.name}",
             targetId = cleanId,
-            id = if (execRes.isSuccess) cleanId else null,
             message = execRes.message,
             rawResponse = execRes.rawResponse
         )
