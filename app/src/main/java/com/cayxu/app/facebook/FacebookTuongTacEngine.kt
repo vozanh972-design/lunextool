@@ -200,19 +200,22 @@ class FacebookTuongTacEngine(
      */
     fun react(feedbackId: String, reaction: ReactionType = ReactionType.LIKE): EngineResult {
         val cleanId = extractId(feedbackId)
-        val input = JSONObject().apply {
-            put("client_mutation_id", UUID.randomUUID().toString())
-            put("actor_id", userId ?: "")
-            put("feedback_id", cleanId)
-            put("feedback_reaction", reaction.code)
-        }
-        val fdi = FbVault.fieldDocId()
-        val fv  = FbVault.fieldVariables()
-        val params = mapOf(
-            fdi to FbVault.docIdProfileReact(),
-            fv  to JSONObject().put("input", input).toString()
+        val execRes = Page615ReactionWorker.executeReactionDetail(
+            objectId = cleanId,
+            reactionType = reaction.name,
+            token = accessToken ?: "",
+            pageUid = userId,
+            proxyHost = proxyHost,
+            proxyPort = proxyPort
         )
-        return postGraphQL(params, "UFIFeedbackReactMutation", "REACT_${reaction.name}", cleanId)
+        return EngineResult(
+            isSuccess = execRes.isSuccess,
+            action = "REACT_${reaction.name}",
+            targetId = cleanId,
+            id = if (execRes.isSuccess) cleanId else null,
+            message = execRes.message,
+            rawResponse = execRes.rawResponse
+        )
     }
 
 
