@@ -169,6 +169,20 @@ object XsmmFacebookTaskRunner {
             return RunResult(0, 1, 0, msg)
         }
 
+        // Token mẹ (Katana User Token EAAAAU...) dùng cho Page 615 GraphQL mutation.
+        // Phải là User Access Token của nick mẹ, KHÔNG phải Page Access Token (EAAB...).
+        // Thử account.bio trước; nếu blank thì lấy từ cookie.
+        val parentTokenForKatana: String = if (matchedPage != null) {
+            account.bio.trim().takeIf { it.isNotBlank() }
+                ?: if (account.note.contains("c_user=")) {
+                    try {
+                        FacebookAccountManager()
+                            .getTokenFromCookie(account.note, account.phone.ifBlank { null })
+                            ?.bio.orEmpty()
+                    } catch (_: Exception) { "" }
+                } else ""
+        } else ""
+
         val config = XsmmRunConfigStore.get(context, "facebook")
         var totalCompleted = 0
         var totalErrors = 0
@@ -493,7 +507,7 @@ object XsmmFacebookTaskRunner {
                     targetId = target,
                     comment = task.comment,
                     reactionStr = effectiveReaction,
-                    token = if (matchedPage != null && account.bio.isNotBlank()) account.bio.trim() else fbToken,
+                    token = if (matchedPage != null && parentTokenForKatana.isNotBlank()) parentTokenForKatana else fbToken,
                     cookie = account.note,
                     proxyStr = account.phone.ifBlank { null },
                     uid = targetUidForXsmm,
