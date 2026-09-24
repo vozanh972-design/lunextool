@@ -13,12 +13,14 @@ import java.util.concurrent.TimeUnit
  * BỘ ENGINE TƯƠNG TÁC CẢM XÚC DÀNH CHO PAGE 615 (PROFILE PLUS / NEW PAGES EXPERIENCE)
  * Trích xuất 100% từ cấu trúc Facebook Katana v548 (KaharaMod)
  *
- * CƠ CHẾ DUY NHẤT CHUẨN XÁC 100%:
- * 1. Gọi trực tiếp Numeric Target ID: POST https://graph.facebook.com/{TARGET_ID}/reactions
- * 2. Tự động bắt lỗi #12 (singular statuses API is deprecated):
- *    -> Query GET https://graph.facebook.com/{TARGET_ID}?fields=from&access_token={PAGE_TOKEN}
- *    -> Trích xuất owner_id = from.id
- *    -> Retry POST https://graph.facebook.com/{owner_id}_{TARGET_ID}/reactions
+ * CƠ CHẾ AUTO-RESOLVER DIỆT TẬN GỐC LỖI 100 SUBCODE 33 & LỖI #12 (CHUẨN XÁC 100%):
+ * 1. Gọi phân giải Full ID chuẩn:
+ *    GET https://graph.facebook.com/v21.0/?id=https://www.facebook.com/{TARGET_ID}&fields=id&access_token={PAGE_TOKEN}
+ *    -> Facebook trả về {"id": "{owner_id}_{target_id}"}
+ * 2. Bắn reaction vào đúng Full ID vừa tìm được:
+ *    POST https://graph.facebook.com/v21.0/{RESOLVED_FULL_ID}/reactions
+ *    Header: User-Agent Katana v548
+ *    Body: type={REACTION_TYPE}&access_token={PAGE_TOKEN}
  * 3. Page Access Token của Page 615
  * =========================================================================================
  */
@@ -214,8 +216,14 @@ class Page615ReactionEngine(
     }
 
     /**
-     * 1. GỬI TRỰC TIẾP TARGET_ID SỐ NGUYÊN BẢN (KHÔNG BASE64)
-     * 2. TỰ ĐỘNG BẮT VÀ FIX LỖI #12 (SINGULAR STATUSES)
+     * CƠ CHẾ AUTO-RESOLVER DIỆT TẬN GỐC LỖI 100 SUBCODE 33 & LỖI #12:
+     * Bước 1: Gọi phân giải Full ID chuẩn:
+     *         GET https://graph.facebook.com/v21.0/?id=https://www.facebook.com/{TARGET_ID}&fields=id&access_token={PAGE_TOKEN}
+     *         -> Facebook trả về {"id": "{owner_id}_{target_id}"}
+     * Bước 2: Bắn reaction vào đúng Full ID vừa tìm được:
+     *         POST https://graph.facebook.com/v21.0/{RESOLVED_FULL_ID}/reactions
+     *         Header: User-Agent Katana
+     *         Body: type={REACTION_TYPE}&access_token={PAGE_TOKEN}
      */
     private fun executeReaction(
         cleanId: String,
@@ -224,13 +232,34 @@ class Page615ReactionEngine(
     ): ReactionResult {
         val cleanToken = cleanToken(token)
 
+        // BƯỚC 1: TỰ ĐỘNG RESOLVE FULL POST ID ĐỂ DIỆT LỖI 100 SUBCODE 33
+        var finalPostId = cleanId
+        try {
+            val resolveUrl = "https://graph.facebook.com/v21.0/?id=https://www.facebook.com/$cleanId&fields=id&access_token=$cleanToken"
+            val resolveReq = Request.Builder()
+                .url(resolveUrl)
+                .get()
+                .header("User-Agent", KATANA_USER_AGENT)
+                .build()
+
+            httpClient.newCall(resolveReq).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val json = JSONObject(body)
+                val resolved = json.optString("id")
+                if (!resolved.isNullOrEmpty()) {
+                    finalPostId = resolved
+                }
+            }
+        } catch (_: Exception) {}
+
+        // BƯỚC 2: THẢ REACTION VÀO FULL ID
         val formBody = FormBody.Builder()
             .add("type", reaction.restValue)
             .add("access_token", cleanToken)
             .build()
 
         val request = Request.Builder()
-            .url("https://graph.facebook.com/$cleanId/reactions")
+            .url("https://graph.facebook.com/v21.0/$finalPostId/reactions")
             .post(formBody)
             .header("User-Agent", KATANA_USER_AGENT)
             .build()
@@ -242,18 +271,18 @@ class Page615ReactionEngine(
             if (response.isSuccessful && (body.contains("\"success\":true") || body.contains("\"success\": true") || body.contains("\"id\":"))) {
                 return ReactionResult(
                     isSuccess = true,
-                    targetId = cleanId,
+                    targetId = finalPostId,
                     reaction = reaction,
-                    methodUsed = "REST_DIRECT_NUMERIC",
+                    methodUsed = "REST_AUTO_RESOLVED",
                     message = "Thành công (REST)",
                     rawResponse = body
                 )
             }
 
-            // 2. TỰ ĐỘNG BẮT VÀ FIX LỖI #12 (SINGULAR STATUSES)
-            if (body.contains("singular statuses API is deprecated") || body.contains("\"code\":12") || body.contains("\"code\": 12")) {
+            // DỰ PHÒNG: NẾU VẪN BỊ LỖI #12 HOẶC 100 SUBCODE 33 (VÍ DỤ STATUS ĐƠN LẺ KHÔNG TÌM THẤY QUA URL)
+            if (body.contains("singular statuses API is deprecated") || body.contains("\"code\":12") || body.contains("\"code\": 12") || body.contains("error_subcode\":33") || body.contains("error_subcode\": 33")) {
                 val ownerReq = Request.Builder()
-                    .url("https://graph.facebook.com/$cleanId?fields=from&access_token=$cleanToken")
+                    .url("https://graph.facebook.com/v21.0/$cleanId?fields=from&access_token=$cleanToken")
                     .get()
                     .header("User-Agent", KATANA_USER_AGENT)
                     .build()
@@ -263,14 +292,14 @@ class Page615ReactionEngine(
                 val ownerId = JSONObject(ownerBody).optJSONObject("from")?.optString("id")
 
                 if (!ownerId.isNullOrEmpty()) {
-                    val fullPostId = "${ownerId}_$cleanId"
+                    val fallbackPostId = "${ownerId}_$cleanId"
                     val retryBody = FormBody.Builder()
                         .add("type", reaction.restValue)
                         .add("access_token", cleanToken)
                         .build()
 
                     val retryReq = Request.Builder()
-                        .url("https://graph.facebook.com/$fullPostId/reactions")
+                        .url("https://graph.facebook.com/v21.0/$fallbackPostId/reactions")
                         .post(retryBody)
                         .header("User-Agent", KATANA_USER_AGENT)
                         .build()
@@ -281,10 +310,10 @@ class Page615ReactionEngine(
 
                     return ReactionResult(
                         isSuccess = isRetryOk,
-                        targetId = fullPostId,
+                        targetId = fallbackPostId,
                         reaction = reaction,
-                        methodUsed = "REST_RESOLVED_STATUS_12",
-                        message = if (isRetryOk) "Thành công (Đã resolve lỗi #12 sang $fullPostId)" else "Thất bại sau resolve #12: $retryBodyStr",
+                        methodUsed = "REST_RESOLVED_OWNER_ID",
+                        message = if (isRetryOk) "Thành công (Đã resolve sang $fallbackPostId)" else "Thất bại sau resolve: $retryBodyStr",
                         rawResponse = retryBodyStr
                     )
                 }
@@ -292,18 +321,18 @@ class Page615ReactionEngine(
 
             ReactionResult(
                 isSuccess = false,
-                targetId = cleanId,
+                targetId = finalPostId,
                 reaction = reaction,
-                methodUsed = "REST_DIRECT_NUMERIC",
+                methodUsed = "REST_AUTO_RESOLVED",
                 message = "Thất bại: $body",
                 rawResponse = body
             )
         } catch (e: Exception) {
             ReactionResult(
                 isSuccess = false,
-                targetId = cleanId,
+                targetId = finalPostId,
                 reaction = reaction,
-                methodUsed = "REST_DIRECT_NUMERIC",
+                methodUsed = "REST_AUTO_RESOLVED",
                 message = e.message ?: "Exception",
                 rawResponse = ""
             )
