@@ -303,17 +303,10 @@ object XsmmFacebookTaskRunner {
             val currentTaskLabel = getTaskName(currentActiveTaskType)
 
             notify("Lấy nhiệm vụ Facebook ($currentTaskLabel)...")
-            var actualTaskType = currentActiveTaskType
-            var taskResult = XsmmTasksRepository.getTasks(token, currentActiveTaskType)
-
-            // Nếu server XSMM không có endpoint riêng cho subtype cảm xúc, lấy pool chung từ facebook_like
             val isReactionSubtype = currentActiveTaskType in listOf("facebook_like", "facebook_love", "facebook_care", "facebook_haha", "facebook_wow", "facebook_sad", "facebook_angry")
-            if (isReactionSubtype && (taskResult is XsmmTasks2Result.Error || (taskResult is XsmmTasks2Result.Success && taskResult.tasks.isEmpty())) && currentActiveTaskType != "facebook_like") {
-                val poolResult = XsmmTasksRepository.getTasks(token, "facebook_like")
-                if (poolResult is XsmmTasks2Result.Success && poolResult.tasks.isNotEmpty()) {
-                    taskResult = poolResult
-                }
-            }
+            val queryType = if (isReactionSubtype) "facebook_like" else currentActiveTaskType
+            var actualTaskType = queryType
+            var taskResult = XsmmTasksRepository.getTasks(token, queryType)
 
             if (taskResult is XsmmTasks2Result.Error && (
                 taskResult.message.contains("cần thêm tài khoản", ignoreCase = true) ||
@@ -333,40 +326,11 @@ object XsmmFacebookTaskRunner {
                     XsmmAccountsRepository.syncAndActivateFacebookAccount(token, targetUidForXsmm)
                     delay(1500L)
                 }
-                taskResult = XsmmTasksRepository.getTasks(token, currentActiveTaskType)
+                taskResult = XsmmTasksRepository.getTasks(token, queryType)
             }
 
-            // Lọc đúng loại cảm xúc độc lập khi người dùng đang chạy riêng 1 loại cảm xúc:
-            val targetReactionFilter = when (currentActiveTaskType) {
-                "facebook_like" -> "LIKE"
-                "facebook_love" -> "LOVE"
-                "facebook_care" -> "CARE"
-                "facebook_haha" -> "HAHA"
-                "facebook_wow"  -> "WOW"
-                "facebook_sad"  -> "SAD"
-                "facebook_angry"-> "ANGRY"
-                else -> null
-            }
-
-            val rawTaskList = (taskResult as? XsmmTasks2Result.Success)?.tasks ?: emptyList()
-            val taskList = if (targetReactionFilter != null && rawTaskList.isNotEmpty()) {
-                rawTaskList.filter { t ->
-                    val r = t.reaction.ifBlank {
-                        when {
-                            t.type.contains("love") -> "LOVE"
-                            t.type.contains("care") -> "CARE"
-                            t.type.contains("haha") -> "HAHA"
-                            t.type.contains("wow")  -> "WOW"
-                            t.type.contains("sad")  -> "SAD"
-                            t.type.contains("angry")-> "ANGRY"
-                            else -> "LIKE"
-                        }
-                    }
-                    r.equals(targetReactionFilter, ignoreCase = true)
-                }
-            } else {
-                rawTaskList
-            }
+            // Với nhiệm vụ cảm xúc: server XSMM trả về pool chung (facebook_like), có job nào làm job đó, không lọc vứt bỏ job của nhau
+            val taskList = (taskResult as? XsmmTasks2Result.Success)?.tasks ?: emptyList()
 
             val (isNoTask, errorMsg) = when {
                 taskResult is XsmmTasks2Result.Error -> {
@@ -464,15 +428,14 @@ object XsmmFacebookTaskRunner {
 
                 val effectiveReaction = when {
                     isFollowTask || isCommentTask -> ""
-                    targetReactionFilter != null -> targetReactionFilter
                     task.reaction.isNotBlank() -> task.reaction.uppercase()
-                    task.type.contains("love") || actualTaskType.contains("love") -> "LOVE"
-                    task.type.contains("care") || actualTaskType.contains("care") -> "CARE"
-                    task.type.contains("haha") || actualTaskType.contains("haha") -> "HAHA"
-                    task.type.contains("wow") || actualTaskType.contains("wow") -> "WOW"
-                    task.type.contains("sad") || actualTaskType.contains("sad") -> "SAD"
-                    task.type.contains("angry") || actualTaskType.contains("angry") -> "ANGRY"
-                    currentActiveTaskType == "facebook_like" || actualTaskType == "facebook_like" -> "LIKE"
+                    task.type.contains("love", ignoreCase = true) -> "LOVE"
+                    task.type.contains("care", ignoreCase = true) -> "CARE"
+                    task.type.contains("haha", ignoreCase = true) -> "HAHA"
+                    task.type.contains("wow", ignoreCase = true)  -> "WOW"
+                    task.type.contains("sad", ignoreCase = true)  -> "SAD"
+                    task.type.contains("angry", ignoreCase = true)-> "ANGRY"
+                    isReactionSubtype -> "LIKE"
                     else -> ""
                 }
 
