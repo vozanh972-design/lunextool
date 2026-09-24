@@ -493,7 +493,7 @@ object XsmmFacebookTaskRunner {
                     targetId = target,
                     comment = task.comment,
                     reactionStr = effectiveReaction,
-                    token = fbToken,
+                    token = if (matchedPage != null && account.bio.isNotBlank()) account.bio.trim() else fbToken,
                     cookie = account.note,
                     proxyStr = account.phone.ifBlank { null },
                     uid = targetUidForXsmm,
