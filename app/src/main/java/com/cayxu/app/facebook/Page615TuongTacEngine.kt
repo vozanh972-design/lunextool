@@ -270,6 +270,87 @@ import java.util.concurrent.TimeUnit
         )
     }
 
+    private fun reactLikeGraphQL(targetId: String, token: String): InteractionResult {
+        if (targetId.isBlank() || token.isBlank()) {
+            return InteractionResult(false, targetId, "REACT_LIKE", null, "Target ID hoặc token trống", "")
+        }
+
+        val relayBase64Id = try {
+            android.util.Base64.encodeToString("feedback:$targetId".toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+        } catch (_: Exception) { "" }
+
+        val feedbackCandidates = mutableListOf<String>()
+        if (relayBase64Id.isNotBlank()) feedbackCandidates.add(relayBase64Id)
+        feedbackCandidates.add(targetId)
+        feedbackCandidates.add("feedback:$targetId")
+
+        val actorId = pageId615?.trim()?.takeIf { it.isNotBlank() } ?: ""
+        val actorVariants = if (actorId.isNotBlank()) listOf(actorId, "") else listOf("")
+
+        var lastErrorMsg = ""
+        var lastBody = ""
+
+        val fdi = FbVault.fieldDocId()
+        val fv  = FbVault.fieldVariables()
+        val fat = FbVault.fieldAccessToken()
+
+        val docIdList = listOf(FbVault.docIdPageReact(), FbVault.docIdVoiceReact())
+
+        for (docId in docIdList) {
+            for (actor in actorVariants) {
+                for (fid in feedbackCandidates) {
+                    try {
+                        val input = JSONObject().apply {
+                            put("client_mutation_id", java.util.UUID.randomUUID().toString())
+                            if (actor.isNotBlank()) put("actor_id", actor)
+                            put("feedback_id", fid)
+                            put("feedback_reaction", 1) // 1 = LIKE
+                        }
+
+                        val formBody = FormBody.Builder()
+                            .add(fdi, docId)
+                            .add(fv, JSONObject().put("input", input).toString())
+                            .add(fat, token)
+                            .build()
+
+                        val req = Request.Builder()
+                            .url(graphql())
+                            .post(formBody)
+                            .header("User-Agent", ua())
+                            .header("X-FB-Friendly-Name", "UFIFeedbackReactMutation")
+                            .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+                            .header("Authorization", "OAuth $token")
+                            .build()
+
+                        httpClient.newCall(req).execute().use { res ->
+                            val body = res.body?.string() ?: ""
+                            lastBody = body
+                            val isOk = res.isSuccessful && !body.contains("\"errors\":") && (body.contains("feedback_react") || body.contains("\"data\":"))
+                            if (isOk) {
+                                return InteractionResult(true, targetId, "REACT_LIKE", null, "Success", body)
+                            }
+                            val errMsg = parseErrorMessage(body)
+                            if (errMsg.isNotBlank() && errMsg != "Success") {
+                                lastErrorMsg = errMsg
+                            }
+                        }
+                    } catch (e: Exception) {
+                        lastErrorMsg = e.message ?: "Lỗi kết nối mạng"
+                    }
+                }
+            }
+        }
+
+        return InteractionResult(
+            false,
+            targetId,
+            "REACT_LIKE",
+            null,
+            lastErrorMsg.ifBlank { "Thao tác LIKE thất bại" },
+            lastBody
+        )
+    }
+
     fun reactPost(
         postId: String,
         reactionType: ReactionType = ReactionType.LIKE,
@@ -279,6 +360,10 @@ import java.util.concurrent.TimeUnit
         if (token.isEmpty()) return InteractionResult(false, postId, "REACT_${reactionType.value}", null, "Page token required", "")
 
         val cleanTargetId = if (!postId.startsWith("http")) postId.trim() else extractId(postId)
+
+        if (reactionType == ReactionType.LIKE) {
+            return reactLikeGraphQL(cleanTargetId, token)
+        }
 
         return executeReactionGraphQL(cleanTargetId, reactionType, token)
     }
