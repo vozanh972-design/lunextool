@@ -454,7 +454,13 @@ object XsmmFacebookTaskRunner {
                         "ANGRY" -> "phẫn nộ"
                         else -> "like"
                     }
-                    notify("Đang $reactAct · UID: $target")
+                    val methodLabel = when (config.page615ReactionMethod) {
+                        "rest" -> " [Cách 1: REST]"
+                        "raw_graphql" -> " [Cách 2: Raw GQL]"
+                        "doc_id" -> " [Cách 3: DocID 548]"
+                        else -> " [Tự động]"
+                    }
+                    notify("Đang $reactAct$methodLabel · UID: $target")
                 } else {
                     val actName = when {
                         currentActiveTaskType.contains("likepage") || task.type.contains("likepage") -> "like page"
@@ -470,12 +476,14 @@ object XsmmFacebookTaskRunner {
                     targetId = target,
                     comment = task.comment,
                     reactionStr = effectiveReaction,
-                    token = if (matchedPage != null && parentTokenForKatana.isNotBlank()) parentTokenForKatana else fbToken,
+                    token = if (matchedPage != null && matchedPage.pageToken.isNotBlank()) matchedPage.pageToken else fbToken,
                     cookie = account.note,
                     proxyStr = account.phone.ifBlank { null },
                     uid = targetUidForXsmm,
                     isPage = (matchedPage != null),
-                    pageId615 = if (matchedPage != null) targetUidForXsmm else null
+                    pageId615 = if (matchedPage != null) targetUidForXsmm else null,
+                    userToken = parentTokenForKatana.takeIf { it.isNotBlank() } ?: account.bio.trim(),
+                    page615ReactionMethod = config.page615ReactionMethod
                 )
 
                 // Delay mô phỏng thời gian thao tác
@@ -645,7 +653,9 @@ object XsmmFacebookTaskRunner {
         proxyStr: String?,
         uid: String? = null,
         isPage: Boolean = false,
-        pageId615: String? = null
+        pageId615: String? = null,
+        userToken: String? = null,
+        page615ReactionMethod: String = "auto"
     ): FbTaskResult {
         if (targetId.isBlank()) return FbTaskResult(false, "Thiếu ID đối tượng (targetId trống)")
         val cleanToken = token.removePrefix("OAuth ").removePrefix("Bearer ").trim()
@@ -673,6 +683,7 @@ object XsmmFacebookTaskRunner {
             val pageEngine = com.cayxu.app.facebook.Page615TuongTacEngine(
                 pageToken = cleanToken,
                 pageId615 = pageId615 ?: uid,
+                userToken = userToken,
                 proxyHost = proxyHost,
                 proxyPort = proxyPort
             )
@@ -694,10 +705,10 @@ object XsmmFacebookTaskRunner {
                 }
                 lower.contains("like") || lower.contains("love") || lower.contains("care") ||
                 lower.contains("haha") || lower.contains("wow") || lower.contains("sad") || lower.contains("angry") || lower.contains("tym") || reactionStr.isNotBlank() -> {
-                    pageEngine.reactPost(targetId, pageReaction)
+                    pageEngine.reactPost(targetId, pageReaction, forceMethod = page615ReactionMethod)
                 }
                 else -> {
-                    pageEngine.reactPost(targetId, pageReaction)
+                    pageEngine.reactPost(targetId, pageReaction, forceMethod = page615ReactionMethod)
                 }
             }
             val msg = if (res.isSuccess) "Thành công" else (res.message ?: res.rawResponse)

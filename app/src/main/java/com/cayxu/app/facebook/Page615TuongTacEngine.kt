@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit
 @Keep class Page615TuongTacEngine(
     private var pageToken: String? = null,
     private var pageId615: String? = null,
+    private var userToken: String? = null,
     private val proxyHost: String? = null,
     private val proxyPort: Int? = null,
     private val proxyType: Proxy.Type = Proxy.Type.HTTP
@@ -269,17 +270,44 @@ import java.util.concurrent.TimeUnit
         )
     }
 
+    fun setUserToken(token: String) { this.userToken = token }
+
     fun reactPost(
         postId: String,
         reactionType: ReactionType = ReactionType.LIKE,
-        overrideToken: String? = null
+        overrideToken: String? = null,
+        forceMethod: String = "auto"
     ): InteractionResult {
-        val token = getCleanToken(overrideToken)
-        if (token.isEmpty()) return InteractionResult(false, postId, "REACT_${reactionType.value}", null, "Page token required", "")
-
         val cleanTargetId = if (!postId.startsWith("http")) postId.trim() else extractId(postId)
 
-        return executeReactionGraphQL(cleanTargetId, reactionType, token)
+        val engine = Page615ReactionEngine(
+            pageToken = overrideToken ?: pageToken,
+            pageId615 = pageId615,
+            userToken = userToken,
+            proxyHost = proxyHost,
+            proxyPort = proxyPort,
+            proxyType = proxyType
+        )
+
+        val engineReaction = when (reactionType) {
+            ReactionType.LIKE -> Page615ReactionEngine.ReactionType.LIKE
+            ReactionType.LOVE -> Page615ReactionEngine.ReactionType.LOVE
+            ReactionType.CARE -> Page615ReactionEngine.ReactionType.CARE
+            ReactionType.HAHA -> Page615ReactionEngine.ReactionType.HAHA
+            ReactionType.WOW  -> Page615ReactionEngine.ReactionType.WOW
+            ReactionType.SAD  -> Page615ReactionEngine.ReactionType.SAD
+            ReactionType.ANGRY-> Page615ReactionEngine.ReactionType.ANGRY
+        }
+
+        val result = engine.react(cleanTargetId, engineReaction, forceMethod = forceMethod)
+        return InteractionResult(
+            isSuccess = result.isSuccess,
+            targetId = result.targetId,
+            actionType = "REACT_${reactionType.value}",
+            resultId = null,
+            message = result.message,
+            rawResponse = result.rawResponse
+        )
     }
 
     fun commentPost(

@@ -25,7 +25,9 @@ data class XsmmRunConfig(
     /** Lướt (vuốt) một chút trước khi làm nhiệm vụ. */
     val swipeBeforeTask: Boolean = false,
     /** Trở về Home rồi lướt sau khi làm xong (giữa các nhiệm vụ). */
-    val returnHomeAndSwipe: Boolean = false
+    val returnHomeAndSwipe: Boolean = false,
+    /** Chế độ cảm xúc Page 615: auto (tự động 3 lớp), rest (Cách 1 - REST API), raw_graphql (Cách 2 - Raw GraphQL), doc_id (Cách 3 - DocID 548). */
+    val page615ReactionMethod: String = "auto"
 ) {
     /** Trả về danh sách loại nhiệm vụ hiệu lực (ưu tiên taskTypes, fallback taskType). */
     fun effectiveTaskTypes(): List<String> =
@@ -45,6 +47,7 @@ object XsmmRunConfigStore {
     private const val KEY_FAIL_JOB_COUNT_TO_SWITCH = "fail_job_count_to_switch"
     private const val KEY_SWIPE_BEFORE = "swipe_before_task"
     private const val KEY_RETURN_HOME_SWIPE = "return_home_and_swipe"
+    private const val KEY_PAGE615_REACTION_METHOD = "page615_reaction_method"
 
     val supportedPlatforms = listOf(
         "tiktok"    to "TikTok",
@@ -140,7 +143,8 @@ object XsmmRunConfigStore {
             stopAfterCompletedCount = p.getInt("${prefix}${KEY_STOP_AFTER_COMPLETED}", p.getInt(KEY_STOP_AFTER_COMPLETED, 100)),
             failJobCountToSwitchAccount = p.getInt("${prefix}${KEY_FAIL_JOB_COUNT_TO_SWITCH}", p.getInt(KEY_FAIL_JOB_COUNT_TO_SWITCH, 50)),
             swipeBeforeTask = p.getBoolean("${prefix}${KEY_SWIPE_BEFORE}", p.getBoolean(KEY_SWIPE_BEFORE, false)),
-            returnHomeAndSwipe = p.getBoolean("${prefix}${KEY_RETURN_HOME_SWIPE}", p.getBoolean(KEY_RETURN_HOME_SWIPE, false))
+            returnHomeAndSwipe = p.getBoolean("${prefix}${KEY_RETURN_HOME_SWIPE}", p.getBoolean(KEY_RETURN_HOME_SWIPE, false)),
+            page615ReactionMethod = p.getString("${prefix}${KEY_PAGE615_REACTION_METHOD}", p.getString(KEY_PAGE615_REACTION_METHOD, "auto")) ?: "auto"
         )
     }
 
@@ -164,6 +168,7 @@ object XsmmRunConfigStore {
             .putInt("${prefix}${KEY_FAIL_JOB_COUNT_TO_SWITCH}", config.failJobCountToSwitchAccount)
             .putBoolean("${prefix}${KEY_SWIPE_BEFORE}", config.swipeBeforeTask)
             .putBoolean("${prefix}${KEY_RETURN_HOME_SWIPE}", config.returnHomeAndSwipe)
+            .putString("${prefix}${KEY_PAGE615_REACTION_METHOD}", config.page615ReactionMethod)
             .apply()
     }
 }

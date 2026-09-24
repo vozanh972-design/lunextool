@@ -1,6 +1,7 @@
 package com.cayxu.app.ui.screens.xsmm
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -60,6 +61,7 @@ fun XsmmRunConfigScreen(navController: NavController) {
     var failJobCountToSwitch by remember { mutableStateOf(saved.failJobCountToSwitchAccount.toString()) }
     var swipeBeforeTask by remember { mutableStateOf(saved.swipeBeforeTask) }
     var returnHomeAndSwipe by remember { mutableStateOf(saved.returnHomeAndSwipe) }
+    var page615ReactionMethod by remember { mutableStateOf(saved.page615ReactionMethod) }
 
     var showInstagramCookieSheet by remember { mutableStateOf(false) }
     var showFacebookLoginSheet by remember { mutableStateOf(false) }
@@ -79,7 +81,8 @@ fun XsmmRunConfigScreen(navController: NavController) {
                 stopAfterCompletedCount = stopAfterCompleted.toIntOrNull()?.coerceAtLeast(1) ?: 100,
                 failJobCountToSwitchAccount = failJobCountToSwitch.toIntOrNull()?.coerceAtLeast(1) ?: 50,
                 swipeBeforeTask = swipeBeforeTask,
-                returnHomeAndSwipe = returnHomeAndSwipe
+                returnHomeAndSwipe = returnHomeAndSwipe,
+                page615ReactionMethod = page615ReactionMethod
             )
         )
         navController.popBackStack()
@@ -127,6 +130,7 @@ fun XsmmRunConfigScreen(navController: NavController) {
                     failJobCountToSwitch = platConfig.failJobCountToSwitchAccount.toString()
                     swipeBeforeTask = platConfig.swipeBeforeTask
                     returnHomeAndSwipe = platConfig.returnHomeAndSwipe
+                    page615ReactionMethod = platConfig.page615ReactionMethod
                 }
             )
 
@@ -139,6 +143,14 @@ fun XsmmRunConfigScreen(navController: NavController) {
                                else selectedTaskTypes - typeKey
                 }
             )
+
+            // Thử nghiệm 3 cách tương tác cảm xúc Page 615 khi chọn nền tảng Facebook
+            if (platform.equals("facebook", ignoreCase = true)) {
+                Page615ReactionMethodSelector(
+                    currentMethod = page615ReactionMethod,
+                    onSelect = { page615ReactionMethod = it }
+                )
+            }
 
             ConfigNumberField(
                 label = "Thời gian lấy nhiệm vụ",
@@ -377,3 +389,67 @@ private fun ConfigPlatformSelector(
         }
     }
 }
+
+/** Card chọn 1 trong 3 cách tương tác cảm xúc Page 615 để test loại trừ. */
+@Composable
+private fun Page615ReactionMethodSelector(
+    currentMethod: String,
+    onSelect: (String) -> Unit
+) {
+    val methods = listOf(
+        "auto" to "Tự động (Khuyên dùng - 3 lớp fallback)",
+        "rest" to "Cách 1: REST API (Graph v21.0 - Page Token)",
+        "raw_graphql" to "Cách 2: Raw GraphQL Mutation (Không doc_id)",
+        "doc_id" to "Cách 3: GraphQL Persisted DocID (Katana v548)"
+    )
+
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Text(
+                text = "Phương thức Cảm xúc Page 615 (Test 3 cách)",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Chọn chế độ để test loại trừ theo hướng dẫn:",
+                fontSize = 12.sp,
+                color = TextSecondary
+            )
+            Spacer(Modifier.height(8.dp))
+
+            methods.forEach { (key, label) ->
+                val isSelected = (currentMethod == key)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) XsmmAccent.copy(alpha = 0.1f) else Color.Transparent)
+                        .clickable { onSelect(key) }
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = isSelected,
+                        onClick = { onSelect(key) },
+                        colors = RadioButtonDefaults.colors(selectedColor = XsmmAccent)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = label,
+                        fontSize = 13.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isSelected) XsmmAccent else TextPrimary
+                    )
+                }
+            }
+        }
+    }
+}
+
