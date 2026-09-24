@@ -26,6 +26,21 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
+      # Đảm bảo NDK 26.1.10909125 sẵn sàng, tái sử dụng NDK 26 có sẵn trên runner tránh lỗi tải hỏng file zip
+      - name: Setup Android NDK
+        run: |
+          rm -rf $ANDROID_HOME/.temp || true
+          if [ ! -d "$ANDROID_HOME/ndk/26.1.10909125" ]; then
+            PREINSTALLED=$(ls -d $ANDROID_HOME/ndk/26.* 2>/dev/null | head -n 1)
+            if [ -n "$PREINSTALLED" ]; then
+              echo "Tái sử dụng NDK có sẵn: $PREINSTALLED -> 26.1.10909125"
+              ln -s "$PREINSTALLED" "$ANDROID_HOME/ndk/26.1.10909125"
+            else
+              echo "Cài đặt NDK qua sdkmanager..."
+              yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" || true
+            fi
+          fi
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
