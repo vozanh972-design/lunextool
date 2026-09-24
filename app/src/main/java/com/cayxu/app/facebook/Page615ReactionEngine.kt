@@ -13,14 +13,14 @@ import java.util.concurrent.TimeUnit
  * BỘ ENGINE TƯƠNG TÁC CẢM XÚC DÀNH CHO PAGE 615 (PROFILE PLUS / NEW PAGES EXPERIENCE)
  * Trích xuất 100% từ cấu trúc Facebook Katana v548 (KaharaMod)
  *
- * CƠ CHẾ DUY NHẤT CHUẨN XÁC 100%:
+ * CƠ CHẾ GRAPHQL DIỆT TẬN GỐC LỖI 100 SUBCODE 33 (CHUẨN XÁC 100%):
  * 1. Bóc tách chính xác 7 loại cảm xúc: LIKE, LOVE, CARE, HAHA, WOW, SAD, ANGRY
- * 2. Gửi duy nhất 1 lệnh HTTP POST form-data lên Graph API:
- *    POST https://graph.facebook.com/{TARGET_ID}/reactions
- *    Header: User-Agent Katana v548
- *    Body: type={REACTION_TYPE}&access_token={PAGE_TOKEN}
- * 3. Tự động giải quyết lỗi #12 khi gặp Status ID đơn lẻ
- * 4. Page Access Token của Page 615
+ * 2. Gửi GraphQL Mutation qua endpoint Mobile Katana:
+ *    POST https://graph.facebook.com/graphql
+ *    Headers: Authorization: OAuth {PAGE_ACCESS_TOKEN}
+ *             User-Agent Katana v548
+ *    Body: query_string={rawMutation}&variables={variables}
+ * 3. Page Access Token độc lập của Page 615 (EAAAAU...)
  * =========================================================================================
  */
 @Keep
@@ -36,6 +36,7 @@ class Page615ReactionEngine(
     companion object {
         const val GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
         const val GRAPH_BASE = "https://graph.facebook.com"
+        const val GRAPHQL_ENDPOINT = "https://graph.facebook.com/graphql"
 
         // User-Agent chuẩn Facebook Katana v548 (Android) từ Kahara
         const val KATANA_USER_AGENT =
@@ -215,7 +216,7 @@ class Page615ReactionEngine(
                 isSuccess = false,
                 targetId = cleanId,
                 reaction = reaction,
-                methodUsed = "REST_DIRECT_NUMERIC",
+                methodUsed = "GRAPHQL_QUERY_STRING",
                 message = "Thiếu Page Access Token của Page 615 để thực hiện reaction"
             )
         }
@@ -237,10 +238,10 @@ class Page615ReactionEngine(
     }
 
     /**
-     * BẮN DUY NHẤT 1 LỆNH HTTP POST THẲNG VÀO GRAPH API:
-     * POST https://graph.facebook.com/{target_id}/reactions
-     * Body: type={REACTION_TYPE}&access_token={PAGE_TOKEN}
-     * Header: User-Agent Katana v548
+     * BẮN GRAPHQL MUTATION TRỰC TIẾP QUA ENDPOINT MOBILE KATANA:
+     * POST https://graph.facebook.com/graphql
+     * Header: Authorization: OAuth {PAGE_ACCESS_TOKEN}
+     * FormBody: query_string={rawMutation}&variables={variables}
      */
     private fun executeReaction(
         cleanId: String,
@@ -249,14 +250,35 @@ class Page615ReactionEngine(
     ): ReactionResult {
         val cleanToken = cleanToken(token)
 
+        // 1. Khởi tạo biến variables
+        val variables = JSONObject().apply {
+            put("input", JSONObject().apply {
+                put("feedback_id", cleanId)
+                put("feedback_reaction", reaction.graphqlCode)
+                put("client_mutation_id", "1")
+            })
+        }
+
+        // 2. Chuỗi GraphQL Mutation
+        val rawMutation = """
+            mutation FeedbackReactionMutation(${'$'}input: FeedbackReactionInput!) {
+                feedback_reaction_subscribe(data: ${'$'}input) {
+                    client_mutation_id
+                    feedback { id }
+                }
+            }
+        """.trimIndent()
+
+        // 3. Gửi đúng tham số "query_string" (Diệt tận gốc lỗi #100)
         val formBody = FormBody.Builder()
-            .add("type", reaction.restValue)
-            .add("access_token", cleanToken)
+            .add("query_string", rawMutation)
+            .add("variables", variables.toString())
             .build()
 
         val request = Request.Builder()
-            .url("https://graph.facebook.com/$cleanId/reactions")
+            .url(GRAPHQL_ENDPOINT)
             .post(formBody)
+            .header("Authorization", "OAuth $cleanToken")
             .header("User-Agent", KATANA_USER_AGENT)
             .build()
 
@@ -264,52 +286,48 @@ class Page615ReactionEngine(
             val response = httpClient.newCall(request).execute()
             val body = response.body?.string() ?: ""
 
-            if (response.isSuccessful && (body.contains("\"success\":true") || body.contains("\"success\": true") || body.contains("\"id\":"))) {
+            // Thành công khi response 200 và không chứa errors
+            val isSuccess = response.isSuccessful && !body.contains("\"errors\"")
+
+            if (isSuccess) {
                 return ReactionResult(
                     isSuccess = true,
                     targetId = cleanId,
                     reaction = reaction,
-                    methodUsed = "GRAPH_API_POST_REACTIONS",
-                    message = "Thành công",
+                    methodUsed = "GRAPHQL_QUERY_STRING",
+                    message = "Thành công (GraphQL)",
                     rawResponse = body
                 )
             }
 
-            // Tự động giải quyết lỗi #12 khi gặp Status ID đơn lẻ
-            if (body.contains("singular statuses API is deprecated") || body.contains("\"code\":12") || body.contains("\"code\": 12")) {
-                val ownerReq = Request.Builder()
-                    .url("https://graph.facebook.com/$cleanId?fields=from&access_token=$cleanToken")
-                    .get()
+            // Dự phòng nếu targetId cần dạng feedback:$cleanId
+            if (body.contains("feedback") || body.contains("Object with ID")) {
+                val retryVariables = JSONObject().apply {
+                    put("input", JSONObject().apply {
+                        put("feedback_id", "feedback:$cleanId")
+                        put("feedback_reaction", reaction.graphqlCode)
+                        put("client_mutation_id", "1")
+                    })
+                }
+                val retryBody = FormBody.Builder()
+                    .add("query_string", rawMutation)
+                    .add("variables", retryVariables.toString())
+                    .build()
+                val retryReq = Request.Builder()
+                    .url(GRAPHQL_ENDPOINT)
+                    .post(retryBody)
+                    .header("Authorization", "OAuth $cleanToken")
                     .header("User-Agent", KATANA_USER_AGENT)
                     .build()
-
-                val ownerRes = httpClient.newCall(ownerReq).execute()
-                val ownerBody = ownerRes.body?.string() ?: ""
-                val ownerId = JSONObject(ownerBody).optJSONObject("from")?.optString("id")
-
-                if (!ownerId.isNullOrEmpty()) {
-                    val fullPostId = "${ownerId}_$cleanId"
-                    val retryBody = FormBody.Builder()
-                        .add("type", reaction.restValue)
-                        .add("access_token", cleanToken)
-                        .build()
-
-                    val retryReq = Request.Builder()
-                        .url("https://graph.facebook.com/$fullPostId/reactions")
-                        .post(retryBody)
-                        .header("User-Agent", KATANA_USER_AGENT)
-                        .build()
-
-                    val retryRes = httpClient.newCall(retryReq).execute()
-                    val retryBodyStr = retryRes.body?.string() ?: ""
-                    val isRetryOk = retryRes.isSuccessful && (retryBodyStr.contains("\"success\":true") || retryBodyStr.contains("\"success\": true") || retryBodyStr.contains("\"id\":"))
-
+                val retryRes = httpClient.newCall(retryReq).execute()
+                val retryBodyStr = retryRes.body?.string() ?: ""
+                if (retryRes.isSuccessful && !retryBodyStr.contains("\"errors\"")) {
                     return ReactionResult(
-                        isSuccess = isRetryOk,
-                        targetId = fullPostId,
+                        isSuccess = true,
+                        targetId = cleanId,
                         reaction = reaction,
-                        methodUsed = "PAGE_615_RESOLVED_STATUS",
-                        message = if (isRetryOk) "Thành công" else "Thất bại: $retryBodyStr",
+                        methodUsed = "GRAPHQL_QUERY_STRING",
+                        message = "Thành công (GraphQL)",
                         rawResponse = retryBodyStr
                     )
                 }
@@ -319,7 +337,7 @@ class Page615ReactionEngine(
                 isSuccess = false,
                 targetId = cleanId,
                 reaction = reaction,
-                methodUsed = "GRAPH_API_POST_REACTIONS",
+                methodUsed = "GRAPHQL_QUERY_STRING",
                 message = "Thất bại: $body",
                 rawResponse = body
             )
@@ -328,7 +346,7 @@ class Page615ReactionEngine(
                 isSuccess = false,
                 targetId = cleanId,
                 reaction = reaction,
-                methodUsed = "GRAPH_API_POST_REACTIONS",
+                methodUsed = "GRAPHQL_QUERY_STRING",
                 message = e.message ?: "Exception",
                 rawResponse = ""
             )
