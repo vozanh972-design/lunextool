@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.ui.theme.AppBackground
 import com.cayxu.app.ui.theme.CardWhite
@@ -73,7 +74,7 @@ fun FacebookLoginWebViewScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val focusManager = LocalFocusManager()
+    val focusManager = LocalFocusManager.current
 
     var emailOrPhone by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -109,13 +110,15 @@ fun FacebookLoginWebViewScreen(
         // 2. Lưu vào cơ sở dữ liệu FacebookAccountsStore của app
         FacebookAccountsStore.addAccount(
             context = context,
-            uid = result.uid,
-            name = result.uid,
-            bio = result.token,
-            note = result.cookies,
-            password = currentPass,
-            email = currentEmail,
-            isLive = true
+            account = FacebookAccount(
+                uid = result.uid,
+                name = result.uid,
+                bio = result.token,
+                note = result.cookies,
+                password = currentPass,
+                email = currentEmail,
+                isLive = true
+            )
         )
 
         loginResult = result
@@ -560,7 +563,7 @@ fun FacebookLoginWebViewScreen(
                             }
                         }
 
-                        Divider(color = CardBorder, thickness = 0.5.dp)
+                        HorizontalDivider(color = CardBorder, thickness = 0.5.dp)
 
                         // 1. UID
                         ResultRow(
