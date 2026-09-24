@@ -454,13 +454,7 @@ object XsmmFacebookTaskRunner {
                         "ANGRY" -> "phẫn nộ"
                         else -> "like"
                     }
-                    val methodLabel = when (config.page615ReactionMethod) {
-                        "rest" -> " [Cách 1: REST]"
-                        "raw_graphql" -> " [Cách 2: Raw GQL]"
-                        "doc_id" -> " [Cách 3: DocID 548]"
-                        else -> " [Tự động]"
-                    }
-                    notify("Đang $reactAct$methodLabel · UID: $target")
+                    notify("Đang $reactAct · UID: $target")
                 } else {
                     val actName = when {
                         currentActiveTaskType.contains("likepage") || task.type.contains("likepage") -> "like page"

@@ -1,5 +1,6 @@
 package com.cayxu.app.facebook
 
+import android.util.Base64
 import androidx.annotation.Keep
 import okhttp3.*
 import org.json.JSONArray
@@ -13,16 +14,10 @@ import java.util.concurrent.TimeUnit
  * BỘ ENGINE TƯƠNG TÁC CẢM XÚC DÀNH CHO PAGE 615 (PROFILE PLUS / NEW PAGES EXPERIENCE)
  * Trích xuất 100% từ cấu trúc Facebook Katana v548 (KaharaMod)
  *
- * ĐẶC TRỊ CÁC LỖI KINH ĐIỂN CỦA TOOL TỰ ĐỘNG (XSMM, GOLIKE, TRAODOISUB, BOT):
- * 1. KHẮC PHỤC "The GraphQL document with ID ... was not found":
- *    -> Áp dụng kiến trúc 3 lớp: Ưu tiên REST API (không bao giờ dùng doc_id) -> Fallback sang
- *       GraphQL Raw Mutation (không phụ thuộc cache server) -> Fallback doc_id Katana v548 mới nhất.
- * 2. KHẮC PHỤC LỖI #12 ("API Deprecated" hoặc "Unsupported object"):
- *    -> Loại bỏ hoàn toàn endpoint cũ /likes (đã bị Meta xóa).
- *    -> Tích hợp hàm resolveTargetToFeedbackId tự động quy đổi Reel/Story/Post ID sang Feedback ID.
- * 3. KHẮC PHỤC LỖI #200 ("Permissions error"):
- *    -> Tự động bóc tách Page Access Token độc lập của Page 615 từ User Token mẹ (/me/accounts).
- *    -> Tự động kẹp actor_id nếu tương tác qua GraphQL Voice Switcher.
+ * ÁP DỤNG CƠ CHẾ DUY NHẤT CHUẨN XÁC VĨNH VIỄN:
+ * 1. Base64 Feedback Node ID: Base64.encode("feedback:" + targetId)
+ * 2. POST https://graph.facebook.com/v21.0/{base64FeedbackId}/reactions
+ * 3. Page Access Token của Page 615
  * =========================================================================================
  */
 @Keep
@@ -43,8 +38,21 @@ class Page615ReactionEngine(
         const val KATANA_USER_AGENT =
             "[FBAN/FB4A;FBAV/548.1.0.51.64;FBBV/474618929;FBDM/{density=3.0,width=1080,height=2340};FBLC/vi_VN;FBRV/0;FBCR/Viettel;FBMF/samsung;FBBD/samsung;FBPN/com.facebook.katana;FBDV/SM-S928B;FBSV/14;FBOP/1;FBCA/arm64-v8a;]"
 
-        // Mã doc_id Katana v548 dự phòng (thay thế cho mã 5411782298894101 đã chết)
-        const val DOC_ID_FEEDBACK_REACTION_KATANA = "4715426135182900"
+        /**
+         * Quy đổi targetId sang Base64 Feedback Node ID chuẩn:
+         * Ví dụ: 1488740023061437 -> "feedback:1488740023061437" -> "ZmVlZGJhY2s6MTQ4ODc0MDAyMzA2MTQzNw=="
+         */
+        fun toBase64FeedbackId(targetId: String): String {
+            val clean = targetId.trim()
+            if (clean.startsWith("ZmVlZGJhY2s6")) {
+                return clean
+            }
+            val feedbackString = if (clean.startsWith("feedback:")) clean else "feedback:$clean"
+            return Base64.encodeToString(
+                feedbackString.toByteArray(Charsets.UTF_8),
+                Base64.NO_WRAP
+            )
+        }
     }
 
     /**
@@ -166,11 +174,11 @@ class Page615ReactionEngine(
     }
 
     /**
-     * HÀM THỰC THI TƯƠNG TÁC THÔNG MINH (BULLETPROOF REACTION)
-     * Tự động điều phối 3 lớp để đảm bảo 100% không dính lỗi #12, #200, hay doc_id not found:
-     * - Ưu tiên Lớp 1: REST API với Page Token (Chuẩn Graph API v21.0).
-     * - Fallback Lớp 2: GraphQL Raw Mutation (Gửi query thô, không cần doc_id).
-     * - Fallback Lớp 3: GraphQL Persisted Query với doc_id Katana v548.
+     * HÀM THỰC THI TƯƠNG TÁC CẢM XÚC CHUẨN XÁC VĨNH VIỄN
+     * 1. Nhận targetId
+     * 2. Quy đổi targetId sang Feedback Node ID bằng Base64: "feedback:" + targetId -> Base64
+     * 3. Gửi request REST Graph API v21.0: POST https://graph.facebook.com/v21.0/{base64FeedbackId}/reactions
+     *    Body: type={REACTION}, access_token={PAGE_ACCESS_TOKEN}
      */
     fun react(
         targetId: String,
@@ -184,77 +192,57 @@ class Page615ReactionEngine(
         val uToken = cleanToken(customUserToken ?: userToken)
         val pageId = customPageId615 ?: pageId615
 
-        // =========================================================================
-        // CÁCH 1: REST API (Graph API v21.0 - Page Access Token)
-        // =========================================================================
-        if (forceMethod == "rest" || forceMethod == "auto") {
-            var activePageToken = pToken
-            if (activePageToken.isEmpty() && uToken.isNotEmpty() && !pageId.isNullOrEmpty()) {
-                activePageToken = extractPageTokenFromUserToken(pageId, uToken) ?: ""
-            }
-            if (activePageToken.isNotEmpty()) {
-                val restResult = executeRestReaction(targetId, reaction, activePageToken)
-                if (restResult.isSuccess) return restResult
-                if (restResult.rawResponse.contains("\"code\":12") || restResult.rawResponse.contains("\"code\": 12")) {
-                    val resolvedId = resolveTargetToFeedbackId(targetId, activePageToken)
-                    if (resolvedId != targetId) {
-                        val retryRest = executeRestReaction(resolvedId, reaction, activePageToken)
-                        if (retryRest.isSuccess) return retryRest
-                    }
+        // BƯỚC 1: Xác định Page Access Token của Page 615
+        var activePageToken = pToken
+        if (activePageToken.isEmpty() && uToken.isNotEmpty() && !pageId.isNullOrEmpty()) {
+            activePageToken = extractPageTokenFromUserToken(pageId, uToken) ?: ""
+        }
+
+        if (activePageToken.isEmpty()) {
+            return ReactionResult(
+                isSuccess = false,
+                targetId = targetId,
+                reaction = reaction,
+                methodUsed = "REST_FEEDBACK_NODE",
+                message = "Thiếu Page Access Token của Page 615 để thực hiện reaction"
+            )
+        }
+
+        // BƯỚC 2 & 3: Quy đổi sang Base64 Feedback Node ID và gọi REST Graph API v21.0
+        val base64FeedbackId = toBase64FeedbackId(targetId)
+        val result = executeRestReaction(base64FeedbackId, targetId, reaction, activePageToken)
+
+        // Nếu token bị hết hạn, thử refresh lại Page Token 1 lần từ User Token mẹ /me/accounts
+        if (!result.isSuccess && (result.rawResponse.contains("Error validating access token") || result.rawResponse.contains("\"code\":190"))) {
+            if (uToken.isNotEmpty() && !pageId.isNullOrEmpty()) {
+                val refreshed = extractPageTokenFromUserToken(pageId, uToken)
+                if (!refreshed.isNullOrEmpty() && refreshed != activePageToken) {
+                    return executeRestReaction(base64FeedbackId, targetId, reaction, refreshed)
                 }
-                if (forceMethod == "rest") return restResult
-            } else if (forceMethod == "rest") {
-                return ReactionResult(false, targetId, reaction, "REST_GRAPH_API", "Thiếu Page Token cho REST API", "")
             }
         }
 
-        // =========================================================================
-        // CÁCH 2: GRAPHQL RAW MUTATION (Không cần doc_id)
-        // =========================================================================
-        val tokenForGql = if (uToken.isNotEmpty()) uToken else pToken
-        if (forceMethod == "raw_graphql" || forceMethod == "auto") {
-            if (tokenForGql.isNotEmpty()) {
-                val rawGqlResult = executeRawGraphQLMutation(targetId, reaction, tokenForGql, pageId)
-                if (rawGqlResult.isSuccess) return rawGqlResult
-                if (forceMethod == "raw_graphql") return rawGqlResult
-            } else if (forceMethod == "raw_graphql") {
-                return ReactionResult(false, targetId, reaction, "GRAPHQL_RAW_MUTATION", "Thiếu Access Token cho GraphQL", "")
-            }
-        }
-
-        // =========================================================================
-        // CÁCH 3: GRAPHQL PERSISTED QUERY VỚI DOC_ID MỚI TỪ KATANA 548
-        // =========================================================================
-        if (forceMethod == "doc_id" || forceMethod == "auto") {
-            if (tokenForGql.isNotEmpty()) {
-                val docIdResult = executePersistedGraphQLMutation(targetId, reaction, tokenForGql, pageId)
-                if (docIdResult.isSuccess) return docIdResult
-                if (forceMethod == "doc_id") return docIdResult
-            } else if (forceMethod == "doc_id") {
-                return ReactionResult(false, targetId, reaction, "GRAPHQL_DOC_ID_548", "Thiếu Access Token cho GraphQL DocID", "")
-            }
-        }
-
-        return ReactionResult(
-            isSuccess = false,
-            targetId = targetId,
-            reaction = reaction,
-            methodUsed = "ALL_LAYERS_FAILED",
-            message = "Không thể thả cảm xúc (chế độ: $forceMethod). Kiểm tra lại quyền Page 615, bài viết bị ẩn hoặc token hết hạn."
-        )
+        return result
     }
 
     /**
-     * Triển khai Lớp 1: REST API Graph API v21.0
+     * Gửi request REST Graph API v21.0 vào đúng Feedback Node:
+     * Endpoint: POST https://graph.facebook.com/v21.0/{base64FeedbackId}/reactions
+     * Form Body: type={LIKE|LOVE|CARE|HAHA|WOW|SAD|ANGRY}&access_token={PAGE_ACCESS_TOKEN}
      */
-    private fun executeRestReaction(targetId: String, reaction: ReactionType, token: String): ReactionResult {
+    private fun executeRestReaction(
+        base64FeedbackId: String,
+        originalTargetId: String,
+        reaction: ReactionType,
+        token: String
+    ): ReactionResult {
         val formBody = FormBody.Builder()
             .add("type", reaction.restValue)
             .add("access_token", token)
             .build()
 
         val request = Request.Builder()
-            .url("$GRAPH_API_BASE/$targetId/reactions")
+            .url("$GRAPH_API_BASE/$base64FeedbackId/reactions")
             .post(formBody)
             .header("User-Agent", KATANA_USER_AGENT)
             .build()
@@ -262,129 +250,19 @@ class Page615ReactionEngine(
         return try {
             httpClient.newCall(request).execute().use { res ->
                 val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && (body.contains("\"success\":true") || body.contains("\"id\":"))
+                val isOk = res.isSuccessful && (body.contains("\"success\":true") || body.contains("\"success\": true") || body.contains("\"id\":"))
                 ReactionResult(
                     isSuccess = isOk,
-                    targetId = targetId,
+                    targetId = originalTargetId,
                     reaction = reaction,
-                    methodUsed = "REST_GRAPH_API",
-                    message = if (isOk) "Thành công (REST)" else "Thất bại: $body",
+                    methodUsed = "REST_FEEDBACK_NODE",
+                    message = if (isOk) "Thành công (REST Feedback Node)" else "Thất bại: $body",
                     rawResponse = body
                 )
             }
         } catch (e: Exception) {
-            ReactionResult(false, targetId, reaction, "REST_GRAPH_API", e.message ?: "Exception", "")
-        }
-    }
-
-    /**
-     * Triển khai Lớp 2: GraphQL Raw Mutation (Bỏ qua doc_id, Facebook server tự compile)
-     */
-    private fun executeRawGraphQLMutation(
-        targetId: String,
-        reaction: ReactionType,
-        token: String,
-        actorId615: String?
-    ): ReactionResult {
-        val variables = JSONObject().apply {
-            put("input", JSONObject().apply {
-                put("feedback_id", targetId)
-                put("feedback_reaction", reaction.graphqlCode)
-                if (!actorId615.isNullOrEmpty()) {
-                    put("actor_id", actorId615)
-                }
-                put("client_mutation_id", "1")
-            })
-        }
-
-        val rawMutation = """
-            mutation FeedbackReactionMutation(${'$'}input: FeedbackReactionInput!) {
-                feedback_reaction_subscribe(data: ${'$'}input) {
-                    client_mutation_id
-                    feedback {
-                        id
-                    }
-                }
-            }
-        """.trimIndent()
-
-        val formBody = FormBody.Builder()
-            .add("query", rawMutation)
-            .add("variables", variables.toString())
-            .build()
-
-        val request = Request.Builder()
-            .url(GRAPHQL_ENDPOINT)
-            .post(formBody)
-            .header("User-Agent", KATANA_USER_AGENT)
-            .header("Authorization", "OAuth $token")
-            .build()
-
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && !body.contains("\"errors\"")
-                ReactionResult(
-                    isSuccess = isOk,
-                    targetId = targetId,
-                    reaction = reaction,
-                    methodUsed = "GRAPHQL_RAW_MUTATION",
-                    message = if (isOk) "Thành công (GraphQL Raw)" else "Lỗi GraphQL: $body",
-                    rawResponse = body
-                )
-            }
-        } catch (e: Exception) {
-            ReactionResult(false, targetId, reaction, "GRAPHQL_RAW_MUTATION", e.message ?: "Exception", "")
-        }
-    }
-
-    /**
-     * Triển khai Lớp 3: GraphQL Persisted Query dùng doc_id Katana v548
-     */
-    private fun executePersistedGraphQLMutation(
-        targetId: String,
-        reaction: ReactionType,
-        token: String,
-        actorId615: String?
-    ): ReactionResult {
-        val variables = JSONObject().apply {
-            put("input", JSONObject().apply {
-                put("feedback_id", targetId)
-                put("feedback_reaction", reaction.graphqlCode)
-                if (!actorId615.isNullOrEmpty()) {
-                    put("actor_id", actorId615)
-                }
-                put("client_mutation_id", "1")
-            })
-        }
-
-        val formBody = FormBody.Builder()
-            .add("doc_id", DOC_ID_FEEDBACK_REACTION_KATANA)
-            .add("variables", variables.toString())
-            .build()
-
-        val request = Request.Builder()
-            .url(GRAPHQL_ENDPOINT)
-            .post(formBody)
-            .header("User-Agent", KATANA_USER_AGENT)
-            .header("Authorization", "OAuth $token")
-            .build()
-
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && !body.contains("\"errors\"")
-                ReactionResult(
-                    isSuccess = isOk,
-                    targetId = targetId,
-                    reaction = reaction,
-                    methodUsed = "GRAPHQL_DOC_ID_548",
-                    message = if (isOk) "Thành công (GraphQL DocID)" else "Lỗi DocID: $body",
-                    rawResponse = body
-                )
-            }
-        } catch (e: Exception) {
-            ReactionResult(false, targetId, reaction, "GRAPHQL_DOC_ID_548", e.message ?: "Exception", "")
+            ReactionResult(false, originalTargetId, reaction, "REST_FEEDBACK_NODE", e.message ?: "Exception", "")
         }
     }
 }
+
