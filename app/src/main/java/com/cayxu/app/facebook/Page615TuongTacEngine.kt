@@ -67,16 +67,16 @@ import java.util.concurrent.TimeUnit
 
         companion object {
             fun fromString(str: String): ReactionType {
-                val upper = str.uppercase().trim()
-                return when {
-                    upper.contains("CARE") || upper.contains("THUONG") || upper.contains("THƯƠNG") -> CARE
-                    upper.contains("LOVE") || upper.contains("TYM") || upper.contains("TIM") || upper.contains("YÊU") || upper.contains("YEU") -> LOVE
-                    upper.contains("HAHA") || upper.contains("CUOI") || upper.contains("CƯỜI") -> HAHA
-                    upper.contains("WOW") || upper.contains("NGAC") || upper.contains("NGẠC") || upper.contains("BAT_NGO") || upper.contains("NGO") || upper.contains("NGỜ") -> WOW
-                    upper.contains("SAD") || upper.contains("BUON") || upper.contains("BUỒN") -> SAD
-                    upper.contains("ANGRY") || upper.contains("PHAN_NO") || upper.contains("PHẪN") || upper.contains("PHANNO") -> ANGRY
-                    upper.contains("LIKE") || upper.contains("THICH") || upper.contains("THÍCH") -> LIKE
-                    else -> LIKE
+                val parsed = Page615ReactionEngine.parseReactionType(str)
+                return when (parsed) {
+                    "CARE" -> CARE
+                    "LOVE" -> LOVE
+                    "LIKE" -> LIKE
+                    "HAHA" -> HAHA
+                    "WOW"  -> WOW
+                    "SAD"  -> SAD
+                    "ANGRY"-> ANGRY
+                    else -> LOVE
                 }
             }
         }

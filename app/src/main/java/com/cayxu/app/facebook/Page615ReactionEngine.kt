@@ -13,15 +13,14 @@ import java.util.concurrent.TimeUnit
  * BỘ ENGINE TƯƠNG TÁC CẢM XÚC DÀNH CHO PAGE 615 (PROFILE PLUS / NEW PAGES EXPERIENCE)
  * Trích xuất 100% từ cấu trúc Facebook Katana v548 (KaharaMod)
  *
- * CƠ CHẾ AUTO-RESOLVER DIỆT TẬN GỐC LỖI 100 SUBCODE 33 & LỖI #12 (CHUẨN XÁC 100%):
- * 1. Gọi phân giải Full ID chuẩn:
- *    GET https://graph.facebook.com/v21.0/?id=https://www.facebook.com/{TARGET_ID}&fields=id&access_token={PAGE_TOKEN}
- *    -> Facebook trả về {"id": "{owner_id}_{target_id}"}
- * 2. Bắn reaction vào đúng Full ID vừa tìm được:
- *    POST https://graph.facebook.com/v21.0/{RESOLVED_FULL_ID}/reactions
+ * CƠ CHẾ DUY NHẤT CHUẨN XÁC 100%:
+ * 1. Bóc tách chính xác 7 loại cảm xúc: LIKE, LOVE, CARE, HAHA, WOW, SAD, ANGRY
+ * 2. Gửi duy nhất 1 lệnh HTTP POST form-data lên Graph API:
+ *    POST https://graph.facebook.com/{TARGET_ID}/reactions
  *    Header: User-Agent Katana v548
  *    Body: type={REACTION_TYPE}&access_token={PAGE_TOKEN}
- * 3. Page Access Token của Page 615
+ * 3. Tự động giải quyết lỗi #12 khi gặp Status ID đơn lẻ
+ * 4. Page Access Token của Page 615
  * =========================================================================================
  */
 @Keep
@@ -41,6 +40,24 @@ class Page615ReactionEngine(
         // User-Agent chuẩn Facebook Katana v548 (Android) từ Kahara
         const val KATANA_USER_AGENT =
             "[FBAN/FB4A;FBAV/548.1.0.51.64;FBBV/474618929;FBDM/{density=3.0,width=1080,height=2340};FBLC/vi_VN;FBRV/0;FBCR/Viettel;FBMF/samsung;FBBD/samsung;FBPN/com.facebook.katana;FBDV/SM-S928B;FBSV/14;FBOP/1;FBCA/arm64-v8a;]"
+
+        /**
+         * Bóc tách chính xác 7 loại cảm xúc từ mọi định dạng chuỗi của XSMM
+         * Ví dụ: "facebook_reaction (CARE)" -> "CARE", "facebook_reaction (LOVE)" -> "LOVE"
+         */
+        fun parseReactionType(rawInput: String): String {
+            val upper = rawInput.uppercase()
+            return when {
+                upper.contains("CARE") || upper.contains("THƯƠNG") || upper.contains("THUONG") || upper == "16" -> "CARE"
+                upper.contains("LOVE") || upper.contains("TIM") || upper == "2" -> "LOVE"
+                upper.contains("LIKE") || upper.contains("THÍCH") || upper.contains("THICH") || upper == "1" -> "LIKE"
+                upper.contains("HAHA") || upper.contains("CƯỜI") || upper.contains("CUOI") || upper == "4" -> "HAHA"
+                upper.contains("WOW") || upper.contains("BẤT NGỜ") || upper == "3" -> "WOW"
+                upper.contains("SAD") || upper.contains("BUỒN") || upper.contains("BUON") || upper == "7" -> "SAD"
+                upper.contains("ANGRY") || upper.contains("PHẪN NỘ") || upper.contains("PHAN_NO") || upper == "8" -> "ANGRY"
+                else -> "LOVE"
+            }
+        }
     }
 
     /**
@@ -60,8 +77,8 @@ class Page615ReactionEngine(
 
         companion object {
             fun fromString(name: String): ReactionType {
-                val upper = name.trim().uppercase()
-                return values().find { it.name == upper || it.restValue == upper } ?: LIKE
+                val parsed = parseReactionType(name)
+                return values().find { it.name == parsed || it.restValue == parsed } ?: LOVE
             }
         }
     }
@@ -178,7 +195,11 @@ class Page615ReactionEngine(
         customPageId615: String? = null,
         forceMethod: String = "auto"
     ): ReactionResult {
-        val cleanId = targetId.trim()
+        val cleanId = if (targetId.startsWith("http://") || targetId.startsWith("https://")) {
+            Page615TuongTacEngine.extractId(targetId)
+        } else {
+            targetId.trim().trimEnd('/')
+        }
         val pToken = cleanToken(customPageToken ?: pageToken)
         val uToken = cleanToken(customUserToken ?: userToken)
         val pageId = customPageId615 ?: pageId615
@@ -216,14 +237,10 @@ class Page615ReactionEngine(
     }
 
     /**
-     * CƠ CHẾ AUTO-RESOLVER DIỆT TẬN GỐC LỖI 100 SUBCODE 33 & LỖI #12:
-     * Bước 1: Gọi phân giải Full ID chuẩn:
-     *         GET https://graph.facebook.com/v21.0/?id=https://www.facebook.com/{TARGET_ID}&fields=id&access_token={PAGE_TOKEN}
-     *         -> Facebook trả về {"id": "{owner_id}_{target_id}"}
-     * Bước 2: Bắn reaction vào đúng Full ID vừa tìm được:
-     *         POST https://graph.facebook.com/v21.0/{RESOLVED_FULL_ID}/reactions
-     *         Header: User-Agent Katana
-     *         Body: type={REACTION_TYPE}&access_token={PAGE_TOKEN}
+     * BẮN DUY NHẤT 1 LỆNH HTTP POST THẲNG VÀO GRAPH API:
+     * POST https://graph.facebook.com/{target_id}/reactions
+     * Body: type={REACTION_TYPE}&access_token={PAGE_TOKEN}
+     * Header: User-Agent Katana v548
      */
     private fun executeReaction(
         cleanId: String,
@@ -232,34 +249,13 @@ class Page615ReactionEngine(
     ): ReactionResult {
         val cleanToken = cleanToken(token)
 
-        // BƯỚC 1: TỰ ĐỘNG RESOLVE FULL POST ID ĐỂ DIỆT LỖI 100 SUBCODE 33
-        var finalPostId = cleanId
-        try {
-            val resolveUrl = "https://graph.facebook.com/v21.0/?id=https://www.facebook.com/$cleanId&fields=id&access_token=$cleanToken"
-            val resolveReq = Request.Builder()
-                .url(resolveUrl)
-                .get()
-                .header("User-Agent", KATANA_USER_AGENT)
-                .build()
-
-            httpClient.newCall(resolveReq).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val json = JSONObject(body)
-                val resolved = json.optString("id")
-                if (!resolved.isNullOrEmpty()) {
-                    finalPostId = resolved
-                }
-            }
-        } catch (_: Exception) {}
-
-        // BƯỚC 2: THẢ REACTION VÀO FULL ID
         val formBody = FormBody.Builder()
             .add("type", reaction.restValue)
             .add("access_token", cleanToken)
             .build()
 
         val request = Request.Builder()
-            .url("https://graph.facebook.com/v21.0/$finalPostId/reactions")
+            .url("https://graph.facebook.com/$cleanId/reactions")
             .post(formBody)
             .header("User-Agent", KATANA_USER_AGENT)
             .build()
@@ -271,18 +267,18 @@ class Page615ReactionEngine(
             if (response.isSuccessful && (body.contains("\"success\":true") || body.contains("\"success\": true") || body.contains("\"id\":"))) {
                 return ReactionResult(
                     isSuccess = true,
-                    targetId = finalPostId,
+                    targetId = cleanId,
                     reaction = reaction,
-                    methodUsed = "REST_AUTO_RESOLVED",
-                    message = "Thành công (REST)",
+                    methodUsed = "GRAPH_API_POST_REACTIONS",
+                    message = "Thành công",
                     rawResponse = body
                 )
             }
 
-            // DỰ PHÒNG: NẾU VẪN BỊ LỖI #12 HOẶC 100 SUBCODE 33 (VÍ DỤ STATUS ĐƠN LẺ KHÔNG TÌM THẤY QUA URL)
-            if (body.contains("singular statuses API is deprecated") || body.contains("\"code\":12") || body.contains("\"code\": 12") || body.contains("error_subcode\":33") || body.contains("error_subcode\": 33")) {
+            // Tự động giải quyết lỗi #12 khi gặp Status ID đơn lẻ
+            if (body.contains("singular statuses API is deprecated") || body.contains("\"code\":12") || body.contains("\"code\": 12")) {
                 val ownerReq = Request.Builder()
-                    .url("https://graph.facebook.com/v21.0/$cleanId?fields=from&access_token=$cleanToken")
+                    .url("https://graph.facebook.com/$cleanId?fields=from&access_token=$cleanToken")
                     .get()
                     .header("User-Agent", KATANA_USER_AGENT)
                     .build()
@@ -292,14 +288,14 @@ class Page615ReactionEngine(
                 val ownerId = JSONObject(ownerBody).optJSONObject("from")?.optString("id")
 
                 if (!ownerId.isNullOrEmpty()) {
-                    val fallbackPostId = "${ownerId}_$cleanId"
+                    val fullPostId = "${ownerId}_$cleanId"
                     val retryBody = FormBody.Builder()
                         .add("type", reaction.restValue)
                         .add("access_token", cleanToken)
                         .build()
 
                     val retryReq = Request.Builder()
-                        .url("https://graph.facebook.com/v21.0/$fallbackPostId/reactions")
+                        .url("https://graph.facebook.com/$fullPostId/reactions")
                         .post(retryBody)
                         .header("User-Agent", KATANA_USER_AGENT)
                         .build()
@@ -310,10 +306,10 @@ class Page615ReactionEngine(
 
                     return ReactionResult(
                         isSuccess = isRetryOk,
-                        targetId = fallbackPostId,
+                        targetId = fullPostId,
                         reaction = reaction,
-                        methodUsed = "REST_RESOLVED_OWNER_ID",
-                        message = if (isRetryOk) "Thành công (Đã resolve sang $fallbackPostId)" else "Thất bại sau resolve: $retryBodyStr",
+                        methodUsed = "PAGE_615_RESOLVED_STATUS",
+                        message = if (isRetryOk) "Thành công" else "Thất bại: $retryBodyStr",
                         rawResponse = retryBodyStr
                     )
                 }
@@ -321,18 +317,18 @@ class Page615ReactionEngine(
 
             ReactionResult(
                 isSuccess = false,
-                targetId = finalPostId,
+                targetId = cleanId,
                 reaction = reaction,
-                methodUsed = "REST_AUTO_RESOLVED",
+                methodUsed = "GRAPH_API_POST_REACTIONS",
                 message = "Thất bại: $body",
                 rawResponse = body
             )
         } catch (e: Exception) {
             ReactionResult(
                 isSuccess = false,
-                targetId = finalPostId,
+                targetId = cleanId,
                 reaction = reaction,
-                methodUsed = "REST_AUTO_RESOLVED",
+                methodUsed = "GRAPH_API_POST_REACTIONS",
                 message = e.message ?: "Exception",
                 rawResponse = ""
             )

@@ -426,16 +426,16 @@ object XsmmFacebookTaskRunner {
                     else -> actualTaskType
                 }
 
+                val rawReactionString = when {
+                    task.reaction.isNotBlank() -> task.reaction
+                    task.type.isNotBlank() -> task.type
+                    else -> actualTaskType
+                }
                 val effectiveReaction = when {
                     isFollowTask || isCommentTask -> ""
-                    task.reaction.isNotBlank() -> task.reaction.uppercase()
-                    task.type.contains("love", ignoreCase = true) -> "LOVE"
-                    task.type.contains("care", ignoreCase = true) -> "CARE"
-                    task.type.contains("haha", ignoreCase = true) -> "HAHA"
-                    task.type.contains("wow", ignoreCase = true)  -> "WOW"
-                    task.type.contains("sad", ignoreCase = true)  -> "SAD"
-                    task.type.contains("angry", ignoreCase = true)-> "ANGRY"
-                    isReactionSubtype -> "LIKE"
+                    isReactionSubtype || rawReactionString.contains("reaction", ignoreCase = true) || rawReactionString.contains("like", ignoreCase = true) -> {
+                        com.cayxu.app.facebook.Page615ReactionEngine.parseReactionType(rawReactionString)
+                    }
                     else -> ""
                 }
 
