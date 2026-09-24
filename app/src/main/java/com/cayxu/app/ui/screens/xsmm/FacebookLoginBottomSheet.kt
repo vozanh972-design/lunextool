@@ -25,22 +25,40 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookAccountsStore
-import com.cayxu.app.facebook.AccountFieldType
 import com.cayxu.app.facebook.FacebookAccountManager
-import com.cayxu.app.facebook.FacebookAuthenticator
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
+import com.example.facebooktoken.FacebookToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class FbFieldKey(val type: AccountFieldType, val label: String, val sample: String) {
-    TOKEN(AccountFieldType.TOKEN, "Token", "EAAB..."),
-    COOKIE(AccountFieldType.COOKIE, "Cookie", "c_user=...; xs=..."),
-    PROXY(AccountFieldType.PROXY, "Proxy", "1.2.3.4:8080")
+/**
+ * Định dạng đăng nhập Facebook trong popup dấu "+" tab Facebook
+ */
+enum class FbLoginFormat(
+    val label: String,
+    val description: String,
+    val sample: String
+) {
+    TOKEN(
+        label = "Token",
+        description = "Định dạng trực tiếp: Dán Access Token Facebook (EAA... / EAAB...)",
+        sample = "EAAAAU...\nEAAB..."
+    ),
+    UID_PASS_2FA_COOKIE(
+        label = "UID|PASS|2FA|COOKIE",
+        description = "Định dạng chuẩn: UID | Mật khẩu | Mã 2FA (hoặc secret) | Cookie (hoặc DATR)",
+        sample = "6159xxxx|matkhau|2FA_SECRET|c_user=... hoặc datr=..."
+    ),
+    UID_PASS_COOKIE(
+        label = "UID|PASS|COOKIE",
+        description = "Định dạng cơ bản: UID | Mật khẩu | Cookie",
+        sample = "6159xxxx|matkhau|c_user=...; xs=..."
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,33 +71,9 @@ fun FacebookLoginBottomSheet(
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Không chọn mặc định trường nào, người dùng tự do chọn
-    var selectedFields by remember { mutableStateOf<List<FbFieldKey>>(emptyList()) }
+    var selectedFormat by remember { mutableStateOf<FbLoginFormat?>(null) }
     var inputText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
-
-    val allFields = listOf(
-        FbFieldKey.TOKEN,
-        FbFieldKey.COOKIE,
-        FbFieldKey.PROXY
-    )
-
-    fun toggleField(field: FbFieldKey) {
-        selectedFields = if (field in selectedFields) {
-            selectedFields - field
-        } else {
-            selectedFields + field
-        }
-    }
-
-    val formatString = if (selectedFields.isEmpty()) "Tự động nhận diện"
-    else selectedFields.joinToString(" | ") { it.label }
-
-    val placeholderExample = if (selectedFields.isEmpty()) {
-        "Dán Token, Cookie hoặc Token|Cookie|Proxy (mỗi dòng 1 nick)"
-    } else {
-        selectedFields.joinToString(" | ") { it.sample }
-    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -121,7 +115,7 @@ fun FacebookLoginBottomSheet(
                         color = TextPrimary
                     )
                     Text(
-                        "Chọn định dạng trường hoặc dán trực tiếp Token / Cookie",
+                        "Chọn định dạng và dán tài khoản (hỗ trợ Token, UID|Pass|2FA|Cookie)",
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
@@ -130,20 +124,24 @@ fun FacebookLoginBottomSheet(
 
             Spacer(Modifier.height(16.dp))
 
-            Text("Chọn trường & thứ tự kết hợp (tùy chọn):", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Text(
+                "Chọn định dạng tài khoản (tùy chọn):",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
+            )
             Spacer(Modifier.height(8.dp))
 
-            // 1 hàng x 3 nút chọn trường: Token, Cookie, Proxy
+            // 3 nút chọn định dạng: [ Token ], [ UID|PASS|2FA|COOKIE ], [ UID|PASS|COOKIE ]
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                allFields.forEach { field ->
-                    val orderIndex = selectedFields.indexOf(field).let { if (it >= 0) it + 1 else null }
-                    val isSelected = orderIndex != null
+                FbLoginFormat.values().forEach { format ->
+                    val isSelected = selectedFormat == format
                     Box(
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(if (format == FbLoginFormat.TOKEN) 0.85f else 1.25f)
                             .clip(RoundedCornerShape(10.dp))
                             .background(if (isSelected) Color(0xFF1877F2) else CardWhite)
                             .border(
@@ -154,16 +152,19 @@ fun FacebookLoginBottomSheet(
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
-                                onClick = { toggleField(field) }
+                                onClick = {
+                                    selectedFormat = if (selectedFormat == format) null else format
+                                }
                             )
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (orderIndex != null) "$orderIndex. ${field.label}" else field.label,
-                            fontSize = 13.sp,
+                            text = format.label,
+                            fontSize = if (format == FbLoginFormat.TOKEN) 13.sp else 11.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) CardWhite else TextPrimary
+                            color = if (isSelected) CardWhite else TextPrimary,
+                            maxLines = 1
                         )
                     }
                 }
@@ -171,25 +172,38 @@ fun FacebookLoginBottomSheet(
 
             Spacer(Modifier.height(12.dp))
 
-            // Hiển thị định dạng hiện tại
+            // Hiển thị hướng dẫn theo định dạng đã chọn
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFFF1F5F9))
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(horizontal = 12.dp, vertical = 9.dp)
             ) {
-                Text(
-                    text = "Định dạng: $formatString",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF1877F2)
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text = if (selectedFormat != null) "Định dạng chọn: ${selectedFormat?.label}" else "Chưa chọn định dạng (Tự động nhận diện)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1877F2)
+                    )
+                    Text(
+                        text = selectedFormat?.description ?: "Bấm chọn 1 nút phía trên nếu muốn cố định định dạng, hoặc dán trực tiếp vào ô dưới (hệ thống sẽ tự nhận diện).",
+                        fontSize = 11.sp,
+                        color = TextSecondary,
+                        lineHeight = 15.sp
+                    )
+                }
             }
 
             Spacer(Modifier.height(14.dp))
 
-            Text("Dữ liệu tài khoản (mỗi dòng 1 nick):", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Text(
+                "Dữ liệu tài khoản (mỗi dòng 1 nick):",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
+            )
             Spacer(Modifier.height(6.dp))
 
             SelectionContainer {
@@ -198,8 +212,8 @@ fun FacebookLoginBottomSheet(
                     onValueChange = { inputText = it },
                     placeholder = {
                         Text(
-                            placeholderExample,
-                            color = TextSecondary.copy(alpha = 0.7f),
+                            if (selectedFormat != null) "Ví dụ:\n${selectedFormat?.sample}" else "Dán Token (EAA...), Cookie hoặc UID|PASS|... (mỗi dòng 1 nick)",
+                            color = TextSecondary.copy(alpha = 0.6f),
                             fontSize = 12.sp
                         )
                     },
@@ -214,6 +228,15 @@ fun FacebookLoginBottomSheet(
                 )
             }
 
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = "💡 Hệ thống tự động kiểm tra Live, lấy Avatar, Tên thật, UID và danh sách Page của tài khoản.",
+                fontSize = 11.sp,
+                color = TextSecondary,
+                lineHeight = 15.sp
+            )
+
             Spacer(Modifier.height(20.dp))
 
             // Nút Hủy & Đăng nhập
@@ -224,24 +247,17 @@ fun FacebookLoginBottomSheet(
                 OutlinedButton(
                     onClick = onDismiss,
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).height(48.dp)
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    enabled = !isLoading
                 ) {
                     Text("Hủy", color = TextSecondary, fontWeight = FontWeight.Medium)
                 }
+
                 Button(
                     onClick = {
                         val raw = inputText.trim()
                         if (raw.isBlank()) {
                             Toast.makeText(context, "Vui lòng dán dữ liệu tài khoản", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-
-                        val accountManager = FacebookAccountManager()
-                        val fieldTypes = selectedFields.map { it.type }
-                        val accountsToProcess = accountManager.parseAccountsInput(raw, fieldTypes, "|")
-
-                        if (accountsToProcess.isEmpty()) {
-                            Toast.makeText(context, "Không có dữ liệu hợp lệ", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
 
@@ -251,28 +267,61 @@ fun FacebookLoginBottomSheet(
                                 raw.lines().mapNotNull { rawLine ->
                                     val line = rawLine.trim()
                                     if (line.isBlank()) return@mapNotNull null
-                                    
-                                    async(Dispatchers.IO) {
-                                        val authenticator = FacebookAuthenticator()
 
+                                    async(Dispatchers.IO) {
+                                        val accountManager = FacebookAccountManager()
                                         val parts = if (line.contains("|")) line.split("|").map { it.trim() } else listOf(line)
 
-                                        // 1. Tìm Token (EAA...)
-                                        val token = parts.find { it.startsWith("EAA") } ?: if (line.startsWith("EAA")) line else null
+                                        // 1. Ưu tiên kiểm tra Token trực tiếp (Nút Token hoặc dòng bắt đầu bằng EAA)
+                                        val directToken = when {
+                                            line.startsWith("EAA") -> line
+                                            selectedFormat == FbLoginFormat.TOKEN -> {
+                                                parts.find { it.startsWith("EAA") } ?: line
+                                            }
+                                            else -> parts.find { it.startsWith("EAA") }
+                                        }
 
-                                        // 2. Tìm Cookie (chứa c_user hoặc xs)
-                                        val cookie = parts.find { it.contains("c_user=") || it.contains("xs=") }
-                                            ?: if (line.contains("c_user=") || line.contains("xs=")) line else null
-
-                                        // 3. Tìm Proxy (chứa ip:port)
                                         val proxy = parts.find { it.matches(Regex("""\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+.*""")) }
+                                        val cookiePart = parts.find { it.contains("c_user=") || it.contains("xs=") }
 
-                                        // Ưu tiên 1: Đăng nhập bằng Token EAA nếu có
+                                        // Gọi trực tiếp hàm fetchAccountDetailsWithToken có sẵn (giữ nguyên logic gốc 100%)
+                                        if (!directToken.isNullOrBlank() && (directToken.startsWith("EAA") || selectedFormat == FbLoginFormat.TOKEN)) {
+                                            try {
+                                                val details = accountManager.fetchAccountDetailsWithToken(directToken, proxy)
+                                                if (details.isLive) {
+                                                    return@async details.copy(
+                                                        bio = directToken,
+                                                        note = cookiePart ?: details.note,
+                                                        phone = proxy.orEmpty(),
+                                                        isLive = true
+                                                    )
+                                                }
+                                            } catch (_: Exception) {}
+                                        }
+
+                                        // 2. Nếu là UID|PASS|... -> Chạy qua FacebookToken.process từ test để get Token EAAAA
+                                        var token: String? = null
+                                        var cookie: String? = cookiePart
+                                        var uidFromLine: String? = null
+
+                                        try {
+                                            val processResults = FacebookToken.process(line)
+                                            val firstRes = processResults.firstOrNull()
+                                            if (firstRes != null && firstRes.success && !firstRes.token.isNullOrBlank()) {
+                                                token = firstRes.token
+                                                cookie = firstRes.cookie ?: cookie
+                                                uidFromLine = firstRes.uid
+                                            }
+                                        } catch (_: Exception) {}
+
+                                        // 3. Truyền thẳng Token EAAAA vừa lấy được vào hàm fetchAccountDetailsWithToken có sẵn
                                         if (!token.isNullOrBlank()) {
                                             try {
                                                 val details = accountManager.fetchAccountDetailsWithToken(token, proxy)
                                                 if (details.isLive) {
+                                                    val resolvedUid = if (details.uid.isBlank() || details.uid == "Token") (uidFromLine ?: details.uid) else details.uid
                                                     return@async details.copy(
+                                                        uid = resolvedUid,
                                                         bio = token,
                                                         note = cookie ?: details.note,
                                                         phone = proxy.orEmpty(),
@@ -282,13 +331,12 @@ fun FacebookLoginBottomSheet(
                                             } catch (_: Exception) {}
                                         }
 
-                                        // Ưu tiên 2: Đăng nhập bằng Cookie nếu có
+                                        // 4. Ưu tiên phụ: Thử lấy token qua Cookie nếu có cookie
                                         if (!cookie.isNullOrBlank()) {
                                             try {
                                                 val cookieAcc = accountManager.getTokenFromCookie(cookie, proxy)
                                                 if (cookieAcc != null && cookieAcc.isLive) {
                                                     return@async cookieAcc.copy(
-                                                        bio = token ?: cookieAcc.bio,
                                                         note = cookie,
                                                         phone = proxy.orEmpty(),
                                                         isLive = true
@@ -297,34 +345,8 @@ fun FacebookLoginBottomSheet(
                                             } catch (_: Exception) {}
                                         }
 
-                                        // Ưu tiên 3: Dạng UID|Pass|2FA
-                                        if (parts.size >= 2 && !parts[0].startsWith("EAA") && !parts[0].contains("c_user=")) {
-                                            val uid = parts[0]
-                                            val pwd = parts[1]
-                                            val twofa = parts.getOrNull(2)?.takeIf { !it.contains("=") && !it.startsWith("EAA") }.orEmpty()
-
-                                            try {
-                                                val authResult = authenticator.login(
-                                                    uid = uid,
-                                                    pass = pwd,
-                                                    twoFaSecret = twofa,
-                                                    proxyStr = proxy,
-                                                    rawCookie = cookie
-                                                )
-                                                if (authResult.isSuccess && authResult.account.isLive) {
-                                                    return@async authResult.account.copy(
-                                                        password = pwd,
-                                                        link = twofa,
-                                                        note = cookie ?: authResult.account.note,
-                                                        phone = proxy.orEmpty(),
-                                                        isLive = true
-                                                    )
-                                                }
-                                            } catch (_: Exception) {}
-                                        }
-
-                                        // Mặc định: Không xác thực được
-                                        val fallbackUid = cookie?.let { c ->
+                                        // 5. Mặc định: Ghi nhận tài khoản không Live
+                                        val fallbackUid = uidFromLine ?: cookie?.let { c ->
                                             Regex("""c_user=(\d+)""").find(c)?.groupValues?.get(1)
                                         } ?: parts.getOrNull(0)?.takeIf { it.matches(Regex("""\d+""")) } ?: "N/A"
 
@@ -332,7 +354,7 @@ fun FacebookLoginBottomSheet(
                                             uid = fallbackUid,
                                             name = fallbackUid,
                                             note = cookie.orEmpty(),
-                                            bio = token.orEmpty(),
+                                            bio = directToken ?: token.orEmpty(),
                                             phone = proxy.orEmpty(),
                                             isLive = false
                                         )
@@ -373,5 +395,3 @@ fun FacebookLoginBottomSheet(
         }
     }
 }
-
-

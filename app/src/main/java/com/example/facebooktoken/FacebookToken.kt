@@ -455,7 +455,6 @@ object FacebookToken {
         return LoginResult(401, errorMsg)
     }
 
-    // ---------- PARSE INPUT ----------
     fun parseEntries(raw: String): List<Entry> {
         val entries = mutableListOf<Entry>()
         for (line in raw.split("\n")) {
@@ -468,12 +467,28 @@ object FacebookToken {
                 val pwd = parts.getOrNull(1) ?: ""
                 var twofa: String? = null
                 var datr: String? = null
+                var cookiePart: String? = null
 
                 for (part in parts) {
-                    if (part.startsWith("datr=")) datr = part.substring(5)
+                    if (part.startsWith("datr=")) {
+                        datr = part.substring(5)
+                    } else if (part.contains("c_user=") || part.contains("xs=")) {
+                        cookiePart = part
+                    }
                 }
-                if (parts.size > 2 && !parts[2].startsWith("datr=")) {
-                    twofa = parts[2]
+
+                // Xử lý 2FA (nếu có phần thứ 3 không phải cookie hay datr)
+                if (parts.size > 2) {
+                    val p2 = parts[2]
+                    if (!p2.startsWith("datr=") && !p2.contains("c_user=") && !p2.contains("xs=") && !p2.startsWith("EAA")) {
+                        twofa = p2
+                    }
+                }
+
+                // Trích xuất datr từ cookiePart nếu chưa có
+                if (datr.isNullOrBlank() && cookiePart != null) {
+                    val datrRegex = Regex("""datr=([^;]+)""")
+                    datrRegex.find(cookiePart)?.let { datr = it.groupValues[1] }
                 }
 
                 entries.add(Entry(
@@ -482,6 +497,7 @@ object FacebookToken {
                     pass = pwd,
                     twofa = twofa,
                     datr = datr,
+                    cookie = cookiePart,
                     raw = trimmed
                 ))
             } else {
@@ -513,14 +529,29 @@ object FacebookToken {
                     ))
                 }
             } else {
-                val r = facebookLogin(entry.uid ?: "", entry.pass ?: "", entry.twofa, entry.datr)
+                // Thử lấy token từ Cookie trước nếu có (UID|PASS|COOKIE hoặc UID|PASS|2FA|COOKIE)
+                var r: LoginResult? = null
+                if (!entry.cookie.isNullOrBlank() && (entry.cookie.contains("c_user=") || entry.cookie.contains("xs="))) {
+                    try {
+                        val cookieRes = getTokenFromCookie(entry.cookie)
+                        if (cookieRes.status == 200 && !cookieRes.eaaaaToken.isNullOrBlank()) {
+                            r = cookieRes
+                        }
+                    } catch (_: Exception) {}
+                }
+
+                // Nếu chưa lấy được từ cookie, chạy luồng login qua API với pass & 2FA
+                if (r == null || r.status != 200) {
+                    r = facebookLogin(entry.uid ?: "", entry.pass ?: "", entry.twofa, entry.datr)
+                }
+
                 if (r.status == 200) {
                     results.add(ProcessedResult(
                         account = entry.uid ?: "N/A",
                         success = true,
                         token = r.eaaaaToken,
-                        cookie = r.cookie,
-                        uid = r.uid
+                        cookie = r.cookie ?: entry.cookie,
+                        uid = r.uid ?: entry.uid
                     ))
                 } else {
                     results.add(ProcessedResult(
