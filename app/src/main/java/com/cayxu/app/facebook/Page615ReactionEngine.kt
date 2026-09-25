@@ -69,7 +69,7 @@ object Page615ReactionWorker {
     fun isReactionSuccess(json: JSONObject): Boolean {
         if (json.has("errors")) return false
         val data = json.optJSONObject("data") ?: return false
-        val ufi = data.optJSONObject("ufi_reaction") ?: return data.length() > 0
+        val ufi = data.optJSONObject("ufi_reaction") ?: data.optJSONObject("feedback_react") ?: return data.length() > 0
         if (ufi.has("error") || ufi.has("error_message")) return false
         if (ufi.has("feedback_reaction") || ufi.has("viewer_feedback_reaction")) return true
         val fb = ufi.optJSONObject("feedback")
@@ -114,12 +114,16 @@ object Page615ReactionWorker {
         }
 
         fun callApi(fbId: String): Pair<JSONObject?, String> {
-            val inputObj = JSONObject().apply {
+            val inputData = JSONObject().apply {
                 put("feedback_id", fbId)
                 put("feedback_reaction_id", reactId)
                 if (!pageUid.isNullOrEmpty()) {
                     put("actor_id", pageUid) // Bắt buộc cho Page 615 hoạt động độc lập
                 }
+            }
+
+            val finalVariables = JSONObject().apply {
+                put("input", inputData)
             }
 
             val bodyParams = listOf(
@@ -131,7 +135,7 @@ object Page615ReactionWorker {
                 "fb_api_req_friendly_name" to "UFIReactionMutation",
                 "fb_api_caller_class" to "graphservice",
                 "client_doc_id" to REACTION_DOC_ID,
-                "variables" to inputObj.toString(),
+                "variables" to finalVariables.toString(),
                 "client_trace_id" to UUID.randomUUID().toString()
             )
 
