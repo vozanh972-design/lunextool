@@ -59,7 +59,7 @@ fun CayXuBottomBar(navController: NavController) {
             containerColor = Color.White,
             tonalElevation = 0.dp,
             modifier = Modifier
-                .height(68.dp)
+                .height(60.dp)
         ) {
             bottomItems.forEach { item ->
                 val isSelected = currentRoute == item.route
@@ -80,19 +80,12 @@ fun CayXuBottomBar(navController: NavController) {
                             contentDescription = item.label
                         )
                     },
-                    label = {
-                        Text(
-                            text = item.label,
-                            fontSize = 11.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                        )
-                    },
+                    label = null,
+                    alwaysShowLabel = false,
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = cobalt600,
-                        selectedTextColor = cobalt600,
-                        unselectedIconColor = textTertiary,
-                        unselectedTextColor = textTertiary,
-                        indicatorColor = indicatorBg
+                        selectedIconColor = Color(0xFF1976D2),
+                        unselectedIconColor = Color(0xFF757575),
+                        indicatorColor = Color(0xFFE3F2FD)
                     )
                 )
             }

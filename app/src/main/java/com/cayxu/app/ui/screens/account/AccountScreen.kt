@@ -1,13 +1,22 @@
 package com.cayxu.app.ui.screens.account
 
+import android.app.DownloadManager
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -114,6 +123,9 @@ fun AccountScreen(navController: NavController) {
     var avatarBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var showBenefitsDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var pendingUpdate by remember { mutableStateOf<AppUpdateData?>(null) }
 
     LaunchedEffect(avatarUriString) {
         val uriString = avatarUriString
@@ -189,6 +201,85 @@ fun AccountScreen(navController: NavController) {
             dismissButton = {
                 OutlinedButton(onClick = { showLogoutDialog = false }) {
                     Text("Hủy", color = TextSecondary)
+                }
+            }
+        )
+    }
+
+    pendingUpdate?.let { update ->
+        AlertDialog(
+            onDismissRequest = { pendingUpdate = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.SystemUpdate,
+                    contentDescription = null,
+                    tint = Cobalt600,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Bản cập nhật mới (v${update.versionName})",
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Đã có phiên bản mới sẵn sàng tải về.",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextPrimary
+                    )
+                    if (update.changelog.isNotBlank()) {
+                        Text(
+                            text = "Nội dung cập nhật:\n${update.changelog}",
+                            fontSize = 13.sp,
+                            color = TextSecondary
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val downloadUrl = update.apkUrl
+                        pendingUpdate = null
+                        if (downloadUrl.isNotBlank()) {
+                            try {
+                                val dm = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as? DownloadManager
+                                if (dm != null && (downloadUrl.endsWith(".apk") || downloadUrl.contains(".apk?"))) {
+                                    val req = DownloadManager.Request(Uri.parse(downloadUrl)).apply {
+                                        setTitle("Lunex Update v${update.versionName}")
+                                        setDescription("Đang tải bản cập nhật...")
+                                        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                        setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Lunex_${update.versionName}.apk")
+                                        setMimeType("application/vnd.android.package-archive")
+                                    }
+                                    dm.enqueue(req)
+                                    Toast.makeText(context, "Đang tải bản cập nhật trong thanh thông báo...", Toast.LENGTH_LONG).show()
+                                }
+                                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(browserIntent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Lỗi mở liên kết cập nhật: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Chưa có đường dẫn tải về bản cập nhật này", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Cobalt600),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Cập nhật ngay", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingUpdate = null }) {
+                    Text("Để sau", color = TextSecondary)
                 }
             }
         )
@@ -490,7 +581,47 @@ fun AccountScreen(navController: NavController) {
                 HorizontalDivider(color = AppBackground, thickness = 1.dp)
                 HtmlListRow(
                     title = "Phiên bản ứng dụng",
-                    trailingText = BuildConfig.VERSION_NAME
+                    trailingText = BuildConfig.VERSION_NAME,
+                    onClick = {
+                        if (isCheckingUpdate) return@HtmlListRow
+                        isCheckingUpdate = true
+                        Toast.makeText(context, "Đang kiểm tra bản cập nhật...", Toast.LENGTH_SHORT).show()
+                        coroutineScope.launch {
+                            try {
+                                val result = withContext(Dispatchers.IO) {
+                                    val client = OkHttpClient.Builder()
+                                        .connectTimeout(10, TimeUnit.SECONDS)
+                                        .readTimeout(10, TimeUnit.SECONDS)
+                                        .build()
+                                    val request = Request.Builder()
+                                        .url("https://raw.githubusercontent.com/theanh39/lunexapk/main/version.json")
+                                        .header("Cache-Control", "no-cache")
+                                        .build()
+                                    val response = client.newCall(request).execute()
+                                    if (!response.isSuccessful) {
+                                        throw Exception("Mã HTTP ${response.code}")
+                                    }
+                                    val body = response.body?.string().orEmpty()
+                                    val json = JSONObject(body)
+                                    val vCode = if (json.has("version_code")) json.getInt("version_code") else json.optInt("versionCode", 0)
+                                    val vName = if (json.has("version_name")) json.getString("version_name") else json.optString("versionName", "")
+                                    val changelog = if (json.has("changelog")) json.getString("changelog") else json.optString("change_log", json.optString("description", ""))
+                                    val apkUrl = if (json.has("apk_url")) json.getString("apk_url") else json.optString("download_url", json.optString("url", ""))
+                                    AppUpdateData(vCode, vName, changelog, apkUrl)
+                                }
+                                if (result.versionCode > BuildConfig.VERSION_CODE) {
+                                    pendingUpdate = result
+                                } else {
+                                    Toast.makeText(context, "Bạn đang sử dụng phiên bản mới nhất (v${BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                val msg = if (e.message?.contains("404") == true) "Chưa có bản cập nhật mới trên máy chủ" else (e.message ?: "Lỗi kết nối")
+                                Toast.makeText(context, "Kiểm tra cập nhật: $msg", Toast.LENGTH_SHORT).show()
+                            } finally {
+                                isCheckingUpdate = false
+                            }
+                        }
+                    }
                 )
                 HorizontalDivider(color = AppBackground, thickness = 1.dp)
                 HtmlListRow(
@@ -505,6 +636,13 @@ fun AccountScreen(navController: NavController) {
         Spacer(Modifier.height(90.dp))
     }
 }
+
+private data class AppUpdateData(
+    val versionCode: Int,
+    val versionName: String,
+    val changelog: String,
+    val apkUrl: String
+)
 
 private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
