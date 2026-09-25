@@ -43,6 +43,9 @@ import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.data.local.NhiemVuCheoStore
 import com.cayxu.app.nhiemvucheo.NhiemVuCheoApiClient
 import com.cayxu.app.nhiemvucheo.NvcProfileResult
+import com.cayxu.app.nhiemvucheo.NvcRunConfig
+import com.cayxu.app.nhiemvucheo.NvcRunConfigStore
+import com.cayxu.app.nhiemvucheo.NhiemVuCheoTaskRunner
 import com.cayxu.app.ui.screens.xsmm.FacebookAccountDetailSheet
 import com.cayxu.app.ui.screens.xsmm.FacebookLoginBottomSheet
 import com.cayxu.app.ui.screens.xsmm.FacebookPageDetailSheet
@@ -901,11 +904,30 @@ fun NhiemVuCheoScreen(navController: NavController) {
                                     // Nút Chạy / Dừng (placeholder - chưa có API)
                                     IconButton(
                                         onClick = {
-                                            android.widget.Toast.makeText(
-                                                context,
-                                                "Nhiệm vụ chéo chưa có API - tính năng đang chờ backend",
-                                                android.widget.Toast.LENGTH_SHORT
-                                            ).show()
+                                            if (nvcToken.isNullOrBlank()) {
+                                                android.widget.Toast.makeText(context, "Vui lòng đăng nhập Nhiệm Vụ Chéo trước", android.widget.Toast.LENGTH_SHORT).show()
+                                                return@IconButton
+                                            }
+                                            if (isRunningThis) {
+                                                NhiemVuCheoTaskRunner.stop(account.uid)
+                                                runningFbAccounts.remove(account.uid)
+                                                fbStatusMap[account.uid] = "Đã dừng chạy"
+                                            } else {
+                                                runningFbAccounts.add(account.uid)
+                                                fbStatusMap[account.uid] = "Đang khởi động..."
+                                                NhiemVuCheoTaskRunner.start(
+                                                    scope = scope,
+                                                    context = context,
+                                                    account = account,
+                                                    matchedPage = null,
+                                                    onStatusUpdate = { msg -> fbStatusMap[account.uid] = msg },
+                                                    onSuccessCountChange = { c -> fbSuccessCountMap[account.uid] = c },
+                                                    onErrorCountChange = { c -> fbErrorCountMap[account.uid] = c },
+                                                    onErrorDetail = { uid, detail -> fbErrorDetailMap[uid] = detail },
+                                                    onBalanceUpdate = { bal -> nvcUser = nvcUser.copy(coinBalance = bal) },
+                                                    onFinished = { runningFbAccounts.remove(account.uid) }
+                                                )
+                                            }
                                         },
                                         modifier = Modifier.size(32.dp)
                                     ) {
@@ -1184,11 +1206,30 @@ fun NhiemVuCheoScreen(navController: NavController) {
                                                     // Nút Play/Stop Page (placeholder)
                                                     IconButton(
                                                         onClick = {
-                                                            android.widget.Toast.makeText(
-                                                                context,
-                                                                "Nhiệm vụ chéo chưa có API - tính năng đang chờ backend",
-                                                                android.widget.Toast.LENGTH_SHORT
-                                                            ).show()
+                                                            if (nvcToken.isNullOrBlank()) {
+                                                                android.widget.Toast.makeText(context, "Vui lòng đăng nhập Nhiệm Vụ Chéo trước", android.widget.Toast.LENGTH_SHORT).show()
+                                                                return@IconButton
+                                                            }
+                                                            if (isPageRunning) {
+                                                                NhiemVuCheoTaskRunner.stop(effectivePageUid)
+                                                                runningFbAccounts.remove(effectivePageUid)
+                                                                fbStatusMap[effectivePageUid] = "Đã dừng chạy"
+                                                            } else {
+                                                                runningFbAccounts.add(effectivePageUid)
+                                                                fbStatusMap[effectivePageUid] = "Đang khởi động..."
+                                                                NhiemVuCheoTaskRunner.start(
+                                                                    scope = scope,
+                                                                    context = context,
+                                                                    account = account,
+                                                                    matchedPage = page,
+                                                                    onStatusUpdate = { msg -> fbStatusMap[effectivePageUid] = msg },
+                                                                    onSuccessCountChange = { c -> fbSuccessCountMap[effectivePageUid] = c },
+                                                                    onErrorCountChange = { c -> fbErrorCountMap[effectivePageUid] = c },
+                                                                    onErrorDetail = { uid, detail -> fbErrorDetailMap[uid] = detail },
+                                                                    onBalanceUpdate = { bal -> nvcUser = nvcUser.copy(coinBalance = bal) },
+                                                                    onFinished = { runningFbAccounts.remove(effectivePageUid) }
+                                                                )
+                                                            }
                                                         },
                                                         modifier = Modifier.size(28.dp)
                                                     ) {
@@ -1397,15 +1438,64 @@ fun NhiemVuCheoScreen(navController: NavController) {
                         }
                     }
 
-                    // Nút Chạy tất cả (placeholder)
+                    // Nút Chạy tất cả NVC
                     if (facebookAccounts.isNotEmpty()) {
+                        val anyRunning = runningFbAccounts.isNotEmpty()
                         IconButton(
                             onClick = {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "Nhiệm vụ chéo chưa có API - tính năng đang chờ backend",
-                                    android.widget.Toast.LENGTH_LONG
-                                ).show()
+                                if (nvcToken.isNullOrBlank()) {
+                                    android.widget.Toast.makeText(context, "Vui lòng đăng nhập Nhiệm Vụ Chéo trước", android.widget.Toast.LENGTH_SHORT).show()
+                                    return@IconButton
+                                }
+                                if (anyRunning) {
+                                    NhiemVuCheoTaskRunner.stopAll()
+                                    runningFbAccounts.clear()
+                                    android.widget.Toast.makeText(context, "Đã dừng tất cả tác vụ", android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val targets = if (selectedForRunUids.isNotEmpty()) selectedForRunUids else facebookAccounts.map { it.uid }.toSet()
+                                    facebookAccounts.forEach { acc ->
+                                        if (acc.uid in targets) {
+                                            if (!runningFbAccounts.contains(acc.uid)) {
+                                                runningFbAccounts.add(acc.uid)
+                                                fbStatusMap[acc.uid] = "Đang khởi động..."
+                                                NhiemVuCheoTaskRunner.start(
+                                                    scope = scope,
+                                                    context = context,
+                                                    account = acc,
+                                                    matchedPage = null,
+                                                    onStatusUpdate = { msg -> fbStatusMap[acc.uid] = msg },
+                                                    onSuccessCountChange = { c -> fbSuccessCountMap[acc.uid] = c },
+                                                    onErrorCountChange = { c -> fbErrorCountMap[acc.uid] = c },
+                                                    onErrorDetail = { uid, detail -> fbErrorDetailMap[uid] = detail },
+                                                    onBalanceUpdate = { bal -> nvcUser = nvcUser.copy(coinBalance = bal) },
+                                                    onFinished = { runningFbAccounts.remove(acc.uid) }
+                                                )
+                                            }
+                                        }
+                                        acc.pages.forEach { p ->
+                                            val pUid = livePageUids[p.pageId] ?: p.pageId
+                                            if (pUid in targets || p.pageId in targets) {
+                                                if (!runningFbAccounts.contains(pUid)) {
+                                                    runningFbAccounts.add(pUid)
+                                                    fbStatusMap[pUid] = "Đang khởi động..."
+                                                    NhiemVuCheoTaskRunner.start(
+                                                        scope = scope,
+                                                        context = context,
+                                                        account = acc,
+                                                        matchedPage = p,
+                                                        onStatusUpdate = { msg -> fbStatusMap[pUid] = msg },
+                                                        onSuccessCountChange = { c -> fbSuccessCountMap[pUid] = c },
+                                                        onErrorCountChange = { c -> fbErrorCountMap[pUid] = c },
+                                                        onErrorDetail = { uid, detail -> fbErrorDetailMap[uid] = detail },
+                                                        onBalanceUpdate = { bal -> nvcUser = nvcUser.copy(coinBalance = bal) },
+                                                        onFinished = { runningFbAccounts.remove(pUid) }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    android.widget.Toast.makeText(context, "Đã bắt đầu chạy các tài khoản đã chọn", android.widget.Toast.LENGTH_SHORT).show()
+                                }
                             },
                             modifier = Modifier.size(38.dp)
                         ) {
@@ -1413,15 +1503,24 @@ fun NhiemVuCheoScreen(navController: NavController) {
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(NvcFbBlue),
+                                    .background(if (anyRunning) NvcDangerRed else NvcFbBlue),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.PlayArrow,
-                                    contentDescription = "Chạy tất cả",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                if (anyRunning) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(Color.White)
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Filled.PlayArrow,
+                                        contentDescription = "Chạy tất cả",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -1729,13 +1828,22 @@ private fun NvcLogoutBottomSheet(
 }
 
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun NvcConfigBottomSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = androidx.compose.ui.platform.LocalContext.current
+    val savedConfig = remember { NvcRunConfigStore.get(context) }
+
+    var enabledCategories by remember { mutableStateOf(savedConfig.enabledCategories.toSet()) }
+    var selectedReactions by remember { mutableStateOf(savedConfig.selectedReactions.toSet()) }
+    var claimLimit by remember { mutableStateOf(savedConfig.claimLimit) }
+    var delaySeconds by remember { mutableStateOf(savedConfig.delaySeconds.toFloat()) }
+    var quality by remember { mutableStateOf(savedConfig.quality) }
+    var taskCountTarget by remember { mutableStateOf(savedConfig.taskCountTarget) }
+    var failJobLimit by remember { mutableStateOf(savedConfig.failJobLimit) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1746,8 +1854,9 @@ private fun NvcConfigBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-                .padding(bottom = 16.dp),
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Header
@@ -1767,25 +1876,220 @@ private fun NvcConfigBottomSheet(
 
             HorizontalDivider(color = Color(0xFFF1F5F9))
 
-            // Nội dung cấu hình — placeholder cho đến khi API sẵn sàng
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Tính năng cấu hình chi tiết sẽ được bổ sung sau khi API Nhiệm Vụ Chéo chính thức sẵn sàng.", fontSize = 13.sp, color = TextSecondary, lineHeight = 20.sp)
+            // 1. Chọn loại nhiệm vụ muốn chạy (Category)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Loại nhiệm vụ muốn chạy",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                NvcRunConfigStore.supportedCategories.forEach { (catKey, catName) ->
+                    val isChecked = catKey in enabledCategories
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isChecked) NvcFbBlue.copy(alpha = 0.08f) else Color(0xFFF8FAFC))
+                            .border(1.dp, if (isChecked) NvcFbBlue else Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
+                            .clickable {
+                                enabledCategories = if (isChecked) {
+                                    if (enabledCategories.size > 1) enabledCategories - catKey else enabledCategories
+                                } else {
+                                    enabledCategories + catKey
+                                }
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isChecked,
+                            onCheckedChange = { chk ->
+                                enabledCategories = if (chk) enabledCategories + catKey
+                                else if (enabledCategories.size > 1) enabledCategories - catKey
+                                else enabledCategories
+                            },
+                            colors = CheckboxDefaults.colors(checkedColor = NvcFbBlue)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(catName, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                    }
                 }
             }
 
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = NvcFbBlue),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().height(46.dp)
-            ) {
-                Text("Đóng", fontWeight = FontWeight.Bold, color = Color.White)
+            // 2. Tùy chọn các loại cảm xúc (Nếu bật Reaction)
+            if ("reaction" in enabledCategories) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFF8FAFC))
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(12.dp))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        "Loại cảm xúc Facebook mong muốn",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        NvcRunConfigStore.supportedReactions.forEach { (rKey, rLabel) ->
+                            val isSel = rKey in selectedReactions
+                            FilterChip(
+                                selected = isSel,
+                                onClick = {
+                                    selectedReactions = if (isSel) {
+                                        if (selectedReactions.size > 1) selectedReactions - rKey else selectedReactions
+                                    } else {
+                                        selectedReactions + rKey
+                                    }
+                                },
+                                label = { Text(rLabel, fontSize = 12.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = NvcFbBlue,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 3. Số đơn nhận mỗi lần (Claim limit)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Số đơn nhận mỗi lần (Claim limit)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    Text("$claimLimit đơn/lần", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = NvcFbBlue)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(1, 2, 3, 5).forEach { lim ->
+                        FilterChip(
+                            selected = (claimLimit == lim),
+                            onClick = { claimLimit = lim },
+                            label = { Text("$lim đơn", fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = NvcFbBlue,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+            }
+
+            // 4. Thời gian delay giữa các nhiệm vụ (giây)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Thời gian delay giữa các nhiệm vụ", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    Text("${delaySeconds.toInt()} giây", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = NvcFbBlue)
+                }
+                Slider(
+                    value = delaySeconds,
+                    onValueChange = { delaySeconds = it },
+                    valueRange = 5f..60f,
+                    steps = 10,
+                    colors = SliderDefaults.colors(thumbColor = NvcFbBlue, activeTrackColor = NvcFbBlue)
+                )
+            }
+
+            // 5. Lọc chất lượng nick (Quality)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Lọc chất lượng tài khoản (Quality)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    NvcRunConfigStore.supportedQualities.forEach { (qKey, qLabel) ->
+                        FilterChip(
+                            selected = (quality == qKey),
+                            onClick = { quality = qKey },
+                            label = { Text(qLabel, fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = NvcFbBlue,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+            }
+
+            // 6. Giới hạn số nhiệm vụ & Dừng khi lỗi liên tiếp
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Mục tiêu số nhiệm vụ", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0 to "Không giới hạn", 20 to "20", 50 to "50", 100 to "100").forEach { (targetVal, label) ->
+                        FilterChip(
+                            selected = (taskCountTarget == targetVal),
+                            onClick = { taskCountTarget = targetVal },
+                            label = { Text(label, fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = NvcFbBlue,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Dừng nick nếu lỗi liên tiếp", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(3, 5, 10, 20).forEach { limitVal ->
+                        FilterChip(
+                            selected = (failJobLimit == limitVal),
+                            onClick = { failJobLimit = limitVal },
+                            label = { Text("$limitVal lần", fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = NvcFbBlue,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Nút Lưu cấu hình
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).height(46.dp)
+                ) {
+                    Text("Đóng", fontWeight = FontWeight.SemiBold, color = TextSecondary)
+                }
+
+                Button(
+                    onClick = {
+                        val newConfig = NvcRunConfig(
+                            enabledCategories = enabledCategories.toList(),
+                            selectedReactions = selectedReactions.toList(),
+                            claimLimit = claimLimit,
+                            delaySeconds = delaySeconds.toInt(),
+                            quality = quality,
+                            taskCountTarget = taskCountTarget,
+                            failJobLimit = failJobLimit
+                        )
+                        NvcRunConfigStore.save(context, newConfig)
+                        android.widget.Toast.makeText(context, "Đã lưu cấu hình Nhiệm Vụ Chéo!", android.widget.Toast.LENGTH_SHORT).show()
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = NvcFbBlue),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1.5f).height(46.dp)
+                ) {
+                    Text("Lưu cấu hình", fontWeight = FontWeight.Bold, color = Color.White)
+                }
             }
         }
     }
