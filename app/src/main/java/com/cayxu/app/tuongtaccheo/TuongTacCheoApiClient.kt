@@ -147,29 +147,43 @@ class TuongTacCheoApiClient(
      * 2. Thêm Nick/Page vào hệ thống TTC (nhapnick.php)
      */
     @Throws(Exception::class)
-    fun themNick(linkOrUid: String, loainick: String = "fb", recaptcha: String = ""): TTCThemNickResult {
+    fun themNick(linkOrUid: String, loainick: String = "fb"): TTCThemNickResult {
         if (sessionCookie.isBlank() && tokenTTC.isNotBlank()) {
             try { loginWithToken(tokenTTC) } catch (_: Exception) {}
         }
 
+        val refererUrl = if (loainick == "fb") {
+            "$BASE_URL/cauhinh/facebook.php"
+        } else {
+            "$BASE_URL/cauhinh/tiktok.php"
+        }
+
+        // Form data chuẩn xác 100% từ cURL trình duyệt
+        val formBody = FormBody.Builder()
+            .add("link", linkOrUid)
+            .add("loainick", loainick)
+            .add("recaptcha", "1") // BẮT BUỘC PHẢI LÀ "1" (TTC YÊU CẦU ĐỂ CHẤP NHẬN THÊM NICK)
+            .build()
+
+        val request = Request.Builder()
+            .url("$BASE_URL/cauhinh/nhapnick.php")
+            .headers(buildHeaders())
+            .header("Referer", refererUrl) // Header Referer bắt buộc
+            .header("Origin", BASE_URL)
+            .header("X-Requested-With", "XMLHttpRequest")
+            .post(formBody)
+            .build()
+
         fun doThem(): TTCThemNickResult {
-            val formBody = FormBody.Builder()
-                .add("link", linkOrUid)
-                .add("loainick", loainick)
-                .add("recaptcha", recaptcha)
-                .build()
-            val request = Request.Builder()
-                .url("$BASE_URL/cauhinh/nhapnick.php")
-                .headers(buildHeaders())
-                .post(formBody)
-                .build()
             return httpClient.newCall(request).execute().use { response ->
                 val body = response.body?.string() ?: ""
-                val isRedirectOrHtml = response.code in 300..399 || isHtml(body)
-                if (isRedirectOrHtml) {
-                    return@use TTCThemNickResult(false, "Phiên đăng nhập TTC hết hạn", body)
-                }
-                val isSuccess = response.isSuccessful && (body.contains("\"status\":1") || body.contains("Thành công") || body.contains("thành công") || body.trim() == "1")
+                val isSuccess = response.isSuccessful && (
+                    body.contains("\"status\":1") || 
+                    body.contains("Thành công") || 
+                    body.contains("thành công") ||
+                    body.contains("Thêm thành công")
+                )
+                
                 var msg = body
                 try {
                     if (body.trim().startsWith("{")) {
@@ -177,12 +191,17 @@ class TuongTacCheoApiClient(
                         msg = json.optString("mess", json.optString("message", body))
                     }
                 } catch (_: Exception) {}
-                TTCThemNickResult(isSuccess, msg, body)
+
+                TTCThemNickResult(
+                    isSuccess = isSuccess,
+                    message = msg,
+                    rawResponse = body
+                )
             }
         }
 
         var res = doThem()
-        if (!res.isSuccess && (res.message.contains("hết hạn") || isHtml(res.rawResponse)) && tokenTTC.isNotBlank()) {
+        if (!res.isSuccess && (isHtml(res.rawResponse) || res.message.contains("hết hạn")) && tokenTTC.isNotBlank()) {
             try {
                 loginWithToken(tokenTTC)
                 res = doThem()
@@ -208,6 +227,9 @@ class TuongTacCheoApiClient(
             val request = Request.Builder()
                 .url("$BASE_URL/cauhinh/datnick.php")
                 .headers(buildHeaders())
+                .header("Referer", "$BASE_URL/cauhinh/facebook.php")
+                .header("Origin", BASE_URL)
+                .header("X-Requested-With", "XMLHttpRequest")
                 .post(formBody)
                 .build()
             return httpClient.newCall(request).execute().use { response ->
@@ -227,7 +249,7 @@ class TuongTacCheoApiClient(
                 val isSuccess = response.isSuccessful && (trimmed == "1" || trimmed.contains("\"status\":1") || trimmed.contains("Cấu hình thành công") || trimmed.contains("Thành công"))
                 val code = when {
                     isSuccess -> 1
-                    trimmed == "2" || trimmed.contains("\"status\":2") -> 2
+                    trimmed == "2" || trimmed.contains("\"status\":2") || trimmed.contains("chưa thêm") || trimmed.contains("chưa được thêm") -> 2
                     else -> 0
                 }
                 val msg = when (code) {
@@ -284,7 +306,12 @@ class TuongTacCheoApiClient(
         }
 
         // Nếu mã lỗi 2 (chưa có trên web), tự động gọi themNick rồi thử lại
-        if (datResult.code == 2) {
+        val isNotAdded = datResult.code == 2 || 
+            datResult.message.contains("chưa được thêm", ignoreCase = true) || 
+            datResult.message.contains("chưa thêm", ignoreCase = true) ||
+            datResult.rawResponse.contains("chưa", ignoreCase = true)
+
+        if (isNotAdded) {
             onStepUpdate?.invoke("Đang thêm nick/page [$uid] vào hệ thống TTC...")
             val themRes = themNick(uid, loai)
             if (themRes.message.contains("thao tác chậm lại", ignoreCase = true) || themRes.rawResponse.contains("thao tác chậm lại", ignoreCase = true)) {
@@ -293,19 +320,20 @@ class TuongTacCheoApiClient(
                     try { Thread.sleep(1000) } catch (_: Exception) {}
                 }
             } else {
-                try { Thread.sleep(1000) } catch (_: Exception) {}
+                try { Thread.sleep(2000) } catch (_: Exception) {}
             }
             onStepUpdate?.invoke("Đang đặt nick/page làm nick chạy...")
             datResult = setNickRun(uid, loai)
 
             // Kiểm tra rate-limit sau khi themNick và thử đặt lại
-            if (!datResult.isSuccess && (datResult.message.contains("thao tác chậm lại", ignoreCase = true) || datResult.rawResponse.contains("thao tác chậm lại", ignoreCase = true))) {
+            while (!datResult.isSuccess && (datResult.message.contains("thao tác chậm lại", ignoreCase = true) || datResult.rawResponse.contains("thao tác chậm lại", ignoreCase = true))) {
                 for (sec in 10 downTo 1) {
                     onStepUpdate?.invoke("TTC yêu cầu thao tác chậm lại, đang chờ ${sec}s rồi thử lại...")
                     try { Thread.sleep(1000) } catch (_: Exception) {}
                 }
                 onStepUpdate?.invoke("Đang đặt nick/page làm nick chạy...")
                 datResult = setNickRun(uid, loai)
+                if (datResult.isSuccess) break
             }
         }
         return datResult

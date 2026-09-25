@@ -493,6 +493,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                             TtcAccountsStore.addAccount(context, updatedAcc)
                         }
                     } catch (_: Exception) {}
+                    delay(1200L)
                 }
 
                 // BƯỚC 1 & BƯỚC 2: TỰ ĐỘNG THÊM NICK/PAGE VÀO TTC (NẾU CHƯA CÓ) VÀ ĐẶT NICK CHẠY
