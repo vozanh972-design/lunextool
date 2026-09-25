@@ -109,7 +109,7 @@ class TuongTacCheoApiClient(
             try { loginWithToken(tokenTTC) } catch (_: Exception) {}
         }
 
-        val refererUrl = if (loainick == "fb") "$BASE_URL/cauhinh/facebook.php" else "$BASE_URL/cauhinh/tiktok.php"
+        val refererUrl = if (loainick == "fb") "$BASE_URL/cauhinh/facebook.php" else "$BASE_URL/cauhinh/facebook.php"
         val formBody = FormBody.Builder()
             .add("link", linkOrUid)
             .add("loainick", loainick)
@@ -149,7 +149,7 @@ class TuongTacCheoApiClient(
             .add("iddat[]", uid)
             .add("loai", loai)
             .build()
-        val refererUrl = if (loai == "fb") "$BASE_URL/cauhinh/facebook.php" else "$BASE_URL/cauhinh/tiktok.php"
+        val refererUrl = if (loai == "fb") "$BASE_URL/cauhinh/facebook.php" else "$BASE_URL/cauhinh/facebook.php"
         val req = Request.Builder()
             .url("$BASE_URL/cauhinh/datnick.php")
             .headers(buildHeaders())
@@ -178,30 +178,52 @@ class TuongTacCheoApiClient(
         }
     }
 
-    // 4. Helper tự động thêm nick nếu chưa có & tự động delay nếu gặp rate-limit
+    // 4. Quy trình 2 bước chuẩn 100% cURL web: Luôn nhập nick trước rồi mới đặt nick
     @Throws(Exception::class)
     fun autoPrepareAndSetNick(uid: String, loai: String = "fb", onLog: ((String) -> Unit)? = null): TTCDatNickResult {
-        var res = setNickRun(uid, loai)
-        if (res.isSuccess) return res
-
-        // Nếu mã 2: Chưa thêm nick -> Tự thêm nick vào TTC rồi đặt lại
-        if (res.code == 2 || res.message.contains("chưa", ignoreCase = true)) {
-            onLog?.invoke("Nick chưa thêm trên web, đang tự động thêm vào TTC...")
+        // BƯỚC 1: TỰ ĐỘNG NHẬP NICK VÀO HỆ THỐNG TTC (Theo đúng cURL web)
+        onLog?.invoke("Đang thêm UID [$uid] vào web TTC...")
+        try {
             themNick(uid, loai)
-            try { Thread.sleep(2000) } catch (_: Exception) {}
-            res = setNickRun(uid, loai)
-        }
+        } catch (_: Exception) {}
 
-        // Nếu mã -1: Rate limit thao tác chậm -> Tự động chờ đếm ngược 7s rồi thử lại
-        if (res.code == -1 || res.message.contains("chậm lại", ignoreCase = true) || res.rawResponse.contains("chậm lại", ignoreCase = true)) {
+        try { Thread.sleep(1500) } catch (_: Exception) {} // Nghỉ 1.5s để server TTC cập nhật CSDL
+
+        // BƯỚC 2: CẤU HÌNH ĐẶT NICK CHẠY (Theo đúng cURL web)
+        onLog?.invoke("Đang đặt UID [$uid] làm nick chạy...")
+        var res = setNickRun(uid, loai)
+
+        // Xử lý chống spam rate-limit -1
+        var retryCount = 0
+        while ((res.code == -1 || res.message.contains("chậm lại", ignoreCase = true) || res.rawResponse.contains("chậm lại", ignoreCase = true)) && retryCount < 3) {
+            retryCount++
             for (sec in 7 downTo 1) {
                 onLog?.invoke("TTC yêu cầu thao tác chậm, tự động chờ ${sec}s rồi thử lại...")
                 try { Thread.sleep(1000) } catch (_: Exception) {}
             }
-            onLog?.invoke("Đang đặt nick/page làm nick chạy...")
+            onLog?.invoke("Đang thử đặt lại nick [$uid] làm nick chạy (lần $retryCount)...")
             res = setNickRun(uid, loai)
         }
+
+        // Phòng hờ nếu vẫn gặp mã 2 -> thử lại thêm nick và đặt lại 1 lần nữa
+        if (res.code == 2 || res.message.contains("chưa", ignoreCase = true)) {
+            onLog?.invoke("TTC báo chưa thêm nick, đang thêm lại...")
+            try { themNick(uid, loai) } catch (_: Exception) {}
+            try { Thread.sleep(2000) } catch (_: Exception) {}
+            res = setNickRun(uid, loai)
+        }
+
+        if (res.isSuccess) {
+            onLog?.invoke("✔️ Đặt nick thành công! Đang lấy nhiệm vụ...")
+        } else {
+            onLog?.invoke("❌ ${res.message}")
+        }
         return res
+    }
+
+    // Helper chuẩn theo đúng signature yêu cầu
+    fun prepareAndRunNick(uid: String, onStatus: (String) -> Unit): Boolean {
+        return autoPrepareAndSetNick(uid, "fb", onStatus).isSuccess
     }
 
     // 5. Lấy danh sách nhiệm vụ (Chuẩn 100% theo path cURL)
