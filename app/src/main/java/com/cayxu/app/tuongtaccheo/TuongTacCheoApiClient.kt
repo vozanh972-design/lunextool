@@ -18,14 +18,57 @@ class TuongTacCheoApiClient(
         const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; Mi 9T Pro) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/12.1 Chrome/79.0.3945.136 Mobile Safari/537.36"
     }
 
+    private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
     private var httpClient: OkHttpClient
 
     init {
+        // Nạp cookie khởi tạo nếu có
+        if (sessionCookie.isNotBlank()) {
+            val list = cookieStore.getOrPut("tuongtaccheo.com") { mutableListOf() }
+            val parts = sessionCookie.split(";")
+            for (p in parts) {
+                val kv = p.trim().split("=", limit = 2)
+                if (kv.size == 2) {
+                    try {
+                        val c = Cookie.Builder()
+                            .domain("tuongtaccheo.com")
+                            .path("/")
+                            .name(kv[0].trim())
+                            .value(kv[1].trim())
+                            .build()
+                        list.removeAll { it.name == c.name }
+                        list.add(c)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+
         val builder = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
-            .followRedirects(true)
+            .cookieJar(object : CookieJar {
+                override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+                    val list = cookieStore.getOrPut(url.host) { mutableListOf() }
+                    for (cookie in cookies) {
+                        list.removeAll { it.name == cookie.name }
+                        list.add(cookie)
+                    }
+                    val sb = StringBuilder()
+                    for (c in list) {
+                        sb.append(c.name).append("=").append(c.value).append("; ")
+                    }
+                    if (sb.isNotEmpty()) {
+                        sessionCookie = sb.toString().trim()
+                    }
+                }
+                override fun loadForRequest(url: HttpUrl): List<Cookie> {
+                    return cookieStore[url.host] ?: emptyList()
+                }
+            })
+            .followRedirects(false) // TẮT tự động redirect để không bị nuốt mã HTML trang chủ
+            .followSslRedirects(false)
+
         if (!proxyStr.isNullOrEmpty()) {
             setupProxy(builder, proxyStr)
         }
@@ -62,10 +105,17 @@ class TuongTacCheoApiClient(
             .add("Host", "tuongtaccheo.com")
             .add("Origin", BASE_URL)
             .add("Referer", "$BASE_URL/home.php")
+
         if (sessionCookie.isNotEmpty()) {
             builder.add("Cookie", sessionCookie)
         }
         return builder.build()
+    }
+
+    private fun isHtml(raw: String): Boolean {
+        val b = raw.trim().lowercase()
+        return b.startsWith("<!doctype") || b.startsWith("<html") ||
+                b.contains("<title>") || b.contains("tăng like tương tác chéo")
     }
 
     /**
@@ -78,7 +128,7 @@ class TuongTacCheoApiClient(
         val request = Request.Builder().url("$BASE_URL/logintoken.php").headers(buildHeaders()).post(formBody).build()
         httpClient.newCall(request).execute().use { response ->
             val body = response.body?.string() ?: ""
-            if (!response.isSuccessful) throw IllegalStateException("Lỗi HTTP: ${response.code}")
+            if (!response.isSuccessful && response.code !in 200..399) throw IllegalStateException("Lỗi HTTP: ${response.code}")
             val cookies = response.headers("Set-Cookie")
             val cookieSb = StringBuilder()
             for (c in cookies) cookieSb.append(c.split(";")[0]).append("; ")
@@ -99,32 +149,46 @@ class TuongTacCheoApiClient(
     @Throws(Exception::class)
     fun themNick(linkOrUid: String, loainick: String = "fb", recaptcha: String = ""): TTCThemNickResult {
         if (sessionCookie.isBlank() && tokenTTC.isNotBlank()) {
+            try { loginWithToken(tokenTTC) } catch (_: Exception) {}
+        }
+
+        fun doThem(): TTCThemNickResult {
+            val formBody = FormBody.Builder()
+                .add("link", linkOrUid)
+                .add("loainick", loainick)
+                .add("recaptcha", recaptcha)
+                .build()
+            val request = Request.Builder()
+                .url("$BASE_URL/cauhinh/nhapnick.php")
+                .headers(buildHeaders())
+                .post(formBody)
+                .build()
+            return httpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                val isRedirectOrHtml = response.code in 300..399 || isHtml(body)
+                if (isRedirectOrHtml) {
+                    return@use TTCThemNickResult(false, "Phiên đăng nhập TTC hết hạn", body)
+                }
+                val isSuccess = response.isSuccessful && (body.contains("\"status\":1") || body.contains("Thành công") || body.contains("thành công") || body.trim() == "1")
+                var msg = body
+                try {
+                    if (body.trim().startsWith("{")) {
+                        val json = JSONObject(body)
+                        msg = json.optString("mess", json.optString("message", body))
+                    }
+                } catch (_: Exception) {}
+                TTCThemNickResult(isSuccess, msg, body)
+            }
+        }
+
+        var res = doThem()
+        if (!res.isSuccess && (res.message.contains("hết hạn") || isHtml(res.rawResponse)) && tokenTTC.isNotBlank()) {
             try {
                 loginWithToken(tokenTTC)
+                res = doThem()
             } catch (_: Exception) {}
         }
-        val formBody = FormBody.Builder()
-            .add("link", linkOrUid)
-            .add("loainick", loainick)
-            .add("recaptcha", recaptcha)
-            .build()
-        val request = Request.Builder()
-            .url("$BASE_URL/cauhinh/nhapnick.php")
-            .headers(buildHeaders())
-            .post(formBody)
-            .build()
-        httpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string() ?: ""
-            val isSuccess = response.isSuccessful && (body.contains("\"status\":1") || body.contains("Thành công") || body.contains("thành công") || body.trim() == "1")
-            var msg = body
-            try {
-                if (body.trim().startsWith("{")) {
-                    val json = JSONObject(body)
-                    msg = json.optString("mess", json.optString("message", body))
-                }
-            } catch (_: Exception) {}
-            return TTCThemNickResult(isSuccess, msg, body)
-        }
+        return res
     }
 
     /**
@@ -133,35 +197,66 @@ class TuongTacCheoApiClient(
     @Throws(Exception::class)
     fun setNickRun(uid: String, loai: String = "fb"): TTCDatNickResult {
         if (sessionCookie.isBlank() && tokenTTC.isNotBlank()) {
+            try { loginWithToken(tokenTTC) } catch (_: Exception) {}
+        }
+
+        fun doSet(): TTCDatNickResult {
+            val formBody = FormBody.Builder()
+                .add("iddat[]", uid)
+                .add("loai", loai)
+                .build()
+            val request = Request.Builder()
+                .url("$BASE_URL/cauhinh/datnick.php")
+                .headers(buildHeaders())
+                .post(formBody)
+                .build()
+            return httpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                val trimmed = body.trim()
+
+                // Kiểm tra nếu bị redirect hoặc trả về HTML
+                if (response.code in 300..399 || isHtml(trimmed)) {
+                    return@use TTCDatNickResult(
+                        isSuccess = false,
+                        code = -1,
+                        message = "Phiên đăng nhập TTC hết hạn hoặc sai Cookie!",
+                        rawResponse = trimmed
+                    )
+                }
+
+                val isSuccess = response.isSuccessful && (trimmed == "1" || trimmed.contains("\"status\":1") || trimmed.contains("Cấu hình thành công") || trimmed.contains("Thành công"))
+                val code = when {
+                    isSuccess -> 1
+                    trimmed == "2" || trimmed.contains("\"status\":2") -> 2
+                    else -> 0
+                }
+                val msg = when (code) {
+                    1 -> "Cấu hình đặt nick thành công!"
+                    2 -> "Nick/Page chưa được thêm vào hệ thống TTC!"
+                    else -> {
+                        var parsedMsg = trimmed
+                        try {
+                            if (trimmed.startsWith("{")) {
+                                val json = JSONObject(trimmed)
+                                parsedMsg = json.optString("mess", json.optString("message", trimmed))
+                            }
+                        } catch (_: Exception) {}
+                        "Lỗi đặt nick TTC: $parsedMsg"
+                    }
+                }
+                TTCDatNickResult(isSuccess, code, msg, body)
+            }
+        }
+
+        var res = doSet()
+        // Nếu bị hết hạn cookie (-1), tự động login token refresh rồi thử lại 1 lần
+        if (res.code == -1 && tokenTTC.isNotBlank()) {
             try {
                 loginWithToken(tokenTTC)
+                res = doSet()
             } catch (_: Exception) {}
         }
-        val formBody = FormBody.Builder()
-            .add("iddat[]", uid)
-            .add("loai", loai)
-            .build()
-        val request = Request.Builder()
-            .url("$BASE_URL/cauhinh/datnick.php")
-            .headers(buildHeaders())
-            .post(formBody)
-            .build()
-        httpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string() ?: ""
-            val trimmed = body.trim()
-            val isSuccess = response.isSuccessful && (trimmed == "1" || trimmed.contains("\"status\":1") || trimmed.contains("Cấu hình thành công"))
-            val code = when {
-                isSuccess -> 1
-                trimmed == "2" || trimmed.contains("\"status\":2") -> 2
-                else -> 0
-            }
-            val msg = when (code) {
-                1 -> "Cấu hình đặt nick thành công!"
-                2 -> "Nick/Page chưa được thêm vào hệ thống TTC!"
-                else -> "Lỗi đặt nick TTC: $trimmed"
-            }
-            return TTCDatNickResult(isSuccess, code, msg, body)
-        }
+        return res
     }
 
     /**
@@ -176,10 +271,11 @@ class TuongTacCheoApiClient(
         onStepUpdate?.invoke("Đang đặt nick/page làm nick chạy...")
         var datResult = setNickRun(uid, loai)
         if (datResult.isSuccess) return datResult
+
         // Nếu mã lỗi 2 (chưa có trên web), tự động gọi themNick rồi thử lại
         if (datResult.code == 2) {
             onStepUpdate?.invoke("Đang thêm nick/page [$uid] vào hệ thống TTC...")
-            themNick(uid, loai)
+            val themRes = themNick(uid, loai)
             try { Thread.sleep(1000) } catch (_: Exception) {}
             onStepUpdate?.invoke("Đang đặt nick/page làm nick chạy...")
             datResult = setNickRun(uid, loai)
@@ -195,7 +291,7 @@ class TuongTacCheoApiClient(
         val request = Request.Builder().url("$BASE_URL/kiemtien/getpost.php?type=${jobType.apiType}").headers(buildHeaders()).get().build()
         httpClient.newCall(request).execute().use { response ->
             val body = response.body?.string() ?: ""
-            if (body.contains("Hết Job") || body.contains("countdown") || body.contains("\"error\"")) return emptyList()
+            if (response.code in 300..399 || isHtml(body) || body.contains("Hết Job") || body.contains("countdown") || body.contains("\"error\"")) return emptyList()
             val jobList = mutableListOf<TTCJob>()
             if (body.trim().startsWith("[")) {
                 val jsonArr = JSONArray(body)

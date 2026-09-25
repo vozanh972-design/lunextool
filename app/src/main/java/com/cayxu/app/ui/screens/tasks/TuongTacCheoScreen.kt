@@ -484,6 +484,17 @@ fun TuongTacCheoScreen(navController: NavController) {
                     proxyStr = activeTtcAccount.proxy.ifBlank { null }
                 )
 
+                // Luôn làm mới phiên đăng nhập TTC bằng Token để CookieJar có session mới nhất
+                if (activeTtcAccount.token.isNotBlank()) {
+                    try {
+                        val logged = ttcClient.loginWithToken(activeTtcAccount.token)
+                        if (!logged.cookie.isNullOrBlank() && logged.cookie != activeTtcAccount.cookie) {
+                            val updatedAcc = activeTtcAccount.copy(cookie = logged.cookie, coins = logged.sodu)
+                            TtcAccountsStore.addAccount(context, updatedAcc)
+                        }
+                    } catch (_: Exception) {}
+                }
+
                 // BƯỚC 1 & BƯỚC 2: TỰ ĐỘNG THÊM NICK/PAGE VÀO TTC (NẾU CHƯA CÓ) VÀ ĐẶT NICK CHẠY
                 val setNickRes = try {
                     ttcClient.autoPrepareAndSetNick(runUid, "fb") { stepMsg ->
