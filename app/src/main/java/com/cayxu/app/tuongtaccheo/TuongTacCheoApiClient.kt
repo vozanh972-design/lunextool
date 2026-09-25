@@ -145,9 +145,19 @@ class TuongTacCheoApiClient(
         val httpCode: Int = 200
     )
 
+    private fun isHtmlResponse(raw: String): Boolean {
+        val b = raw.trim().lowercase()
+        return b.startsWith("<!doctype") || b.startsWith("<html") ||
+                b.contains("<title>") || b.contains("tăng like tương tác chéo") ||
+                (b.contains("<head>") && b.contains("</head>"))
+    }
+
     private fun parseTtcErrorMessage(raw: String): String {
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) return "Phản hồi rỗng từ máy chủ"
+        if (isHtmlResponse(trimmed)) {
+            return "Phiên đăng nhập TTC hết hạn hoặc sai Cookie, vui lòng đăng nhập lại TTC!"
+        }
         try {
             if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
                 val json = JSONObject(trimmed)
@@ -183,27 +193,86 @@ class TuongTacCheoApiClient(
      * @param loai "fb" hoặc "tiktok"
      */
     fun setNickRunDetailed(uid: String, loai: String = "fb"): SetNickResult {
-        var lastRawResponse = ""
-        var lastHttpCode = 200
-        var lastErrorMsg = ""
+        // Tự động khôi phục Session Cookie nếu bị trống mà có Token
+        if (sessionCookie.isBlank() && tokenTTC.isNotBlank()) {
+            try {
+                loginWithToken(tokenTTC)
+            } catch (_: Exception) {}
+        }
 
-        // 1. Thử gọi API đặt nick trực tiếp: api.php?do=datnick&id=<UID>
-        try {
-            val reqApi = Request.Builder()
-                .url("$BASE_URL/api.php?do=datnick&id=$uid")
-                .headers(buildHeaders())
-                .get()
-                .build()
+        fun tryDatNick(): SetNickResult {
+            // Cách 1: Gọi endpoint form web cauhinh/datnick.php (kèm Cookie session)
+            try {
+                val formBody = FormBody.Builder()
+                    .add("iddat[]", uid)
+                    .add("loai", loai)
+                    .build()
 
-            httpClient.newCall(reqApi).execute().use { response ->
-                lastHttpCode = response.code
-                val rawResponse = response.body?.string() ?: ""
-                lastRawResponse = rawResponse
-                Log.e("TTC_DEBUG", "Response TTC: " + rawResponse)
+                val request = Request.Builder()
+                    .url("$BASE_URL/cauhinh/datnick.php")
+                    .headers(buildHeaders())
+                    .post(formBody)
+                    .build()
 
-                if (!response.isSuccessful) {
-                    lastErrorMsg = "Lỗi kết nối TTC (Mã: ${response.code})"
-                } else {
+                httpClient.newCall(request).execute().use { response ->
+                    val rawResponse = response.body?.string() ?: ""
+                    Log.e("TTC_DEBUG", "Response TTC (cauhinh/datnick.php): " + rawResponse)
+
+                    if (!response.isSuccessful) {
+                        return SetNickResult(isSuccess = false, message = "Lỗi kết nối TTC (Mã: ${response.code})", rawResponse = rawResponse, httpCode = response.code)
+                    }
+
+                    if (isHtmlResponse(rawResponse)) {
+                        return SetNickResult(
+                            isSuccess = false,
+                            message = "Lỗi TTC: Phiên đăng nhập TTC hết hạn hoặc sai Cookie, vui lòng đăng nhập lại TTC!",
+                            rawResponse = rawResponse,
+                            httpCode = response.code
+                        )
+                    }
+
+                    val isSuccess = rawResponse.contains("\"status\":1") || 
+                        rawResponse.contains("\"status\":\"success\"") || 
+                        rawResponse.contains("Cấu hình thành công") || 
+                        rawResponse.contains("Thành công")
+
+                    if (isSuccess) {
+                        return SetNickResult(isSuccess = true, message = "Cấu hình thành công", rawResponse = rawResponse, httpCode = response.code)
+                    }
+
+                    val serverMsg = parseTtcErrorMessage(rawResponse)
+                    return SetNickResult(isSuccess = false, message = "Lỗi TTC: $serverMsg", rawResponse = rawResponse, httpCode = response.code)
+                }
+            } catch (e: Exception) {
+                Log.e("TTC_DEBUG", "Response TTC (Exception cauhinh/datnick): " + e.message, e)
+            }
+
+            // Cách 2: Gọi api.php?do=datnick&id=<UID>
+            try {
+                val apiUrl = "$BASE_URL/api.php?do=datnick&id=$uid" + if (tokenTTC.isNotBlank()) "&access_token=$tokenTTC" else ""
+                val reqApi = Request.Builder()
+                    .url(apiUrl)
+                    .headers(buildHeaders())
+                    .get()
+                    .build()
+
+                httpClient.newCall(reqApi).execute().use { response ->
+                    val rawResponse = response.body?.string() ?: ""
+                    Log.e("TTC_DEBUG", "Response TTC (api.php?do=datnick): " + rawResponse)
+
+                    if (!response.isSuccessful) {
+                        return SetNickResult(isSuccess = false, message = "Lỗi kết nối TTC (Mã: ${response.code})", rawResponse = rawResponse, httpCode = response.code)
+                    }
+
+                    if (isHtmlResponse(rawResponse)) {
+                        return SetNickResult(
+                            isSuccess = false,
+                            message = "Lỗi TTC: Phiên đăng nhập TTC hết hạn hoặc sai Cookie, vui lòng đăng nhập lại TTC!",
+                            rawResponse = rawResponse,
+                            httpCode = response.code
+                        )
+                    }
+
                     val isSuccess = rawResponse.contains("\"status\":1") || 
                         rawResponse.contains("\"status\":\"success\"") || 
                         rawResponse.contains("Cấu hình thành công") || 
@@ -216,63 +285,30 @@ class TuongTacCheoApiClient(
                     }
 
                     val serverMsg = parseTtcErrorMessage(rawResponse)
-                    lastErrorMsg = "Lỗi TTC: $serverMsg"
-                    return SetNickResult(isSuccess = false, message = lastErrorMsg, rawResponse = rawResponse, httpCode = response.code)
+                    return SetNickResult(isSuccess = false, message = "Lỗi TTC: $serverMsg", rawResponse = rawResponse, httpCode = response.code)
                 }
+            } catch (e: Exception) {
+                Log.e("TTC_DEBUG", "Response TTC (Exception api.php): " + e.message, e)
+                return SetNickResult(isSuccess = false, message = "Lỗi kết nối TTC (Mã: Mất mạng)", httpCode = 0)
             }
-        } catch (e: Exception) {
-            Log.e("TTC_DEBUG", "Response TTC (Exception): " + e.message, e)
-            lastErrorMsg = "Lỗi kết nối TTC (Mã: Mất mạng)"
+
+            return SetNickResult(isSuccess = false, message = "Lỗi kết nối TTC (Mã: 500)", httpCode = 500)
         }
 
-        // 2. Thử gọi qua endpoint web nếu endpoint 1 lỗi kết nối: cauhinh/datnick.php
-        try {
-            val formBody = FormBody.Builder()
-                .add("iddat[]", uid)
-                .add("loai", loai)
-                .build()
+        var result = tryDatNick()
 
-            val request = Request.Builder()
-                .url("$BASE_URL/cauhinh/datnick.php")
-                .headers(buildHeaders())
-                .post(formBody)
-                .build()
-
-            httpClient.newCall(request).execute().use { response ->
-                lastHttpCode = response.code
-                val rawResponse = response.body?.string() ?: ""
-                lastRawResponse = rawResponse
-                Log.e("TTC_DEBUG", "Response TTC: " + rawResponse)
-
-                if (!response.isSuccessful) {
-                    lastErrorMsg = "Lỗi kết nối TTC (Mã: ${response.code})"
-                } else {
-                    val isSuccess = rawResponse.contains("\"status\":1") || 
-                        rawResponse.contains("\"status\":\"success\"") || 
-                        rawResponse.contains("Cấu hình thành công") || 
-                        rawResponse.contains("Thành công")
-
-                    if (isSuccess) {
-                        return SetNickResult(isSuccess = true, message = "Cấu hình thành công", rawResponse = rawResponse, httpCode = response.code)
-                    }
-
-                    val serverMsg = parseTtcErrorMessage(rawResponse)
-                    lastErrorMsg = "Lỗi TTC: $serverMsg"
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("TTC_DEBUG", "Response TTC (Exception): " + e.message, e)
-            if (lastErrorMsg.isBlank()) {
-                lastErrorMsg = "Lỗi kết nối TTC (Mã: Mất mạng)"
+        // Nếu máy chủ trả về mã HTML (chưa đăng nhập / hết hạn Cookie) và tài khoản có Token, tự động login refresh lại cookie
+        if (!result.isSuccess && result.message.contains("Phiên đăng nhập TTC hết hạn") && tokenTTC.isNotBlank()) {
+            try {
+                Log.e("TTC_DEBUG", "Phát hiện Cookie TTC hết hạn, đang tự động login refresh lại bằng Token...")
+                loginWithToken(tokenTTC)
+                result = tryDatNick()
+            } catch (e: Exception) {
+                Log.e("TTC_DEBUG", "Tự động refresh Token thất bại: ${e.message}")
             }
         }
 
-        return SetNickResult(
-            isSuccess = false,
-            message = lastErrorMsg.ifBlank { "Lỗi TTC: Không nhận được phản hồi hợp lệ" },
-            rawResponse = lastRawResponse,
-            httpCode = lastHttpCode
-        )
+        return result
     }
 
     @Throws(Exception::class)

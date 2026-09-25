@@ -1,8 +1,12 @@
 package com.cayxu.app.ui.screens.tasks
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -479,53 +483,42 @@ fun TuongTacCheoScreen(navController: NavController) {
                     proxyStr = activeTtcAccount.proxy.ifBlank { null }
                 )
 
-                // Cấu hình nick/page chạy trên TTC — thử lại tối đa 50 lần, mỗi lần thất bại đếm ngược 10s
-                var isSet = false
-                var lastTtcError = ""
-                for (attempt in 1..50) {
-                    if (!isActive || distinctRunningKeys.none { it in runningTtcUids } || ttcUser !in runningTtcAccounts) break
-                    val attemptSuffix = if (attempt > 1) " (lần $attempt/50)" else ""
-                    withContext(Dispatchers.Main) {
-                        val statusText = "Đang cấu hình đặt $targetTypeStr [$runUid] lên TTC...$attemptSuffix"
-                        ttcAccountStatusMap[ttcUser] = statusText
-                        distinctRunningKeys.forEach { k -> ttcStatusMap[k] = statusText }
-                    }
-                    val setNickRes = try {
-                        ttcClient.setNickRunDetailed(runUid, "fb")
-                    } catch (e: Exception) {
-                        TuongTacCheoApiClient.SetNickResult(false, message = "Lỗi kết nối TTC (Mã: Mất mạng)")
-                    }
-                    isSet = setNickRes.isSuccess
-                    if (isSet) break
-
-                    lastTtcError = setNickRes.message.ifBlank { "Lỗi TTC: Đặt $targetTypeStr thất bại" }
-                    withContext(Dispatchers.Main) {
-                        ttcAccountStatusMap[ttcUser] = lastTtcError
-                        distinctRunningKeys.forEach { k -> ttcStatusMap[k] = lastTtcError }
-                    }
-
-                    // Thất bại: đếm ngược 10s trước khi thử lại
-                    if (attempt < 50) {
-                        for (countdown in 10 downTo 1) {
-                            if (!isActive || distinctRunningKeys.none { it in runningTtcUids } || ttcUser !in runningTtcAccounts) break
-                            delay(1000L)
-                        }
-                    }
+                // Cấu hình nick/page chạy trên TTC - BẮT BUỘC phải nhận phản hồi thành công mới được chuyển sang nhận job
+                val statusText = "Đang cấu hình đặt $targetTypeStr [$runUid] lên TTC..."
+                withContext(Dispatchers.Main) {
+                    ttcAccountStatusMap[ttcUser] = statusText
+                    distinctRunningKeys.forEach { k -> ttcStatusMap[k] = statusText }
                 }
 
-                if (!isSet) {
+                val setNickRes = try {
+                    ttcClient.setNickRunDetailed(runUid, "fb")
+                } catch (e: Exception) {
+                    TuongTacCheoApiClient.SetNickResult(false, message = "Lỗi kết nối TTC (Mã: Mất mạng)")
+                }
+
+                // Nếu cấu hình chưa xong hoặc lỗi thì PHẢI DỪNG LẠI, TUYỆT ĐỐI KHÔNG tự động chuyển sang nhận job!
+                if (!setNickRes.isSuccess) {
+                    val err = setNickRes.message.ifBlank { "Lỗi TTC: Đặt $targetTypeStr [$runUid] thất bại" }
+                    val rawResp = setNickRes.rawResponse.ifBlank { err }
                     withContext(Dispatchers.Main) {
-                        val err = lastTtcError.ifBlank { "Lỗi TTC: Đặt $targetTypeStr [$runUid] thất bại sau 50 lần" }
                         ttcAccountStatusMap[ttcUser] = err
                         distinctRunningKeys.forEach { k ->
                             ttcStatusMap[k] = err
-                            ttcErrorDetailMap[k] = err
+                            ttcErrorDetailMap[k] = rawResp
                             ttcErrorCountMap[k] = (ttcErrorCountMap[k] ?: 0) + 1
                         }
+                        ttcErrorDetailMap[ttcUser] = rawResp
+
+                        // Dừng ngay lập tức trạng thái chạy
+                        runningTtcAccounts.remove(ttcUser)
+                        distinctRunningKeys.forEach { runningTtcUids.remove(it) }
+                        activeRunJobs.remove(ttcUser)
+                        distinctRunningKeys.forEach { activeRunJobs.remove(it) }
                     }
                     return@launch
                 }
 
+                // Nhận được phản hồi thành công (status = 1 hoặc success) -> CHUYỂN SANG BƯỚC NHẬN JOB
                 withContext(Dispatchers.Main) {
                     val okText = if (usePage && targetPageItem != null) "Đặt page [$runUid] thành công, đang nhận job..." else "Đặt nick [$runUid] thành công, đang nhận job..."
                     ttcAccountStatusMap[ttcUser] = okText
@@ -1027,7 +1020,10 @@ fun TuongTacCheoScreen(navController: NavController) {
 
     // Sheet chi tiết lỗi
     selectedErrorDetailAccount?.let { accUid ->
-        val errMsg = ttcErrorDetailMap[accUid] ?: "Không có thông tin chi tiết lỗi"
+        val errMsg = ttcErrorDetailMap[accUid]
+            ?: ttcAccountStatusMap[accUid]
+            ?: ttcStatusMap[accUid]
+            ?: "Không có thông tin chi tiết lỗi"
         TtcErrorDetailBottomSheet(
             accountName = accUid,
             errorMessage = errMsg,
@@ -1155,6 +1151,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                     accountStatusMap = ttcAccountStatusMap,
                     isAnyFbRunning = runningTtcUids.isNotEmpty(),
                     onRunSingle = { username -> toggleRunTtcSingle(username) },
+                    onErrorDetailClick = { selectedErrorDetailAccount = it },
                     onToggle = { username ->
                         selectedTtcUsernames = if (username in selectedTtcUsernames) {
                             selectedTtcUsernames - username
@@ -1457,6 +1454,7 @@ private fun TtcAccountsTabContent(
     accountStatusMap: Map<String, String>,
     isAnyFbRunning: Boolean,
     onRunSingle: (String) -> Unit,
+    onErrorDetailClick: (String) -> Unit = {},
     onToggle: (String) -> Unit,
     onSelectAll: (Boolean) -> Unit,
     onAddNew: () -> Unit,
@@ -1623,27 +1621,51 @@ private fun TtcAccountsTabContent(
 
                                 // Trạng thái hiển thị (Status Visibility):
                                 // Khi chưa bấm chạy: Ẩn hoàn toàn (View.GONE)
-                                // Khi bấm chạy: Hiện lên (View.VISIBLE) và cập nhật liên tục tiến trình
-                                if (isAccRunning && !statusText.isNullOrBlank()) {
+                                // Khi bấm chạy hoặc gặp lỗi: Hiện lên (View.VISIBLE) và cập nhật liên tục tiến trình
+                                if (!statusText.isNullOrBlank() && (isAccRunning || statusText.startsWith("Lỗi") || statusText.contains("thất bại", ignoreCase = true) || statusText.contains("hết hạn", ignoreCase = true))) {
+                                    val isError = statusText.startsWith("Lỗi") || statusText.contains("thất bại", ignoreCase = true) || statusText.contains("hết hạn", ignoreCase = true) || statusText.contains("sai Cookie", ignoreCase = true)
+                                    val statusColor = if (isError) DangerRed else Color(0xFF16A34A)
                                     Spacer(Modifier.height(4.dp))
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Box(
                                             modifier = Modifier
                                                 .size(7.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0xFF16A34A))
+                                                .background(statusColor)
                                         )
                                         Text(
                                             text = statusText,
                                             fontSize = 11.5.sp,
                                             fontWeight = FontWeight.Medium,
-                                            color = Color(0xFF16A34A),
+                                            color = statusColor,
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier
+                                                .weight(1f, fill = false)
+                                                .then(if (isError) Modifier.clickable { onErrorDetailClick(acc.username) } else Modifier)
                                         )
+                                        if (isError) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .clip(CircleShape)
+                                                    .background(DangerRed.copy(alpha = 0.12f))
+                                                    .border(1.dp, DangerRed.copy(alpha = 0.35f), CircleShape)
+                                                    .clickable { onErrorDetailClick(acc.username) },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Warning,
+                                                    contentDescription = "Xem chi tiết lỗi",
+                                                    tint = DangerRed,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -2823,6 +2845,7 @@ private fun TtcErrorDetailBottomSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2879,25 +2902,55 @@ private fun TtcErrorDetailBottomSheet(
                 border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(Modifier.padding(14.dp)) {
-                    Text(
-                        errorMessage,
-                        color = Color(0xFF991B1B),
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp
-                    )
+                Column(
+                    modifier = Modifier
+                        .padding(14.dp)
+                        .heightIn(max = 280.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = errorMessage,
+                            color = Color(0xFF991B1B),
+                            fontSize = 13.sp,
+                            lineHeight = 19.sp
+                        )
+                    }
                 }
             }
 
             Spacer(Modifier.height(20.dp))
 
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = DangerRed),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().height(46.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("Đã hiểu & Đóng", fontWeight = FontWeight.Bold, color = Color.White)
+                OutlinedButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("TTC Error", errorMessage)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "Đã sao chép nội dung lỗi", Toast.LENGTH_SHORT).show()
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, DangerRed),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp)
+                ) {
+                    Text("Sao chép lỗi", fontWeight = FontWeight.Bold, color = DangerRed)
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = DangerRed),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp)
+                ) {
+                    Text("Đã hiểu & Đóng", fontWeight = FontWeight.Bold, color = Color.White)
+                }
             }
 
             Spacer(Modifier.height(16.dp))
