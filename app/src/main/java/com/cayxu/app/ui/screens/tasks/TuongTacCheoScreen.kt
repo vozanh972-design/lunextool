@@ -623,17 +623,20 @@ fun TuongTacCheoScreen(navController: NavController) {
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_PAGE -> {
                                     pageEngine.likeOtherPage(target)
                                 }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_MEMBER -> {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_MEMBER,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_JOIN_GROUP -> {
                                     pageEngine.joinGroup(target)
                                 }
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE -> {
                                     pageEngine.sharePost(target, message = null)
                                 }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_ND -> {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_ND,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_CONTENT -> {
                                     val shareMsg = j.cmt?.takeIf { it.isNotBlank() } ?: "Hay quá!"
                                     pageEngine.sharePost(target, message = shareMsg)
                                 }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW -> {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW_PAGE -> {
                                     val reviewText = j.cmt?.takeIf { it.isNotBlank() } ?: "Dịch vụ rất tuyệt vời!"
                                     pageEngine.reviewOtherPage(target, reviewText = reviewText, recommendationType = "positive")
                                 }
@@ -643,7 +646,9 @@ fun TuongTacCheoScreen(navController: NavController) {
                                 }
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX,
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_VIP,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_CMT -> {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REACTION,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_CMT,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_COMMENT -> {
                                     val rxType = when (j.loaicx?.uppercase()) {
                                         "LOVE", "TYM" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LOVE
                                         "CARE", "THUONGTHUONG" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.CARE
@@ -681,17 +686,20 @@ fun TuongTacCheoScreen(navController: NavController) {
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_PAGE -> {
                                     engine.likePage(target)
                                 }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_MEMBER -> {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_MEMBER,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_JOIN_GROUP -> {
                                     engine.joinGroup(target)
                                 }
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE -> {
                                     engine.share(target, message = null)
                                 }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_ND -> {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_ND,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_CONTENT -> {
                                     val shareMsg = j.cmt?.takeIf { it.isNotBlank() } ?: "Hay quá!"
                                     engine.share(target, message = shareMsg)
                                 }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW -> {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW_PAGE -> {
                                     val reviewText = j.cmt?.takeIf { it.isNotBlank() } ?: "Dịch vụ rất tuyệt vời!"
                                     engine.reviewPage(target, isPositive = true, reviewText = reviewText)
                                 }
@@ -701,7 +709,9 @@ fun TuongTacCheoScreen(navController: NavController) {
                                 }
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX,
                                 com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_VIP,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_CMT -> {
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REACTION,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_CMT,
+                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_COMMENT -> {
                                     val rxType = when (j.loaicx?.uppercase()) {
                                         "LOVE", "TYM" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LOVE
                                         "CARE", "THUONGTHUONG" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.CARE

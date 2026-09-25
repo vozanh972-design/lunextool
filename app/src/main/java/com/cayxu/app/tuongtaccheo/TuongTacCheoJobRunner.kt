@@ -14,13 +14,17 @@ class TuongTacCheoJobRunner(
     ) {
         isRunning = true
         onStatusUpdate?.invoke("Đang cấu hình đặt nick/page [$targetNickUid]...")
+
         try {
-            val configResult = apiClient.autoPrepareAndSetNick(targetNickUid, if (jobType.apiType.startsWith("tiktok")) "tiktok" else "fb")
-            if (!configResult.isSuccess) {
-                onStatusUpdate?.invoke("❌ ${configResult.message}")
+            val configRes = apiClient.autoPrepareAndSetNick(targetNickUid, "fb") { log ->
+                onStatusUpdate?.invoke(log)
+            }
+            if (!configRes.isSuccess) {
+                onStatusUpdate?.invoke("❌ ${configRes.message}")
                 return
             }
-            onStatusUpdate?.invoke("✔️ Đặt nick thành công! Đang lấy nhiệm vụ...")
+            onStatusUpdate?.invoke("✔️ Đặt nick thành công! Đang lấy job ${jobType.displayName}...")
+
             while (isRunning) {
                 val jobs = apiClient.getJobs(jobType)
                 if (jobs.isEmpty()) {
@@ -28,9 +32,10 @@ class TuongTacCheoJobRunner(
                     Thread.sleep(10000)
                     continue
                 }
+
                 for (job in jobs) {
                     if (!isRunning) break
-                    onStatusUpdate?.invoke("Đang làm nhiệm vụ ID: ${job.id}...")
+                    onStatusUpdate?.invoke("Đang làm job ID: ${job.id}...")
                     val ok = executorAction(job)
                     if (ok) {
                         val res = apiClient.claimReward(job.id, jobType)
@@ -40,7 +45,7 @@ class TuongTacCheoJobRunner(
                             onStatusUpdate?.invoke("❌ Nhận xu thất bại: ${res.message}")
                         }
                     } else {
-                        onStatusUpdate?.invoke("❌ Thực hiện tương tác thất bại!")
+                        onStatusUpdate?.invoke("❌ Tương tác thất bại!")
                     }
                     Thread.sleep((delayBetweenJobsSeconds * 1000).toLong())
                 }

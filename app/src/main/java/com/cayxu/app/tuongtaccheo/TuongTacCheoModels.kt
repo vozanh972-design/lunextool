@@ -13,38 +13,43 @@ data class TuongTacCheoAccount(
     val updatedAt: Long = System.currentTimeMillis()
 ) : Serializable
 
-enum class TTCJobType(val apiType: String, val displayName: String, val alternateApiType: String? = null) {
-    FB_LIKE_VIP("likevip", "Facebook Like VIP"),
-    FB_LIKE("like", "Facebook Like"),
-    FB_CX_VIP("cxvip", "Facebook Cảm xúc VIP", "camxucvip"),
-    FB_CX("cx", "Facebook Cảm xúc", "camxuc"),
-    FB_CX_CMT("cxcmt", "Facebook Cảm xúc cmt", "camxuccmt"),
-    FB_COMMENT("cmt", "Facebook Comment", "comment"),
-    FB_FOLLOW("sub", "Facebook Follow", "follow"),
-    FB_SUB_VIP("subvip", "Facebook Follow VIP", "followvip"),
-    FB_SHARE("share", "Facebook Share"),
-    FB_SHARE_ND("sharend", "Facebook Share kèm nội dung", "sharent"),
-    FB_PAGE("page", "Facebook Like Page", "likepage"),
-    FB_MEMBER("member", "Facebook Tham gia nhóm", "group"),
-    FB_REVIEW("danhgia", "Facebook Đánh giá page", "review"),
-    TIKTOK_LIKE("tiktok_like", "TikTok Like"),
-    TIKTOK_FOLLOW("tiktok_follow", "TikTok Follow");
+/**
+ * Danh mục chuẩn xác 100% từng thư mục job của TuongTacCheo:
+ */
+enum class TTCJobType(val path: String, val displayName: String) {
+    FB_LIKE("likepostvipre", "Facebook Like thường"),
+    FB_LIKE_VIP("likepostvipre", "Facebook Like VIP"),
+    FB_REACTION("camxucvipre", "Facebook Cảm xúc thường"),
+    FB_CX("camxucvipre", "Facebook Cảm xúc thường"),
+    FB_CX_VIP("camxucvipre", "Facebook Cảm xúc VIP"),
+    FB_CX_COMMENT("camxuccheobinhluan", "Facebook Cảm xúc bình luận"),
+    FB_CX_CMT("camxuccheobinhluan", "Facebook Cảm xúc bình luận"),
+    FB_COMMENT("cmtcheo", "Facebook Bình luận"),
+    FB_FOLLOW("subcheo", "Facebook Theo dõi"),
+    FB_SUB_VIP("subcheo", "Facebook Theo dõi VIP"),
+    FB_PAGE("likepagecheo", "Facebook Like Page"),
+    FB_JOIN_GROUP("thamgianhomcheo", "Facebook Tham gia nhóm"),
+    FB_MEMBER("thamgianhomcheo", "Facebook Tham gia nhóm"),
+    FB_REVIEW_PAGE("danhgiapage", "Facebook Đánh giá Page"),
+    FB_REVIEW("danhgiapage", "Facebook Đánh giá Page"),
+    FB_SHARE("sharecheo", "Facebook Share thường"),
+    FB_SHARE_CONTENT("sharecheokemnoidung", "Facebook Share kèm nội dung"),
+    FB_SHARE_ND("sharecheokemnoidung", "Facebook Share kèm nội dung");
+
+    val apiType: String get() = path
 
     companion object {
         fun fromKey(key: String): TTCJobType = when (key.lowercase()) {
-            "likevip" -> FB_LIKE_VIP
-            "like" -> FB_LIKE
-            "cxvip", "camxucvip" -> FB_CX_VIP
-            "cx", "camxuc" -> FB_CX
-            "cxcmt", "camxuccmt" -> FB_CX_CMT
-            "cmt", "comment", "cmtvip" -> FB_COMMENT
-            "sub", "follow" -> FB_FOLLOW
-            "subvip", "followvip" -> FB_SUB_VIP
-            "share" -> FB_SHARE
-            "sharend", "sharent" -> FB_SHARE_ND
-            "page", "likepage" -> FB_PAGE
-            "member", "group" -> FB_MEMBER
-            "danhgia", "review" -> FB_REVIEW
+            "like", "likevip", "likepostvipre" -> FB_LIKE
+            "cx", "camxuc", "camxucvip", "camxucvipre", "reaction" -> FB_REACTION
+            "cxcmt", "camxuccmt", "camxuccheobinhluan" -> FB_CX_COMMENT
+            "cmt", "comment", "cmtcheo", "cmtvip" -> FB_COMMENT
+            "sub", "subvip", "follow", "followvip", "subcheo" -> FB_FOLLOW
+            "page", "likepage", "likepagecheo" -> FB_PAGE
+            "member", "group", "thamgianhomcheo" -> FB_JOIN_GROUP
+            "danhgia", "review", "danhgiapage" -> FB_REVIEW_PAGE
+            "share", "sharecheo" -> FB_SHARE
+            "sharend", "sharent", "sharecheokemnoidung" -> FB_SHARE_CONTENT
             else -> FB_LIKE
         }
     }
@@ -62,7 +67,7 @@ data class TTCJob(
 
 data class TTCDatNickResult(
     val isSuccess: Boolean,
-    val code: Int, // 1: Thành công, 2: Chưa thêm nick vào web TTC
+    val code: Int, // 1: Thành công, 2: Chưa thêm nick vào TTC, -1: Vui lòng thao tác chậm lại
     val message: String,
     val rawResponse: String
 )
