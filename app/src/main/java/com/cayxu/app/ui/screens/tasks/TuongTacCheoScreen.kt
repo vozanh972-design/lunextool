@@ -481,6 +481,7 @@ fun TuongTacCheoScreen(navController: NavController) {
 
                 // Cấu hình nick/page chạy trên TTC — thử lại tối đa 50 lần, mỗi lần thất bại đếm ngược 10s
                 var isSet = false
+                var lastTtcError = ""
                 for (attempt in 1..50) {
                     if (!isActive || distinctRunningKeys.none { it in runningTtcUids } || ttcUser !in runningTtcAccounts) break
                     val attemptSuffix = if (attempt > 1) " (lần $attempt/50)" else ""
@@ -489,22 +490,24 @@ fun TuongTacCheoScreen(navController: NavController) {
                         ttcAccountStatusMap[ttcUser] = statusText
                         distinctRunningKeys.forEach { k -> ttcStatusMap[k] = statusText }
                     }
-                    try {
-                        isSet = ttcClient.setNickRun(runUid, "fb")
-                    } catch (_: Exception) {
-                        isSet = false
+                    val setNickRes = try {
+                        ttcClient.setNickRunDetailed(runUid, "fb")
+                    } catch (e: Exception) {
+                        TuongTacCheoApiClient.SetNickResult(false, message = "Lỗi kết nối TTC (Mã: Mất mạng)")
                     }
+                    isSet = setNickRes.isSuccess
                     if (isSet) break
+
+                    lastTtcError = setNickRes.message.ifBlank { "Lỗi TTC: Đặt $targetTypeStr thất bại" }
+                    withContext(Dispatchers.Main) {
+                        ttcAccountStatusMap[ttcUser] = lastTtcError
+                        distinctRunningKeys.forEach { k -> ttcStatusMap[k] = lastTtcError }
+                    }
 
                     // Thất bại: đếm ngược 10s trước khi thử lại
                     if (attempt < 50) {
                         for (countdown in 10 downTo 1) {
                             if (!isActive || distinctRunningKeys.none { it in runningTtcUids } || ttcUser !in runningTtcAccounts) break
-                            withContext(Dispatchers.Main) {
-                                val failText = "Đặt $targetTypeStr thất bại, thử lại sau ${countdown}s..."
-                                ttcAccountStatusMap[ttcUser] = failText
-                                distinctRunningKeys.forEach { k -> ttcStatusMap[k] = failText }
-                            }
                             delay(1000L)
                         }
                     }
@@ -512,7 +515,7 @@ fun TuongTacCheoScreen(navController: NavController) {
 
                 if (!isSet) {
                     withContext(Dispatchers.Main) {
-                        val err = "Đặt $targetTypeStr [$runUid] lên TTC thất bại sau 50 lần (nick chưa thêm vào TTC?)"
+                        val err = lastTtcError.ifBlank { "Lỗi TTC: Đặt $targetTypeStr [$runUid] thất bại sau 50 lần" }
                         ttcAccountStatusMap[ttcUser] = err
                         distinctRunningKeys.forEach { k ->
                             ttcStatusMap[k] = err

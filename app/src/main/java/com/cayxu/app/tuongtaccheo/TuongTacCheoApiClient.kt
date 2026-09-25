@@ -1,5 +1,6 @@
 package com.cayxu.app.tuongtaccheo
 
+import android.util.Log
 import okhttp3.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -137,13 +138,55 @@ class TuongTacCheoApiClient(
         }
     }
 
+    data class SetNickResult(
+        val isSuccess: Boolean,
+        val message: String = "",
+        val rawResponse: String = "",
+        val httpCode: Int = 200
+    )
+
+    private fun parseTtcErrorMessage(raw: String): String {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return "Phản hồi rỗng từ máy chủ"
+        try {
+            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                val json = JSONObject(trimmed)
+                for (key in listOf("mess", "message", "error", "msg", "thongbao", "noti")) {
+                    if (json.has(key)) {
+                        val v = json.optString(key, "")
+                        if (v.isNotBlank()) return v
+                    }
+                }
+            } else if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                val arr = JSONArray(trimmed)
+                if (arr.length() > 0) {
+                    val first = arr.optJSONObject(0)
+                    if (first != null) {
+                        for (key in listOf("mess", "message", "error", "msg", "thongbao", "noti")) {
+                            if (first.has(key)) {
+                                val v = first.optString(key, "")
+                                if (v.isNotBlank()) return v
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        val stripped = trimmed.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim()
+        return if (stripped.isNotBlank()) stripped.take(150) else trimmed.take(150)
+    }
+
     /**
      * 2. Cấu hình Nick chạy Job (cauhinh/datnick.php)
      * @param uid ID Facebook hoặc username TikTok cần đặt làm nick chạy
      * @param loai "fb" hoặc "tiktok"
      */
-    @Throws(Exception::class)
-    fun setNickRun(uid: String, loai: String = "fb"): Boolean {
+    fun setNickRunDetailed(uid: String, loai: String = "fb"): SetNickResult {
+        var lastRawResponse = ""
+        var lastHttpCode = 200
+        var lastErrorMsg = ""
+
         // 1. Thử gọi API đặt nick trực tiếp: api.php?do=datnick&id=<UID>
         try {
             val reqApi = Request.Builder()
@@ -151,21 +194,38 @@ class TuongTacCheoApiClient(
                 .headers(buildHeaders())
                 .get()
                 .build()
-            val okApi = httpClient.newCall(reqApi).execute().use { response ->
-                val body = response.body?.string() ?: ""
-                response.isSuccessful && (
-                    body.contains("\"status\":1") || 
-                    body.contains("\"status\":\"success\"") || 
-                    body.contains("Cấu hình thành công") || 
-                    body.contains("Thành công") || 
-                    body.contains("\"success\"") ||
-                    body.trim() == "1"
-                )
-            }
-            if (okApi) return true
-        } catch (_: Exception) {}
 
-        // 2. Thử gọi qua endpoint web: cauhinh/datnick.php
+            httpClient.newCall(reqApi).execute().use { response ->
+                lastHttpCode = response.code
+                val rawResponse = response.body?.string() ?: ""
+                lastRawResponse = rawResponse
+                Log.e("TTC_DEBUG", "Response TTC: " + rawResponse)
+
+                if (!response.isSuccessful) {
+                    lastErrorMsg = "Lỗi kết nối TTC (Mã: ${response.code})"
+                } else {
+                    val isSuccess = rawResponse.contains("\"status\":1") || 
+                        rawResponse.contains("\"status\":\"success\"") || 
+                        rawResponse.contains("Cấu hình thành công") || 
+                        rawResponse.contains("Thành công") || 
+                        rawResponse.contains("\"success\"") ||
+                        rawResponse.trim() == "1"
+
+                    if (isSuccess) {
+                        return SetNickResult(isSuccess = true, message = "Cấu hình thành công", rawResponse = rawResponse, httpCode = response.code)
+                    }
+
+                    val serverMsg = parseTtcErrorMessage(rawResponse)
+                    lastErrorMsg = "Lỗi TTC: $serverMsg"
+                    return SetNickResult(isSuccess = false, message = lastErrorMsg, rawResponse = rawResponse, httpCode = response.code)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("TTC_DEBUG", "Response TTC (Exception): " + e.message, e)
+            lastErrorMsg = "Lỗi kết nối TTC (Mã: Mất mạng)"
+        }
+
+        // 2. Thử gọi qua endpoint web nếu endpoint 1 lỗi kết nối: cauhinh/datnick.php
         try {
             val formBody = FormBody.Builder()
                 .add("iddat[]", uid)
@@ -178,19 +238,46 @@ class TuongTacCheoApiClient(
                 .post(formBody)
                 .build()
 
-            val okWeb = httpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: ""
-                response.isSuccessful && (
-                    body.contains("\"status\":1") || 
-                    body.contains("\"status\":\"success\"") || 
-                    body.contains("Cấu hình thành công") || 
-                    body.contains("Thành công")
-                )
-            }
-            if (okWeb) return true
-        } catch (_: Exception) {}
+            httpClient.newCall(request).execute().use { response ->
+                lastHttpCode = response.code
+                val rawResponse = response.body?.string() ?: ""
+                lastRawResponse = rawResponse
+                Log.e("TTC_DEBUG", "Response TTC: " + rawResponse)
 
-        return false
+                if (!response.isSuccessful) {
+                    lastErrorMsg = "Lỗi kết nối TTC (Mã: ${response.code})"
+                } else {
+                    val isSuccess = rawResponse.contains("\"status\":1") || 
+                        rawResponse.contains("\"status\":\"success\"") || 
+                        rawResponse.contains("Cấu hình thành công") || 
+                        rawResponse.contains("Thành công")
+
+                    if (isSuccess) {
+                        return SetNickResult(isSuccess = true, message = "Cấu hình thành công", rawResponse = rawResponse, httpCode = response.code)
+                    }
+
+                    val serverMsg = parseTtcErrorMessage(rawResponse)
+                    lastErrorMsg = "Lỗi TTC: $serverMsg"
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("TTC_DEBUG", "Response TTC (Exception): " + e.message, e)
+            if (lastErrorMsg.isBlank()) {
+                lastErrorMsg = "Lỗi kết nối TTC (Mã: Mất mạng)"
+            }
+        }
+
+        return SetNickResult(
+            isSuccess = false,
+            message = lastErrorMsg.ifBlank { "Lỗi TTC: Không nhận được phản hồi hợp lệ" },
+            rawResponse = lastRawResponse,
+            httpCode = lastHttpCode
+        )
+    }
+
+    @Throws(Exception::class)
+    fun setNickRun(uid: String, loai: String = "fb"): Boolean {
+        return setNickRunDetailed(uid, loai).isSuccess
     }
 
     /**
