@@ -1,15 +1,9 @@
 package com.cayxu.app.tuongtaccheo
 
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-/**
- * Runner tự động nhận và hoàn thành job TTC.
- */
 class TuongTacCheoJobRunner(
     private val apiClient: TuongTacCheoApiClient,
-    private val delayBetweenJobsSeconds: Int = 3
+    private val delayBetweenJobsSeconds: Int = 5,
+    private val onStatusUpdate: ((String) -> Unit)? = null
 ) {
     private var isRunning = false
 
@@ -19,59 +13,45 @@ class TuongTacCheoJobRunner(
         executorAction: (TTCJob) -> Boolean
     ) {
         isRunning = true
-        log("Bắt đầu cấu hình nick $targetNickUid chạy job ${jobType.displayName}...")
-
+        onStatusUpdate?.invoke("Đang cấu hình đặt nick/page [$targetNickUid]...")
         try {
-            val configured = apiClient.setNickRun(targetNickUid, if (jobType.apiType.startsWith("tiktok")) "tiktok" else "fb")
-            if (!configured) {
-                log("Cấu hình nick $targetNickUid thất bại! Kiểm tra lại nick trên TTC.")
+            val configResult = apiClient.autoPrepareAndSetNick(targetNickUid, if (jobType.apiType.startsWith("tiktok")) "tiktok" else "fb")
+            if (!configResult.isSuccess) {
+                onStatusUpdate?.invoke("❌ ${configResult.message}")
                 return
             }
-            log("Cấu hình nick $targetNickUid thành công!")
-
+            onStatusUpdate?.invoke("✔️ Đặt nick thành công! Đang lấy nhiệm vụ...")
             while (isRunning) {
-                log("Đang lấy danh sách nhiệm vụ ${jobType.displayName}...")
                 val jobs = apiClient.getJobs(jobType)
-
                 if (jobs.isEmpty()) {
-                    log("Tạm thời hết job hoặc đang cooldown. Chờ 10 giây...")
+                    onStatusUpdate?.invoke("Tạm hết job ${jobType.displayName}. Chờ 10s...")
                     Thread.sleep(10000)
                     continue
                 }
-
-                log("Đã tải được ${jobs.size} nhiệm vụ!")
                 for (job in jobs) {
                     if (!isRunning) break
-
-                    log("Đang làm nhiệm vụ ID: ${job.id} (Link: ${job.link ?: job.idpost})...")
-                    val executed = executorAction(job)
-
-                    if (executed) {
-                        log("Làm xong nhiệm vụ, đang nhận tiền...")
-                        val result = apiClient.claimReward(job.id, jobType)
-                        if (result.isSuccess) {
-                            log("✔️ Nhận xu thành công! +${result.xuThem} xu | Số dư hiện tại: ${result.sodu} xu")
+                    onStatusUpdate?.invoke("Đang làm nhiệm vụ ID: ${job.id}...")
+                    val ok = executorAction(job)
+                    if (ok) {
+                        val res = apiClient.claimReward(job.id, jobType)
+                        if (res.isSuccess) {
+                            onStatusUpdate?.invoke("✔️ +${res.xuThem} xu | Số dư: ${res.sodu} xu")
                         } else {
-                            log("❌ Nhận xu thất bại: ${result.message}")
+                            onStatusUpdate?.invoke("❌ Nhận xu thất bại: ${res.message}")
                         }
                     } else {
-                        log("❌ Thực hiện nhiệm vụ thất bại!")
+                        onStatusUpdate?.invoke("❌ Thực hiện tương tác thất bại!")
                     }
-
                     Thread.sleep((delayBetweenJobsSeconds * 1000).toLong())
                 }
             }
         } catch (e: Exception) {
-            log("Lỗi trong quá trình chạy auto: ${e.message}")
+            onStatusUpdate?.invoke("Lỗi: ${e.message}")
         }
     }
 
     fun stop() {
         isRunning = false
-    }
-
-    private fun log(message: String) {
-        val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-        println("[$time] [TTC] $message")
+        onStatusUpdate?.invoke("Đã dừng chạy.")
     }
 }

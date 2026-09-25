@@ -452,10 +452,11 @@ fun TuongTacCheoScreen(navController: NavController) {
         val proxyHost = proxyParts.getOrNull(0)?.takeIf { it.isNotBlank() }
         val proxyPort = proxyParts.getOrNull(1)?.toIntOrNull()
 
-        // Danh sách các key đại diện cho luồng chạy này trên UI (để cả card mẹ và mục Page con đều hiển thị)
-        val runningKeys = mutableListOf(runUid, parentFbAccount.uid)
-        if (targetPageItem != null) {
-            runningKeys.add(targetPageItem.pageId)
+        // Danh sách các key đại diện cho luồng chạy này trên UI (Nếu chạy Page thì CHỈ HIỂN THỊ TRÊN PAGE CON, TUYỆT ĐỐI KHÔNG KHỞI ĐỘNG PROFILE MẸ)
+        val runningKeys = if (usePage && targetPageItem != null) {
+            mutableListOf(runUid, targetPageItem.pageId)
+        } else {
+            mutableListOf(runUid)
         }
         val distinctRunningKeys = runningKeys.distinct()
 
@@ -483,17 +484,16 @@ fun TuongTacCheoScreen(navController: NavController) {
                     proxyStr = activeTtcAccount.proxy.ifBlank { null }
                 )
 
-                // Cấu hình nick/page chạy trên TTC - BẮT BUỘC phải nhận phản hồi thành công mới được chuyển sang nhận job
-                val statusText = "Đang cấu hình đặt $targetTypeStr [$runUid] lên TTC..."
-                withContext(Dispatchers.Main) {
-                    ttcAccountStatusMap[ttcUser] = statusText
-                    distinctRunningKeys.forEach { k -> ttcStatusMap[k] = statusText }
-                }
-
+                // BƯỚC 1 & BƯỚC 2: TỰ ĐỘNG THÊM NICK/PAGE VÀO TTC (NẾU CHƯA CÓ) VÀ ĐẶT NICK CHẠY
                 val setNickRes = try {
-                    ttcClient.setNickRunDetailed(runUid, "fb")
+                    ttcClient.autoPrepareAndSetNick(runUid, "fb") { stepMsg ->
+                        scope.launch(Dispatchers.Main) {
+                            ttcAccountStatusMap[ttcUser] = stepMsg
+                            distinctRunningKeys.forEach { k -> ttcStatusMap[k] = stepMsg }
+                        }
+                    }
                 } catch (e: Exception) {
-                    TuongTacCheoApiClient.SetNickResult(false, message = "Lỗi kết nối TTC (Mã: Mất mạng)")
+                    com.cayxu.app.tuongtaccheo.TTCDatNickResult(false, 0, "Lỗi kết nối TTC: ${e.message}", "")
                 }
 
                 // Nếu cấu hình chưa xong hoặc lỗi thì PHẢI DỪNG LẠI, TUYỆT ĐỐI KHÔNG tự động chuyển sang nhận job!
@@ -518,9 +518,9 @@ fun TuongTacCheoScreen(navController: NavController) {
                     return@launch
                 }
 
-                // Nhận được phản hồi thành công (status = 1 hoặc success) -> CHUYỂN SANG BƯỚC NHẬN JOB
+                // BƯỚC 3: Nhận được phản hồi thành công (status = 1) -> CHUYỂN SANG BƯỚC NHẬN JOB
                 withContext(Dispatchers.Main) {
-                    val okText = if (usePage && targetPageItem != null) "Đặt page [$runUid] thành công, đang nhận job..." else "Đặt nick [$runUid] thành công, đang nhận job..."
+                    val okText = "Đặt $targetTypeStr [$runUid] thành công! Đang nhận job..."
                     ttcAccountStatusMap[ttcUser] = okText
                     distinctRunningKeys.forEach { k -> ttcStatusMap[k] = okText }
                 }
@@ -1352,10 +1352,59 @@ fun TuongTacCheoScreen(navController: NavController) {
                                     ttcAccounts.filter { it.isLive }.ifEmpty { ttcAccounts }
                                 }
 
-                                ttcToRun.forEach { acc ->
-                                    startTtcAccount(targetTtcUsername = acc.username)
+                                val isUsePage = ttcConfig.pairTargetType.equals("page", ignoreCase = true)
+
+                                if (isUsePage) {
+                                    val allAvailablePages = fbAccounts.flatMap { acc ->
+                                        acc.pages.map { p ->
+                                            val pDisplay = livePageUids[p.pageId] ?: p.displayUid
+                                            val effUid = (p.additionalProfileId.takeIf { it.isNotBlank() && it.startsWith("615") }
+                                                ?: pDisplay.takeIf { it.isNotBlank() && it.startsWith("615") }
+                                                ?: p.additionalProfileId.takeIf { it.isNotBlank() }
+                                                ?: pDisplay.takeIf { it.isNotBlank() }
+                                                ?: p.pageId).trim()
+                                            Pair(p, effUid)
+                                        }
+                                    }
+
+                                    val pagesToPair = if (selectedFbUids.isNotEmpty()) {
+                                        allAvailablePages.filter { it.second in selectedFbUids || it.first.pageId in selectedFbUids }
+                                    } else {
+                                        allAvailablePages
+                                    }
+
+                                    if (pagesToPair.isEmpty()) {
+                                        Toast.makeText(context, "Không có Page Facebook nào! Vui lòng chọn [Dùng Profile] hoặc thêm Page", Toast.LENGTH_LONG).show()
+                                        return@Button
+                                    }
+
+                                    pagesToPair.forEachIndexed { index, (pageItem, effUid) ->
+                                        if (index < ttcToRun.size) {
+                                            val ttcAcc = ttcToRun[index]
+                                            startTtcAccount(inputUid = effUid, targetTtcUsername = ttcAcc.username)
+                                        } else {
+                                            ttcStatusMap[effUid] = "Thiếu acc TTC để ghép"
+                                            ttcStatusMap[pageItem.pageId] = "Thiếu acc TTC để ghép"
+                                        }
+                                    }
+                                    Toast.makeText(context, "Bắt đầu ghép ${minOf(ttcToRun.size, pagesToPair.size)} Page với TTC", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val fbsToPair = if (selectedFbUids.isNotEmpty()) {
+                                        fbAccounts.filter { it.uid in selectedFbUids }
+                                    } else {
+                                        fbAccounts.filter { it.isLive }.ifEmpty { fbAccounts }
+                                    }
+
+                                    fbsToPair.forEachIndexed { index, fbAcc ->
+                                        if (index < ttcToRun.size) {
+                                            val ttcAcc = ttcToRun[index]
+                                            startTtcAccount(inputUid = fbAcc.uid, targetTtcUsername = ttcAcc.username)
+                                        } else {
+                                            ttcStatusMap[fbAcc.uid] = "Thiếu acc TTC để ghép"
+                                        }
+                                    }
+                                    Toast.makeText(context, "Bắt đầu ghép ${minOf(ttcToRun.size, fbsToPair.size)} Profile với TTC", Toast.LENGTH_SHORT).show()
                                 }
-                                Toast.makeText(context, "Bắt đầu chạy ${ttcToRun.size} tài khoản TTC", Toast.LENGTH_SHORT).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(
