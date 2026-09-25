@@ -5,7 +5,8 @@ import com.cayxu.app.data.local.TtcRunConfigStore
 
 class TuongTacCheoJobRunner(
     private val apiClient: TuongTacCheoApiClient,
-    var delayBetweenJobsSeconds: Int = 5,
+    var delayBetweenJobsSeconds: Int = 10,
+    var doJobDelaySeconds: Int = 5,
     private val onStatusUpdate: ((String) -> Unit)? = null
 ) {
     // Constructor nạp delay trực tiếp từ Bảng Cấu hình nếu có Context
@@ -16,6 +17,7 @@ class TuongTacCheoJobRunner(
     ) : this(
         apiClient = apiClient,
         delayBetweenJobsSeconds = TtcRunConfigStore.getConfig(context).delaySeconds,
+        doJobDelaySeconds = TtcRunConfigStore.getConfig(context).doJobDelaySeconds,
         onStatusUpdate = onStatusUpdate
     )
 
@@ -38,10 +40,14 @@ class TuongTacCheoJobRunner(
         jobType: TTCJobType,
         targetNickUid: String,
         delaySeconds: Int? = null,
+        doJobDelaySec: Int? = null,
         executorAction: (TTCJob) -> Boolean
     ) {
         if (delaySeconds != null && delaySeconds > 0) {
             this.delayBetweenJobsSeconds = delaySeconds
+        }
+        if (doJobDelaySec != null && doJobDelaySec > 0) {
+            this.doJobDelaySeconds = doJobDelaySec
         }
         isRunning = true
         onStatusUpdate?.invoke("Đang cấu hình đặt nick/page [$targetNickUid]...")
@@ -74,24 +80,33 @@ class TuongTacCheoJobRunner(
                     onStatusUpdate?.invoke("🎯 Nhận job: ID [${job.id}] - Mục tiêu: [$targetId]")
                     try { Thread.sleep(1000) } catch (_: Exception) {}
 
-                    // BƯỚC 1: GỌI HÀM TƯƠNG TÁC FACEBOOK (LIKE / CẢM XÚC)
+                    // BƯỚC 0: NGHỈ DELAY LÀM JOB (TRÁNH QUÉT SPAM FB)
+                    val waitSec = doJobDelaySeconds.coerceIn(3, 10)
+                    for (s in waitSec downTo 1) {
+                        if (!isRunning) break
+                        onStatusUpdate?.invoke("⏳ Chờ làm job ${s}s...")
+                        try { Thread.sleep(1000) } catch (_: Exception) {}
+                    }
+                    if (!isRunning) break
+
+                    // BƯỚC 1: GỌI HÀM TƯƠNG TÁC FACEBOOK (LIKE / CẢM XÚC / FOLLOW / COMMENT)
                     onStatusUpdate?.invoke("⏳ Đang thực hiện tương tác Facebook cho [$targetId]...")
 
                     val isFbSuccess = try {
-                        executorAction(job) // Thực hiện like bài viết Facebook
+                        executorAction(job) // Thực hiện tương tác bài viết Facebook
                     } catch (e: Exception) {
-                        onStatusUpdate?.invoke("❌ Lỗi crash khi Like FB: ${e.message}")
+                        onStatusUpdate?.invoke("❌ Lỗi crash khi thao tác FB: ${e.message}")
                         false
                     }
 
-                    // BƯỚC 2: KIỂM TRA KẾT QUẢ LIKE FACEBOOK
+                    // BƯỚC 2: KIỂM TRA KẾT QUẢ TƯƠNG TÁC FACEBOOK
                     if (!isFbSuccess) {
-                        onStatusUpdate?.invoke("❌ Like Facebook THẤT BẠI cho [$targetId]! Bỏ qua nhận xu.")
+                        onStatusUpdate?.invoke("❌ Thao tác Facebook THẤT BẠI cho [$targetId]! Bỏ qua nhận xu.")
                         countdownDelay(delayBetweenJobsSeconds)
                         continue
                     }
 
-                    onStatusUpdate?.invoke("✔️ Like Facebook THÀNH CÔNG! Đang gửi nhận xu lên TTC...")
+                    onStatusUpdate?.invoke("✔️ Thao tác Facebook THÀNH CÔNG! Đang gửi nhận xu lên TTC...")
                     try { Thread.sleep(1500) } catch (_: Exception) {} // Nghỉ 1.5s để TTC kịp cập nhật tương tác
 
                     // BƯỚC 3: GỬI LỆNH NHẬN XU LÊN SERVER TTC

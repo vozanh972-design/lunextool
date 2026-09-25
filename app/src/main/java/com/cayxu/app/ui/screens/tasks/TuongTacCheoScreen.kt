@@ -599,139 +599,111 @@ fun TuongTacCheoScreen(navController: NavController) {
                             distinctRunningKeys.forEach { k -> ttcStatusMap[k] = "Làm [${currentJobType.displayName}]: ${target.take(12)}..." }
                         }
 
-                        // Thao tác tương tác bằng Facebook Engine (Page615 hoặc Profile)
-                        var fbOk = true
-                        var fbErr: String? = null
+                        // Delay làm job (3 - 10s, mặc định 5s) để tránh Facebook quét hành vi bất thường
+                        val doJobWaitSec = ttcConfig.doJobDelaySeconds.coerceIn(3, 10)
+                        for (sec in doJobWaitSec downTo 1) {
+                            if (!isActive || distinctRunningKeys.none { it in runningTtcUids } || ttcUser !in runningTtcAccounts) break
+                            withContext(Dispatchers.Main) {
+                                val waitJobMsg = "Chờ làm job ${sec}s..."
+                                ttcAccountStatusMap[ttcUser] = waitJobMsg
+                                distinctRunningKeys.forEach { k -> ttcStatusMap[k] = waitJobMsg }
+                            }
+                            delay(1000L)
+                        }
+                        if (!isActive || distinctRunningKeys.none { it in runningTtcUids } || ttcUser !in runningTtcAccounts) break
 
-                        if (usePage && targetPageItem != null) {
-                            val pageEngine = com.cayxu.app.facebook.Page615TuongTacEngine(
-                                pageToken = cleanToken,
-                                pageId615 = runUid,
-                                proxyHost = proxyHost,
-                                proxyPort = proxyPort
-                            )
-                            val res = when (currentJobType) {
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_COMMENT -> {
-                                    val cmtText = j.cmt.orEmpty()
-                                    if (cmtText.isNotBlank()) pageEngine.commentPost(target, cmtText)
-                                    else com.cayxu.app.facebook.Page615TuongTacEngine.InteractionResult(false, target, "COMMENT", null, "Nội dung comment trống")
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_FOLLOW,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SUB_VIP -> {
-                                    pageEngine.followTarget(target)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_PAGE -> {
-                                    pageEngine.likeOtherPage(target)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_MEMBER,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_JOIN_GROUP -> {
-                                    pageEngine.joinGroup(target)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE -> {
-                                    pageEngine.sharePost(target, message = null)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_ND,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_CONTENT -> {
-                                    val shareMsg = j.cmt?.takeIf { it.isNotBlank() } ?: "Hay quá!"
-                                    pageEngine.sharePost(target, message = shareMsg)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW_PAGE -> {
-                                    val reviewText = j.cmt?.takeIf { it.isNotBlank() } ?: "Dịch vụ rất tuyệt vời!"
-                                    pageEngine.reviewOtherPage(target, reviewText = reviewText, recommendationType = "positive")
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE_VIP -> {
-                                    pageEngine.reactPost(target, com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_VIP,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REACTION,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_CMT,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_COMMENT -> {
-                                    val rxType = when (j.loaicx?.uppercase()) {
-                                        "LOVE", "TYM" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LOVE
-                                        "CARE", "THUONGTHUONG" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.CARE
-                                        "HAHA" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.HAHA
-                                        "WOW" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.WOW
-                                        "SAD" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.SAD
-                                        "ANGRY" -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.ANGRY
-                                        else -> com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE
-                                    }
-                                    pageEngine.reactPost(target, rxType)
-                                }
-                                else -> {
-                                    pageEngine.reactPost(target, com.cayxu.app.facebook.Page615TuongTacEngine.ReactionType.LIKE)
-                                }
+                        // Phân định chuẩn xác theo yêu cầu TTC:
+                        // 1. Nhánh Follow: lấy đúng j.idfb (hoặc j.uid)
+                        val effectiveTarget = when (currentJobType) {
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_FOLLOW,
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_SUB_VIP -> {
+                                j.idfb?.takeIf { it.isNotBlank() } ?: j.uid?.takeIf { it.isNotBlank() } ?: j.idpost?.takeIf { it.isNotBlank() } ?: j.link.orEmpty()
                             }
-                            fbOk = res.isSuccess
-                            if (!res.isSuccess) fbErr = res.message ?: res.rawResponse
-                        } else {
-                            val engine = com.cayxu.app.facebook.FacebookTuongTacEngine(
-                                accessToken = cleanToken,
-                                userId = runUid,
-                                proxyHost = proxyHost,
-                                proxyPort = proxyPort
-                            )
-                            val res = when (currentJobType) {
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_COMMENT -> {
-                                    val cmtText = j.cmt.orEmpty()
-                                    if (cmtText.isNotBlank()) engine.comment(target, cmtText)
-                                    else com.cayxu.app.facebook.FacebookTuongTacEngine.EngineResult(isSuccess = false, action = "COMMENT", targetId = target, message = "Nội dung comment trống")
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_FOLLOW,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SUB_VIP -> {
-                                    engine.follow(target)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_PAGE -> {
-                                    engine.likePage(target)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_MEMBER,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_JOIN_GROUP -> {
-                                    engine.joinGroup(target)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE -> {
-                                    engine.share(target, message = null)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_ND,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_CONTENT -> {
-                                    val shareMsg = j.cmt?.takeIf { it.isNotBlank() } ?: "Hay quá!"
-                                    engine.share(target, message = shareMsg)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW_PAGE -> {
-                                    val reviewText = j.cmt?.takeIf { it.isNotBlank() } ?: "Dịch vụ rất tuyệt vời!"
-                                    engine.reviewPage(target, isPositive = true, reviewText = reviewText)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE_VIP -> {
-                                    engine.react(target, com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE)
-                                }
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_VIP,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_REACTION,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_CMT,
-                                com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_COMMENT -> {
-                                    val rxType = when (j.loaicx?.uppercase()) {
-                                        "LOVE", "TYM" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LOVE
-                                        "CARE", "THUONGTHUONG" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.CARE
-                                        "HAHA" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.HAHA
-                                        "WOW" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.WOW
-                                        "SAD" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.SAD
-                                        "ANGRY" -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.ANGRY
-                                        else -> com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE
-                                    }
-                                    engine.react(target, rxType)
-                                }
-                                else -> {
-                                    engine.react(target, com.cayxu.app.facebook.FacebookTuongTacEngine.ReactionType.LIKE)
-                                }
+                            else -> {
+                                j.idpost?.takeIf { it.isNotBlank() } ?: j.idfb?.takeIf { it.isNotBlank() } ?: j.uid?.takeIf { it.isNotBlank() } ?: j.link.orEmpty()
                             }
-                            fbOk = res.isSuccess
-                            if (!res.isSuccess) fbErr = res.message ?: res.rawResponse
                         }
 
+                        // 2. Nhánh Like: Luôn ép loại cảm xúc là "LIKE"
+                        // 3. Nhánh Cảm xúc: Tách riêng Like, chỉ còn 6 loại: LOVE, CARE, HAHA, WOW, SAD, ANGRY (đọc từ j.loaicx)
+                        val reactionStr = when (currentJobType) {
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE,
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_LIKE_VIP -> "LIKE"
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_REACTION,
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX,
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_VIP,
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_COMMENT,
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_CX_CMT -> {
+                                when (j.loaicx?.uppercase()?.trim()) {
+                                    "LOVE", "TYM" -> "LOVE"
+                                    "CARE", "THUONGTHUONG" -> "CARE"
+                                    "HAHA" -> "HAHA"
+                                    "WOW" -> "WOW"
+                                    "SAD" -> "SAD"
+                                    "ANGRY" -> "ANGRY"
+                                    else -> j.loaicx?.uppercase()?.trim()?.takeIf { it.isNotBlank() } ?: "LOVE"
+                                }
+                            }
+                            else -> ""
+                        }
+
+                        val taskType = when (currentJobType) {
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_COMMENT -> "comment"
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_FOLLOW,
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_SUB_VIP -> "follow"
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_PAGE -> "likepage"
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_JOIN_GROUP,
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_MEMBER -> "member"
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW,
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_REVIEW_PAGE -> "review"
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE,
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_ND,
+                            com.cayxu.app.tuongtaccheo.TTCJobType.FB_SHARE_CONTENT -> "share"
+                            else -> "like"
+                        }
+
+                        // 4. Nhánh Comment: lấy đúng nội dung j.cmt
+                        val cmtContent = j.cmt?.takeIf { it.isNotBlank() }
+                            ?: if (taskType == "review") "Dịch vụ rất tuyệt vời!"
+                            else if (taskType == "share") "Hay quá!"
+                            else ""
+
+                        // Thao tác tương tác bằng Facebook Executor copy 100% nguyên bản từ module XSMM (hỗ trợ Page 615 và Profile kèm Graph API v21.0 fallback)
+                        val res = withContext(Dispatchers.IO) {
+                            com.cayxu.app.tuongtaccheo.TtcFacebookExecutor.executeFacebookTask(
+                                taskType = taskType,
+                                targetId = effectiveTarget,
+                                comment = cmtContent,
+                                reactionStr = reactionStr,
+                                token = cleanToken,
+                                cookie = parentFbAccount.note,
+                                proxyStr = proxyHost?.let { h -> if (proxyPort != null) "$h:$proxyPort" else h },
+                                uid = runUid,
+                                isPage = (usePage && targetPageItem != null),
+                                pageId615 = if (usePage && targetPageItem != null) runUid else null,
+                                userToken = parentFbAccount.bio.trim()
+                            )
+                        }
+
+                        val fbOk = res.isSuccess
+                        val fbErr = res.message
+
                         if (!fbOk) {
+                            // C. BỎ QUA KHI GẶP BÀI VIẾT BỊ XÓA (CODE 1446034 / Content Not Available Anymore)
+                            if (res.isPostUnavailable) {
+                                withContext(Dispatchers.Main) {
+                                    val skipMsg = "⚠️ Bài viết trên FB đã bị xóa/ẩn, tự động bỏ qua nhận job khác!"
+                                    ttcAccountStatusMap[ttcUser] = skipMsg
+                                    distinctRunningKeys.forEach { k ->
+                                        ttcStatusMap[k] = skipMsg
+                                        ttcErrorDetailMap[k] = "Mã 1446034: Bài viết trên Facebook không còn khả dụng hoặc đã bị xóa. Đã tự động bỏ qua nhận job khác."
+                                    }
+                                    ttcErrorDetailMap[ttcUser] = "Mã 1446034: Bài viết trên Facebook không còn khả dụng hoặc đã bị xóa."
+                                }
+                                delay(2000L)
+                                continue
+                            }
+
                             errorCount++
                             consecutiveErrors++
                             val err = fbErr ?: "Tương tác Facebook thất bại"
@@ -2486,6 +2458,7 @@ private fun TtcRunConfigBottomSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedTypes by remember { mutableStateOf(config.taskTypes.toSet()) }
     var delaySec by remember { mutableIntStateOf(config.delaySeconds) }
+    var doJobDelaySec by remember { mutableIntStateOf(config.doJobDelaySeconds) }
     var targetCount by remember { mutableIntStateOf(config.taskCountTarget) }
     var failLimit by remember { mutableIntStateOf(config.failJobCountLimit) }
     var pairModeEnabled by remember { mutableStateOf(config.pairModeEnabled) }
@@ -2660,6 +2633,29 @@ private fun TtcRunConfigBottomSheet(
                 )
             }
 
+            // 3b. Thời gian chờ thực hiện tương tác (Delay làm job)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Thời gian chờ thực hiện tương tác (Delay làm job):", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    Text("$doJobDelaySec giây", fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = TtcPrimary)
+                }
+                Slider(
+                    value = doJobDelaySec.toFloat(),
+                    onValueChange = { doJobDelaySec = it.toInt() },
+                    valueRange = 3f..10f,
+                    steps = 6,
+                    colors = SliderDefaults.colors(
+                        thumbColor = TtcPrimary,
+                        activeTrackColor = TtcPrimary,
+                        inactiveTrackColor = Color(0xFFE2E8F0)
+                    )
+                )
+            }
+
             // 4. Số lượng nhiệm vụ cần chạy (Target)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
@@ -2752,7 +2748,8 @@ private fun TtcRunConfigBottomSheet(
                             taskCountTarget = targetCount,
                             failJobCountLimit = failLimit,
                             pairModeEnabled = pairModeEnabled,
-                            pairTargetType = pairTargetType
+                            pairTargetType = pairTargetType,
+                            doJobDelaySeconds = doJobDelaySec
                         )
                         onSaveConfig(newCfg)
                     },

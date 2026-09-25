@@ -8,7 +8,8 @@ data class TtcRunConfig(
     val taskCountTarget: Int = 50,
     val failJobCountLimit: Int = 5,
     val pairModeEnabled: Boolean = true,
-    val pairTargetType: String = "page" // "page" hoặc "profile"
+    val pairTargetType: String = "page", // "page" hoặc "profile"
+    val doJobDelaySeconds: Int = 5 // "Thời gian chờ thực hiện tương tác (Delay làm job)": 3 - 10 giây (Mặc định: 5 giây)
 )
 
 object TtcRunConfigStore {
@@ -19,6 +20,7 @@ object TtcRunConfigStore {
     private const val KEY_FAIL_LIMIT = "fail_limit"
     private const val KEY_PAIR_MODE_ENABLED = "pair_mode_enabled"
     private const val KEY_PAIR_TARGET_TYPE = "pair_target_type"
+    private const val KEY_DO_JOB_DELAY_SECONDS = "do_job_delay_seconds"
 
     val fbTaskTypes = listOf(
         "likevip" to "Like chéo VIP",
@@ -62,6 +64,7 @@ object TtcRunConfigStore {
         val failLimit = sp.getInt(KEY_FAIL_LIMIT, 5)
         val pairEnabled = sp.getBoolean(KEY_PAIR_MODE_ENABLED, true)
         val pairType = sp.getString(KEY_PAIR_TARGET_TYPE, "page") ?: "page"
+        val doJobDelay = sp.getInt(KEY_DO_JOB_DELAY_SECONDS, 5).coerceIn(3, 10)
 
         return TtcRunConfig(
             taskTypes = types,
@@ -69,7 +72,8 @@ object TtcRunConfigStore {
             taskCountTarget = target,
             failJobCountLimit = failLimit,
             pairModeEnabled = pairEnabled,
-            pairTargetType = pairType
+            pairTargetType = pairType,
+            doJobDelaySeconds = doJobDelay
         )
     }
 
@@ -82,6 +86,7 @@ object TtcRunConfigStore {
             .putInt(KEY_FAIL_LIMIT, config.failJobCountLimit)
             .putBoolean(KEY_PAIR_MODE_ENABLED, config.pairModeEnabled)
             .putString(KEY_PAIR_TARGET_TYPE, config.pairTargetType)
+            .putInt(KEY_DO_JOB_DELAY_SECONDS, config.doJobDelaySeconds)
             .apply()
     }
 }
