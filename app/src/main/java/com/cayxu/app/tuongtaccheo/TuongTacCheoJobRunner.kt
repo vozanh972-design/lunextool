@@ -106,8 +106,15 @@ class TuongTacCheoJobRunner(
                         continue
                     }
 
-                    onStatusUpdate?.invoke("✔️ Thao tác Facebook THÀNH CÔNG! Đang gửi nhận xu lên TTC...")
-                    try { Thread.sleep(1500) } catch (_: Exception) {} // Nghỉ 1.5s để TTC kịp cập nhật tương tác
+                    val waitRewardSec = if (jobType == TTCJobType.FB_COMMENT) 60 else 2
+                    for (s in waitRewardSec downTo 1) {
+                        if (!isRunning) break
+                        if (jobType == TTCJobType.FB_COMMENT) {
+                            onStatusUpdate?.invoke("⏳ Chờ TTC & FB đồng bộ cmt ${s}s...")
+                        }
+                        try { Thread.sleep(1000) } catch (_: Exception) {}
+                    }
+                    if (!isRunning) break
 
                     // BƯỚC 3: GỬI LỆNH NHẬN XU LÊN SERVER TTC
                     val claimResult = apiClient.claimReward(job.id, jobType)

@@ -542,23 +542,40 @@ fun TuongTacCheoScreen(navController: NavController) {
                 var errorCount = ttcErrorCountMap[runUid] ?: 0
                 var consecutiveErrors = 0
 
-                val activeTypes = ttcConfig.taskTypes.filter { it.isNotBlank() }.ifEmpty { listOf("like") }
+                var successCount = ttcSuccessCountMap[runUid] ?: 0
+                var errorCount = ttcErrorCountMap[runUid] ?: 0
+                var consecutiveErrors = 0
                 var typeIndex = 0
+                var lastSelectedTypes = emptyList<String>()
 
                 withContext(Dispatchers.Main) {
-                    val readyMsg = "Sẵn sàng nhận job..."
+                    val readyMsg = "Sẵn sàng..."
                     ttcAccountStatusMap[ttcUser] = readyMsg
                     distinctRunningKeys.forEach { k -> ttcStatusMap[k] = readyMsg }
                 }
 
                 while (isActive && distinctRunningKeys.any { it in runningTtcUids } && ttcUser in runningTtcAccounts) {
-                    val delaySec = ttcConfig.delaySeconds.coerceAtLeast(3)
-                    val delayTime = delaySec * 1000L
+                    // Hot-switching: luôn lấy danh sách nhiệm vụ mới nhất từ Cấu hình ngay trong chu kỳ
+                    val liveConfig = com.cayxu.app.data.local.TtcRunConfigStore.getConfig(context)
+                    val activeTypes = liveConfig.taskTypes.filter { it.isNotBlank() }.ifEmpty { listOf("like") }
+                    if (lastSelectedTypes.isNotEmpty() && activeTypes != lastSelectedTypes) {
+                        typeIndex = 0
+                        val newTypeName = com.cayxu.app.tuongtaccheo.TTCJobType.fromKey(activeTypes.first()).displayName
+                        withContext(Dispatchers.Main) {
+                            val switchMsg = "Đổi sang: $newTypeName"
+                            ttcAccountStatusMap[ttcUser] = switchMsg
+                            distinctRunningKeys.forEach { k -> ttcStatusMap[k] = switchMsg }
+                        }
+                        delay(1000L)
+                    }
+                    lastSelectedTypes = activeTypes
+
+                    val delaySec = liveConfig.delaySeconds.coerceAtLeast(3)
                     for (sec in delaySec downTo 1) {
                         if (!isActive || distinctRunningKeys.none { it in runningTtcUids } || ttcUser !in runningTtcAccounts) break
                         withContext(Dispatchers.Main) {
-                            ttcAccountStatusMap[ttcUser] = "Delay nghỉ ${sec}s..."
-                            distinctRunningKeys.forEach { k -> ttcStatusMap[k] = "Delay nghỉ ${sec}s..." }
+                            ttcAccountStatusMap[ttcUser] = "Nghỉ ${sec}s..."
+                            distinctRunningKeys.forEach { k -> ttcStatusMap[k] = "Nghỉ ${sec}s..." }
                         }
                         delay(1000L)
                     }
@@ -568,7 +585,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                     val currentJobType = com.cayxu.app.tuongtaccheo.TTCJobType.fromKey(currentKey)
 
                     withContext(Dispatchers.Main) {
-                        val fetchMsg = "Đang nhận job ${currentJobType.displayName}..."
+                        val fetchMsg = "Nhận job ${currentJobType.displayName}..."
                         ttcAccountStatusMap[ttcUser] = fetchMsg
                         distinctRunningKeys.forEach { k -> ttcStatusMap[k] = fetchMsg }
                     }
@@ -592,19 +609,33 @@ fun TuongTacCheoScreen(navController: NavController) {
 
                     for (j in jobs) {
                         if (!isActive || distinctRunningKeys.none { it in runningTtcUids } || ttcUser !in runningTtcAccounts) break
+
+                        // Kiểm tra hot-switching: Nếu người dùng vừa đổi loại task trong Cấu hình thì chuyển ngay
+                        val checkCfg = com.cayxu.app.data.local.TtcRunConfigStore.getConfig(context)
+                        val checkTypes = checkCfg.taskTypes.filter { it.isNotBlank() }.ifEmpty { listOf("like") }
+                        if (checkTypes != lastSelectedTypes) {
+                            val newTypeName = com.cayxu.app.tuongtaccheo.TTCJobType.fromKey(checkTypes.first()).displayName
+                            withContext(Dispatchers.Main) {
+                                val switchMsg = "Đổi sang: $newTypeName"
+                                ttcAccountStatusMap[ttcUser] = switchMsg
+                                distinctRunningKeys.forEach { k -> ttcStatusMap[k] = switchMsg }
+                            }
+                            break // Ngắt đợt job cũ để chuyển sang loại mới
+                        }
+
                         val target = j.idpost?.takeIf { it.isNotBlank() } ?: j.idfb?.takeIf { it.isNotBlank() } ?: j.link.orEmpty()
                         withContext(Dispatchers.Main) {
-                            val doingMsg = "Đang làm nhiệm vụ..."
-                            ttcAccountStatusMap[ttcUser] = doingMsg
-                            distinctRunningKeys.forEach { k -> ttcStatusMap[k] = "Làm [${currentJobType.displayName}]: ${target.take(12)}..." }
+                            val shortTarget = if (target.length > 15) target.take(12) + "..." else target
+                            ttcAccountStatusMap[ttcUser] = "Làm ${currentJobType.displayName}..."
+                            distinctRunningKeys.forEach { k -> ttcStatusMap[k] = "${currentJobType.displayName} · $shortTarget" }
                         }
 
                         // Delay làm job (3 - 10s, mặc định 5s) để tránh Facebook quét hành vi bất thường
-                        val doJobWaitSec = ttcConfig.doJobDelaySeconds.coerceIn(3, 10)
+                        val doJobWaitSec = liveConfig.doJobDelaySeconds.coerceIn(3, 10)
                         for (sec in doJobWaitSec downTo 1) {
                             if (!isActive || distinctRunningKeys.none { it in runningTtcUids } || ttcUser !in runningTtcAccounts) break
                             withContext(Dispatchers.Main) {
-                                val waitJobMsg = "Chờ làm job ${sec}s..."
+                                val waitJobMsg = "Chờ làm ${sec}s..."
                                 ttcAccountStatusMap[ttcUser] = waitJobMsg
                                 distinctRunningKeys.forEach { k -> ttcStatusMap[k] = waitJobMsg }
                             }
@@ -692,7 +723,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                             // C. BỎ QUA KHI GẶP BÀI VIẾT BỊ XÓA (CODE 1446034 / Content Not Available Anymore)
                             if (res.isPostUnavailable) {
                                 withContext(Dispatchers.Main) {
-                                    val skipMsg = "⚠️ Bài viết trên FB đã bị xóa/ẩn, tự động bỏ qua nhận job khác!"
+                                    val skipMsg = "⚠️ Bài viết FB đã ẩn/xóa, bỏ qua..."
                                     ttcAccountStatusMap[ttcUser] = skipMsg
                                     distinctRunningKeys.forEach { k ->
                                         ttcStatusMap[k] = skipMsg
@@ -707,7 +738,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                             errorCount++
                             consecutiveErrors++
                             val err = fbErr ?: "Tương tác Facebook thất bại"
-                            val limitStr = if (ttcConfig.failJobCountLimit <= 0 || ttcConfig.failJobCountLimit == -1) "∞" else "${ttcConfig.failJobCountLimit}"
+                            val limitStr = if (liveConfig.failJobCountLimit <= 0 || liveConfig.failJobCountLimit == -1) "∞" else "${liveConfig.failJobCountLimit}"
                             withContext(Dispatchers.Main) {
                                 distinctRunningKeys.forEach { k ->
                                     ttcErrorCountMap[k] = errorCount
@@ -728,7 +759,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                                     errorDetail = err
                                 )
                             }
-                            if (ttcConfig.failJobCountLimit > 0 && consecutiveErrors >= ttcConfig.failJobCountLimit) {
+                            if (liveConfig.failJobCountLimit > 0 && consecutiveErrors >= liveConfig.failJobCountLimit) {
                                 val stopMsg = "Dừng do lỗi FB liên tiếp $consecutiveErrors lần"
                                 withContext(Dispatchers.Main) {
                                     distinctRunningKeys.forEach { k -> ttcStatusMap[k] = stopMsg }
@@ -748,8 +779,21 @@ fun TuongTacCheoScreen(navController: NavController) {
                             continue
                         }
 
-                        // Đợi trước khi nhận xu
-                        delay(3000L)
+                        // Đợi trước khi nhận xu: Riêng comment cần đếm ngược 60s để Facebook hiển thị và TTC duyệt comment
+                        if (currentJobType == com.cayxu.app.tuongtaccheo.TTCJobType.FB_COMMENT) {
+                            for (sec in 60 downTo 1) {
+                                if (!isActive || distinctRunningKeys.none { it in runningTtcUids } || ttcUser !in runningTtcAccounts) break
+                                withContext(Dispatchers.Main) {
+                                    val waitMsg = "Chờ duyệt cmt ${sec}s..."
+                                    ttcAccountStatusMap[ttcUser] = waitMsg
+                                    distinctRunningKeys.forEach { k -> ttcStatusMap[k] = waitMsg }
+                                }
+                                delay(1000L)
+                            }
+                        } else {
+                            delay(2000L)
+                        }
+
                         val claimRes = try {
                             ttcClient.claimReward(j.id, currentJobType)
                         } catch (e: Exception) {
@@ -760,11 +804,11 @@ fun TuongTacCheoScreen(navController: NavController) {
                             successCount++
                             consecutiveErrors = 0
                             withContext(Dispatchers.Main) {
-                                val doneMsg = "Đã xong ${currentJobType.displayName} (+${claimRes.xuThem} xu)"
-                                ttcAccountStatusMap[ttcUser] = doneMsg
+                                val doneMsg = "+${claimRes.xuThem} xu · Tổng: ${claimRes.sodu}"
+                                ttcAccountStatusMap[ttcUser] = "+${claimRes.xuThem} xu (${currentJobType.displayName})"
                                 distinctRunningKeys.forEach { k ->
                                     ttcSuccessCountMap[k] = successCount
-                                    ttcStatusMap[k] = "$doneMsg (Tổng $successCount)"
+                                    ttcStatusMap[k] = doneMsg
                                 }
                                 val idx = ttcAccounts.indexOfFirst { it.username == ttcUser }
                                 if (idx >= 0 && claimRes.sodu > 0) {
@@ -777,7 +821,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                             errorCount++
                             consecutiveErrors++
                             val err = claimRes?.message ?: "Lỗi nhận xu từ TTC"
-                            val limitStr = if (ttcConfig.failJobCountLimit <= 0 || ttcConfig.failJobCountLimit == -1) "∞" else "${ttcConfig.failJobCountLimit}"
+                            val limitStr = if (liveConfig.failJobCountLimit <= 0 || liveConfig.failJobCountLimit == -1) "∞" else "${liveConfig.failJobCountLimit}"
                             withContext(Dispatchers.Main) {
                                 val errStatus = "Lỗi nhận xu ($consecutiveErrors/$limitStr)"
                                 distinctRunningKeys.forEach { k ->
@@ -2633,14 +2677,14 @@ private fun TtcRunConfigBottomSheet(
                 )
             }
 
-            // 3b. Thời gian chờ thực hiện tương tác (Delay làm job)
+            // 3b. Thời gian làm nhiệm vụ
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Thời gian chờ thực hiện tương tác (Delay làm job):", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    Text("Thời gian làm nhiệm vụ:", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                     Text("$doJobDelaySec giây", fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = TtcPrimary)
                 }
                 Slider(

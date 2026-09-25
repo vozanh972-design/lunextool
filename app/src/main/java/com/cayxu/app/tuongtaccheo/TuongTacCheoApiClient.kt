@@ -249,13 +249,15 @@ class TuongTacCheoApiClient(
                 val arr = JSONArray(resStr)
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
+                    val commentContent = o.optString("nd", o.optString("noidung", o.optString("cmt", "")))
+                        .takeIf { it.isNotBlank() } ?: o.optString("content").takeIf { it.isNotBlank() }
                     list.add(TTCJob(
                         id = o.optString("id", o.optString("idpost", "")),
                         idfb = o.optString("idfb", null),
                         idpost = o.optString("idpost", null),
                         link = o.optString("link", null),
                         loaicx = o.optString("loaicx", null),
-                        cmt = o.optString("nd", null),
+                        cmt = commentContent,
                         uid = o.optString("uid", null)
                     ))
                 }
@@ -265,13 +267,15 @@ class TuongTacCheoApiClient(
                 if (arr != null) {
                     for (i in 0 until arr.length()) {
                         val o = arr.getJSONObject(i)
+                        val commentContent = o.optString("nd", o.optString("noidung", o.optString("cmt", "")))
+                            .takeIf { it.isNotBlank() } ?: o.optString("content").takeIf { it.isNotBlank() }
                         list.add(TTCJob(
                             id = o.optString("id", o.optString("idpost", "")),
                             idfb = o.optString("idfb", null),
                             idpost = o.optString("idpost", null),
                             link = o.optString("link", null),
                             loaicx = o.optString("loaicx", null),
-                            cmt = o.optString("nd", null),
+                            cmt = commentContent,
                             uid = o.optString("uid", null)
                         ))
                     }
