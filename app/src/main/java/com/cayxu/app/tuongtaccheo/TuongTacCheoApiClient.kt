@@ -349,6 +349,10 @@ class TuongTacCheoApiClient(
                 "$BASE_URL/kiemtien/likepostvipre/getpost.php",
                 "$BASE_URL/kiemtien/likepostvipre/"
             )
+            TTCJobType.FB_CX -> Pair(
+                "$BASE_URL/kiemtien/camxucvipre/getpost.php",
+                "$BASE_URL/kiemtien/camxucvipre/"
+            )
             else -> Pair(
                 "$BASE_URL/kiemtien/getpost.php?type=${jobType.apiType}",
                 "$BASE_URL/home.php"
@@ -417,6 +421,10 @@ class TuongTacCheoApiClient(
             TTCJobType.FB_LIKE -> Pair(
                 "$BASE_URL/kiemtien/likepostvipre/nhantien.php",
                 "$BASE_URL/kiemtien/likepostvipre/"
+            )
+            TTCJobType.FB_CX -> Pair(
+                "$BASE_URL/kiemtien/camxucvipre/nhantien.php",
+                "$BASE_URL/kiemtien/camxucvipre/"
             )
             else -> Pair(
                 "$BASE_URL/kiemtien/nhantien.php",
