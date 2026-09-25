@@ -541,10 +541,6 @@ fun TuongTacCheoScreen(navController: NavController) {
                 var successCount = ttcSuccessCountMap[runUid] ?: 0
                 var errorCount = ttcErrorCountMap[runUid] ?: 0
                 var consecutiveErrors = 0
-
-                var successCount = ttcSuccessCountMap[runUid] ?: 0
-                var errorCount = ttcErrorCountMap[runUid] ?: 0
-                var consecutiveErrors = 0
                 var typeIndex = 0
                 var lastSelectedTypes = emptyList<String>()
 
@@ -571,6 +567,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                     lastSelectedTypes = activeTypes
 
                     val delaySec = liveConfig.delaySeconds.coerceAtLeast(3)
+                    val delayTime = delaySec * 1000L
                     for (sec in delaySec downTo 1) {
                         if (!isActive || distinctRunningKeys.none { it in runningTtcUids } || ttcUser !in runningTtcAccounts) break
                         withContext(Dispatchers.Main) {
@@ -843,7 +840,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                                     errorDetail = "Lỗi nhận xu: $err"
                                 )
                             }
-                            if (ttcConfig.failJobCountLimit > 0 && consecutiveErrors >= ttcConfig.failJobCountLimit) {
+                            if (liveConfig.failJobCountLimit > 0 && consecutiveErrors >= liveConfig.failJobCountLimit) {
                                 val stopMsg = "Dừng do lỗi nhận xu liên tiếp $consecutiveErrors lần"
                                 withContext(Dispatchers.Main) {
                                     distinctRunningKeys.forEach { k -> ttcStatusMap[k] = stopMsg }
@@ -862,7 +859,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                             }
                         }
 
-                        if (ttcConfig.taskCountTarget > 0 && successCount >= ttcConfig.taskCountTarget) {
+                        if (liveConfig.taskCountTarget > 0 && successCount >= liveConfig.taskCountTarget) {
                             withContext(Dispatchers.Main) {
                                 val doneAll = "Hoàn thành $successCount nhiệm vụ!"
                                 ttcAccountStatusMap[ttcUser] = doneAll
