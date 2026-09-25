@@ -488,8 +488,9 @@ fun TuongTacCheoScreen(navController: NavController) {
                 if (activeTtcAccount.token.isNotBlank()) {
                     try {
                         val logged = ttcClient.loginWithToken(activeTtcAccount.token)
-                        if (!logged.cookie.isNullOrBlank() && logged.cookie != activeTtcAccount.cookie) {
-                            val updatedAcc = activeTtcAccount.copy(cookie = logged.cookie, coins = logged.sodu)
+                        val freshCookie = logged.cookie
+                        if (!freshCookie.isNullOrBlank() && freshCookie != activeTtcAccount.cookie) {
+                            val updatedAcc = activeTtcAccount.copy(cookie = freshCookie, coins = logged.sodu)
                             TtcAccountsStore.addAccount(context, updatedAcc)
                         }
                     } catch (_: Exception) {}
