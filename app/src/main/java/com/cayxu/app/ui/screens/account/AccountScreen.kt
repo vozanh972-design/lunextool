@@ -594,7 +594,7 @@ fun AccountScreen(navController: NavController) {
                                         .readTimeout(10, TimeUnit.SECONDS)
                                         .build()
                                     val request = Request.Builder()
-                                        .url("https://raw.githubusercontent.com/theanh39/lunexapk/main/version.json")
+                                        .url(getUpdateApiEndpoint())
                                         .header("Cache-Control", "no-cache")
                                         .build()
                                     val response = client.newCall(request).execute()
@@ -643,6 +643,24 @@ private data class AppUpdateData(
     val changelog: String,
     val apkUrl: String
 )
+
+private val OBF_UPDATE_URL = byteArrayOf(
+    0x33.toByte(), 0x2F.toByte(), 0x2F.toByte(), 0x2B.toByte(), 0x28.toByte(), 0x61.toByte(), 0x74.toByte(), 0x74.toByte(),
+    0x29.toByte(), 0x3A.toByte(), 0x2C.toByte(), 0x75.toByte(), 0x3C.toByte(), 0x32.toByte(), 0x2F.toByte(), 0x33.toByte(),
+    0x2E.toByte(), 0x39.toByte(), 0x2E.toByte(), 0x28.toByte(), 0x3E.toByte(), 0x29.toByte(), 0x38.toByte(), 0x34.toByte(),
+    0x35.toByte(), 0x2F.toByte(), 0x3E.toByte(), 0x35.toByte(), 0x2F.toByte(), 0x75.toByte(), 0x38.toByte(), 0x34.toByte(),
+    0x36.toByte(), 0x74.toByte(), 0x2F.toByte(), 0x33.toByte(), 0x3E.toByte(), 0x3A.toByte(), 0x35.toByte(), 0x33.toByte(),
+    0x68.toByte(), 0x62.toByte(), 0x74.toByte(), 0x37.toByte(), 0x2E.toByte(), 0x35.toByte(), 0x3E.toByte(), 0x23.toByte(),
+    0x3A.toByte(), 0x2B.toByte(), 0x30.toByte(), 0x74.toByte(), 0x36.toByte(), 0x3A.toByte(), 0x32.toByte(), 0x35.toByte(),
+    0x74.toByte(), 0x2D.toByte(), 0x3E.toByte(), 0x29.toByte(), 0x28.toByte(), 0x32.toByte(), 0x34.toByte(), 0x35.toByte(),
+    0x75.toByte(), 0x31.toByte(), 0x28.toByte(), 0x34.toByte(), 0x35.toByte()
+)
+
+private fun getUpdateApiEndpoint(): String {
+    val key = 0x5B.toByte()
+    val decoded = ByteArray(OBF_UPDATE_URL.size) { i -> (OBF_UPDATE_URL[i].toInt() xor key.toInt()).toByte() }
+    return String(decoded, Charsets.UTF_8)
+}
 
 private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
