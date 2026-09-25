@@ -8,6 +8,7 @@ import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import kotlinx.coroutines.Dispatchers
@@ -74,6 +75,7 @@ private val Cobalt600 = Color(0xFF1D4ED8)
 private val Cyan400 = Color(0xFF4FD1E8)
 private val Cyan100 = Color(0xFFE3FBFD)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountScreen(navController: NavController) {
     val context = LocalContext.current
@@ -207,41 +209,79 @@ fun AccountScreen(navController: NavController) {
     }
 
     pendingUpdate?.let { update ->
-        AlertDialog(
+        ModalBottomSheet(
             onDismissRequest = { pendingUpdate = null },
-            icon = {
-                Icon(
-                    imageVector = Icons.Filled.SystemUpdate,
-                    contentDescription = null,
-                    tint = Cobalt600,
-                    modifier = Modifier.size(36.dp)
-                )
-            },
-            title = {
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = Color.White,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Cobalt600.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.SystemUpdate,
+                        contentDescription = null,
+                        tint = Cobalt600,
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
+
+                Spacer(Modifier.height(14.dp))
+
                 Text(
                     text = "Bản cập nhật mới (v${update.versionName})",
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "Đã có phiên bản mới sẵn sàng tải về.",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = TextPrimary
-                    )
-                    if (update.changelog.isNotBlank()) {
-                        Text(
-                            text = "Nội dung cập nhật:\n${update.changelog}",
-                            fontSize = 13.sp,
-                            color = TextSecondary
-                        )
+
+                Spacer(Modifier.height(6.dp))
+
+                Text(
+                    text = "Đã có phiên bản mới sẵn sàng để cài đặt.",
+                    fontSize = 13.5.sp,
+                    color = TextSecondary
+                )
+
+                if (update.changelog.isNotBlank()) {
+                    Spacer(Modifier.height(16.dp))
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = "Nội dung cập nhật:",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                color = TextPrimary
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = update.changelog,
+                                fontSize = 12.5.sp,
+                                color = TextSecondary,
+                                lineHeight = 18.sp
+                            )
+                        }
                     }
                 }
-            },
-            confirmButton = {
+
+                Spacer(Modifier.height(24.dp))
+
                 Button(
                     onClick = {
                         val downloadUrl = update.apkUrl
@@ -271,18 +311,35 @@ fun AccountScreen(navController: NavController) {
                             Toast.makeText(context, "Chưa có đường dẫn tải về bản cập nhật này", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Cobalt600),
-                    shape = RoundedCornerShape(12.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Cobalt600)
                 ) {
-                    Text("Cập nhật ngay", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Cập nhật ngay",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingUpdate = null }) {
-                    Text("Để sau", color = TextSecondary)
+
+                Spacer(Modifier.height(10.dp))
+
+                TextButton(
+                    onClick = { pendingUpdate = null },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Để sau",
+                        color = TextSecondary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
-        )
+        }
     }
 
     Column(

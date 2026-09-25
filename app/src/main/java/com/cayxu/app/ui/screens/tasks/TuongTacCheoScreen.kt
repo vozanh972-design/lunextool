@@ -131,6 +131,10 @@ fun TuongTacCheoScreen(navController: NavController) {
     val ttcErrorDetailMap = remember { mutableStateMapOf<String, String>() }
     val activeRunJobs = remember { mutableStateMapOf<String, Job>() }
 
+    // Quản lý trạng thái hiển thị và chạy cho từng nick TTC
+    val runningTtcAccounts = remember { mutableStateListOf<String>() }
+    val ttcAccountStatusMap = remember { mutableStateMapOf<String, String>() }
+
     var targetFbAvatarChangeUid by remember { mutableStateOf<String?>(null) }
     var isUploadingAvatar by remember { mutableStateOf(false) }
 
@@ -291,6 +295,33 @@ fun TuongTacCheoScreen(navController: NavController) {
         activeRunJobs.remove(uid)
         runningTtcUids.remove(uid)
         ttcStatusMap[uid] = "Đã dừng"
+        if (runningTtcUids.isEmpty()) {
+            runningTtcAccounts.clear()
+            ttcAccounts.forEach { ttcAccountStatusMap[it.username] = "Đang chờ chạy..." }
+        }
+    }
+
+    fun toggleRunTtcSingle(username: String) {
+        if (username in runningTtcAccounts) {
+            runningTtcAccounts.remove(username)
+            ttcAccountStatusMap[username] = "Đang chờ chạy..."
+            if (runningTtcAccounts.isEmpty()) {
+                val targets = runningTtcUids.toList()
+                targets.forEach { stopTtcAccount(it) }
+            }
+        } else {
+            runningTtcAccounts.add(username)
+            if (username !in selectedTtcUsernames) {
+                selectedTtcUsernames = selectedTtcUsernames + username
+            }
+            ttcAccountStatusMap[username] = "Đang lấy nhiệm vụ..."
+            val targetFb = selectedFbUids.firstOrNull() ?: fbAccounts.firstOrNull { it.isLive }?.uid ?: fbAccounts.firstOrNull()?.uid
+            if (targetFb != null) {
+                startTtcAccount(targetFb)
+            } else {
+                Toast.makeText(context, "Đã kích hoạt $username (Chờ chọn nick FB)", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     fun startTtcAccount(uid: String) {
@@ -347,6 +378,12 @@ fun TuongTacCheoScreen(navController: NavController) {
             Toast.makeText(context, "Chưa có tài khoản TTC nào để lấy nhiệm vụ!", Toast.LENGTH_SHORT).show()
             return
         }
+
+        val ttcUser = activeTtcAccount.username
+        if (ttcUser !in runningTtcAccounts) {
+            runningTtcAccounts.add(ttcUser)
+        }
+        ttcAccountStatusMap[ttcUser] = "Đang lấy nhiệm vụ..."
 
         runningTtcUids.add(uid)
         ttcStatusMap[uid] = "Khởi động..."
@@ -665,6 +702,10 @@ fun TuongTacCheoScreen(navController: NavController) {
                 withContext(Dispatchers.Main) {
                     runningTtcUids.remove(uid)
                     activeRunJobs.remove(uid)
+                    if (runningTtcUids.isEmpty()) {
+                        runningTtcAccounts.clear()
+                        ttcAccounts.forEach { ttcAccountStatusMap[it.username] = "Đang chờ chạy..." }
+                    }
                 }
             }
         }
@@ -945,6 +986,10 @@ fun TuongTacCheoScreen(navController: NavController) {
                 TtcAccountsTabContent(
                     accounts = ttcAccounts,
                     selectedUsernames = selectedTtcUsernames,
+                    runningAccounts = runningTtcAccounts,
+                    accountStatusMap = ttcAccountStatusMap,
+                    isAnyFbRunning = runningTtcUids.isNotEmpty(),
+                    onRunSingle = { username -> toggleRunTtcSingle(username) },
                     onToggle = { username ->
                         selectedTtcUsernames = if (username in selectedTtcUsernames) {
                             selectedTtcUsernames - username
@@ -1234,6 +1279,10 @@ private fun TtcTabButton(
 private fun TtcAccountsTabContent(
     accounts: List<TtcAccount>,
     selectedUsernames: Set<String>,
+    runningAccounts: List<String>,
+    accountStatusMap: Map<String, String>,
+    isAnyFbRunning: Boolean,
+    onRunSingle: (String) -> Unit,
     onToggle: (String) -> Unit,
     onSelectAll: (Boolean) -> Unit,
     onAddNew: () -> Unit,
@@ -1338,6 +1387,9 @@ private fun TtcAccountsTabContent(
             ) {
                 items(accounts, key = { it.username }) { acc ->
                     val isSelected = acc.username in selectedUsernames
+                    val isAccRunning = acc.username in runningAccounts || (isSelected && isAnyFbRunning)
+                    val statusText = accountStatusMap[acc.username] ?: if (isAccRunning) "Đang chạy nhiệm vụ..." else "Đang chờ chạy..."
+
                     Card(
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(
@@ -1391,6 +1443,56 @@ private fun TtcAccountsTabContent(
                                             fontSize = 11.sp,
                                             color = Color(0xFF0284C7),
                                             fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isAccRunning) Color(0xFF16A34A) else Color(0xFF94A3B8))
+                                    )
+                                    Text(
+                                        text = statusText,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isAccRunning) FontWeight.Medium else FontWeight.Normal,
+                                        color = if (isAccRunning) Color(0xFF16A34A) else TextSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            // Nút chạy hình tam giác (▶) / Dừng (⏹) cho từng tài khoản TTC
+                            IconButton(
+                                onClick = { onRunSingle(acc.username) },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isAccRunning) DangerRed.copy(alpha = 0.12f) else TtcPrimary.copy(alpha = 0.1f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isAccRunning) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .clip(RoundedCornerShape(2.dp))
+                                                .background(DangerRed)
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Filled.PlayArrow,
+                                            contentDescription = "Chạy tài khoản",
+                                            tint = TtcPrimary,
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
                                 }
