@@ -272,13 +272,41 @@ class TuongTacCheoApiClient(
         var datResult = setNickRun(uid, loai)
         if (datResult.isSuccess) return datResult
 
+        // Xử lý lỗi Rate-limit TTC: "Vui lòng thao tác chậm lại"
+        if (datResult.message.contains("thao tác chậm lại", ignoreCase = true) || datResult.rawResponse.contains("thao tác chậm lại", ignoreCase = true)) {
+            for (sec in 10 downTo 1) {
+                onStepUpdate?.invoke("TTC yêu cầu thao tác chậm lại, đang chờ ${sec}s rồi thử lại...")
+                try { Thread.sleep(1000) } catch (_: Exception) {}
+            }
+            onStepUpdate?.invoke("Đang đặt nick/page làm nick chạy...")
+            datResult = setNickRun(uid, loai)
+            if (datResult.isSuccess) return datResult
+        }
+
         // Nếu mã lỗi 2 (chưa có trên web), tự động gọi themNick rồi thử lại
         if (datResult.code == 2) {
             onStepUpdate?.invoke("Đang thêm nick/page [$uid] vào hệ thống TTC...")
             val themRes = themNick(uid, loai)
-            try { Thread.sleep(1000) } catch (_: Exception) {}
+            if (themRes.message.contains("thao tác chậm lại", ignoreCase = true) || themRes.rawResponse.contains("thao tác chậm lại", ignoreCase = true)) {
+                for (sec in 10 downTo 1) {
+                    onStepUpdate?.invoke("TTC yêu cầu thao tác chậm lại, đang chờ ${sec}s rồi thử lại...")
+                    try { Thread.sleep(1000) } catch (_: Exception) {}
+                }
+            } else {
+                try { Thread.sleep(1000) } catch (_: Exception) {}
+            }
             onStepUpdate?.invoke("Đang đặt nick/page làm nick chạy...")
             datResult = setNickRun(uid, loai)
+
+            // Kiểm tra rate-limit sau khi themNick và thử đặt lại
+            if (!datResult.isSuccess && (datResult.message.contains("thao tác chậm lại", ignoreCase = true) || datResult.rawResponse.contains("thao tác chậm lại", ignoreCase = true))) {
+                for (sec in 10 downTo 1) {
+                    onStepUpdate?.invoke("TTC yêu cầu thao tác chậm lại, đang chờ ${sec}s rồi thử lại...")
+                    try { Thread.sleep(1000) } catch (_: Exception) {}
+                }
+                onStepUpdate?.invoke("Đang đặt nick/page làm nick chạy...")
+                datResult = setNickRun(uid, loai)
+            }
         }
         return datResult
     }

@@ -301,7 +301,7 @@ fun TuongTacCheoScreen(navController: NavController) {
         activeRunJobs.remove(key)
         runningTtcUids.remove(key)
         runningTtcAccounts.remove(key)
-        ttcAccountStatusMap.remove(key)
+        ttcAccountStatusMap[key] = "Đã dừng"
         ttcStatusMap[key] = "Đã dừng"
 
         // Đồng bộ dọn dẹp các key khác chạy chung job này (Page UID, Nick mẹ UID, TTC username)
@@ -311,7 +311,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                 activeRunJobs.remove(k)
                 runningTtcUids.remove(k)
                 runningTtcAccounts.remove(k)
-                ttcAccountStatusMap.remove(k)
+                ttcAccountStatusMap[k] = "Đã dừng"
                 ttcStatusMap[k] = "Đã dừng"
             }
         }
@@ -319,7 +319,6 @@ fun TuongTacCheoScreen(navController: NavController) {
         if (runningTtcAccounts.isEmpty() && runningTtcUids.isEmpty()) {
             activeRunJobs.clear()
             runningTtcAccounts.clear()
-            ttcAccountStatusMap.clear()
             runningTtcUids.clear()
         }
     }
@@ -557,7 +556,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                     for (sec in delaySec downTo 1) {
                         if (!isActive || distinctRunningKeys.none { it in runningTtcUids } || ttcUser !in runningTtcAccounts) break
                         withContext(Dispatchers.Main) {
-                            ttcAccountStatusMap[ttcUser] = "Delay nghỉ..."
+                            ttcAccountStatusMap[ttcUser] = "Delay nghỉ ${sec}s..."
                             distinctRunningKeys.forEach { k -> ttcStatusMap[k] = "Delay nghỉ ${sec}s..." }
                         }
                         delay(1000L)
@@ -733,6 +732,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                                     ttcStatusMap[k] = "Lỗi FB ($consecutiveErrors/$limitStr)"
                                 }
                                 ttcAccountStatusMap[ttcUser] = "Lỗi FB ($consecutiveErrors/$limitStr)"
+                                ttcErrorDetailMap[ttcUser] = err
                             }
                             if (consecutiveErrors >= 3) {
                                 val accName = if (usePage && targetPageItem != null) "Page: ${targetPageItem.pageName.ifBlank { runUid }}" else parentFbAccount.name.ifBlank { runUid }
@@ -803,6 +803,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                                     ttcStatusMap[k] = errStatus
                                 }
                                 ttcAccountStatusMap[ttcUser] = errStatus
+                                ttcErrorDetailMap[ttcUser] = err
                             }
                             if (consecutiveErrors >= 3) {
                                 val accName = if (usePage && targetPageItem != null) "Page: ${targetPageItem.pageName.ifBlank { runUid }}" else parentFbAccount.name.ifBlank { runUid }
@@ -853,6 +854,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                 withContext(Dispatchers.Main) {
                     val err = "Lỗi luồng chạy: ${e.message}"
                     ttcAccountStatusMap[ttcUser] = err
+                    ttcErrorDetailMap[ttcUser] = err
                     distinctRunningKeys.forEach { k ->
                         ttcStatusMap[k] = err
                         ttcErrorDetailMap[k] = err
@@ -863,10 +865,15 @@ fun TuongTacCheoScreen(navController: NavController) {
                     distinctRunningKeys.forEach { k ->
                         runningTtcUids.remove(k)
                         activeRunJobs.remove(k)
+                        if (ttcStatusMap[k]?.startsWith("Đang") == true || ttcStatusMap[k]?.startsWith("Delay") == true) {
+                            ttcStatusMap[k] = "Đã dừng"
+                        }
                     }
                     runningTtcAccounts.remove(ttcUser)
-                    ttcAccountStatusMap.remove(ttcUser)
                     activeRunJobs.remove(ttcUser)
+                    if (ttcAccountStatusMap[ttcUser]?.startsWith("Đang") == true || ttcAccountStatusMap[ttcUser]?.startsWith("Delay") == true) {
+                        ttcAccountStatusMap[ttcUser] = "Đã dừng"
+                    }
                 }
             }
         }
@@ -1345,7 +1352,6 @@ fun TuongTacCheoScreen(navController: NavController) {
                                 activeRunJobs.clear()
                                 runningTtcUids.clear()
                                 runningTtcAccounts.clear()
-                                ttcAccountStatusMap.clear()
                                 Toast.makeText(context, "Đã dừng tất cả tác vụ TTC", Toast.LENGTH_SHORT).show()
                             } else {
                                 if (ttcAccounts.isEmpty()) {
@@ -1683,21 +1689,41 @@ private fun TtcAccountsTabContent(
                                 // Trạng thái hiển thị (Status Visibility):
                                 // Khi chưa bấm chạy: Ẩn hoàn toàn (View.GONE)
                                 // Khi bấm chạy hoặc gặp lỗi: Hiện lên (View.VISIBLE) và cập nhật liên tục tiến trình
-                                if (!statusText.isNullOrBlank() && (isAccRunning || statusText.startsWith("Lỗi") || statusText.contains("thất bại", ignoreCase = true) || statusText.contains("hết hạn", ignoreCase = true))) {
-                                    val isError = statusText.startsWith("Lỗi") || statusText.contains("thất bại", ignoreCase = true) || statusText.contains("hết hạn", ignoreCase = true) || statusText.contains("sai Cookie", ignoreCase = true)
-                                    val statusColor = if (isError) DangerRed else Color(0xFF16A34A)
+                                if (!statusText.isNullOrBlank()) {
+                                    val isError = statusText.startsWith("Lỗi") ||
+                                        statusText.contains("Lỗi", ignoreCase = true) ||
+                                        statusText.contains("thất bại", ignoreCase = true) ||
+                                        statusText.contains("hết hạn", ignoreCase = true) ||
+                                        statusText.contains("sai Cookie", ignoreCase = true) ||
+                                        statusText.contains("Dừng do", ignoreCase = true)
+                                    val isWaiting = statusText.contains("chậm lại", ignoreCase = true)
+                                    val isStopped = statusText == "Đã dừng"
+                                    val statusColor = when {
+                                        isError -> DangerRed
+                                        isWaiting -> Color(0xFFF59E0B)
+                                        isStopped -> TextSecondary
+                                        else -> Color(0xFF16A34A)
+                                    }
                                     Spacer(Modifier.height(4.dp))
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(5.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(7.dp)
-                                                .clip(CircleShape)
-                                                .background(statusColor)
-                                        )
+                                        if (isAccRunning && !isWaiting) {
+                                            CircularProgressIndicator(
+                                                color = statusColor,
+                                                strokeWidth = 1.6.dp,
+                                                modifier = Modifier.size(10.dp)
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(7.dp)
+                                                    .clip(CircleShape)
+                                                    .background(statusColor)
+                                            )
+                                        }
                                         Text(
                                             text = statusText,
                                             fontSize = 11.5.sp,
