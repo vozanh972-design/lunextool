@@ -344,7 +344,26 @@ class TuongTacCheoApiClient(
      */
     @Throws(Exception::class)
     fun getJobs(jobType: TTCJobType): List<TTCJob> {
-        val request = Request.Builder().url("$BASE_URL/kiemtien/getpost.php?type=${jobType.apiType}").headers(buildHeaders()).get().build()
+        val (url, referer) = when (jobType) {
+            TTCJobType.FB_LIKE -> Pair(
+                "$BASE_URL/kiemtien/likepostvipre/getpost.php",
+                "$BASE_URL/kiemtien/likepostvipre/"
+            )
+            else -> Pair(
+                "$BASE_URL/kiemtien/getpost.php?type=${jobType.apiType}",
+                "$BASE_URL/home.php"
+            )
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .headers(buildHeaders())
+            .header("Referer", referer)
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Accept", "application/json, text/javascript, */*; q=0.01")
+            .get()
+            .build()
+
         httpClient.newCall(request).execute().use { response ->
             val body = response.body?.string() ?: ""
             if (response.code in 300..399 || isHtml(body) || body.contains("Hết Job") || body.contains("countdown") || body.contains("\"error\"")) return emptyList()
@@ -365,6 +384,25 @@ class TuongTacCheoApiClient(
                         )
                     )
                 }
+            } else if (body.trim().startsWith("{")) {
+                val json = JSONObject(body)
+                val jsonArr = json.optJSONArray("data") ?: json.optJSONArray("posts")
+                if (jsonArr != null) {
+                    for (i in 0 until jsonArr.length()) {
+                        val obj = jsonArr.getJSONObject(i)
+                        jobList.add(
+                            TTCJob(
+                                id = obj.optString("id", obj.optString("idpost", "")),
+                                idfb = obj.optString("idfb", null),
+                                idpost = obj.optString("idpost", null),
+                                link = obj.optString("link", null),
+                                loaicx = obj.optString("loaicx", null),
+                                cmt = obj.optString("nd", null),
+                                uid = obj.optString("uid", null)
+                            )
+                        )
+                    }
+                }
             }
             return jobList
         }
@@ -375,19 +413,55 @@ class TuongTacCheoApiClient(
      */
     @Throws(Exception::class)
     fun claimReward(jobId: String, jobType: TTCJobType): TTCNhanTienResult {
-        val formBody = FormBody.Builder().add("id", jobId).add("loai", jobType.apiType).build()
-        val request = Request.Builder().url("$BASE_URL/kiemtien/nhantien.php").headers(buildHeaders()).post(formBody).build()
-        httpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string() ?: ""
-            val isSuccess = response.isSuccessful && (body.contains("\"success\"") || body.contains("\"status\":\"success\"") || body.contains("Thành công"))
-            val json = if (body.trim().startsWith("{")) JSONObject(body) else JSONObject()
-            val soduStr = json.optString("sodu", "0").replace(",", "").replace(".", "")
-            return TTCNhanTienResult(
-                isSuccess = isSuccess,
-                sodu = soduStr.toLongOrNull() ?: 0L,
-                xuThem = json.optLong("xu", json.optLong("xu_them", 0L)),
-                message = json.optString("mess", if (isSuccess) "Nhận xu thành công!" else "Lỗi: $body")
+        val (nhanTienUrl, referer) = when (jobType) {
+            TTCJobType.FB_LIKE -> Pair(
+                "$BASE_URL/kiemtien/likepostvipre/nhantien.php",
+                "$BASE_URL/kiemtien/likepostvipre/"
+            )
+            else -> Pair(
+                "$BASE_URL/kiemtien/nhantien.php",
+                "$BASE_URL/home.php"
             )
         }
+        val formBody = FormBody.Builder()
+            .add("id", jobId)
+            .add("loai", jobType.apiType)
+            .build()
+
+        fun doClaim(targetUrl: String): TTCNhanTienResult {
+            val request = Request.Builder()
+                .url(targetUrl)
+                .headers(buildHeaders())
+                .header("Referer", referer)
+                .header("Origin", BASE_URL)
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header("Accept", "application/json, text/javascript, */*; q=0.01")
+                .post(formBody)
+                .build()
+            return httpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                val isSuccess = response.isSuccessful && (
+                    body.contains("\"success\"") || 
+                    body.contains("\"status\":\"success\"") || 
+                    body.contains("\"status\":1") || 
+                    body.contains("Thành công") || 
+                    body.contains("thành công")
+                )
+                val json = if (body.trim().startsWith("{")) JSONObject(body) else JSONObject()
+                val soduStr = json.optString("sodu", "0").replace(",", "").replace(".", "")
+                TTCNhanTienResult(
+                    isSuccess = isSuccess,
+                    sodu = soduStr.toLongOrNull() ?: 0L,
+                    xuThem = json.optLong("xu", json.optLong("xu_them", 0L)),
+                    message = json.optString("mess", if (isSuccess) "Nhận xu thành công!" else "Lỗi: $body")
+                )
+            }
+        }
+
+        var res = doClaim(nhanTienUrl)
+        if (!res.isSuccess && nhanTienUrl != "$BASE_URL/kiemtien/nhantien.php" && (isHtml(res.message) || res.message.contains("404"))) {
+            res = doClaim("$BASE_URL/kiemtien/nhantien.php")
+        }
+        return res
     }
 }
