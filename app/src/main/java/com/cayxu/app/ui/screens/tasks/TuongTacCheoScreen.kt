@@ -289,81 +289,102 @@ fun TuongTacCheoScreen(navController: NavController) {
         }
     }
 
-    // Logic chạy TTC cho từng nick FB
-    fun stopTtcAccount(uid: String) {
-        activeRunJobs[uid]?.cancel()
-        activeRunJobs.remove(uid)
-        runningTtcUids.remove(uid)
-        ttcStatusMap[uid] = "Đã dừng"
-        if (runningTtcUids.isEmpty()) {
+    // Logic chạy TTC cho từng nick FB hoặc acc TTC
+    fun stopTtcAccount(key: String) {
+        activeRunJobs[key]?.cancel()
+        activeRunJobs.remove(key)
+        runningTtcUids.remove(key)
+        runningTtcAccounts.remove(key)
+        ttcAccountStatusMap.remove(key)
+        ttcStatusMap[key] = "Đã dừng"
+        if (runningTtcAccounts.isEmpty() && runningTtcUids.isEmpty()) {
+            activeRunJobs.clear()
             runningTtcAccounts.clear()
-            ttcAccounts.forEach { ttcAccountStatusMap[it.username] = "Đang chờ chạy..." }
+            ttcAccountStatusMap.clear()
+            runningTtcUids.clear()
         }
     }
 
-    fun startTtcAccount(uid: String) {
+    fun startTtcAccount(inputUid: String? = null, targetTtcUsername: String? = null) {
+        if (ttcAccounts.isEmpty()) {
+            Toast.makeText(context, "Chưa có tài khoản TTC nào để lấy nhiệm vụ!", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (fbAccounts.isEmpty()) {
+            Toast.makeText(context, "Chưa có tài khoản Facebook nào để tương tác!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 1. Xác định tài khoản TTC
+        val activeTtcAccount = if (!targetTtcUsername.isNullOrBlank()) {
+            ttcAccounts.firstOrNull { it.username == targetTtcUsername } ?: ttcAccounts.firstOrNull()
+        } else if (selectedTtcUsernames.isNotEmpty()) {
+            ttcAccounts.firstOrNull { it.username in selectedTtcUsernames } ?: ttcAccounts.firstOrNull()
+        } else {
+            ttcAccounts.firstOrNull { it.isLive } ?: ttcAccounts.firstOrNull()
+        }
+
+        if (activeTtcAccount == null || activeTtcAccount.token.isBlank()) {
+            Toast.makeText(context, "Tài khoản TTC chưa có token hợp lệ!", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val ttcUser = activeTtcAccount.username
+        if (ttcUser in runningTtcAccounts) return
+
+        // 2. Tự động ghép nối Facebook (không bắt buộc người dùng phải tích chọn checkbox)
+        val ttcIndex = ttcAccounts.indexOfFirst { it.username == ttcUser }.coerceAtLeast(0)
+        val uid = if (!inputUid.isNullOrBlank()) {
+            inputUid
+        } else if (selectedFbUids.isNotEmpty()) {
+            val selected = fbAccounts.filter { it.uid in selectedFbUids }
+            selected.getOrNull(ttcIndex % selected.size)?.uid ?: selected.first().uid
+        } else {
+            val liveFbs = fbAccounts.filter { it.isLive }.ifEmpty { fbAccounts }
+            liveFbs.getOrNull(ttcIndex % liveFbs.size)?.uid ?: liveFbs.first().uid
+        }
+
         if (uid in runningTtcUids) return
         val fbAccount = fbAccounts.firstOrNull { it.uid == uid }
+        if (fbAccount == null) {
+            Toast.makeText(context, "Chưa có tài khoản Facebook sẵn sàng!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 3. Tự động đọc Cấu hình người dùng (Profile / Page)
         val usePage = ttcConfig.pairTargetType == "page"
 
-        // --- Logic ghép 1 TTC ↔ 1 Page theo index ---
-        // pairModeEnabled=true + pairTargetType=page:
-        //   Thu thập toàn bộ Page từ tất cả FB acc (theo thứ tự fbAccounts), ghép theo index với fbAcc[i]
-        // Không ghép hoặc pairTargetType=profile: dùng page đầu tiên / UID profile của acc này
-        val pageItem = if (usePage && ttcConfig.pairModeEnabled) {
-            val allPages = mutableListOf<Pair<FacebookAccount, FacebookPageItem>>()
-            fbAccounts.forEach { acc -> acc.pages.forEach { p -> allPages.add(acc to p) } }
-            val fbIndex = fbAccounts.indexOfFirst { it.uid == uid }
-            if (fbIndex >= 0 && allPages.isNotEmpty()) {
-                allPages[fbIndex % allPages.size].second
+        // Quét danh sách Page của nick Facebook (nếu cấu hình chọn Page)
+        val pageItem = if (usePage) {
+            if (fbAccount.pages.isNotEmpty()) {
+                fbAccount.pages.getOrNull(ttcIndex % fbAccount.pages.size) ?: fbAccount.pages.firstOrNull()
             } else {
-                fbAccount?.pages?.firstOrNull()
+                val allPages = fbAccounts.flatMap { it.pages }
+                allPages.getOrNull(ttcIndex % allPages.size) ?: allPages.firstOrNull()
             }
-        } else if (usePage) {
-            fbAccount?.pages?.firstOrNull()
         } else {
             null
         }
 
         val runUid = if (usePage && pageItem != null && pageItem.pageId.isNotBlank()) pageItem.pageId else uid
-        val runToken = if (usePage && pageItem != null && pageItem.pageToken.isNotBlank()) pageItem.pageToken else (fbAccount?.bio ?: "")
+        val runToken = if (usePage && pageItem != null && pageItem.pageToken.isNotBlank()) pageItem.pageToken else (fbAccount.bio ?: "")
         val cleanToken = runToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
 
-        val proxyParts = (fbAccount?.phone ?: "").trim().split(":")
+        val proxyParts = (fbAccount.phone ?: "").trim().split(":")
         val proxyHost = proxyParts.getOrNull(0)?.takeIf { it.isNotBlank() }
         val proxyPort = proxyParts.getOrNull(1)?.toIntOrNull()
 
-        val activeTtcAccount = if (ttcConfig.pairModeEnabled) {
-            val fbIndex = fbAccounts.indexOfFirst { it.uid == uid }
-            val availableTtc = if (selectedTtcUsernames.isNotEmpty()) {
-                ttcAccounts.filter { it.username in selectedTtcUsernames }
-            } else {
-                ttcAccounts.filter { it.isLive }.ifEmpty { ttcAccounts }
-            }
-            if (fbIndex >= 0 && availableTtc.isNotEmpty()) {
-                availableTtc[fbIndex % availableTtc.size]
-            } else {
-                availableTtc.firstOrNull()
-            }
-        } else {
-            ttcAccounts.firstOrNull { it.username in selectedTtcUsernames }
-                ?: ttcAccounts.firstOrNull { it.isLive }
-                ?: ttcAccounts.firstOrNull()
-        }
-
-        if (activeTtcAccount == null || activeTtcAccount.token.isBlank()) {
-            Toast.makeText(context, "Chưa có tài khoản TTC nào để lấy nhiệm vụ!", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val ttcUser = activeTtcAccount.username
+        // 4. Kích hoạt trạng thái chạy ngay lập tức (Hiển thị ngay trên UI)
         if (ttcUser !in runningTtcAccounts) {
             runningTtcAccounts.add(ttcUser)
         }
-        ttcAccountStatusMap[ttcUser] = "Đang lấy nhiệm vụ..."
+        if (uid !in runningTtcUids) {
+            runningTtcUids.add(uid)
+        }
 
-        runningTtcUids.add(uid)
-        ttcStatusMap[uid] = "Khởi động..."
+        // Bắt đầu cập nhật trạng thái ngay lập tức khi bấm Chạy
+        ttcAccountStatusMap[ttcUser] = "Đang kết nối Facebook..."
+        ttcStatusMap[uid] = "Đang kết nối Facebook..."
+
         val job = scope.launch(Dispatchers.IO) {
             try {
                 val ttcClient = TuongTacCheoApiClient(
@@ -372,12 +393,17 @@ fun TuongTacCheoScreen(navController: NavController) {
                     proxyStr = activeTtcAccount.proxy.ifBlank { null }
                 )
 
-                // Cấu hình nick chạy trên TTC — thử lại tối đa 50 lần, mỗi lần thất bại đếm ngược 10s
+                val targetTypeStr = if (usePage && pageItem != null) "page" else "nick"
+
+                // Cấu hình nick/page chạy trên TTC — thử lại tối đa 50 lần, mỗi lần thất bại đếm ngược 10s
                 var isSet = false
                 for (attempt in 1..50) {
-                    if (!isActive || uid !in runningTtcUids) break
+                    if (!isActive || uid !in runningTtcUids || ttcUser !in runningTtcAccounts) break
+                    val attemptSuffix = if (attempt > 1) " (lần $attempt/50)" else ""
                     withContext(Dispatchers.Main) {
-                        ttcStatusMap[uid] = "Đặt nick [$runUid] chạy TTC... (lần $attempt/50)"
+                        val statusText = "Đang cấu hình đặt $targetTypeStr [$runUid] lên TTC...$attemptSuffix"
+                        ttcAccountStatusMap[ttcUser] = statusText
+                        ttcStatusMap[uid] = statusText
                     }
                     try {
                         isSet = ttcClient.setNickRun(runUid, "fb")
@@ -389,9 +415,11 @@ fun TuongTacCheoScreen(navController: NavController) {
                     // Thất bại: đếm ngược 10s trước khi thử lại
                     if (attempt < 50) {
                         for (countdown in 10 downTo 1) {
-                            if (!isActive || uid !in runningTtcUids) break
+                            if (!isActive || uid !in runningTtcUids || ttcUser !in runningTtcAccounts) break
                             withContext(Dispatchers.Main) {
-                                ttcStatusMap[uid] = "Đặt nick thất bại (lần $attempt/50), thử lại sau ${countdown}s..."
+                                val failText = "Đặt $targetTypeStr thất bại, thử lại sau ${countdown}s..."
+                                ttcAccountStatusMap[ttcUser] = failText
+                                ttcStatusMap[uid] = failText
                             }
                             delay(1000L)
                         }
@@ -400,13 +428,21 @@ fun TuongTacCheoScreen(navController: NavController) {
 
                 if (!isSet) {
                     withContext(Dispatchers.Main) {
-                        val err = "Đặt nick [$runUid] chạy TTC thất bại sau 50 lần (nick chưa thêm vào TTC?)"
+                        val err = "Đặt $targetTypeStr [$runUid] lên TTC thất bại sau 50 lần (nick chưa thêm vào TTC?)"
+                        ttcAccountStatusMap[ttcUser] = err
                         ttcStatusMap[uid] = err
                         ttcErrorDetailMap[uid] = err
                         ttcErrorCountMap[uid] = (ttcErrorCountMap[uid] ?: 0) + 1
                     }
                     return@launch
                 }
+
+                withContext(Dispatchers.Main) {
+                    val okText = if (usePage && pageItem != null) "Đặt page thành công, đang nhận job..." else "Đặt nick thành công, đang nhận job..."
+                    ttcAccountStatusMap[ttcUser] = okText
+                    ttcStatusMap[uid] = okText
+                }
+                delay(600L)
 
                 var successCount = ttcSuccessCountMap[uid] ?: 0
                 var errorCount = ttcErrorCountMap[uid] ?: 0
@@ -415,16 +451,31 @@ fun TuongTacCheoScreen(navController: NavController) {
                 val activeTypes = ttcConfig.taskTypes.filter { it.isNotBlank() }.ifEmpty { listOf("like") }
                 var typeIndex = 0
 
-                withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Sẵn sàng nhận job..." }
+                withContext(Dispatchers.Main) {
+                    ttcAccountStatusMap[ttcUser] = "Sẵn sàng nhận job..."
+                    ttcStatusMap[uid] = "Sẵn sàng nhận job..."
+                }
 
-                while (isActive && uid in runningTtcUids) {
-                    val delayTime = (ttcConfig.delaySeconds.coerceAtLeast(3) * 1000L)
-                    delay(delayTime)
+                while (isActive && uid in runningTtcUids && ttcUser in runningTtcAccounts) {
+                    val delaySec = ttcConfig.delaySeconds.coerceAtLeast(3)
+                    for (sec in delaySec downTo 1) {
+                        if (!isActive || uid !in runningTtcUids || ttcUser !in runningTtcAccounts) break
+                        withContext(Dispatchers.Main) {
+                            ttcAccountStatusMap[ttcUser] = "Delay nghỉ..."
+                            ttcStatusMap[uid] = "Delay nghỉ ${sec}s..."
+                        }
+                        delay(1000L)
+                    }
+                    if (!isActive || uid !in runningTtcUids || ttcUser !in runningTtcAccounts) break
 
                     val currentKey = activeTypes[typeIndex % activeTypes.size]
                     val currentJobType = com.cayxu.app.tuongtaccheo.TTCJobType.fromKey(currentKey)
 
-                    withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Lấy job ${currentJobType.displayName}..." }
+                    withContext(Dispatchers.Main) {
+                        val fetchMsg = "Đang nhận job ${currentJobType.displayName}..."
+                        ttcAccountStatusMap[ttcUser] = fetchMsg
+                        ttcStatusMap[uid] = fetchMsg
+                    }
                     // Lấy job từ TTC
                     val jobs = try {
                         ttcClient.getJobs(currentJobType)
@@ -433,16 +484,24 @@ fun TuongTacCheoScreen(navController: NavController) {
                     }
 
                     if (jobs.isEmpty()) {
-                        withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Hết job ${currentJobType.displayName}, đổi..." }
+                        withContext(Dispatchers.Main) {
+                            val emptyMsg = "Hết job ${currentJobType.displayName}, đổi..."
+                            ttcAccountStatusMap[ttcUser] = emptyMsg
+                            ttcStatusMap[uid] = emptyMsg
+                        }
                         typeIndex++
-                        delay(5000L)
+                        delay(3000L)
                         continue
                     }
 
                     for (j in jobs) {
-                        if (!isActive || uid !in runningTtcUids) break
+                        if (!isActive || uid !in runningTtcUids || ttcUser !in runningTtcAccounts) break
                         val target = j.idpost?.takeIf { it.isNotBlank() } ?: j.idfb?.takeIf { it.isNotBlank() } ?: j.link.orEmpty()
-                        withContext(Dispatchers.Main) { ttcStatusMap[uid] = "Làm [${currentJobType.displayName}]: ${target.take(12)}..." }
+                        withContext(Dispatchers.Main) {
+                            val doingMsg = "Đang làm nhiệm vụ..."
+                            ttcAccountStatusMap[ttcUser] = doingMsg
+                            ttcStatusMap[uid] = "Làm [${currentJobType.displayName}]: ${target.take(12)}..."
+                        }
 
                         // Thao tác tương tác bằng Facebook Engine (Page615 hoặc Profile)
                         var fbOk = true
@@ -617,7 +676,15 @@ fun TuongTacCheoScreen(navController: NavController) {
                             consecutiveErrors = 0
                             withContext(Dispatchers.Main) {
                                 ttcSuccessCountMap[uid] = successCount
-                                ttcStatusMap[uid] = "+${claimRes.xuThem} xu (Tổng $successCount)"
+                                val doneMsg = "Đã xong ${currentJobType.displayName} (+${claimRes.xuThem} xu)"
+                                ttcAccountStatusMap[ttcUser] = doneMsg
+                                ttcStatusMap[uid] = "$doneMsg (Tổng $successCount)"
+                                val idx = ttcAccounts.indexOfFirst { it.username == ttcUser }
+                                if (idx >= 0 && claimRes.sodu > 0) {
+                                    val updatedAcc = ttcAccounts[idx].copy(coins = claimRes.sodu)
+                                    TtcAccountsStore.addAccount(context, updatedAcc)
+                                    reloadData()
+                                }
                             }
                         } else {
                             errorCount++
@@ -626,7 +693,9 @@ fun TuongTacCheoScreen(navController: NavController) {
                             withContext(Dispatchers.Main) {
                                 ttcErrorCountMap[uid] = errorCount
                                 ttcErrorDetailMap[uid] = err
-                                ttcStatusMap[uid] = "Lỗi nhận xu ($consecutiveErrors/${ttcConfig.failJobCountLimit})"
+                                val errStatus = "Lỗi nhận xu ($consecutiveErrors/${ttcConfig.failJobCountLimit})"
+                                ttcAccountStatusMap[ttcUser] = errStatus
+                                ttcStatusMap[uid] = errStatus
                             }
                             if (consecutiveErrors >= 3) {
                                 val accName = fbAccounts.firstOrNull { it.uid == uid }?.name.orEmpty().ifBlank { uid }
@@ -641,7 +710,9 @@ fun TuongTacCheoScreen(navController: NavController) {
                             }
                             if (ttcConfig.failJobCountLimit > 0 && consecutiveErrors >= ttcConfig.failJobCountLimit) {
                                 withContext(Dispatchers.Main) {
-                                    ttcStatusMap[uid] = "Dừng do lỗi nhận xu liên tiếp $consecutiveErrors lần"
+                                    val stopMsg = "Dừng do lỗi nhận xu liên tiếp $consecutiveErrors lần"
+                                    ttcAccountStatusMap[ttcUser] = stopMsg
+                                    ttcStatusMap[uid] = stopMsg
                                 }
                                 val accName = fbAccounts.firstOrNull { it.uid == uid }?.name.orEmpty().ifBlank { uid }
                                 com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
@@ -658,7 +729,9 @@ fun TuongTacCheoScreen(navController: NavController) {
 
                         if (ttcConfig.taskCountTarget > 0 && successCount >= ttcConfig.taskCountTarget) {
                             withContext(Dispatchers.Main) {
-                                ttcStatusMap[uid] = "Hoàn thành $successCount nhiệm vụ!"
+                                val doneAll = "Hoàn thành $successCount nhiệm vụ!"
+                                ttcAccountStatusMap[ttcUser] = doneAll
+                                ttcStatusMap[uid] = doneAll
                             }
                             break
                         }
@@ -672,43 +745,29 @@ fun TuongTacCheoScreen(navController: NavController) {
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     val err = "Lỗi luồng chạy: ${e.message}"
+                    ttcAccountStatusMap[ttcUser] = err
                     ttcStatusMap[uid] = err
                     ttcErrorDetailMap[uid] = err
                 }
             } finally {
                 withContext(Dispatchers.Main) {
                     runningTtcUids.remove(uid)
+                    runningTtcAccounts.remove(ttcUser)
+                    ttcAccountStatusMap.remove(ttcUser)
                     activeRunJobs.remove(uid)
-                    if (runningTtcUids.isEmpty()) {
-                        runningTtcAccounts.clear()
-                        ttcAccounts.forEach { ttcAccountStatusMap[it.username] = "Đang chờ chạy..." }
-                    }
+                    activeRunJobs.remove(ttcUser)
                 }
             }
         }
         activeRunJobs[uid] = job
+        activeRunJobs[ttcUser] = job
     }
 
     fun toggleRunTtcSingle(username: String) {
         if (username in runningTtcAccounts) {
-            runningTtcAccounts.remove(username)
-            ttcAccountStatusMap[username] = "Đang chờ chạy..."
-            if (runningTtcAccounts.isEmpty()) {
-                val targets = runningTtcUids.toList()
-                targets.forEach { stopTtcAccount(it) }
-            }
+            stopTtcAccount(username)
         } else {
-            runningTtcAccounts.add(username)
-            if (username !in selectedTtcUsernames) {
-                selectedTtcUsernames = selectedTtcUsernames + username
-            }
-            ttcAccountStatusMap[username] = "Đang lấy nhiệm vụ..."
-            val targetFb = selectedFbUids.firstOrNull() ?: fbAccounts.firstOrNull { it.isLive }?.uid ?: fbAccounts.firstOrNull()?.uid
-            if (targetFb != null) {
-                startTtcAccount(targetFb)
-            } else {
-                Toast.makeText(context, "Đã kích hoạt $username (Chờ chọn nick FB)", Toast.LENGTH_SHORT).show()
-            }
+            startTtcAccount(targetTtcUsername = username)
         }
     }
 
@@ -1162,29 +1221,38 @@ fun TuongTacCheoScreen(navController: NavController) {
                     }
 
                     // NÚT 2: Chạy màu xám chủ đạo TTC
-                    val isAnyRunning = runningTtcUids.isNotEmpty()
+                    val isAnyRunning = runningTtcAccounts.isNotEmpty() || runningTtcUids.isNotEmpty()
                     Button(
                         onClick = {
                             if (isAnyRunning) {
-                                val targets = runningTtcUids.toList()
+                                val targets = activeRunJobs.keys.toList()
                                 targets.forEach { stopTtcAccount(it) }
+                                activeRunJobs.clear()
+                                runningTtcUids.clear()
+                                runningTtcAccounts.clear()
+                                ttcAccountStatusMap.clear()
                                 Toast.makeText(context, "Đã dừng tất cả tác vụ TTC", Toast.LENGTH_SHORT).show()
                             } else {
-                                if (selectedTtcUsernames.isEmpty()) {
-                                    Toast.makeText(context, "Vui lòng chọn ít nhất 1 tài khoản TTC", Toast.LENGTH_SHORT).show()
+                                if (ttcAccounts.isEmpty()) {
+                                    Toast.makeText(context, "Vui lòng thêm ít nhất 1 tài khoản TTC", Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
-                                val accountsToRun = if (selectedFbUids.isNotEmpty()) {
-                                    selectedFbUids.toList()
+                                if (fbAccounts.isEmpty()) {
+                                    Toast.makeText(context, "Vui lòng thêm ít nhất 1 tài khoản Facebook", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+
+                                // Tự động ghép nối: Chạy các tài khoản TTC được chọn, nếu chưa chọn thì tự động chạy tất cả acc
+                                val ttcToRun = if (selectedTtcUsernames.isNotEmpty()) {
+                                    ttcAccounts.filter { it.username in selectedTtcUsernames }
                                 } else {
-                                    fbAccounts.map { it.uid }
+                                    ttcAccounts.filter { it.isLive }.ifEmpty { ttcAccounts }
                                 }
-                                if (accountsToRun.isEmpty()) {
-                                    Toast.makeText(context, "Vui lòng chọn ít nhất 1 tài khoản Facebook để chạy", Toast.LENGTH_SHORT).show()
-                                    return@Button
+
+                                ttcToRun.forEach { acc ->
+                                    startTtcAccount(targetTtcUsername = acc.username)
                                 }
-                                accountsToRun.forEach { startTtcAccount(it) }
-                                Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản TTC Facebook", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Bắt đầu chạy ${ttcToRun.size} tài khoản TTC", Toast.LENGTH_SHORT).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(
@@ -1387,8 +1455,8 @@ private fun TtcAccountsTabContent(
             ) {
                 items(accounts, key = { it.username }) { acc ->
                     val isSelected = acc.username in selectedUsernames
-                    val isAccRunning = acc.username in runningAccounts || (isSelected && isAnyFbRunning)
-                    val statusText = accountStatusMap[acc.username] ?: if (isAccRunning) "Đang chạy nhiệm vụ..." else "Đang chờ chạy..."
+                    val isAccRunning = acc.username in runningAccounts
+                    val statusText = accountStatusMap[acc.username]
 
                     Card(
                         shape = RoundedCornerShape(12.dp),
@@ -1446,25 +1514,31 @@ private fun TtcAccountsTabContent(
                                         )
                                     }
                                 }
-                                Spacer(Modifier.height(4.dp))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(7.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isAccRunning) Color(0xFF16A34A) else Color(0xFF94A3B8))
-                                    )
-                                    Text(
-                                        text = statusText,
-                                        fontSize = 11.5.sp,
-                                        fontWeight = if (isAccRunning) FontWeight.Medium else FontWeight.Normal,
-                                        color = if (isAccRunning) Color(0xFF16A34A) else TextSecondary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+
+                                // Trạng thái hiển thị (Status Visibility):
+                                // Khi chưa bấm chạy: Ẩn hoàn toàn (View.GONE)
+                                // Khi bấm chạy: Hiện lên (View.VISIBLE) và cập nhật liên tục tiến trình
+                                if (isAccRunning && !statusText.isNullOrBlank()) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(7.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF16A34A))
+                                        )
+                                        Text(
+                                            text = statusText,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF16A34A),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
 

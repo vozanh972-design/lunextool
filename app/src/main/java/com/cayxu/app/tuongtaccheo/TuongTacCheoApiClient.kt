@@ -144,21 +144,53 @@ class TuongTacCheoApiClient(
      */
     @Throws(Exception::class)
     fun setNickRun(uid: String, loai: String = "fb"): Boolean {
-        val formBody = FormBody.Builder()
-            .add("iddat[]", uid)
-            .add("loai", loai)
-            .build()
+        // 1. Thử gọi API đặt nick trực tiếp: api.php?do=datnick&id=<UID>
+        try {
+            val reqApi = Request.Builder()
+                .url("$BASE_URL/api.php?do=datnick&id=$uid")
+                .headers(buildHeaders())
+                .get()
+                .build()
+            val okApi = httpClient.newCall(reqApi).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                response.isSuccessful && (
+                    body.contains("\"status\":1") || 
+                    body.contains("\"status\":\"success\"") || 
+                    body.contains("Cấu hình thành công") || 
+                    body.contains("Thành công") || 
+                    body.contains("\"success\"") ||
+                    body.trim() == "1"
+                )
+            }
+            if (okApi) return true
+        } catch (_: Exception) {}
 
-        val request = Request.Builder()
-            .url("$BASE_URL/cauhinh/datnick.php")
-            .headers(buildHeaders())
-            .post(formBody)
-            .build()
+        // 2. Thử gọi qua endpoint web: cauhinh/datnick.php
+        try {
+            val formBody = FormBody.Builder()
+                .add("iddat[]", uid)
+                .add("loai", loai)
+                .build()
 
-        httpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string() ?: ""
-            return response.isSuccessful && (body.contains("\"status\":1") || body.contains("\"status\":\"success\"") || body.contains("Cấu hình thành công"))
-        }
+            val request = Request.Builder()
+                .url("$BASE_URL/cauhinh/datnick.php")
+                .headers(buildHeaders())
+                .post(formBody)
+                .build()
+
+            val okWeb = httpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                response.isSuccessful && (
+                    body.contains("\"status\":1") || 
+                    body.contains("\"status\":\"success\"") || 
+                    body.contains("Cấu hình thành công") || 
+                    body.contains("Thành công")
+                )
+            }
+            if (okWeb) return true
+        } catch (_: Exception) {}
+
+        return false
     }
 
     /**
