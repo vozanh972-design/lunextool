@@ -67,14 +67,29 @@ object Page615ReactionWorker {
     }
 
     fun isReactionSuccess(json: JSONObject): Boolean {
-        if (json.has("errors")) return false
+        if (json.has("error")) return false
+        if (json.has("errors")) {
+            val errs = json.optJSONArray("errors")
+            if (errs == null || errs.length() > 0) return false
+        }
         val data = json.optJSONObject("data") ?: return false
         val ufi = data.optJSONObject("ufi_reaction") ?: data.optJSONObject("feedback_react") ?: return data.length() > 0
         if (ufi.has("error") || ufi.has("error_message")) return false
-        if (ufi.has("feedback_reaction") || ufi.has("viewer_feedback_reaction")) return true
+        if (ufi.has("feedback_reaction") || ufi.has("viewer_feedback_reaction") || ufi.has("id")) return true
         val fb = ufi.optJSONObject("feedback")
-        if (fb != null && (fb.has("viewer_feedback_reaction") || fb.has("feedback_reaction"))) return true
-        return ufi.has("id")
+        if (fb != null) {
+            if (fb.has("error") || fb.has("error_message")) return false
+            if (fb.has("viewer_feedback_reaction_info") ||
+                fb.has("viewer_feedback_reaction") ||
+                fb.has("feedback_reaction") ||
+                fb.has("id") ||
+                fb.has("legacy_api_post_id")
+            ) {
+                return true
+            }
+            return fb.length() > 0
+        }
+        return ufi.length() > 0
     }
 
     fun executeReaction(

@@ -266,7 +266,13 @@ object XsmmFacebookTaskRunner {
         val pendingBatchTaskIds = mutableListOf<String>()
         val activeTaskTypes = config.effectiveTaskTypes()
         var currentTypeIndex = 0
-        var currentTypeRetryCount = 0
+
+        fun isReactionSubtype(t: String): Boolean =
+            t in listOf("facebook_like", "facebook_love", "facebook_care", "facebook_haha", "facebook_wow", "facebook_sad", "facebook_angry")
+
+        val queryCategories = activeTaskTypes.map { type ->
+            if (isReactionSubtype(type)) "facebook_like" else type
+        }.distinct().ifEmpty { listOf("facebook_like") }
 
         fun getTaskName(type: String): String {
             val full = XsmmRunConfigStore.facebookTaskTypes.firstOrNull { it.first == type }?.second ?: type
@@ -299,13 +305,21 @@ object XsmmFacebookTaskRunner {
                 break
             }
 
-            val currentActiveTaskType = activeTaskTypes.getOrElse(currentTypeIndex) { config.taskType }
-            val currentTaskLabel = getTaskName(currentActiveTaskType)
+            val queryType = queryCategories.getOrElse(currentTypeIndex % queryCategories.size) { "facebook_like" }
+            val queryLabel = if (queryType == "facebook_like") {
+                val selectedReactions = activeTaskTypes.filter { isReactionSubtype(it) }
+                if (selectedReactions.size == 1) {
+                    getTaskName(selectedReactions.first())
+                } else if (selectedReactions.isNotEmpty()) {
+                    "Cảm xúc (${selectedReactions.joinToString("/") { it.removePrefix("facebook_").uppercase() }})"
+                } else {
+                    "Cảm xúc (Reaction)"
+                }
+            } else {
+                getTaskName(queryType)
+            }
 
-            notify("Lấy nhiệm vụ Facebook ($currentTaskLabel)...")
-            val isReactionSubtype = currentActiveTaskType in listOf("facebook_like", "facebook_love", "facebook_care", "facebook_haha", "facebook_wow", "facebook_sad", "facebook_angry")
-            val queryType = if (isReactionSubtype) "facebook_like" else currentActiveTaskType
-            var actualTaskType = queryType
+            notify("Lấy nhiệm vụ Facebook ($queryLabel)...")
             var taskResult = XsmmTasksRepository.getTasks(token, queryType)
 
             if (taskResult is XsmmTasks2Result.Error && (
@@ -340,7 +354,7 @@ object XsmmFacebookTaskRunner {
                     Pair(true, taskResult.message)
                 }
                 taskList.isEmpty() -> {
-                    Pair(true, "Hết nhiệm vụ ($currentTaskLabel)")
+                    Pair(true, "Hết nhiệm vụ ($queryLabel)")
                 }
                 else -> Pair(false, "")
             }
@@ -359,30 +373,24 @@ object XsmmFacebookTaskRunner {
                         notify("Lỗi server XSMM: $errorMsg (${sec}s)...")
                         delay(1000L)
                     }
-                } else if (activeTaskTypes.size > 1) {
-                    if (currentTypeRetryCount == 0) {
-                        // Lần đầu hết NV của loại này: chờ 5s tự reload lại đúng loại đó
-                        currentTypeRetryCount++
-                        for (sec in 5 downTo 1) {
-                            if (!coroutineContext.isActive) break
-                            notify("Hết NV ($currentTaskLabel). Chờ reload (${sec}s)...")
-                            delay(1000L)
-                        }
+                } else if (queryCategories.size > 1) {
+                    // Nếu còn nhóm nhiệm vụ khác trong cấu hình đã chọn: chuyển ngay sang nhóm tiếp theo, không ép thứ tự
+                    currentTypeIndex = (currentTypeIndex + 1) % queryCategories.size
+                    val nextCategory = queryCategories[currentTypeIndex]
+                    val nextLabel = if (nextCategory == "facebook_like") {
+                        val sel = activeTaskTypes.filter { isReactionSubtype(it) }
+                        if (sel.size == 1) getTaskName(sel.first()) else "Cảm xúc"
                     } else {
-                        // Đã reload sau 5s mà vẫn hết NV -> chuyển sang loại nhiệm vụ khác trong danh sách
-                        currentTypeRetryCount = 0
-                        currentTypeIndex = (currentTypeIndex + 1) % activeTaskTypes.size
-                        val nextTaskType = activeTaskTypes[currentTypeIndex]
-                        val nextTaskLabel = getTaskName(nextTaskType)
-                        notify("Hết NV ($currentTaskLabel). Chuyển sang: $nextTaskLabel...")
-                        delay(1_000L)
+                        getTaskName(nextCategory)
                     }
+                    notify("Hết NV ($queryLabel). Chuyển sang: $nextLabel...")
+                    delay(1_000L)
                 } else {
-                    // Chỉ chọn 1 loại nhiệm vụ: chờ 5s rồi thử lại
+                    // Chỉ chọn 1 nhóm nhiệm vụ: chờ theo cấu hình (mặc định 5s) rồi thử lại
                     val waitSec = if (config.fetchTaskIntervalSeconds in 1..5) config.fetchTaskIntervalSeconds else 5
                     for (sec in waitSec downTo 1) {
                         if (!coroutineContext.isActive) break
-                        notify("Hết NV ($currentTaskLabel). Chờ ${sec}s...")
+                        notify("Hết NV ($queryLabel). Chờ ${sec}s...")
                         delay(1000L)
                     }
                 }
@@ -390,7 +398,6 @@ object XsmmFacebookTaskRunner {
             }
 
             // Có nhiệm vụ
-            currentTypeRetryCount = 0
             noTaskConsecutiveCount = 0
 
             for ((idx, task) in taskList.withIndex()) {
@@ -408,40 +415,72 @@ object XsmmFacebookTaskRunner {
                 val shortTarget = if (target.length > 20) target.take(17) + "..." else target
                 val pos = "[${idx + 1}/${taskList.size}]"
 
-                val isCommentTask = currentActiveTaskType.contains("comment", ignoreCase = true) ||
-                    task.type.contains("comment", ignoreCase = true)
+                val isCommentTask = task.type.contains("comment", ignoreCase = true) ||
+                    (task.type.isBlank() && queryType.contains("comment", ignoreCase = true))
 
                 if (isCommentTask && task.comment.isBlank()) {
                     notify("$pos Bỏ qua: XSMM không trả về nội dung comment cho task ${task.id}")
                     continue
                 }
 
-                val isFollowTask = currentActiveTaskType.contains("follow") || currentActiveTaskType.contains("sub") ||
-                    task.type.contains("follow") || task.type.contains("sub") ||
-                    actualTaskType.contains("follow") || actualTaskType.contains("sub")
-
-                val effectiveTaskType = when {
-                    isFollowTask -> "facebook_follow"
-                    task.type.isNotBlank() -> task.type
-                    else -> actualTaskType
-                }
+                val isFollowTask = !isCommentTask && (
+                    task.type.contains("follow", ignoreCase = true) ||
+                    task.type.contains("sub", ignoreCase = true) ||
+                    (task.type.isBlank() && (queryType.contains("follow", ignoreCase = true) || queryType.contains("sub", ignoreCase = true)))
+                )
 
                 val rawReactionString = when {
                     task.reaction.isNotBlank() -> task.reaction
-                    task.type.isNotBlank() -> task.type
-                    else -> actualTaskType
+                    task.type.isNotBlank() && !isFollowTask && !isCommentTask -> task.type
+                    else -> queryType
                 }
-                val effectiveReaction = when {
-                    isFollowTask || isCommentTask -> ""
-                    isReactionSubtype || rawReactionString.contains("reaction", ignoreCase = true) || rawReactionString.contains("like", ignoreCase = true) -> {
-                        com.cayxu.app.facebook.Page615ReactionEngine.parseReactionType(rawReactionString)
+
+                val isReactionTask = !isFollowTask && !isCommentTask && (
+                    task.reaction.isNotBlank() ||
+                    task.type.contains("reaction", ignoreCase = true) ||
+                    task.type.contains("like", ignoreCase = true) ||
+                    task.type.contains("love", ignoreCase = true) ||
+                    task.type.contains("care", ignoreCase = true) ||
+                    task.type.contains("haha", ignoreCase = true) ||
+                    task.type.contains("wow", ignoreCase = true) ||
+                    task.type.contains("sad", ignoreCase = true) ||
+                    task.type.contains("angry", ignoreCase = true) ||
+                    queryType == "facebook_like"
+                )
+
+                val effectiveReaction = if (isReactionTask) {
+                    com.cayxu.app.facebook.Page615ReactionEngine.parseReactionType(rawReactionString)
+                } else {
+                    ""
+                }
+
+                val effectiveTaskType = when {
+                    isFollowTask -> "facebook_follow"
+                    isCommentTask -> "facebook_comment"
+                    isReactionTask -> "facebook_like"
+                    task.type.isNotBlank() -> task.type
+                    else -> queryType
+                }
+
+                // Bỏ ép thứ tự nhiệm vụ: cho phép nhận bất kỳ nhiệm vụ nào có trong cấu hình đã chọn
+                val isTaskAllowed = when {
+                    isCommentTask -> activeTaskTypes.any { it.contains("comment", ignoreCase = true) }
+                    isFollowTask -> activeTaskTypes.any { it.contains("follow", ignoreCase = true) || it.contains("sub", ignoreCase = true) }
+                    isReactionTask -> {
+                        val reactKey = "facebook_" + effectiveReaction.lowercase()
+                        reactKey in activeTaskTypes || "facebook_like" in activeTaskTypes || activeTaskTypes.any { isReactionSubtype(it) }
                     }
-                    else -> ""
+                    else -> activeTaskTypes.contains(effectiveTaskType) || activeTaskTypes.contains(queryType)
+                }
+
+                if (!isTaskAllowed) {
+                    notify("$pos Bỏ qua: Loại nhiệm vụ không nằm trong cấu hình đã chọn")
+                    continue
                 }
 
                 if (isCommentTask) {
                     val displayCmt = if (task.comment.length > 25) task.comment.take(22) + "..." else task.comment
-                    notify("$pos Đang làm ($currentTaskLabel): \"$displayCmt\"")
+                    notify("$pos Đang làm (Comment): \"$displayCmt\"")
                 } else if (isFollowTask) {
                     notify("Đang theo dõi · UID: $target")
                 } else if (effectiveReaction.isNotBlank()) {
@@ -457,10 +496,10 @@ object XsmmFacebookTaskRunner {
                     notify("Đang $reactAct · UID: $target")
                 } else {
                     val actName = when {
-                        currentActiveTaskType.contains("likepage") || task.type.contains("likepage") -> "like page"
-                        currentActiveTaskType.contains("member") || task.type.contains("member") -> "tham gia nhóm"
-                        currentActiveTaskType.contains("share") || task.type.contains("share") -> "chia sẻ"
-                        else -> currentTaskLabel.lowercase()
+                        effectiveTaskType.contains("likepage") || task.type.contains("likepage") -> "like page"
+                        effectiveTaskType.contains("member") || task.type.contains("member") -> "tham gia nhóm"
+                        effectiveTaskType.contains("share") || task.type.contains("share") -> "chia sẻ"
+                        else -> effectiveTaskType
                     }
                     notify("Đang $actName · UID: $target")
                 }
@@ -500,7 +539,7 @@ object XsmmFacebookTaskRunner {
                         val displayTaskType = if (effectiveReaction.isNotBlank()) {
                             "facebook_reaction ($effectiveReaction)"
                         } else {
-                            task.type.ifBlank { currentActiveTaskType }
+                            task.type.ifBlank { effectiveTaskType }
                         }
                         append("• Nhiệm vụ: $displayTaskType\n")
                         append("• Target: $target\n")
@@ -536,7 +575,7 @@ object XsmmFacebookTaskRunner {
 
                 // follow → gom đủ 10 rồi mới nhận xu
                 // comment / like (cảm xúc) / các loại khác → nhận xu ngay sau mỗi job
-                val isCommentTaskType = currentActiveTaskType.contains("comment")
+                val isCommentTaskType = isCommentTask
 
                 val batchLimit = if (isFollowTask) 10 else 1
                 val isLast = (idx == taskList.size - 1)
@@ -559,11 +598,11 @@ object XsmmFacebookTaskRunner {
 
                     // Chuẩn API XSMM đơn luồng: POST /api/taskapi/tasks/complete (Body: {"type": ..., "task_id": [...]})
                     val apiCompleteType = when {
-                        isFollowTask -> if (actualTaskType.contains("sub") || task.type.contains("sub")) "facebook_sub" else "facebook_follow"
+                        isFollowTask -> if (queryType.contains("sub") || task.type.contains("sub")) "facebook_sub" else "facebook_follow"
+                        isCommentTask -> "facebook_comment"
                         task.type.isNotBlank() && task.type.startsWith("facebook_") -> task.type
-                        isReactionSubtype -> "facebook_like"
-                        actualTaskType.startsWith("facebook_") -> actualTaskType
-                        currentActiveTaskType.startsWith("facebook_") -> currentActiveTaskType
+                        isReactionTask -> "facebook_like"
+                        queryType.startsWith("facebook_") -> queryType
                         else -> "facebook_like"
                     }
 
