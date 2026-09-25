@@ -458,6 +458,7 @@ fun TuongTacCheoScreen(navController: NavController) {
 
                 while (isActive && uid in runningTtcUids && ttcUser in runningTtcAccounts) {
                     val delaySec = ttcConfig.delaySeconds.coerceAtLeast(3)
+                    val delayTime = delaySec * 1000L
                     for (sec in delaySec downTo 1) {
                         if (!isActive || uid !in runningTtcUids || ttcUser !in runningTtcAccounts) break
                         withContext(Dispatchers.Main) {
