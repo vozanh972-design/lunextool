@@ -301,29 +301,6 @@ fun TuongTacCheoScreen(navController: NavController) {
         }
     }
 
-    fun toggleRunTtcSingle(username: String) {
-        if (username in runningTtcAccounts) {
-            runningTtcAccounts.remove(username)
-            ttcAccountStatusMap[username] = "Đang chờ chạy..."
-            if (runningTtcAccounts.isEmpty()) {
-                val targets = runningTtcUids.toList()
-                targets.forEach { stopTtcAccount(it) }
-            }
-        } else {
-            runningTtcAccounts.add(username)
-            if (username !in selectedTtcUsernames) {
-                selectedTtcUsernames = selectedTtcUsernames + username
-            }
-            ttcAccountStatusMap[username] = "Đang lấy nhiệm vụ..."
-            val targetFb = selectedFbUids.firstOrNull() ?: fbAccounts.firstOrNull { it.isLive }?.uid ?: fbAccounts.firstOrNull()?.uid
-            if (targetFb != null) {
-                startTtcAccount(targetFb)
-            } else {
-                Toast.makeText(context, "Đã kích hoạt $username (Chờ chọn nick FB)", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
     fun startTtcAccount(uid: String) {
         if (uid in runningTtcUids) return
         val fbAccount = fbAccounts.firstOrNull { it.uid == uid }
@@ -710,6 +687,29 @@ fun TuongTacCheoScreen(navController: NavController) {
             }
         }
         activeRunJobs[uid] = job
+    }
+
+    fun toggleRunTtcSingle(username: String) {
+        if (username in runningTtcAccounts) {
+            runningTtcAccounts.remove(username)
+            ttcAccountStatusMap[username] = "Đang chờ chạy..."
+            if (runningTtcAccounts.isEmpty()) {
+                val targets = runningTtcUids.toList()
+                targets.forEach { stopTtcAccount(it) }
+            }
+        } else {
+            runningTtcAccounts.add(username)
+            if (username !in selectedTtcUsernames) {
+                selectedTtcUsernames = selectedTtcUsernames + username
+            }
+            ttcAccountStatusMap[username] = "Đang lấy nhiệm vụ..."
+            val targetFb = selectedFbUids.firstOrNull() ?: fbAccounts.firstOrNull { it.isLive }?.uid ?: fbAccounts.firstOrNull()?.uid
+            if (targetFb != null) {
+                startTtcAccount(targetFb)
+            } else {
+                Toast.makeText(context, "Đã kích hoạt $username (Chờ chọn nick FB)", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     // Modal BottomSheet thêm acc TTC
