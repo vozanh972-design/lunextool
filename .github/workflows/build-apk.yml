@@ -75,3 +75,23 @@ jobs:
         with:
           name: CayXu-release-apk
           path: app/build/outputs/apk/release/*.apk
+
+      # Tự động đọc versionCode & versionName từ file cấu hình Gradle để sinh version.json
+      - name: Generate version.json
+        run: |
+          GRADLE_FILE="app/build.gradle.kts"
+          if [ ! -f "$GRADLE_FILE" ]; then
+            GRADLE_FILE="app/build.gradle"
+          fi
+          V_CODE=$(grep -E 'versionCode\s*=' "$GRADLE_FILE" | grep -oE '[0-9]+' | head -n 1)
+          V_NAME=$(sed -n -E 's/.*versionName\s*=\s*"([^"]+)".*/\1/p' "$GRADLE_FILE" | head -n 1)
+          echo "Detected versionCode: $V_CODE, versionName: $V_NAME"
+          printf '{\n  "version_code": %s,\n  "version_name": "%s",\n  "download_url": "https://github.com/theanh39/lunexapk/raw/main/app-release.apk",\n  "changelog": "- Cập nhật phiên bản mới",\n  "force_update": false\n}\n' "${V_CODE:-1}" "${V_NAME:-1.0.0}" > version.json
+          cat version.json
+
+      - name: Upload version info
+        uses: actions/upload-artifact@v4
+        with:
+          name: version-info
+          path: version.json
+
