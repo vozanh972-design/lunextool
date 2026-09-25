@@ -230,10 +230,11 @@ object NhiemVuCheoTaskRunner {
                                     val coinText = if (coins > 0) "+$coins xu" else "Thành công"
                                     notify("$pos Hoàn thành: $coinText")
 
-                                    if (!submitRes.newBalance.isNullOrBlank()) {
-                                        NhiemVuCheoStore.updateCoinBalance(context, submitRes.newBalance)
+                                    val newBal = submitRes.newBalance
+                                    if (!newBal.isNullOrBlank()) {
+                                        NhiemVuCheoStore.updateCoinBalance(context, newBal)
                                         withContext(Dispatchers.Main) {
-                                            onBalanceUpdate?.invoke(submitRes.newBalance)
+                                            onBalanceUpdate?.invoke(newBal)
                                         }
                                     }
                                 }
