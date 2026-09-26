@@ -31,6 +31,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.cayxu.app.data.local.FacebookAccount
@@ -88,6 +92,8 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
     // State cho tab Chuyển Page
     var transferReceiverUid by remember { mutableStateOf("") }
+    var transferReceiverPassword by remember { mutableStateOf("") }
+    var isReceiverPasswordVisible by remember { mutableStateOf(false) }
     var showTransferConfigSheet by remember { mutableStateOf(false) }
     var isFullPermission by remember { mutableStateOf(true) } // true = Full quyền, false = No full (không full quyền)
     var selectedPageKeys by remember { mutableStateOf<Set<String>>(emptySet()) } // Set các key "${accountUid}_${pageId}" đã tích chọn
@@ -547,20 +553,38 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     page.pageId
                                                 }
                                                 val motherToken = account.bio.trim()
+                                                val senderPassword = account.password.ifBlank { account.name }
+
+                                                // Tìm token nick nhận nếu có trong danh sách
+                                                val receiverAcc = facebookAccounts.find { it.uid.trim() == receiverUid }
+                                                var receiverToken = receiverAcc?.bio?.trim() ?: ""
+                                                if (receiverToken.isBlank() && receiverAcc != null && receiverAcc.note.contains("c_user=")) {
+                                                    try {
+                                                        val mgr = FacebookAccountManager()
+                                                        val direct = mgr.getTokenFromCookie(receiverAcc.note, receiverAcc.phone.ifBlank { null })
+                                                        if (direct != null && direct.bio.isNotBlank()) {
+                                                            receiverToken = direct.bio.trim()
+                                                        }
+                                                    } catch (_: Exception) {}
+                                                }
 
                                                 val res = if (isFullPermission) {
                                                     engine.chuyenPageFullQuyen(
                                                         pageUid615 = page615Uid,
                                                         targetUserId = receiverUid,
                                                         pageAccessToken = tokenToUse,
-                                                        motherToken = motherToken
+                                                        motherToken = motherToken,
+                                                        senderPassword = senderPassword,
+                                                        receiverToken = receiverToken
                                                     )
                                                 } else {
                                                     engine.chuyenPageKhongFullQuyen(
                                                         pageUid615 = page615Uid,
                                                         targetUserId = receiverUid,
                                                         pageAccessToken = tokenToUse,
-                                                        motherToken = motherToken
+                                                        motherToken = motherToken,
+                                                        senderPassword = senderPassword,
+                                                        receiverToken = receiverToken
                                                     )
                                                 }
 
@@ -787,6 +811,10 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                         val toRemove = facebookAccounts.find { it.uid == trimmed }?.pages?.map { "${trimmed}_${it.pageId}" }.orEmpty().toSet()
                                         selectedPageKeys = selectedPageKeys - toRemove
                                     }
+                                    val acc = facebookAccounts.find { it.uid == trimmed }
+                                    if (acc != null && acc.password.isNotBlank() && transferReceiverPassword.isBlank()) {
+                                        transferReceiverPassword = acc.password
+                                    }
                                 },
                                 placeholder = { Text("Nhập UID Facebook người nhận...", fontSize = 13.sp) },
                                 singleLine = true,
@@ -825,6 +853,59 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                     }
                                 }
                             }
+
+                            Spacer(Modifier.height(10.dp))
+
+                            // ===== Ô NHẬP MẬT KHẨU ACC NHẬN =====
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Mật khẩu tài khoản nhận (Xác thực / Tự động Accept)", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
+                                if (transferReceiverPassword.isNotBlank()) {
+                                    Text(
+                                        "Lưu",
+                                        color = Cobalt600,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.clickable {
+                                            if (receiverInList != null) {
+                                                val updated = receiverInList.copy(password = transferReceiverPassword)
+                                                FacebookAccountsStore.addAccount(context, updated)
+                                                Toast.makeText(context, "Đã lưu mật khẩu vào tài khoản!", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "Đã lưu mật khẩu vào phiên làm việc!", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = transferReceiverPassword,
+                                onValueChange = { transferReceiverPassword = it },
+                                placeholder = { Text("Nhập mật khẩu nick nhận (nếu có)...", fontSize = 13.sp) },
+                                singleLine = true,
+                                visualTransformation = if (isReceiverPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                trailingIcon = {
+                                    IconButton(onClick = { isReceiverPasswordVisible = !isReceiverPasswordVisible }) {
+                                        Icon(
+                                            imageVector = if (isReceiverPasswordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                                            contentDescription = if (isReceiverPasswordVisible) "Ẩn mật khẩu" else "Hiện mật khẩu",
+                                            tint = TextSecondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Cobalt600,
+                                    unfocusedBorderColor = CardBorderColor
+                                )
+                            )
                         }
                     }
                 }
@@ -1258,7 +1339,10 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 if (activeTab == 1) {
                                     if (isReceiver) {
                                         Button(
-                                            onClick = { transferReceiverUid = "" },
+                                            onClick = {
+                                                transferReceiverUid = ""
+                                                transferReceiverPassword = ""
+                                            },
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = Color(0xFFFFEBEE),
                                                 contentColor = Color(0xFFD32F2F)
@@ -1281,6 +1365,9 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                         OutlinedButton(
                                             onClick = {
                                                 transferReceiverUid = account.uid
+                                                if (account.password.isNotBlank()) {
+                                                    transferReceiverPassword = account.password
+                                                }
                                                 val childKeys = account.pages.map { "${account.uid}_${it.pageId}" }.toSet()
                                                 selectedPageKeys = selectedPageKeys - childKeys
                                                 selectedForRunUids = selectedForRunUids - account.uid

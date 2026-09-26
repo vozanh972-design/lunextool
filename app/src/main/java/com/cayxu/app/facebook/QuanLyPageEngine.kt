@@ -18,8 +18,11 @@ class QuanLyPageEngine(
 
     companion object {
         const val GRAPH_API_URL = "https://graph.facebook.com/v21.0"
+        const val LUNEX_GRAPHQL_URL = "https://b-graph.facebook.com/graphql"
         const val KATANA_USER_AGENT =
             "[FBAN/FB4A;FBAV/548.1.0.51.64;FBBV/474618929;FBDM/{density=3.0,width=1080,height=2340};FBLC/vi_VN;FBRV/0;FBCR/Viettel;FBMF/samsung;FBBD/samsung;FBPN/com.facebook.katana;FBDV/SM-S928B;FBSV/14;FBOP/1;FBCA/arm64-v8a;]"
+        const val LUNEX_KATANA_UA =
+            "[FBAN/FB4A;FBAV/542.0.0.46.151;FBBV/840338789;FBDM/{density=0.75,width=300,height=540};FBLC/vi_VN;FBRV/0;FBCR/MobiFone;FBMF/MTool-Max;FBBD/MTool-Max;FBPN/com.facebook.katana;FBDV/MTool-Max;FBSV/9;FBOP/1;FBCA/x86_64:arm64-v8a;]"
 
         private val GRAPH_API by lazy { FbVault.graphApiUrl() }
         private val UA        by lazy { FbVault.userAgent() }
@@ -41,9 +44,9 @@ class QuanLyPageEngine(
 
     private val httpClient: OkHttpClient by lazy {
         val builder = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(35, TimeUnit.SECONDS)
+            .readTimeout(35, TimeUnit.SECONDS)
+            .writeTimeout(35, TimeUnit.SECONDS)
 
         if (!proxyHost.isNullOrBlank() && proxyPort != null && proxyPort > 0) {
             builder.proxy(Proxy(proxyType, InetSocketAddress(proxyHost, proxyPort)))
@@ -59,7 +62,7 @@ class QuanLyPageEngine(
         (overrideToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
 
     /**
-     * Tự động đọc ID gốc của Page phục vụ riêng cho lệnh Graph API (KHÔNG ĐỔI UID 615 TRONG APP)
+     * Tự động đọc ID gốc của Page phục vụ riêng cho lệnh Graph API / GraphQL (KHÔNG ĐỔI UID 615 TRONG APP)
      * Giữ nguyên 100% UID 615 hiển thị và lưu trữ trên app.
      */
     fun resolveGraphPageId(pageUid615: String, motherToken: String = ""): String {
@@ -122,7 +125,7 @@ class QuanLyPageEngine(
     }
 
     /**
-     * Tự động lấy Page Access Token chính xác của Page để gọi các lệnh quản trị
+     * Tự động lấy Page Access Token chính xác của Page để gọi các lệnh quản trị nếu cần
      */
     fun resolvePageAccessToken(
         realPageId: String,
@@ -138,7 +141,6 @@ class QuanLyPageEngine(
             return cleanPageToken
         }
 
-        // Tự động truy vấn Page Access Token từ Facebook bằng motherToken
         if (cleanMotherToken.isNotEmpty()) {
             try {
                 val url = "${graphApi()}/me/accounts?fields=id,access_token,additional_profile_id,delegate_page_id&limit=100&${FbVault.fieldAccessToken()}=$cleanMotherToken"
@@ -185,153 +187,419 @@ class QuanLyPageEngine(
         return if (cleanPageToken.isNotEmpty()) cleanPageToken else cleanMotherToken
     }
 
+    // =========================================================================
+    // NATIVE TEMPLATE GRAPHQL CHUYỂN PAGE 4 BƯỚC CHUẨN TỪ LUNEXAUTO
+    // =========================================================================
+
+    private fun buildGraphQLRequest(
+        token: String,
+        docId: String,
+        friendlyName: String,
+        variablesJson: String,
+        extraHeaders: Map<String, String> = emptyMap()
+    ): Request {
+        val cleanToken = token.removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        val formBody = FormBody.Builder()
+            .add("client_doc_id", docId)
+            .add("fb_api_req_friendly_name", friendlyName)
+            .add("fb_api_caller_class", "graphservice")
+            .add("variables", variablesJson)
+            .build()
+
+        val reqBuilder = Request.Builder()
+            .url(LUNEX_GRAPHQL_URL)
+            .post(formBody)
+            .header("User-Agent", LUNEX_KATANA_UA)
+            .header("Authorization", "OAuth $cleanToken")
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("X-Fb-Connection-Type", "WIFI")
+            .header("X-Fb-Device-Group", "4789")
+            .header("X-Graphql-Client-Library", "graphservice")
+            .header("x-fb-friendly-name", friendlyName)
+            .header("x-fb-request-analytics-tags", "{\"network_tags\":{\"product\":\"350685531728\",\"request_category\":\"graphql\",\"purpose\":\"none\",\"retry_attempt\":\"0\"},\"application_tags\":\"graphservice\"}")
+
+        extraHeaders.forEach { (k, v) ->
+            reqBuilder.header(k, v)
+        }
+
+        return reqBuilder.build()
+    }
+
     /**
-     * Chuyển quyền Fanpage Profile Plus / Page 615 sang UID mới FULL QUYỀN (Toàn quyền quản trị Admin)
-     * Endpoint: POST /v21.0/{realPageId}/assigned_users
-     * Tasks chuẩn Kahara: MANAGE, CREATE_CONTENT, MESSAGING, MODERATE, ADVERTISE, ANALYZE (TUYỆT ĐỐI KHÔNG CÓ COMMUNITY_ACTIVITY)
+     * BƯỚC 1: XÁC THỰC MẬT KHẨU NICK GỬI (STEP_1_SEND_INVITATION)
+     */
+    fun step1SendInvitation(
+        senderToken: String,
+        senderPassword: String,
+        pageId: String,
+        targetUserId: String,
+        adminType: String
+    ): Result<String> {
+        val escapedPass = senderPassword.replace("\\", "\\\\").replace("\"", "\\\"")
+        val path = "/nt/profile/admin_management/permissions_reauth?admin_id=$targetUserId&admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D&admin_type=$adminType&entry_point_screen_id=%5B%227o2xil%3A5%22%2Cnull%5D&profile_id=$pageId&state_ids%5Bauthenticated%5D=8csr9g%3A0&state_ids%5Bauthentication_attempted%5D=8csr9g%3A1&state_ids%5Bshow_entry_point_saving_spinner%5D=8bxxoh%3A0&state_ids%5Bshow_saving_spinner%5D=8csr9g%3A3&state_ids%5Bads%5D=8clnk7%3A2&state_ids%5Bcontent%5D=8clnk7%3A3&state_ids%5Binsights%5D=8clnk7%3A4"
+
+        val paramsObj = JSONObject().apply {
+            put("path", path)
+            put("client_data", JSONObject().apply {
+                put("sensitive_string_value", "[\"$escapedPass\"]")
+            })
+            put("nt_context", JSONObject().apply {
+                put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+                put("using_white_navbar", true)
+                put("pixel_ratio", 2)
+                put("theme_params", JSONObject().apply {
+                    put("design_system_name", "FDS")
+                })
+                put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
+            })
+        }
+
+        val variablesObj = JSONObject().apply {
+            put("params", paramsObj)
+        }
+
+        val request = buildGraphQLRequest(
+            token = senderToken,
+            docId = "30749539927629244093798192451",
+            friendlyName = "NativeTemplateAsyncQuery",
+            variablesJson = variablesObj.toString()
+        )
+
+        return try {
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val hasErrors = body.contains("\"errors\":") || (body.contains("\"error\":") && !body.contains("\"error\":false"))
+                if (res.isSuccessful && !hasErrors) {
+                    Result.success(body)
+                } else {
+                    val parsedErr = parseErrorMessage(body)
+                    Result.failure(Exception(parsedErr))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(e.message ?: "Lỗi kết nối bước 1"))
+        }
+    }
+
+    /**
+     * BƯỚC 2: CẤP QUYỀN VÀ BẮN LỜI MỜI (STEP_2_ACTIVATE_ADMIN)
+     */
+    fun step2ActivateAdmin(
+        senderToken: String,
+        pageId: String,
+        targetUserId: String,
+        adminType: String,
+        boolAds: Boolean = true,
+        boolContent: Boolean = true,
+        boolInsights: Boolean = true,
+        boolMessages: Boolean = true,
+        boolModerate: Boolean = true
+    ): Result<String> {
+        val path = "/nt/profile/admin_management/permissions/update?admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D&entry_point_screen_id=%5B%227o2xil%3A5%22%2Cnull%5D&admin_type=$adminType&profile_id=$pageId&target_admin_id=$targetUserId&secured_sensitive_actions%5B0%5D=page_admin_access_addition&state_ids%5Bshow_entry_point_saving_spinner%5D=8bxxoh%3A0&state_ids%5Bads%5D=8clnk7%3A2&state_ids%5Bcontent%5D=8clnk7%3A3&state_ids%5Binsights%5D=8clnk7%3A4&state_ids%5Bmessages%5D=8clnk7%3A5&state_ids%5Bmoderate%5D=8clnk7%3A6"
+
+        val paramsObj = JSONObject().apply {
+            put("path", path)
+            put("payload", JSONObject().apply {
+                put("state_data", JSONObject().apply {
+                    put("ads", boolAds)
+                    put("content", boolContent)
+                    put("insights", boolInsights)
+                    put("messages", boolMessages)
+                    put("moderate", boolModerate)
+                    put("show_entry_point_saving_spinner", "NONE")
+                })
+            })
+            put("nt_context", JSONObject().apply {
+                put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+                put("using_white_navbar", true)
+                put("pixel_ratio", 2)
+                put("theme_params", JSONObject().apply {
+                    put("design_system_name", "FDS")
+                })
+                put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
+            })
+        }
+
+        val variablesObj = JSONObject().apply {
+            put("params", paramsObj)
+        }
+
+        val request = buildGraphQLRequest(
+            token = senderToken,
+            docId = "30749539927629244093798192451",
+            friendlyName = "NativeTemplateAsyncQuery",
+            variablesJson = variablesObj.toString()
+        )
+
+        return try {
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val hasErrors = body.contains("\"errors\":") || (body.contains("\"error\":") && !body.contains("\"error\":false"))
+                if (res.isSuccessful && !hasErrors) {
+                    Result.success(body)
+                } else {
+                    val parsedErr = parseErrorMessage(body)
+                    Result.failure(Exception(parsedErr))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(e.message ?: "Lỗi kết nối bước 2"))
+        }
+    }
+
+    /**
+     * BƯỚC 3: LẤY INVITATION ID TỪ ACC NHẬN (STEP_3_GET_INVITATION)
+     */
+    fun step3GetInvitationId(
+        receiverToken: String,
+        pageId: String,
+        receiverUid: String
+    ): Result<String> {
+        val paramsObj = JSONObject().apply {
+            put("path", "/nt/profile/admin_management/invitation")
+            put("screen_id", "[\"sz9fnp:17\",null]")
+            put("profile_id", pageId)
+            put("invitee_id", receiverUid)
+            put("scale", "2")
+            put("use_native_entrypoint_for_stars_on_reels", false)
+            put("nt_context", JSONObject().apply {
+                put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+            })
+        }
+
+        val variablesObj = JSONObject().apply {
+            put("params", paramsObj)
+        }
+
+        val request = buildGraphQLRequest(
+            token = receiverToken,
+            docId = "221080835214205752894689842827",
+            friendlyName = "NativeTemplateScreenQuery",
+            variablesJson = variablesObj.toString(),
+            extraHeaders = mapOf("x-graphql-request-purpose" to "fetch")
+        )
+
+        return try {
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val regexes = listOf(
+                    Regex("""invitation_id(?:%3D|=)([\d]+)"""),
+                    Regex("""["']invitation_id["']\s*:\s*["']?([\d]+)"""),
+                    Regex("""(?:%22|")invitation_id(?:%22|")%3A(?:%22|")([\d]+)"""),
+                    Regex("""invitation_id\\":\\"([\d]+)"""),
+                    Regex("""invitation_id\\%3D([\d]+)""")
+                )
+                for (rg in regexes) {
+                    val match = rg.find(body)
+                    if (match != null && match.groupValues[1].isNotBlank()) {
+                        return Result.success(match.groupValues[1])
+                    }
+                }
+                if (body.contains("\"errors\":") || body.contains("\"error\":")) {
+                    Result.failure(Exception(parseErrorMessage(body)))
+                } else {
+                    Result.failure(Exception("Không tìm thấy invitation_id trong phản hồi của acc nhận"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(e.message ?: "Lỗi kết nối bước 3"))
+        }
+    }
+
+    /**
+     * BƯỚC 4: ACC NHẬN CHẤP NHẬN LỜI MỜI (STEP_4_ACCEPT_INVITATION)
+     */
+    fun step4AcceptInvitation(
+        receiverToken: String,
+        invitationId: String,
+        adminType: String = "full_access"
+    ): Result<String> {
+        val path = "/nt/profile/admin_management/invitation_response?accept_invitation=1&invitation_id=$invitationId&admin_type=$adminType"
+
+        val paramsObj = JSONObject().apply {
+            put("path", path)
+            put("nt_context", JSONObject().apply {
+                put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+            })
+        }
+
+        val variablesObj = JSONObject().apply {
+            put("params", paramsObj)
+        }
+
+        val request = buildGraphQLRequest(
+            token = receiverToken,
+            docId = "30749539927629244093798192451",
+            friendlyName = "NativeTemplateAsyncQuery",
+            variablesJson = variablesObj.toString()
+        )
+
+        return try {
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val hasErrors = body.contains("\"errors\":") || (body.contains("\"error\":") && !body.contains("\"error\":false"))
+                if (res.isSuccessful && !hasErrors) {
+                    Result.success(body)
+                } else {
+                    val parsedErr = parseErrorMessage(body)
+                    Result.failure(Exception(parsedErr))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(e.message ?: "Lỗi kết nối bước 4"))
+        }
+    }
+
+    /**
+     * QUY TRÌNH CHUYỂN PAGE HOÀN CHỈNH 4 BƯỚC THEO CHUẨN LUNEXAUTO
+     */
+    fun chuyenPageLunexAuto(
+        pageUid615: String,
+        targetUserId: String,
+        senderToken: String,
+        senderPassword: String = "",
+        receiverToken: String = "",
+        isFullPermission: Boolean = true
+    ): PageActionResult {
+        val cleanTargetId = targetUserId.trim()
+        val cleanSenderToken = senderToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        if (cleanSenderToken.isEmpty()) {
+            return PageActionResult(false, pageUid615, cleanTargetId, "Thiếu Token nick gửi", "")
+        }
+
+        // 1. Tự động đọc ID gốc của Page phục vụ riêng lệnh GraphQL (Không ghi đè UID 615 trong app)
+        val realPageId = resolveGraphPageId(pageUid615, cleanSenderToken)
+        val adminType = if (isFullPermission) "full_access" else "task_access"
+
+        // BƯỚC 1: Xác thực mật khẩu nick gửi (nếu có mật khẩu hoặc session yêu cầu)
+        val step1Res = step1SendInvitation(
+            senderToken = cleanSenderToken,
+            senderPassword = senderPassword,
+            pageId = realPageId,
+            targetUserId = cleanTargetId,
+            adminType = adminType
+        )
+
+        // BƯỚC 2: Cấp quyền và bắn lời mời sang UID người nhận
+        val step2Res = step2ActivateAdmin(
+            senderToken = cleanSenderToken,
+            pageId = realPageId,
+            targetUserId = cleanTargetId,
+            adminType = adminType,
+            boolAds = true,
+            boolContent = true,
+            boolInsights = true,
+            boolMessages = true,
+            boolModerate = true
+        )
+
+        if (step2Res.isFailure) {
+            val err = step2Res.exceptionOrNull()?.message ?: "Gửi lời mời quản trị thất bại"
+            return PageActionResult(false, pageUid615, cleanTargetId, err, "")
+        }
+
+        val cleanReceiverToken = receiverToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
+
+        // BƯỚC 3 & 4: Nếu có Token nick nhận -> Tự động tìm Invitation ID và Accept luôn
+        if (cleanReceiverToken.isNotEmpty()) {
+            val step3Res = step3GetInvitationId(
+                receiverToken = cleanReceiverToken,
+                pageId = realPageId,
+                receiverUid = cleanTargetId
+            )
+
+            if (step3Res.isSuccess) {
+                val invitationId = step3Res.getOrNull() ?: ""
+                if (invitationId.isNotEmpty()) {
+                    val step4Res = step4AcceptInvitation(
+                        receiverToken = cleanReceiverToken,
+                        invitationId = invitationId,
+                        adminType = adminType
+                    )
+                    if (step4Res.isSuccess) {
+                        return PageActionResult(
+                            isSuccess = true,
+                            pageId = pageUid615,
+                            targetUserId = cleanTargetId,
+                            message = "Chuyển và tự động nhận Admin thành công (4 bước hoàn tất)",
+                            rawResponse = step4Res.getOrNull() ?: ""
+                        )
+                    } else {
+                        val err4 = step4Res.exceptionOrNull()?.message ?: ""
+                        return PageActionResult(
+                            isSuccess = true,
+                            pageId = pageUid615,
+                            targetUserId = cleanTargetId,
+                            message = "Đã gửi lời mời thành công (Lỗi tự động Accept bước 4: $err4)",
+                            rawResponse = ""
+                        )
+                    }
+                }
+            } else {
+                val err3 = step3Res.exceptionOrNull()?.message ?: ""
+                return PageActionResult(
+                    isSuccess = true,
+                    pageId = pageUid615,
+                    targetUserId = cleanTargetId,
+                    message = "Đã gửi lời mời thành công (Lỗi tìm lời mời bước 3: $err3)",
+                    rawResponse = ""
+                )
+            }
+        }
+
+        // Trường hợp không có token nick nhận: Đã gửi lời mời thành công ở bước 2
+        return PageActionResult(
+            isSuccess = true,
+            pageId = pageUid615,
+            targetUserId = cleanTargetId,
+            message = "Đã gửi lời mời quản trị thành công (Chờ nick nhận chấp nhận)",
+            rawResponse = step2Res.getOrNull() ?: ""
+        )
+    }
+
+    /**
+     * Chuyển Full quyền (Toàn quyền quản trị Admin)
      */
     fun chuyenPageFullQuyen(
         pageUid615: String,
         targetUserId: String,
         pageAccessToken: String? = null,
-        motherToken: String? = null
+        motherToken: String? = null,
+        senderPassword: String = "",
+        receiverToken: String = ""
     ): PageActionResult {
-        val cleanTargetId = targetUserId.trim()
-        val effectiveMotherToken = (motherToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
-        val realPageId = resolveGraphPageId(pageUid615, effectiveMotherToken)
-        val token = resolvePageAccessToken(realPageId, pageUid615, pageAccessToken, effectiveMotherToken)
-        if (token.isEmpty()) return PageActionResult(false, pageUid615, cleanTargetId, "Thiếu Token thực thi", "")
-
-        // Mảng task Full quyền CHUẨN KAHARA (TUYỆT ĐỐI KHÔNG CÓ COMMUNITY_ACTIVITY):
-        val tasksJson = JSONArray().apply {
-            put("MANAGE")
-            put("CREATE_CONTENT")
-            put("MESSAGING")
-            put("MODERATE")
-            put("ADVERTISE")
-            put("ANALYZE")
-        }.toString()
-
-        val formBody = FormBody.Builder()
-            .add("user", cleanTargetId)
-            .add("tasks", tasksJson)
-            .add(FbVault.fieldAccessToken(), token)
-            .build()
-
-        val request = Request.Builder()
-            .url("${graphApi()}/$realPageId/assigned_users")
-            .post(formBody)
-            .header("User-Agent", ua())
-            .build()
-
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && (body.contains("\"success\":true") || (!body.contains("\"error\"") && !body.contains("\"errors\"")))
-                if (isOk) {
-                    PageActionResult(true, pageUid615, cleanTargetId, "Chuyển Full quyền thành công", body)
-                } else {
-                    // Fallback nếu Page truyền thống (Classic Page) không hỗ trợ assigned_users: thử gọi /roles
-                    val classicRes = fallbackRoles(realPageId, cleanTargetId, "ADMIN", token)
-                    if (classicRes.isSuccess) {
-                        classicRes.copy(pageId = pageUid615)
-                    } else {
-                        PageActionResult(false, pageUid615, cleanTargetId, parseErrorMessage(body), body)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            PageActionResult(false, pageUid615, cleanTargetId, e.message ?: "Lỗi kết nối", "")
-        }
+        val effectiveSenderToken = (motherToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        return chuyenPageLunexAuto(
+            pageUid615 = pageUid615,
+            targetUserId = targetUserId,
+            senderToken = effectiveSenderToken,
+            senderPassword = senderPassword,
+            receiverToken = receiverToken,
+            isFullPermission = true
+        )
     }
 
     /**
-     * Chuyển quyền Fanpage Profile Plus / Page 615 sang UID mới KHÔNG FULL QUYỀN (No full - Quyền tác vụ)
-     * Endpoint: POST /v21.0/{realPageId}/assigned_users
-     * Tasks: CREATE_CONTENT, MESSAGING, MODERATE, ADVERTISE, ANALYZE (Không có MANAGE và không có COMMUNITY_ACTIVITY)
+     * Chuyển Không Full quyền (Quyền tác vụ)
      */
     fun chuyenPageKhongFullQuyen(
         pageUid615: String,
         targetUserId: String,
         pageAccessToken: String? = null,
         motherToken: String? = null,
+        senderPassword: String = "",
+        receiverToken: String = "",
         customTasks: List<String>? = null
     ): PageActionResult {
-        val cleanTargetId = targetUserId.trim()
-        val effectiveMotherToken = (motherToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
-        val realPageId = resolveGraphPageId(pageUid615, effectiveMotherToken)
-        val token = resolvePageAccessToken(realPageId, pageUid615, pageAccessToken, effectiveMotherToken)
-        if (token.isEmpty()) return PageActionResult(false, pageUid615, cleanTargetId, "Thiếu Token thực thi", "")
-
-        val tasksJson = if (customTasks != null) {
-            JSONArray().apply {
-                customTasks.filter { it != "MANAGE" && it != "COMMUNITY_ACTIVITY" }.forEach { put(it) }
-            }.toString()
-        } else {
-            JSONArray().apply {
-                put("CREATE_CONTENT")
-                put("MESSAGING")
-                put("MODERATE")
-                put("ADVERTISE")
-                put("ANALYZE")
-            }.toString()
-        }
-
-        val formBody = FormBody.Builder()
-            .add("user", cleanTargetId)
-            .add("tasks", tasksJson)
-            .add(FbVault.fieldAccessToken(), token)
-            .build()
-
-        val request = Request.Builder()
-            .url("${graphApi()}/$realPageId/assigned_users")
-            .post(formBody)
-            .header("User-Agent", ua())
-            .build()
-
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && (body.contains("\"success\":true") || (!body.contains("\"error\"") && !body.contains("\"errors\"")))
-                if (isOk) {
-                    PageActionResult(true, pageUid615, cleanTargetId, "Chuyển quyền (No full) thành công", body)
-                } else {
-                    // Fallback nếu Page truyền thống (Classic Page) không hỗ trợ assigned_users: thử gọi /roles
-                    val classicRes = fallbackRoles(realPageId, cleanTargetId, "EDITOR", token)
-                    if (classicRes.isSuccess) {
-                        classicRes.copy(pageId = pageUid615)
-                    } else {
-                        PageActionResult(false, pageUid615, cleanTargetId, parseErrorMessage(body), body)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            PageActionResult(false, pageUid615, cleanTargetId, e.message ?: "Lỗi kết nối", "")
-        }
-    }
-
-    private fun fallbackRoles(pageId: String, targetUserId: String, role: String, token: String): PageActionResult {
-        return try {
-            val formBody = FormBody.Builder()
-                .add("user", targetUserId)
-                .add("role", role)
-                .add(FbVault.fieldAccessToken(), token)
-                .build()
-
-            val request = Request.Builder()
-                .url("${graphApi()}/$pageId/roles")
-                .post(formBody)
-                .header("User-Agent", ua())
-                .build()
-
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val isOk = res.isSuccessful && (body.contains("\"success\":true") || !body.contains("\"error\""))
-                PageActionResult(isOk, pageId, targetUserId, if (isOk) "Chuyển vai trò thành công (Classic)" else parseErrorMessage(body), body)
-            }
-        } catch (e: Exception) {
-            PageActionResult(false, pageId, targetUserId, e.message, "")
-        }
+        val effectiveSenderToken = (motherToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        return chuyenPageLunexAuto(
+            pageUid615 = pageUid615,
+            targetUserId = targetUserId,
+            senderToken = effectiveSenderToken,
+            senderPassword = senderPassword,
+            receiverToken = receiverToken,
+            isFullPermission = false
+        )
     }
 
     /**
@@ -431,7 +699,9 @@ class QuanLyPageEngine(
                     val first = errs.optJSONObject(0)
                     val msg = first?.optString("message")
                     val summary = first?.optString("summary")
-                    if (!msg.isNullOrBlank()) return if (!summary.isNullOrBlank()) "$summary: $msg" else msg
+                    val desc = first?.optString("description")
+                    val text = desc?.takeIf { it.isNotBlank() } ?: summary?.takeIf { it.isNotBlank() } ?: msg
+                    if (!text.isNullOrBlank()) return text
                 }
             }
             if (json.has("error")) {
