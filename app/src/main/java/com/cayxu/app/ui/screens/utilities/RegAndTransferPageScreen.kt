@@ -1114,18 +1114,43 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                     }
                                 }
 
-                                Spacer(Modifier.width(10.dp))
+                                Spacer(Modifier.width(8.dp))
 
-                                // Tên tài khoản
-                                Text(
-                                    text = account.name.ifBlank { account.uid },
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.5.sp,
-                                    color = TextPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
+                                // Tên tài khoản + Badge Live/Checkpoint CÙNG HÀNG
+                                val hasNoAvatar = account.avatar.isBlank() ||
+                                        account.avatar.contains("silhouette") ||
+                                        account.avatar.contains("blank_avatar")
+                                val isCp = account.uid in checkpointUids || hasNoAvatar || !account.isLive
+
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = account.name.ifBlank { account.uid },
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    // Badge Live / Checkpoint (chữ thẳng hàng 1 dòng, không bị bẻ đôi)
+                                    Text(
+                                        text = if (isCp) "• Checkpoint" else "• Live",
+                                        color = if (isCp) Color(0xFFD32F2F) else Color(0xFF16A34A),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier
+                                            .background(
+                                                color = if (isCp) Color(0xFFFFEBEE) else Color(0xFFE8F5E9),
+                                                shape = RoundedCornerShape(4.dp)
+                                            )
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
 
                                 // Nút Reload nhỏ gọn góc phải
                                 IconButton(
@@ -1214,44 +1239,22 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 }
                             }
 
-                            Spacer(Modifier.height(8.dp))
+                            Spacer(Modifier.height(6.dp))
 
-                            // ================= HÀNG 2: UID + BADGE CHECKPOINT/LIVE + NÚT CHỌN NHẬN / HỦY NHẬN =================
+                            // ================= HÀNG 2: UID Ở TRÁI - NÚT CHỌN NHẬN Ở PHẢI =================
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                // Cụm trái: UID + Badge Trạng thái
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "UID: ${account.uid}",
-                                        fontSize = 12.sp,
-                                        color = TextSecondary
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    // Badge Live / Checkpoint: Chống bẻ đôi chữ
-                                    val hasNoAvatar = account.avatar.isBlank() ||
-                                            account.avatar.contains("silhouette") ||
-                                            account.avatar.contains("blank_avatar")
-                                    val isCp = account.uid in checkpointUids || hasNoAvatar || !account.isLive
-                                    Text(
-                                        text = if (isCp) "• Checkpoint" else "• Live",
-                                        color = if (isCp) Color(0xFFD32F2F) else Color(0xFF16A34A),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        modifier = Modifier
-                                            .background(
-                                                color = if (isCp) Color(0xFFFFEBEE) else Color(0xFFE8F5E9),
-                                                shape = RoundedCornerShape(4.dp)
-                                            )
-                                            .padding(horizontal = 6.dp, vertical = 2.5.dp)
-                                    )
-                                }
+                                // Bên trái: Chỉ hiển thị UID
+                                Text(
+                                    text = "UID: ${account.uid}",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary
+                                )
 
-                                // Cụm phải: Nút Chọn nhận / Hủy nhận ở Tab Chuyển Page (Chữ thuần túy, bỏ icon thừa)
+                                // Bên phải: Nút Chọn nhận / Hủy nhận ở Tab Chuyển Page (Chữ thuần, không icon)
                                 if (activeTab == 1) {
                                     if (isReceiver) {
                                         Button(
@@ -1260,10 +1263,10 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 containerColor = Color(0xFFFFEBEE),
                                                 contentColor = Color(0xFFD32F2F)
                                             ),
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                                             shape = RoundedCornerShape(6.dp),
                                             elevation = null,
-                                            modifier = Modifier.height(32.dp)
+                                            modifier = Modifier.height(30.dp)
                                         ) {
                                             Text(
                                                 text = "Hủy nhận",
@@ -1282,10 +1285,10 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 selectedPageKeys = selectedPageKeys - childKeys
                                                 selectedForRunUids = selectedForRunUids - account.uid
                                             },
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                                             shape = RoundedCornerShape(6.dp),
                                             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1877F2)),
-                                            modifier = Modifier.height(32.dp)
+                                            modifier = Modifier.height(30.dp)
                                         ) {
                                             Text(
                                                 text = "Chọn nhận",
@@ -1506,9 +1509,9 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                         modifier = Modifier.weight(1f, fill = false)
                                     ) {
                                         Text(
-                                            if (activeTab == 1) "Danh sách Fanpage (Đã chọn: $selectedPagesCount/${account.pages.size} page):"
-                                            else "Danh sách Fanpage (${account.pages.size}):",
-                                            fontSize = 11.5.sp,
+                                            if (activeTab == 1) "Fanpage ($selectedPagesCount/${account.pages.size}):"
+                                            else "Fanpage (${account.pages.size}):",
+                                            fontSize = 12.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = if (activeTab == 1 && selectedPagesCount > 0) Cobalt600 else TextSecondary
                                         )
