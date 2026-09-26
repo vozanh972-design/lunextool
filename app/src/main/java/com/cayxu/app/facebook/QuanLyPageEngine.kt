@@ -54,7 +54,7 @@ class QuanLyPageEngine(
     /**
      * Chuyển quyền Fanpage Profile Plus / Page 615 sang UID mới FULL QUYỀN (Toàn quyền quản trị Admin)
      * Endpoint: POST /v21.0/{page_id}/assigned_users
-     * Tasks: MANAGE, CREATE_CONTENT, MESSAGING, MODERATE, COMMUNITY_ACTIVITY, ADVERTISE, ANALYZE
+     * Tasks: MANAGE (Facebook Graph API tự động cấp toàn bộ quyền Full Admin khi có MANAGE)
      */
     fun chuyenPageFullQuyen(pageId: String, targetUserId: String, pageToken: String? = null): PageActionResult {
         val token = getCleanToken(pageToken)
@@ -64,12 +64,6 @@ class QuanLyPageEngine(
 
         val tasks = JSONArray().apply {
             put("MANAGE")
-            put("CREATE_CONTENT")
-            put("MESSAGING")
-            put("MODERATE")
-            put("COMMUNITY_ACTIVITY")
-            put("ADVERTISE")
-            put("ANALYZE")
         }
 
         val formBody = FormBody.Builder()
@@ -108,12 +102,12 @@ class QuanLyPageEngine(
     /**
      * Chuyển quyền Fanpage Profile Plus / Page 615 sang UID mới KHÔNG FULL QUYỀN (No full - Quyền tác vụ)
      * Endpoint: POST /v21.0/{page_id}/assigned_users
-     * Tasks: Không có quyền MANAGE (CREATE_CONTENT, MESSAGING, MODERATE, COMMUNITY_ACTIVITY, ADVERTISE, ANALYZE)
+     * Tasks: Không có quyền MANAGE (CREATE_CONTENT, MESSAGING, MODERATE, ADVERTISE, ANALYZE, MODERATE_COMMUNITY)
      */
     fun chuyenPageKhongFullQuyen(
         pageId: String,
         targetUserId: String,
-        customTasks: List<String> = listOf("CREATE_CONTENT", "MESSAGING", "MODERATE", "COMMUNITY_ACTIVITY", "ADVERTISE", "ANALYZE"),
+        customTasks: List<String> = listOf("CREATE_CONTENT", "MESSAGING", "MODERATE", "ADVERTISE", "ANALYZE", "MODERATE_COMMUNITY"),
         pageToken: String? = null
     ): PageActionResult {
         val token = getCleanToken(pageToken)
@@ -122,7 +116,7 @@ class QuanLyPageEngine(
         val cleanPageId = pageId.trim()
 
         val jsonTasks = JSONArray().apply {
-            customTasks.filter { it != "MANAGE" }.forEach { put(it) }
+            customTasks.filter { it != "MANAGE" && it != "COMMUNITY_ACTIVITY" }.forEach { put(it) }
         }
 
         val formBody = FormBody.Builder()

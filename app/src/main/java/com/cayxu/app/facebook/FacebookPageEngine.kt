@@ -274,12 +274,6 @@ class FacebookPageEngine(
 
         val tasks = JSONArray().apply {
             put("MANAGE")
-            put("CREATE_CONTENT")
-            put("MESSAGING")
-            put("MODERATE")
-            put("COMMUNITY_ACTIVITY")
-            put("ADVERTISE")
-            put("ANALYZE")
         }
 
         val formBody = FormBody.Builder()
