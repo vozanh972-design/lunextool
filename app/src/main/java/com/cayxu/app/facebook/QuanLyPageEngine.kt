@@ -615,7 +615,9 @@ class QuanLyPageEngine(
     }
 
     /**
-     * Chuyển Không Full quyền (Quyền tác vụ)
+     * Chuyển Không Full quyền (Quyền tác vụ - Task Access)
+     * Chuẩn NativeTemplate GraphQL: admin_type=task_access, ads=false, content=true, messages=true, moderate=true, insights=true
+     * BẢO MẬT: Người nhận KHÔNG THỂ gỡ quyền của người gửi, KHÔNG THỂ xóa Page, và KHÔNG THỂ gán thêm admin khác.
      */
     fun chuyenPageKhongFullQuyen(
         pageUid615: String,
@@ -626,14 +628,126 @@ class QuanLyPageEngine(
         receiverToken: String = "",
         customTasks: List<String>? = null
     ): PageActionResult {
+        val cleanTargetId = targetUserId.trim()
         val effectiveSenderToken = (motherToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
-        return chuyenPageLunexAuto(
-            pageUid615 = pageUid615,
-            targetUserId = targetUserId,
+        if (effectiveSenderToken.isEmpty()) {
+            return PageActionResult(false, pageUid615, cleanTargetId, "Thiếu Token nick gửi", "")
+        }
+
+        // Tự động đọc ID gốc của Page phục vụ riêng GraphQL (Giữ nguyên UID 615 trong app/database)
+        val realPageId = resolveGraphPageId(pageUid615, effectiveSenderToken)
+        val adminType = "task_access"
+
+        // Phân quyền chuẩn tác vụ: Quản lý bài viết, tin nhắn Messenger, kiểm duyệt bình luận, xem insights
+        // ads = false (hoặc true nếu customTasks có yêu cầu ADS)
+        val allowAds = customTasks?.any { it.contains("ADS", ignoreCase = true) || it.contains("QUANG_CAO", ignoreCase = true) } ?: false
+
+        // BƯỚC 2: Cấp quyền tác vụ & Gửi lời mời (permissions/update)
+        // Mẹo tối ưu LunexAuto: Thử gọi thẳng Bước 2 trước nếu token chưa bị bắt re-auth
+        var step2Res = step2ActivateAdmin(
             senderToken = effectiveSenderToken,
-            senderPassword = senderPassword,
-            receiverToken = receiverToken,
-            isFullPermission = false
+            pageId = realPageId,
+            targetUserId = cleanTargetId,
+            adminType = adminType,
+            boolAds = allowAds,
+            boolContent = true,
+            boolInsights = true,
+            boolMessages = true,
+            boolModerate = true
+        )
+
+        // Nếu Bước 2 gặp lỗi (cần re-auth mật khẩu), kích hoạt Bước 1 rồi gọi lại Bước 2
+        if (step2Res.isFailure) {
+            if (senderPassword.isNotBlank()) {
+                val step1Res = step1SendInvitation(
+                    senderToken = effectiveSenderToken,
+                    senderPassword = senderPassword,
+                    pageId = realPageId,
+                    targetUserId = cleanTargetId,
+                    adminType = adminType
+                )
+                if (step1Res.isFailure) {
+                    val s1Err = step1Res.exceptionOrNull()?.message ?: "Xác thực mật khẩu thất bại"
+                    return PageActionResult(false, pageUid615, cleanTargetId, s1Err, "")
+                }
+                // Sau khi re-auth thành công, gọi lại Bước 2
+                step2Res = step2ActivateAdmin(
+                    senderToken = effectiveSenderToken,
+                    pageId = realPageId,
+                    targetUserId = cleanTargetId,
+                    adminType = adminType,
+                    boolAds = allowAds,
+                    boolContent = true,
+                    boolInsights = true,
+                    boolMessages = true,
+                    boolModerate = true
+                )
+            } else {
+                val err2 = step2Res.exceptionOrNull()?.message ?: "Facebook yêu cầu xác thực mật khẩu"
+                return PageActionResult(false, pageUid615, cleanTargetId, "$err2 (Vui lòng nhập mật khẩu tài khoản gửi)", "")
+            }
+        }
+
+        if (step2Res.isFailure) {
+            val err = step2Res.exceptionOrNull()?.message ?: "Gửi lời mời quyền tác vụ (Task Access) thất bại"
+            return PageActionResult(false, pageUid615, cleanTargetId, err, "")
+        }
+
+        val cleanReceiverToken = receiverToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
+
+        // BƯỚC 3 & 4: Nếu có Token nick nhận -> Tự động tìm Invitation ID và Accept quyền task_access
+        if (cleanReceiverToken.isNotEmpty()) {
+            val step3Res = step3GetInvitationId(
+                receiverToken = cleanReceiverToken,
+                pageId = realPageId,
+                receiverUid = cleanTargetId
+            )
+
+            if (step3Res.isSuccess) {
+                val invitationId = step3Res.getOrNull() ?: ""
+                if (invitationId.isNotEmpty()) {
+                    val step4Res = step4AcceptInvitation(
+                        receiverToken = cleanReceiverToken,
+                        invitationId = invitationId,
+                        adminType = adminType // task_access
+                    )
+                    if (step4Res.isSuccess) {
+                        return PageActionResult(
+                            isSuccess = true,
+                            pageId = pageUid615,
+                            targetUserId = cleanTargetId,
+                            message = "Chuyển quyền tác vụ (Task Access) & Đã tự động chấp nhận thành công",
+                            rawResponse = step4Res.getOrNull() ?: ""
+                        )
+                    } else {
+                        val err4 = step4Res.exceptionOrNull()?.message ?: ""
+                        return PageActionResult(
+                            isSuccess = true,
+                            pageId = pageUid615,
+                            targetUserId = cleanTargetId,
+                            message = "Đã gửi lời mời quyền tác vụ thành công (Lỗi tự động Accept: $err4)",
+                            rawResponse = ""
+                        )
+                    }
+                }
+            } else {
+                val err3 = step3Res.exceptionOrNull()?.message ?: ""
+                return PageActionResult(
+                    isSuccess = true,
+                    pageId = pageUid615,
+                    targetUserId = cleanTargetId,
+                    message = "Đã gửi lời mời quyền tác vụ thành công (Lỗi tìm lời mời bước 3: $err3)",
+                    rawResponse = ""
+                )
+            }
+        }
+
+        return PageActionResult(
+            isSuccess = true,
+            pageId = pageUid615,
+            targetUserId = cleanTargetId,
+            message = "Đã gửi lời mời quyền tác vụ (Task Access) thành công (Chờ nick nhận chấp nhận)",
+            rawResponse = step2Res.getOrNull() ?: ""
         )
     }
 
