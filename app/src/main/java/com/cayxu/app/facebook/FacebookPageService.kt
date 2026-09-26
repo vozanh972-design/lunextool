@@ -354,15 +354,42 @@ class FacebookPageService {
     }
 
     /**
+     * Tự động đọc ID gốc của Page phục vụ riêng cho lệnh Graph API (KHÔNG ĐỔI UID 615 TRONG APP)
+     */
+    fun resolveGraphPageId(pageUid615: String, motherToken: String): String {
+        if (!pageUid615.startsWith("615")) return pageUid615
+        val cleanToken = motherToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        val url = "$GRAPH_BASE_URL/v21.0/$pageUid615?fields=id,name,delegate_page_id&access_token=$cleanToken"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .header("User-Agent", FacebookPageEngine.KATANA_USER_AGENT)
+            .build()
+        return try {
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val json = JSONObject(body)
+                val delegateId = json.optString("delegate_page_id", "")
+                if (delegateId.isNotEmpty() && !delegateId.startsWith("615")) delegateId
+                else json.optString("id", pageUid615)
+            }
+        } catch (_: Exception) {
+            pageUid615
+        }
+    }
+
+    /**
      * 2. Chuyển quyền quản trị Page sang UID khác (Nút "Chuyển Page")
      */
     @Throws(Exception::class)
     fun transferPageRole(
         pageId: String,
         pageToken: String,
-        targetUserId: String
+        targetUserId: String,
+        motherToken: String = ""
     ): Boolean {
-        val url = "https://graph.facebook.com/v19.0/$pageId/roles"
+        val realPageId = resolveGraphPageId(pageId, if (motherToken.isNotBlank()) motherToken else pageToken)
+        val url = "https://graph.facebook.com/v19.0/$realPageId/roles"
         val formBody = FormBody.Builder()
             .add("user", targetUserId)
             .add("role", "ADMIN")

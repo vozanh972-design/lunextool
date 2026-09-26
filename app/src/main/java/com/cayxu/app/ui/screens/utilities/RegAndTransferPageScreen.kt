@@ -541,17 +541,26 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     continue
                                                 }
 
+                                                val page615Uid = if (page.additionalProfileId.isNotBlank() && page.additionalProfileId.startsWith("615")) {
+                                                    page.additionalProfileId
+                                                } else {
+                                                    page.pageId
+                                                }
+                                                val motherToken = account.bio.trim()
+
                                                 val res = if (isFullPermission) {
                                                     engine.chuyenPageFullQuyen(
-                                                        pageId = page.pageId,
+                                                        pageUid615 = page615Uid,
                                                         targetUserId = receiverUid,
-                                                        pageToken = tokenToUse
+                                                        pageAccessToken = tokenToUse,
+                                                        motherToken = motherToken
                                                     )
                                                 } else {
                                                     engine.chuyenPageKhongFullQuyen(
-                                                        pageId = page.pageId,
+                                                        pageUid615 = page615Uid,
                                                         targetUserId = receiverUid,
-                                                        pageToken = tokenToUse
+                                                        pageAccessToken = tokenToUse,
+                                                        motherToken = motherToken
                                                     )
                                                 }
 

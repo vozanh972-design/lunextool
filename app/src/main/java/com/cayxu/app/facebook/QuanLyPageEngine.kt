@@ -17,6 +17,10 @@ class QuanLyPageEngine(
 ) {
 
     companion object {
+        const val GRAPH_API_URL = "https://graph.facebook.com/v21.0"
+        const val KATANA_USER_AGENT =
+            "[FBAN/FB4A;FBAV/548.1.0.51.64;FBBV/474618929;FBDM/{density=3.0,width=1080,height=2340};FBLC/vi_VN;FBRV/0;FBCR/Viettel;FBMF/samsung;FBBD/samsung;FBPN/com.facebook.katana;FBDV/SM-S928B;FBSV/14;FBOP/1;FBCA/arm64-v8a;]"
+
         private val GRAPH_API by lazy { FbVault.graphApiUrl() }
         private val UA        by lazy { FbVault.userAgent() }
         private fun graphApi() = GRAPH_API
@@ -30,7 +34,10 @@ class QuanLyPageEngine(
         val targetUserId: String? = null,
         val message: String? = null,
         val rawResponse: String = ""
-    )
+    ) {
+        fun asResult(): Result<Boolean> =
+            if (isSuccess) Result.success(true) else Result.failure(Exception(message ?: rawResponse))
+    }
 
     private val httpClient: OkHttpClient by lazy {
         val builder = OkHttpClient.Builder()
@@ -52,28 +59,167 @@ class QuanLyPageEngine(
         (overrideToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
 
     /**
-     * Chuyển quyền Fanpage Profile Plus / Page 615 sang UID mới FULL QUYỀN (Toàn quyền quản trị Admin)
-     * Endpoint: POST /v21.0/{page_id}/assigned_users
-     * Tasks: MANAGE (Facebook Graph API tự động cấp toàn bộ quyền Full Admin khi có MANAGE)
+     * Tự động đọc ID gốc của Page phục vụ riêng cho lệnh Graph API (KHÔNG ĐỔI UID 615 TRONG APP)
+     * Giữ nguyên 100% UID 615 hiển thị và lưu trữ trên app.
      */
-    fun chuyenPageFullQuyen(pageId: String, targetUserId: String, pageToken: String? = null): PageActionResult {
-        val token = getCleanToken(pageToken)
-        if (token.isEmpty()) return PageActionResult(false, pageId, targetUserId, "Thiếu Token thực thi", "")
-        val cleanTargetId = targetUserId.trim()
-        val cleanPageId = pageId.trim()
+    fun resolveGraphPageId(pageUid615: String, motherToken: String = ""): String {
+        val cleanUid = pageUid615.trim()
+        if (!cleanUid.startsWith("615")) return cleanUid
+        val cleanToken = (if (motherToken.isNotBlank()) motherToken else (accessToken ?: ""))
+            .removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        if (cleanToken.isEmpty()) return cleanUid
 
-        val tasks = JSONArray().apply {
-            put("MANAGE")
+        // 1. Thử gọi Graph API: GET /v21.0/$cleanUid?fields=id,name,delegate_page_id&access_token=$cleanToken
+        try {
+            val url = "${graphApi()}/$cleanUid?fields=id,name,delegate_page_id&${FbVault.fieldAccessToken()}=$cleanToken"
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .header("User-Agent", ua())
+                .build()
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val json = JSONObject(body)
+                val delegateId = json.optString("delegate_page_id", "")
+                if (delegateId.isNotBlank() && !delegateId.startsWith("615")) {
+                    return delegateId
+                }
+                val id = json.optString("id", "")
+                if (id.isNotBlank() && !id.startsWith("615")) {
+                    return id
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 2. Fallback: Truy vấn /me/accounts để tìm ID đối ứng với UID 615
+        try {
+            val url = "${graphApi()}/me/accounts?fields=id,additional_profile_id,delegate_page_id&limit=100&${FbVault.fieldAccessToken()}=$cleanToken"
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .header("User-Agent", ua())
+                .build()
+            httpClient.newCall(request).execute().use { res ->
+                val body = res.body?.string() ?: ""
+                val json = JSONObject(body)
+                val data = json.optJSONArray("data")
+                if (data != null) {
+                    for (i in 0 until data.length()) {
+                        val p = data.getJSONObject(i)
+                        val addId = p.optString("additional_profile_id", "")
+                        val delId = p.optString("delegate_page_id", "")
+                        val pageId = p.optString("id", "")
+                        if (addId == cleanUid || delId == cleanUid) {
+                            if (delId.isNotBlank() && !delId.startsWith("615")) return delId
+                            if (pageId.isNotBlank() && !pageId.startsWith("615")) return pageId
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        return cleanUid
+    }
+
+    /**
+     * Tự động lấy Page Access Token chính xác của Page để gọi các lệnh quản trị
+     */
+    fun resolvePageAccessToken(
+        realPageId: String,
+        pageUid615: String,
+        pageAccessToken: String?,
+        motherToken: String = ""
+    ): String {
+        val cleanPageToken = pageAccessToken?.removePrefix("OAuth ")?.removePrefix("Bearer ")?.trim() ?: ""
+        val cleanMotherToken = (if (motherToken.isNotBlank()) motherToken else (accessToken ?: ""))
+            .removePrefix("OAuth ").removePrefix("Bearer ").trim()
+
+        if (cleanPageToken.isNotEmpty() && cleanPageToken != cleanMotherToken) {
+            return cleanPageToken
         }
+
+        // Tự động truy vấn Page Access Token từ Facebook bằng motherToken
+        if (cleanMotherToken.isNotEmpty()) {
+            try {
+                val url = "${graphApi()}/me/accounts?fields=id,access_token,additional_profile_id,delegate_page_id&limit=100&${FbVault.fieldAccessToken()}=$cleanMotherToken"
+                val request = Request.Builder()
+                    .url(url)
+                    .get()
+                    .header("User-Agent", ua())
+                    .build()
+                httpClient.newCall(request).execute().use { res ->
+                    val body = res.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    val data = json.optJSONArray("data")
+                    if (data != null) {
+                        for (i in 0 until data.length()) {
+                            val p = data.getJSONObject(i)
+                            val id = p.optString("id", "")
+                            val addId = p.optString("additional_profile_id", "")
+                            val delId = p.optString("delegate_page_id", "")
+                            val token = p.optString("access_token", "")
+                            if ((id == realPageId || addId == pageUid615 || delId == pageUid615 || id == pageUid615) && token.isNotBlank()) {
+                                return token
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            try {
+                val url = "${graphApi()}/$realPageId?fields=access_token&${FbVault.fieldAccessToken()}=$cleanMotherToken"
+                val request = Request.Builder()
+                    .url(url)
+                    .get()
+                    .header("User-Agent", ua())
+                    .build()
+                httpClient.newCall(request).execute().use { res ->
+                    val body = res.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    val token = json.optString("access_token", "")
+                    if (token.isNotBlank()) return token
+                }
+            } catch (_: Exception) {}
+        }
+
+        return if (cleanPageToken.isNotEmpty()) cleanPageToken else cleanMotherToken
+    }
+
+    /**
+     * Chuyển quyền Fanpage Profile Plus / Page 615 sang UID mới FULL QUYỀN (Toàn quyền quản trị Admin)
+     * Endpoint: POST /v21.0/{realPageId}/assigned_users
+     * Tasks chuẩn Kahara: MANAGE, CREATE_CONTENT, MESSAGING, MODERATE, ADVERTISE, ANALYZE (TUYỆT ĐỐI KHÔNG CÓ COMMUNITY_ACTIVITY)
+     */
+    fun chuyenPageFullQuyen(
+        pageUid615: String,
+        targetUserId: String,
+        pageAccessToken: String? = null,
+        motherToken: String? = null
+    ): PageActionResult {
+        val cleanTargetId = targetUserId.trim()
+        val effectiveMotherToken = (motherToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        val realPageId = resolveGraphPageId(pageUid615, effectiveMotherToken)
+        val token = resolvePageAccessToken(realPageId, pageUid615, pageAccessToken, effectiveMotherToken)
+        if (token.isEmpty()) return PageActionResult(false, pageUid615, cleanTargetId, "Thiếu Token thực thi", "")
+
+        // Mảng task Full quyền CHUẨN KAHARA (TUYỆT ĐỐI KHÔNG CÓ COMMUNITY_ACTIVITY):
+        val tasksJson = JSONArray().apply {
+            put("MANAGE")
+            put("CREATE_CONTENT")
+            put("MESSAGING")
+            put("MODERATE")
+            put("ADVERTISE")
+            put("ANALYZE")
+        }.toString()
 
         val formBody = FormBody.Builder()
             .add("user", cleanTargetId)
-            .add("tasks", tasks.toString())
+            .add("tasks", tasksJson)
             .add(FbVault.fieldAccessToken(), token)
             .build()
 
         val request = Request.Builder()
-            .url("${graphApi()}/$cleanPageId/assigned_users")
+            .url("${graphApi()}/$realPageId/assigned_users")
             .post(formBody)
             .header("User-Agent", ua())
             .build()
@@ -83,50 +229,62 @@ class QuanLyPageEngine(
                 val body = res.body?.string() ?: ""
                 val isOk = res.isSuccessful && (body.contains("\"success\":true") || (!body.contains("\"error\"") && !body.contains("\"errors\"")))
                 if (isOk) {
-                    return PageActionResult(true, cleanPageId, cleanTargetId, "Chuyển Full quyền thành công", body)
+                    PageActionResult(true, pageUid615, cleanTargetId, "Chuyển Full quyền thành công", body)
+                } else {
+                    // Fallback nếu Page truyền thống (Classic Page) không hỗ trợ assigned_users: thử gọi /roles
+                    val classicRes = fallbackRoles(realPageId, cleanTargetId, "ADMIN", token)
+                    if (classicRes.isSuccess) {
+                        classicRes.copy(pageId = pageUid615)
+                    } else {
+                        PageActionResult(false, pageUid615, cleanTargetId, parseErrorMessage(body), body)
+                    }
                 }
-
-                // Fallback nếu Page truyền thống (Classic Page) không hỗ trợ assigned_users: thử gọi /roles
-                val classicRes = fallbackRoles(cleanPageId, cleanTargetId, "ADMIN", token)
-                if (classicRes.isSuccess) {
-                    return classicRes
-                }
-
-                PageActionResult(false, cleanPageId, cleanTargetId, parseErrorMessage(body), body)
             }
         } catch (e: Exception) {
-            PageActionResult(false, cleanPageId, cleanTargetId, e.message ?: "Lỗi kết nối", "")
+            PageActionResult(false, pageUid615, cleanTargetId, e.message ?: "Lỗi kết nối", "")
         }
     }
 
     /**
      * Chuyển quyền Fanpage Profile Plus / Page 615 sang UID mới KHÔNG FULL QUYỀN (No full - Quyền tác vụ)
-     * Endpoint: POST /v21.0/{page_id}/assigned_users
-     * Tasks: Không có quyền MANAGE (CREATE_CONTENT, MESSAGING, MODERATE, ADVERTISE, ANALYZE, MODERATE_COMMUNITY)
+     * Endpoint: POST /v21.0/{realPageId}/assigned_users
+     * Tasks: CREATE_CONTENT, MESSAGING, MODERATE, ADVERTISE, ANALYZE (Không có MANAGE và không có COMMUNITY_ACTIVITY)
      */
     fun chuyenPageKhongFullQuyen(
-        pageId: String,
+        pageUid615: String,
         targetUserId: String,
-        customTasks: List<String> = listOf("CREATE_CONTENT", "MESSAGING", "MODERATE", "ADVERTISE", "ANALYZE", "MODERATE_COMMUNITY"),
-        pageToken: String? = null
+        pageAccessToken: String? = null,
+        motherToken: String? = null,
+        customTasks: List<String>? = null
     ): PageActionResult {
-        val token = getCleanToken(pageToken)
-        if (token.isEmpty()) return PageActionResult(false, pageId, targetUserId, "Thiếu Token thực thi", "")
         val cleanTargetId = targetUserId.trim()
-        val cleanPageId = pageId.trim()
+        val effectiveMotherToken = (motherToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        val realPageId = resolveGraphPageId(pageUid615, effectiveMotherToken)
+        val token = resolvePageAccessToken(realPageId, pageUid615, pageAccessToken, effectiveMotherToken)
+        if (token.isEmpty()) return PageActionResult(false, pageUid615, cleanTargetId, "Thiếu Token thực thi", "")
 
-        val jsonTasks = JSONArray().apply {
-            customTasks.filter { it != "MANAGE" && it != "COMMUNITY_ACTIVITY" }.forEach { put(it) }
+        val tasksJson = if (customTasks != null) {
+            JSONArray().apply {
+                customTasks.filter { it != "MANAGE" && it != "COMMUNITY_ACTIVITY" }.forEach { put(it) }
+            }.toString()
+        } else {
+            JSONArray().apply {
+                put("CREATE_CONTENT")
+                put("MESSAGING")
+                put("MODERATE")
+                put("ADVERTISE")
+                put("ANALYZE")
+            }.toString()
         }
 
         val formBody = FormBody.Builder()
             .add("user", cleanTargetId)
-            .add("tasks", jsonTasks.toString())
+            .add("tasks", tasksJson)
             .add(FbVault.fieldAccessToken(), token)
             .build()
 
         val request = Request.Builder()
-            .url("${graphApi()}/$cleanPageId/assigned_users")
+            .url("${graphApi()}/$realPageId/assigned_users")
             .post(formBody)
             .header("User-Agent", ua())
             .build()
@@ -136,19 +294,19 @@ class QuanLyPageEngine(
                 val body = res.body?.string() ?: ""
                 val isOk = res.isSuccessful && (body.contains("\"success\":true") || (!body.contains("\"error\"") && !body.contains("\"errors\"")))
                 if (isOk) {
-                    return PageActionResult(true, cleanPageId, cleanTargetId, "Chuyển quyền (No full) thành công", body)
+                    PageActionResult(true, pageUid615, cleanTargetId, "Chuyển quyền (No full) thành công", body)
+                } else {
+                    // Fallback nếu Page truyền thống (Classic Page) không hỗ trợ assigned_users: thử gọi /roles
+                    val classicRes = fallbackRoles(realPageId, cleanTargetId, "EDITOR", token)
+                    if (classicRes.isSuccess) {
+                        classicRes.copy(pageId = pageUid615)
+                    } else {
+                        PageActionResult(false, pageUid615, cleanTargetId, parseErrorMessage(body), body)
+                    }
                 }
-
-                // Fallback nếu Page truyền thống (Classic Page) không hỗ trợ assigned_users: thử gọi /roles
-                val classicRes = fallbackRoles(cleanPageId, cleanTargetId, "EDITOR", token)
-                if (classicRes.isSuccess) {
-                    return classicRes
-                }
-
-                PageActionResult(false, cleanPageId, cleanTargetId, parseErrorMessage(body), body)
             }
         } catch (e: Exception) {
-            PageActionResult(false, cleanPageId, cleanTargetId, e.message ?: "Lỗi kết nối", "")
+            PageActionResult(false, pageUid615, cleanTargetId, e.message ?: "Lỗi kết nối", "")
         }
     }
 
@@ -179,12 +337,14 @@ class QuanLyPageEngine(
     /**
      * Rời khỏi Page (Out Page / Gỡ quyền bản thân khỏi Trang)
      */
-    fun outPage(pageId: String, myUserId: String = "me", pageToken: String? = null): PageActionResult {
-        val token = getCleanToken(pageToken)
+    fun outPage(pageId: String, myUserId: String = "me", pageToken: String? = null, motherToken: String? = null): PageActionResult {
+        val effectiveMotherToken = (motherToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        val realPageId = resolveGraphPageId(pageId, effectiveMotherToken)
+        val token = resolvePageAccessToken(realPageId, pageId, pageToken, effectiveMotherToken)
         if (token.isEmpty()) return PageActionResult(false, pageId, myUserId, "Thiếu Token thực thi", "")
 
         val request = Request.Builder()
-            .url("${graphApi()}/$pageId/assigned_users?user=$myUserId&${FbVault.fieldAccessToken()}=$token")
+            .url("${graphApi()}/$realPageId/assigned_users?user=$myUserId&${FbVault.fieldAccessToken()}=$token")
             .delete()
             .header("User-Agent", ua())
             .build()
@@ -203,8 +363,10 @@ class QuanLyPageEngine(
     /**
      * Kích hoạt Page ẩn (Đăng Trang công khai)
      */
-    fun kichHoatPageAn(pageId: String, pageToken: String? = null): PageActionResult {
-        val token = getCleanToken(pageToken)
+    fun kichHoatPageAn(pageId: String, pageToken: String? = null, motherToken: String? = null): PageActionResult {
+        val effectiveMotherToken = (motherToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        val realPageId = resolveGraphPageId(pageId, effectiveMotherToken)
+        val token = resolvePageAccessToken(realPageId, pageId, pageToken, effectiveMotherToken)
         if (token.isEmpty()) return PageActionResult(false, pageId, null, "Thiếu Token thực thi", "")
 
         val formBody = FormBody.Builder()
@@ -213,7 +375,7 @@ class QuanLyPageEngine(
             .build()
 
         val request = Request.Builder()
-            .url("${graphApi()}/$pageId")
+            .url("${graphApi()}/$realPageId")
             .post(formBody)
             .header("User-Agent", ua())
             .build()
@@ -232,8 +394,10 @@ class QuanLyPageEngine(
     /**
      * Ẩn Page (Hủy đăng Trang)
      */
-    fun anPage(pageId: String, pageToken: String? = null): PageActionResult {
-        val token = getCleanToken(pageToken)
+    fun anPage(pageId: String, pageToken: String? = null, motherToken: String? = null): PageActionResult {
+        val effectiveMotherToken = (motherToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
+        val realPageId = resolveGraphPageId(pageId, effectiveMotherToken)
+        val token = resolvePageAccessToken(realPageId, pageId, pageToken, effectiveMotherToken)
         if (token.isEmpty()) return PageActionResult(false, pageId, null, "Thiếu Token thực thi", "")
 
         val formBody = FormBody.Builder()
@@ -242,7 +406,7 @@ class QuanLyPageEngine(
             .build()
 
         val request = Request.Builder()
-            .url("${graphApi()}/$pageId")
+            .url("${graphApi()}/$realPageId")
             .post(formBody)
             .header("User-Agent", ua())
             .build()
