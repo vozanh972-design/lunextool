@@ -90,6 +90,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
     var transferReceiverUid by remember { mutableStateOf("") }
     var showTransferConfigSheet by remember { mutableStateOf(false) }
     var isFullPermission by remember { mutableStateOf(true) } // true = Full quyền, false = No full (không full quyền)
+    var selectedPageKeys by remember { mutableStateOf<Set<String>>(emptySet()) } // Set các key "${accountUid}_${pageId}" đã tích chọn
 
     // Trạng thái đang chạy và Job điều khiển
     var isRunning by remember { mutableStateOf(false) }
@@ -279,13 +280,12 @@ fun RegAndTransferPageScreen(navController: NavController) {
                         onClick = {
                             if (isRunning) return@Button
 
-                            val targetAccounts = facebookAccounts.filter { it.uid in selectedForRunUids }
-                            if (targetAccounts.isEmpty()) {
-                                Toast.makeText(context, "Vui lòng tick chọn ít nhất 1 tài khoản Facebook!", Toast.LENGTH_SHORT).show()
-                                return@Button
-                            }
-
                             if (activeTab == 0) {
+                                val targetAccounts = facebookAccounts.filter { it.uid in selectedForRunUids }
+                                if (targetAccounts.isEmpty()) {
+                                    Toast.makeText(context, "Vui lòng tick chọn ít nhất 1 tài khoản Facebook!", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
                                 // Chạy Reg Page
                                 val count = regCountInput.toIntOrNull() ?: 15
                                 val delaySec = delaySecondsInput.toIntOrNull() ?: 2000
@@ -451,8 +451,19 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 }
                             } else {
                                 // Chuyển Page với Full quyền hoặc No full
-                                if (transferReceiverUid.trim().isBlank()) {
+                                val receiverUid = transferReceiverUid.trim()
+                                if (receiverUid.isBlank()) {
                                     Toast.makeText(context, "Vui lòng nhập UID người nhận quyền admin!", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+
+                                // Lọc ra các Acc Chuyển: acc != receiverUid và có ít nhất 1 page được chọn
+                                val sourceAccounts = facebookAccounts.filter { acc ->
+                                    acc.uid != receiverUid && acc.pages.any { p -> "${acc.uid}_${p.pageId}" in selectedPageKeys }
+                                }
+
+                                if (sourceAccounts.isEmpty()) {
+                                    Toast.makeText(context, "Vui lòng tick chọn ít nhất 1 Fanpage cần chuyển!", Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
 
@@ -462,9 +473,8 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                     try {
                                         var transferredCount = 0
                                         var failCount = 0
-                                        val receiverUid = transferReceiverUid.trim()
 
-                                        for (account in targetAccounts) {
+                                        for (account in sourceAccounts) {
                                             if (!isActive) break
                                             runningAccountUid = account.uid
 
@@ -482,14 +492,16 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 proxyPort = proxyPort
                                             )
 
-                                            if (account.pages.isEmpty()) {
-                                                withContext(Dispatchers.Main) {
-                                                    accountStatusMap[account.uid] = "Tài khoản không có Fanpage nào"
-                                                }
+                                            // CHỈ DUYỆT CÁC PAGE ĐƯỢC TÍCH CHỌN
+                                            val pagesToTransfer = account.pages.filter { p ->
+                                                "${account.uid}_${p.pageId}" in selectedPageKeys
+                                            }
+
+                                            if (pagesToTransfer.isEmpty()) {
                                                 continue
                                             }
 
-                                            for (page in account.pages) {
+                                            for (page in pagesToTransfer) {
                                                 if (!isActive) break
                                                 val pageKey = "${account.uid}_${page.pageId}"
                                                 runningAccountUid = pageKey
@@ -577,7 +589,10 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 }
                             }
                         },
-                        enabled = !isRunning && selectedForRunUids.isNotEmpty(),
+                        enabled = !isRunning && (
+                            if (activeTab == 0) selectedForRunUids.isNotEmpty()
+                            else selectedPageKeys.isNotEmpty() && transferReceiverUid.trim().isNotBlank()
+                        ),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Cobalt600,
@@ -706,27 +721,80 @@ fun RegAndTransferPageScreen(navController: NavController) {
             // Nếu ở tab Chuyển Page -> hiện ô nhập UID người nhận
             if (activeTab == 1) {
                 item {
+                    val receiverInList = facebookAccounts.find { it.uid == transferReceiverUid.trim() }
+
                     Card(
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = CardWhite),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, CardBorderColor),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (receiverInList != null) Color(0xFF16A34A) else CardBorderColor),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
-                            Text("UID người nhận quyền quản trị Admin", fontWeight = FontWeight.Bold, fontSize = 13.5.sp, color = TextPrimary)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("UID người nhận quyền quản trị Admin", fontWeight = FontWeight.Bold, fontSize = 13.5.sp, color = TextPrimary)
+                                if (transferReceiverUid.isNotBlank()) {
+                                    Text(
+                                        "Xóa",
+                                        color = DangerRed,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.clickable { transferReceiverUid = "" }
+                                    )
+                                }
+                            }
                             Spacer(Modifier.height(8.dp))
                             OutlinedTextField(
                                 value = transferReceiverUid,
-                                onValueChange = { transferReceiverUid = it },
+                                onValueChange = { input ->
+                                    transferReceiverUid = input
+                                    val trimmed = input.trim()
+                                    if (trimmed in selectedForRunUids) {
+                                        selectedForRunUids = selectedForRunUids - trimmed
+                                        val toRemove = facebookAccounts.find { it.uid == trimmed }?.pages?.map { "${trimmed}_${it.pageId}" }.orEmpty().toSet()
+                                        selectedPageKeys = selectedPageKeys - toRemove
+                                    }
+                                },
                                 placeholder = { Text("Nhập UID Facebook người nhận...", fontSize = 13.sp) },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Cobalt600,
-                                    unfocusedBorderColor = CardBorderColor
+                                    focusedBorderColor = if (receiverInList != null) Color(0xFF16A34A) else Cobalt600,
+                                    unfocusedBorderColor = if (receiverInList != null) Color(0xFF16A34A).copy(alpha = 0.5f) else CardBorderColor
                                 )
                             )
+
+                            // Nhận diện trạng thái người nhận
+                            if (transferReceiverUid.trim().isNotBlank()) {
+                                Spacer(Modifier.height(6.dp))
+                                if (receiverInList != null) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Color(0xFF16A34A), modifier = Modifier.size(15.dp))
+                                        Spacer(Modifier.width(5.dp))
+                                        Text(
+                                            "Tài khoản trong danh sách: ${receiverInList.name.ifBlank { receiverInList.uid }} (${receiverInList.uid})",
+                                            color = Color(0xFF16A34A),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                } else {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(15.dp))
+                                        Spacer(Modifier.width(5.dp))
+                                        Text(
+                                            "(Người nhận ngoài: ${transferReceiverUid.trim()})",
+                                            color = TextSecondary,
+                                            fontSize = 12.sp,
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -734,8 +802,19 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
             // Header: Tài khoản Facebook (được dời xuống một chút dưới 2 Tab)
             item {
-                val allFbUids = facebookAccounts.map { it.uid }
-                val isAllSelected = allFbUids.isNotEmpty() && allFbUids.all { it in selectedForRunUids }
+                val validSourceAccounts = if (activeTab == 1) {
+                    facebookAccounts.filter { it.uid != transferReceiverUid.trim() && it.pages.isNotEmpty() }
+                } else {
+                    facebookAccounts
+                }
+                val allValidUids = validSourceAccounts.map { it.uid }
+                val isAllSelected = if (activeTab == 1) {
+                    allValidUids.isNotEmpty() && validSourceAccounts.all { acc ->
+                        acc.uid in selectedForRunUids && acc.pages.all { p -> "${acc.uid}_${p.pageId}" in selectedPageKeys }
+                    }
+                } else {
+                    allValidUids.isNotEmpty() && allValidUids.all { it in selectedForRunUids }
+                }
 
                 Row(
                     modifier = Modifier
@@ -764,8 +843,20 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
                                     .clickable {
-                                        selectedForRunUids = if (isAllSelected) selectedForRunUids - allFbUids.toSet()
-                                        else selectedForRunUids + allFbUids.toSet()
+                                        if (activeTab == 1) {
+                                            if (isAllSelected) {
+                                                selectedForRunUids = selectedForRunUids - allValidUids.toSet()
+                                                val toRemove = validSourceAccounts.flatMap { acc -> acc.pages.map { "${acc.uid}_${it.pageId}" } }.toSet()
+                                                selectedPageKeys = selectedPageKeys - toRemove
+                                            } else {
+                                                selectedForRunUids = selectedForRunUids + allValidUids.toSet()
+                                                val toAdd = validSourceAccounts.flatMap { acc -> acc.pages.map { "${acc.uid}_${it.pageId}" } }.toSet()
+                                                selectedPageKeys = selectedPageKeys + toAdd
+                                            }
+                                        } else {
+                                            selectedForRunUids = if (isAllSelected) selectedForRunUids - allValidUids.toSet()
+                                            else selectedForRunUids + allValidUids.toSet()
+                                        }
                                     }
                                     .padding(horizontal = 6.dp, vertical = 4.dp)
                             ) {
@@ -789,6 +880,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                         }
                                         withContext(Dispatchers.Main) {
                                             selectedForRunUids = emptySet()
+                                            selectedPageKeys = emptySet()
                                             facebookAccounts = FacebookAccountsStore.getAccounts(context)
                                             Toast.makeText(context, "Đã xóa tài khoản đã chọn", Toast.LENGTH_SHORT).show()
                                         }
@@ -873,7 +965,11 @@ fun RegAndTransferPageScreen(navController: NavController) {
                 }
             } else {
                 items(facebookAccounts, key = { it.uid }) { account ->
-                    val isChecked = account.uid in selectedForRunUids
+                    val isReceiver = activeTab == 1 && transferReceiverUid.isNotBlank() && account.uid.trim() == transferReceiverUid.trim()
+                    val selectedPagesCount = if (activeTab == 1) account.pages.count { "${account.uid}_${it.pageId}" in selectedPageKeys } else 0
+                    val isChecked = if (isReceiver) false else account.uid in selectedForRunUids
+                    val isSourceAccount = activeTab == 1 && !isReceiver && (isChecked || selectedPagesCount > 0)
+
                     val fbAvatarModel = remember(account.avatar, avatarVersion) {
                         if (account.avatar.isBlank()) null
                         else coil.request.ImageRequest.Builder(context)
@@ -886,8 +982,20 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
                     Card(
                         shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = CardWhite),
-                        border = if (isChecked) androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF1877F2)) else androidx.compose.foundation.BorderStroke(1.dp, CardBorderColor),
+                        colors = CardDefaults.cardColors(
+                            containerColor = when {
+                                isReceiver -> Color(0xFFF0FDF4)
+                                isSourceAccount -> Color(0xFFF8FAFF)
+                                isChecked -> Color(0xFFFAFCFF)
+                                else -> CardWhite
+                            }
+                        ),
+                        border = when {
+                            isReceiver -> androidx.compose.foundation.BorderStroke(1.8.dp, Color(0xFF16A34A))
+                            isSourceAccount -> androidx.compose.foundation.BorderStroke(1.8.dp, Cobalt600)
+                            isChecked -> androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF1877F2))
+                            else -> androidx.compose.foundation.BorderStroke(1.dp, CardBorderColor)
+                        },
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -896,8 +1004,15 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
                             ) {
-                                selectedForRunUids = if (isChecked) selectedForRunUids - account.uid
-                                else selectedForRunUids + account.uid
+                                if (isReceiver) return@clickable
+                                if (activeTab == 1) {
+                                    val willCheck = !isChecked
+                                    selectedForRunUids = if (willCheck) selectedForRunUids + account.uid else selectedForRunUids - account.uid
+                                    val childKeys = account.pages.map { "${account.uid}_${it.pageId}" }.toSet()
+                                    selectedPageKeys = if (willCheck) selectedPageKeys + childKeys else selectedPageKeys - childKeys
+                                } else {
+                                    selectedForRunUids = if (isChecked) selectedForRunUids - account.uid else selectedForRunUids + account.uid
+                                }
                             }
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
@@ -907,11 +1022,20 @@ fun RegAndTransferPageScreen(navController: NavController) {
                             ) {
                                 Checkbox(
                                     checked = isChecked,
+                                    enabled = !isReceiver,
                                     onCheckedChange = { checked ->
-                                        selectedForRunUids = if (checked) selectedForRunUids + account.uid
-                                        else selectedForRunUids - account.uid
+                                        if (isReceiver) return@Checkbox
+                                        if (activeTab == 1) {
+                                            selectedForRunUids = if (checked) selectedForRunUids + account.uid else selectedForRunUids - account.uid
+                                            val childKeys = account.pages.map { "${account.uid}_${it.pageId}" }.toSet()
+                                            selectedPageKeys = if (checked) selectedPageKeys + childKeys else selectedPageKeys - childKeys
+                                        } else {
+                                            selectedForRunUids = if (checked) selectedForRunUids + account.uid else selectedForRunUids - account.uid
+                                        }
                                     },
-                                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2))
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = if (isSourceAccount) Cobalt600 else Color(0xFF1877F2)
+                                    )
                                 )
                                 Spacer(Modifier.width(6.dp))
 
@@ -1033,6 +1157,109 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
+
+                                    if (activeTab == 1) {
+                                        Spacer(Modifier.height(5.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            if (isReceiver) {
+                                                // Huy hiệu ACC NHẬN ADMIN
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(Color(0xFF16A34A))
+                                                        .padding(horizontal = 7.dp, vertical = 2.5.dp)
+                                                ) {
+                                                    Text(
+                                                        "🎯 ACC NHẬN ADMIN",
+                                                        fontSize = 10.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White
+                                                    )
+                                                }
+
+                                                // Nút Hủy nhận
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(DangerRed.copy(alpha = 0.1f))
+                                                        .border(0.8.dp, DangerRed.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                                        .clickable {
+                                                            transferReceiverUid = ""
+                                                        }
+                                                        .padding(horizontal = 6.dp, vertical = 2.5.dp)
+                                                ) {
+                                                    Text(
+                                                        "✕ Hủy nhận",
+                                                        fontSize = 10.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = DangerRed
+                                                    )
+                                                }
+                                            } else if (isSourceAccount) {
+                                                // Huy hiệu ĐANG CHUYỂN
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(Cobalt600)
+                                                        .padding(horizontal = 7.dp, vertical = 2.5.dp)
+                                                ) {
+                                                    Text(
+                                                        "📤 ĐANG CHUYỂN ($selectedPagesCount page)",
+                                                        fontSize = 10.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White
+                                                    )
+                                                }
+
+                                                // Nút Chọn nhận
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(Color(0xFFF1F5F9))
+                                                        .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(6.dp))
+                                                        .clickable {
+                                                            transferReceiverUid = account.uid
+                                                            selectedForRunUids = selectedForRunUids - account.uid
+                                                            val childKeys = account.pages.map { "${account.uid}_${it.pageId}" }.toSet()
+                                                            selectedPageKeys = selectedPageKeys - childKeys
+                                                        }
+                                                        .padding(horizontal = 6.dp, vertical = 2.5.dp)
+                                                ) {
+                                                    Text(
+                                                        "🎯 Chọn nhận",
+                                                        fontSize = 10.5.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = TextSecondary
+                                                    )
+                                                }
+                                            } else {
+                                                // Nút Chọn làm người nhận
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(Color(0xFFF1F5F9))
+                                                        .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(6.dp))
+                                                        .clickable {
+                                                            transferReceiverUid = account.uid
+                                                            selectedForRunUids = selectedForRunUids - account.uid
+                                                            val childKeys = account.pages.map { "${account.uid}_${it.pageId}" }.toSet()
+                                                            selectedPageKeys = selectedPageKeys - childKeys
+                                                        }
+                                                        .padding(horizontal = 8.dp, vertical = 2.5.dp)
+                                                ) {
+                                                    Text(
+                                                        "🎯 Chọn làm người nhận",
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = TextPrimary
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
                                 // Nút Reload (Làm mới)
@@ -1278,10 +1505,11 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                     )
                                 } else {
                                     Text(
-                                        "Danh sách Fanpage (${account.pages.size}):",
+                                        if (activeTab == 1) "Danh sách Fanpage (Đã chọn: $selectedPagesCount/${account.pages.size} page):"
+                                        else "Danh sách Fanpage (${account.pages.size}):",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = TextSecondary
+                                        color = if (activeTab == 1 && selectedPagesCount > 0) Cobalt600 else TextSecondary
                                     )
                                 }
 
@@ -1326,6 +1554,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                         )
 
                                         val pageKey = "${account.uid}_${page.pageId}"
+                                        val isPageChecked = pageKey in selectedPageKeys
                                         val pageStatus = accountStatusMap[pageKey] ?: accountStatusMap[effectivePageUid]
                                         val isPageRunning = isRunning && runningAccountUid == pageKey
                                         val isPageError = pageStatus != null && (pageStatus.contains("Lỗi", ignoreCase = true) || pageStatus.contains("Thất bại", ignoreCase = true))
@@ -1335,10 +1564,56 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clip(RoundedCornerShape(10.dp))
-                                                .background(Color(0xFFF8FAFC))
-                                                .border(0.8.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
-                                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                                                .background(
+                                                    if (activeTab == 1 && isPageChecked) Color(0xFFEFF6FF)
+                                                    else Color(0xFFF8FAFC)
+                                                )
+                                                .border(
+                                                    if (activeTab == 1 && isPageChecked) 1.2.dp else 0.8.dp,
+                                                    if (activeTab == 1 && isPageChecked) Cobalt600.copy(alpha = 0.6f) else Color(0xFFE2E8F0),
+                                                    RoundedCornerShape(10.dp)
+                                                )
+                                                .clickable(enabled = activeTab == 1 && !isReceiver) {
+                                                    val willCheck = !isPageChecked
+                                                    if (willCheck) {
+                                                        selectedPageKeys = selectedPageKeys + pageKey
+                                                        selectedForRunUids = selectedForRunUids + account.uid
+                                                    } else {
+                                                        selectedPageKeys = selectedPageKeys - pageKey
+                                                        val remaining = account.pages.any { it.pageId != page.pageId && "${account.uid}_${it.pageId}" in selectedPageKeys }
+                                                        if (!remaining) {
+                                                            selectedForRunUids = selectedForRunUids - account.uid
+                                                        }
+                                                    }
+                                                }
+                                                .padding(horizontal = 8.dp, vertical = 7.dp)
                                         ) {
+                                            // Checkbox chọn page con (Chỉ hiện và tương tác ở Tab 1 Chuyển Quyền Page)
+                                            if (activeTab == 1) {
+                                                Checkbox(
+                                                    checked = isPageChecked,
+                                                    enabled = !isReceiver,
+                                                    onCheckedChange = { checked ->
+                                                        if (checked) {
+                                                            selectedPageKeys = selectedPageKeys + pageKey
+                                                            selectedForRunUids = selectedForRunUids + account.uid
+                                                        } else {
+                                                            selectedPageKeys = selectedPageKeys - pageKey
+                                                            val remaining = account.pages.any { it.pageId != page.pageId && "${account.uid}_${it.pageId}" in selectedPageKeys }
+                                                            if (!remaining) {
+                                                                selectedForRunUids = selectedForRunUids - account.uid
+                                                            }
+                                                        }
+                                                    },
+                                                    colors = CheckboxDefaults.colors(
+                                                        checkedColor = Cobalt600,
+                                                        uncheckedColor = Color(0xFF94A3B8)
+                                                    ),
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                            }
+
                                             // Avatar Page
                                             if (avatarToDisplay.isNotBlank()) {
                                                 AsyncImage(
