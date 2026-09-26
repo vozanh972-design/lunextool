@@ -553,7 +553,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     page.pageId
                                                 }
                                                 val motherToken = account.bio.trim()
-                                                val senderPassword = account.password.ifBlank { account.name }
+                                                val senderPassword = account.password.ifBlank { transferReceiverPassword.trim() }
 
                                                 // Tìm token nick nhận nếu có trong danh sách
                                                 val receiverAcc = facebookAccounts.find { it.uid.trim() == receiverUid }
@@ -856,13 +856,24 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
                             Spacer(Modifier.height(10.dp))
 
-                            // ===== Ô NHẬP MẬT KHẨU ACC NHẬN =====
+                            // ===== Ô NHẬP MẬT KHẨU XÁC THỰC BẢO MẬT (CHUẨN LUNEXAUTO) =====
+                            val activeSourceAccount = remember(selectedPageKeys, facebookAccounts) {
+                                facebookAccounts.firstOrNull { acc ->
+                                    acc.pages.any { "${acc.uid}_${it.pageId}" in selectedPageKeys }
+                                }
+                            }
+                            LaunchedEffect(activeSourceAccount?.password) {
+                                if (transferReceiverPassword.isBlank() && !activeSourceAccount?.password.isNullOrBlank()) {
+                                    transferReceiverPassword = activeSourceAccount!!.password
+                                }
+                            }
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Mật khẩu tài khoản nhận (Xác thực / Tự động Accept)", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
+                                Text("Mật khẩu xác thực bảo mật (phục vụ khi Facebook yêu cầu)", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
                                 if (transferReceiverPassword.isNotBlank()) {
                                     Text(
                                         "Lưu",
@@ -870,10 +881,14 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.clickable {
-                                            if (receiverInList != null) {
+                                            if (activeSourceAccount != null) {
+                                                val updated = activeSourceAccount.copy(password = transferReceiverPassword)
+                                                FacebookAccountsStore.addAccount(context, updated)
+                                                Toast.makeText(context, "Đã lưu mật khẩu vào tài khoản gửi (${activeSourceAccount.name.ifBlank { activeSourceAccount.uid }})!", Toast.LENGTH_SHORT).show()
+                                            } else if (receiverInList != null) {
                                                 val updated = receiverInList.copy(password = transferReceiverPassword)
                                                 FacebookAccountsStore.addAccount(context, updated)
-                                                Toast.makeText(context, "Đã lưu mật khẩu vào tài khoản!", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Đã lưu mật khẩu vào tài khoản nhận!", Toast.LENGTH_SHORT).show()
                                             } else {
                                                 Toast.makeText(context, "Đã lưu mật khẩu vào phiên làm việc!", Toast.LENGTH_SHORT).show()
                                             }
@@ -885,7 +900,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                             OutlinedTextField(
                                 value = transferReceiverPassword,
                                 onValueChange = { transferReceiverPassword = it },
-                                placeholder = { Text("Nhập mật khẩu nick nhận (nếu có)...", fontSize = 13.sp) },
+                                placeholder = { Text("Nhập mật khẩu tài khoản gửi (phục vụ xác thực)...", fontSize = 13.sp) },
                                 singleLine = true,
                                 visualTransformation = if (isReceiverPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),

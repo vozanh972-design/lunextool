@@ -227,6 +227,7 @@ class QuanLyPageEngine(
 
     /**
      * BƯỚC 1: XÁC THỰC MẬT KHẨU NICK GỬI (STEP_1_SEND_INVITATION)
+     * Chuẩn Bytecode 0x28E2C4 - 0x28E2F2 từ lunexAUTO: sensitive_string_value là JSON mảng 2 chiều [["password", "<PASS>"]]
      */
     fun step1SendInvitation(
         senderToken: String,
@@ -235,14 +236,22 @@ class QuanLyPageEngine(
         targetUserId: String,
         adminType: String
     ): Result<String> {
-        val escapedPass = senderPassword.replace("\\", "\\\\").replace("\"", "\\\"")
-        val path = "/nt/profile/admin_management/permissions_reauth?admin_id=$targetUserId&admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D&admin_type=$adminType&entry_point_screen_id=%5B%227o2xil%3A5%22%2Cnull%5D&profile_id=$pageId&state_ids%5Bauthenticated%5D=8csr9g%3A0&state_ids%5Bauthentication_attempted%5D=8csr9g%3A1&state_ids%5Bshow_entry_point_saving_spinner%5D=8bxxoh%3A0&state_ids%5Bshow_saving_spinner%5D=8csr9g%3A3&state_ids%5Bads%5D=8clnk7%3A2&state_ids%5Bcontent%5D=8clnk7%3A3&state_ids%5Binsights%5D=8clnk7%3A4"
+        val inner = JSONArray().apply {
+            put("password")
+            put(senderPassword)
+        }
+        val outer = JSONArray().apply {
+            put(inner)
+        }
+        val clientData = JSONObject().apply {
+            put("sensitive_string_value", outer.toString())
+        }
+
+        val path = "/nt/profile/admin_management/permissions_reauth?admin_id=$targetUserId&admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D&admin_type=$adminType&entry_point_screen_id=%5B%227o2xil%3A5%22%2Cnull%5D&profile_id=$pageId&state_ids%5Bauthenticated%5D=8csr9g%3A0&state_ids%5Bauthentication_attempted%5D=8csr9g%3A1&state_ids%5Bshow_entry_point_saving_spinner%5D=8bxxoh%3A0&state_ids%5Bshow_saving_spinner%5D=8csr9g%3A3&state_ids%5Bads%5D=8clnk7%3A2&state_ids%5Bcontent%5D=8clnk7%3A3&state_ids%5Binsights%5D=8clnk7%3A4&state_ids%5Bmessages%5D=8clnk7%3A5&state_ids%5Bmoderate%5D=8clnk7%3A6"
 
         val paramsObj = JSONObject().apply {
             put("path", path)
-            put("client_data", JSONObject().apply {
-                put("sensitive_string_value", "[\"$escapedPass\"]")
-            })
+            put("client_data", clientData)
             put("nt_context", JSONObject().apply {
                 put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
                 put("using_white_navbar", true)
@@ -387,7 +396,9 @@ class QuanLyPageEngine(
                     Regex("""["']invitation_id["']\s*:\s*["']?([\d]+)"""),
                     Regex("""(?:%22|")invitation_id(?:%22|")%3A(?:%22|")([\d]+)"""),
                     Regex("""invitation_id\\":\\"([\d]+)"""),
-                    Regex("""invitation_id\\%3D([\d]+)""")
+                    Regex("""invitation_id\\%3D([\d]+)"""),
+                    Regex("""intent_value["']?\s*:\s*["'][^"']*(?:invitation_id|invite_id)(?:%3D|=)([\d]+)"""),
+                    Regex("""intent_value["']?\s*:\s*["'][^"']*?([\d]{8,})""")
                 )
                 for (rg in regexes) {
                     val match = rg.find(body)
@@ -471,17 +482,9 @@ class QuanLyPageEngine(
         val realPageId = resolveGraphPageId(pageUid615, cleanSenderToken)
         val adminType = if (isFullPermission) "full_access" else "task_access"
 
-        // BƯỚC 1: Xác thực mật khẩu nick gửi (nếu có mật khẩu hoặc session yêu cầu)
-        val step1Res = step1SendInvitation(
-            senderToken = cleanSenderToken,
-            senderPassword = senderPassword,
-            pageId = realPageId,
-            targetUserId = cleanTargetId,
-            adminType = adminType
-        )
-
-        // BƯỚC 2: Cấp quyền và bắn lời mời sang UID người nhận
-        val step2Res = step2ActivateAdmin(
+        // MẸO TỐI ƯU CHUẨN LUNEXAUTO:
+        // Thử gọi thẳng Bước 2 trước. Nếu token của nick gửi đang hợp lệ và chưa bị Facebook bắt re-auth mật khẩu, Bước 2 sẽ thành công ngay lập tức!
+        var step2Res = step2ActivateAdmin(
             senderToken = cleanSenderToken,
             pageId = realPageId,
             targetUserId = cleanTargetId,
@@ -492,6 +495,38 @@ class QuanLyPageEngine(
             boolMessages = true,
             boolModerate = true
         )
+
+        // Chỉ khi nào Bước 2 gặp lỗi (cần re-auth mật khẩu hoặc gặp lỗi), mới kích hoạt Bước 1 rồi gọi lại Bước 2
+        if (step2Res.isFailure) {
+            if (senderPassword.isNotBlank()) {
+                val step1Res = step1SendInvitation(
+                    senderToken = cleanSenderToken,
+                    senderPassword = senderPassword,
+                    pageId = realPageId,
+                    targetUserId = cleanTargetId,
+                    adminType = adminType
+                )
+                if (step1Res.isFailure) {
+                    val s1Err = step1Res.exceptionOrNull()?.message ?: "Xác thực mật khẩu thất bại"
+                    return PageActionResult(false, pageUid615, cleanTargetId, s1Err, "")
+                }
+                // Sau khi re-auth thành công, gọi lại Bước 2
+                step2Res = step2ActivateAdmin(
+                    senderToken = cleanSenderToken,
+                    pageId = realPageId,
+                    targetUserId = cleanTargetId,
+                    adminType = adminType,
+                    boolAds = true,
+                    boolContent = true,
+                    boolInsights = true,
+                    boolMessages = true,
+                    boolModerate = true
+                )
+            } else {
+                val err2 = step2Res.exceptionOrNull()?.message ?: "Facebook yêu cầu xác thực mật khẩu"
+                return PageActionResult(false, pageUid615, cleanTargetId, "$err2 (Vui lòng nhập mật khẩu tài khoản gửi)", "")
+            }
+        }
 
         if (step2Res.isFailure) {
             val err = step2Res.exceptionOrNull()?.message ?: "Gửi lời mời quản trị thất bại"
