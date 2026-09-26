@@ -15,6 +15,40 @@ class TuongTacCheoApiClient(
     companion object {
         const val BASE_URL = "https://tuongtaccheo.com"
         const val USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
+
+        @JvmStatic
+        fun cleanCommentContent(rawNd: String?): String {
+            if (rawNd.isNullOrBlank()) return ""
+            var text = rawNd.trim()
+            // Bóc tách đệ quy nếu bị bọc JSON Array dạng chuỗi "[\"..."]"
+            var continueUnwrap = true
+            var depth = 0
+            while (continueUnwrap && depth < 5) {
+                depth++
+                if (text.startsWith("[") && text.endsWith("]")) {
+                    try {
+                        val jsonArr = org.json.JSONArray(text)
+                        if (jsonArr.length() > 0) {
+                            text = jsonArr.optString(0, "").trim()
+                        } else {
+                            text = text.removeSurrounding("[", "]").trim()
+                        }
+                    } catch (_: Exception) {
+                        text = text.removeSurrounding("[", "]").trim()
+                    }
+                } else if ((text.startsWith("\"") && text.endsWith("\"")) || (text.startsWith("'") && text.endsWith("'"))) {
+                    text = text.substring(1, text.length - 1).trim()
+                } else {
+                    continueUnwrap = false
+                }
+            }
+            // Xử lý unescape dấu nháy nếu còn sót
+            text = text.replace("\\\"", "\"").replace("\\/", "/")
+            if (text.startsWith("\"") && text.endsWith("\"")) {
+                text = text.substring(1, text.length - 1).trim()
+            }
+            return text
+        }
     }
 
     private var httpClient: OkHttpClient
@@ -249,15 +283,17 @@ class TuongTacCheoApiClient(
                 val arr = JSONArray(resStr)
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
-                    val commentContent = o.optString("nd", o.optString("noidung", o.optString("cmt", "")))
-                        .takeIf { it.isNotBlank() } ?: o.optString("content").takeIf { it.isNotBlank() }
+                    val rawNd = o.optString("nd", o.optString("noidung", o.optString("cmt", "")))
+                    val cleanCmt = cleanCommentContent(rawNd).ifBlank {
+                        cleanCommentContent(o.optString("content"))
+                    }.takeIf { it.isNotBlank() }
                     list.add(TTCJob(
                         id = o.optString("id", o.optString("idpost", "")),
                         idfb = o.optString("idfb", null),
                         idpost = o.optString("idpost", null),
                         link = o.optString("link", null),
                         loaicx = o.optString("loaicx", null),
-                        cmt = commentContent,
+                        cmt = cleanCmt,
                         uid = o.optString("uid", null)
                     ))
                 }
@@ -267,15 +303,17 @@ class TuongTacCheoApiClient(
                 if (arr != null) {
                     for (i in 0 until arr.length()) {
                         val o = arr.getJSONObject(i)
-                        val commentContent = o.optString("nd", o.optString("noidung", o.optString("cmt", "")))
-                            .takeIf { it.isNotBlank() } ?: o.optString("content").takeIf { it.isNotBlank() }
+                        val rawNd = o.optString("nd", o.optString("noidung", o.optString("cmt", "")))
+                        val cleanCmt = cleanCommentContent(rawNd).ifBlank {
+                            cleanCommentContent(o.optString("content"))
+                        }.takeIf { it.isNotBlank() }
                         list.add(TTCJob(
                             id = o.optString("id", o.optString("idpost", "")),
                             idfb = o.optString("idfb", null),
                             idpost = o.optString("idpost", null),
                             link = o.optString("link", null),
                             loaicx = o.optString("loaicx", null),
-                            cmt = commentContent,
+                            cmt = cleanCmt,
                             uid = o.optString("uid", null)
                         ))
                     }
