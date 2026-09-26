@@ -95,6 +95,8 @@ fun RegAndTransferPageScreen(navController: NavController) {
     // Trạng thái đang chạy và Job điều khiển
     var isRunning by remember { mutableStateOf(false) }
     var runJob by remember { mutableStateOf<Job?>(null) }
+    val runningJobs = remember { mutableStateMapOf<String, Job>() }
+    var checkpointUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     var runningAccountUid by remember { mutableStateOf<String?>(null) }
     val accountStatusMap = remember { mutableStateMapOf<String, String>() }
     var selectedErrorDetail by remember { mutableStateOf<Pair<String, String>?>(null) } // Pair(AccountName, ErrorMessage)
@@ -278,31 +280,44 @@ fun RegAndTransferPageScreen(navController: NavController) {
                     // Nút tam giác nhỏ Bắt đầu chạy (Icon Play, không có chữ)
                     Button(
                         onClick = {
-                            if (isRunning) return@Button
-
                             if (activeTab == 0) {
+                                if (runningJobs.isNotEmpty()) return@Button
+
                                 val targetAccounts = facebookAccounts.filter { it.uid in selectedForRunUids }
                                 if (targetAccounts.isEmpty()) {
                                     Toast.makeText(context, "Vui lòng tick chọn ít nhất 1 tài khoản Facebook!", Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
-                                // Chạy Reg Page
+                                // Chạy Reg Page ĐA LUỒNG SONG SONG
                                 val count = regCountInput.toIntOrNull() ?: 15
                                 val delaySec = delaySecondsInput.toIntOrNull() ?: 2000
 
                                 isRunning = true
-                                runJob = scope.launch(Dispatchers.IO) {
-                                    var totalCreatedAll = 0
-                                    try {
-                                        for (account in targetAccounts) {
-                                            if (!isActive) break
-                                            runningAccountUid = account.uid
-                                            var token = account.bio.ifBlank { null }
-                                            
-                                            withContext(Dispatchers.Main) {
+                                targetAccounts.forEach { account ->
+                                    runningJobs[account.uid]?.cancel()
+                                    val job = scope.launch(Dispatchers.IO) {
+                                        try {
+                                            // 1. Kiểm tra avatar - Nếu không có avatar hoặc avatar mặc định -> Báo Checkpoint ngay
+                                            val hasNoAvatar = account.avatar.isBlank() ||
+                                                    account.avatar.contains("silhouette") ||
+                                                    account.avatar.contains("blank_avatar")
+                                            if (hasNoAvatar) {
+                                                checkpointUids = checkpointUids + account.uid
                                                 try {
-                                                    accountStatusMap[account.uid] = "Đang kiểm tra Token..."
+                                                    val updatedAcc = account.copy(isLive = false)
+                                                    FacebookAccountsStore.addAccount(context, updatedAcc)
                                                 } catch (_: Throwable) {}
+                                                withContext(Dispatchers.Main) {
+                                                    accountStatusMap[account.uid] = "Checkpoint: Nick chưa có Avatar"
+                                                    facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                                }
+                                                return@launch
+                                            }
+
+                                            // 2. Kiểm tra token
+                                            var token = account.bio.ifBlank { null }
+                                            withContext(Dispatchers.Main) {
+                                                accountStatusMap[account.uid] = "Đang kiểm tra Token..."
                                             }
 
                                             // Tự động khôi phục Token từ Cookie nếu Token rỗng
@@ -319,13 +334,16 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                             }
 
                                             if (token.isNullOrBlank()) {
+                                                checkpointUids = checkpointUids + account.uid
+                                                try {
+                                                    val updatedAcc = account.copy(isLive = false)
+                                                    FacebookAccountsStore.addAccount(context, updatedAcc)
+                                                } catch (_: Throwable) {}
                                                 withContext(Dispatchers.Main) {
-                                                    try {
-                                                        accountStatusMap[account.uid] = "Lỗi: Thiếu Token EAAA"
-                                                        Toast.makeText(context.applicationContext, "Tài khoản ${account.name} thiếu Token EAAA!", Toast.LENGTH_SHORT).show()
-                                                    } catch (_: Throwable) {}
+                                                    accountStatusMap[account.uid] = "Lỗi: Thiếu Token EAAA (Checkpoint)"
+                                                    facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
                                                 }
-                                                continue
+                                                return@launch
                                             }
 
                                             var createdSuccessCount = 0
@@ -340,9 +358,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 }
 
                                                 withContext(Dispatchers.Main) {
-                                                    try {
-                                                        accountStatusMap[account.uid] = "Đang tạo ($idx/$count): $pageName"
-                                                    } catch (_: Throwable) {}
+                                                    accountStatusMap[account.uid] = "Đang tạo ($idx/$count): $pageName"
                                                 }
 
                                                 var isCreated = false
@@ -350,7 +366,6 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     val res = pageService.createFacebookPage(pageName, token)
                                                     isCreated = true
                                                     createdSuccessCount++
-                                                    totalCreatedAll++
                                                     try {
                                                         val updatedPages = pageService.getPages(token)
                                                         if (updatedPages.isNotEmpty()) {
@@ -359,22 +374,35 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                         }
                                                     } catch (_: Throwable) {}
                                                     withContext(Dispatchers.Main) {
-                                                        try {
-                                                            facebookAccounts = FacebookAccountsStore.getAccounts(context)
-                                                            accountStatusMap[account.uid] = "Đã tạo: $pageName | [Thành công: $createdSuccessCount] / [$count]"
-                                                            Toast.makeText(context.applicationContext, "Đã tạo Fanpage: $pageName", Toast.LENGTH_SHORT).show()
-                                                        } catch (_: Throwable) {}
+                                                        accountStatusMap[account.uid] = "Đã tạo: $pageName | [Thành công: $createdSuccessCount] / [$count]"
                                                     }
                                                 } catch (e: Throwable) {
                                                     val errRaw = e.message ?: "Thất bại"
                                                     val shortErr = errRaw.substringBefore("\n\n[Raw Facebook Response]")
                                                     lastErrorMsg = shortErr
                                                     val failCount = (idx - createdSuccessCount)
-                                                    withContext(Dispatchers.Main) {
+
+                                                    // Nhận diện lỗi Checkpoint (#1675030, checkpoint, Session expired, ...)
+                                                    val isCheckpointErr = errRaw.contains("1675030") ||
+                                                            errRaw.contains("checkpoint", ignoreCase = true) ||
+                                                            errRaw.contains("Session expired", ignoreCase = true) ||
+                                                            errRaw.contains("Error validating access token", ignoreCase = true)
+
+                                                    if (isCheckpointErr) {
+                                                        checkpointUids = checkpointUids + account.uid
                                                         try {
-                                                            accountStatusMap[account.uid] = "Trạng thái: $shortErr\n[Lỗi: $failCount | Thành công: $createdSuccessCount] / [$count]"
-                                                            Toast.makeText(context.applicationContext, "Tạo thất bại: $shortErr", Toast.LENGTH_SHORT).show()
+                                                            val updatedAcc = account.copy(isLive = false)
+                                                            FacebookAccountsStore.addAccount(context, updatedAcc)
                                                         } catch (_: Throwable) {}
+                                                        withContext(Dispatchers.Main) {
+                                                            accountStatusMap[account.uid] = "Checkpoint: $shortErr\n[Lỗi: $failCount | Thành công: $createdSuccessCount] / [$count]"
+                                                            facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                                        }
+                                                        break
+                                                    }
+
+                                                    withContext(Dispatchers.Main) {
+                                                        accountStatusMap[account.uid] = "Trạng thái: $shortErr\n[Lỗi: $failCount | Thành công: $createdSuccessCount] / [$count]"
                                                     }
                                                 }
 
@@ -383,9 +411,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     for (s in delaySec downTo 1) {
                                                         if (!isActive) break
                                                         withContext(Dispatchers.Main) {
-                                                            try {
-                                                                accountStatusMap[account.uid] = "Chờ ${s}s để tiếp tục...\n[Lỗi: ${idx - createdSuccessCount} | Thành công: $createdSuccessCount] / [$count]"
-                                                            } catch (_: Throwable) {}
+                                                            accountStatusMap[account.uid] = "Chờ ${s}s để tiếp tục...\n[Lỗi: ${idx - createdSuccessCount} | Thành công: $createdSuccessCount] / [$count]"
                                                         }
                                                         delay(1000L)
                                                     }
@@ -397,59 +423,41 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
                                             if (isActive) {
                                                 withContext(Dispatchers.Main) {
-                                                    try {
-                                                        val failCount = (count - createdSuccessCount)
-                                                        if (createdSuccessCount == count) {
-                                                            accountStatusMap[account.uid] = "Hoàn tất: [Thành công: $count/$count Page]"
-                                                        } else if (createdSuccessCount > 0) {
-                                                            accountStatusMap[account.uid] = "Dừng: ${lastErrorMsg ?: "Đã dừng"} | [Lỗi: $failCount | Thành công: $createdSuccessCount] / [$count]"
-                                                        } else {
-                                                            accountStatusMap[account.uid] = "Trạng thái: ${lastErrorMsg ?: "Không thể tạo Trang"} | [Lỗi: $failCount | Thành công: 0] / [$count]"
-                                                        }
-                                                    } catch (_: Throwable) {}
-                                                }
-                                            }
-                                        }
-
-                                        if (isActive) {
-                                            withContext(Dispatchers.Main) {
-                                                try {
-                                                    if (totalCreatedAll > 0) {
-                                                        Toast.makeText(context.applicationContext, "Đã tạo thành công $totalCreatedAll Page!", Toast.LENGTH_LONG).show()
+                                                    val failCount = (count - createdSuccessCount)
+                                                    if (createdSuccessCount == count) {
+                                                        accountStatusMap[account.uid] = "Hoàn tất: [Thành công: $count/$count Page]"
+                                                    } else if (account.uid in checkpointUids) {
+                                                        accountStatusMap[account.uid] = "Checkpoint: ${lastErrorMsg ?: "Bị hạn chế"} | [Lỗi: $failCount | Thành công: $createdSuccessCount] / [$count]"
+                                                    } else if (createdSuccessCount > 0) {
+                                                        accountStatusMap[account.uid] = "Dừng: ${lastErrorMsg ?: "Đã dừng"} | [Lỗi: $failCount | Thành công: $createdSuccessCount] / [$count]"
                                                     } else {
-                                                        Toast.makeText(context.applicationContext, "Tiến trình kết thúc (0 Page được tạo)", Toast.LENGTH_SHORT).show()
+                                                        accountStatusMap[account.uid] = "Trạng thái: ${lastErrorMsg ?: "Không thể tạo Trang"} | [Lỗi: $failCount | Thành công: 0] / [$count]"
                                                     }
-                                                    facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
-                                                } catch (_: Throwable) {}
+                                                }
                                             }
-                                        }
-                                    } catch (e: kotlinx.coroutines.CancellationException) {
-                                        withContext(Dispatchers.Main) {
-                                            try {
-                                                runningAccountUid?.let { uid ->
-                                                    accountStatusMap[uid] = "Đã dừng"
+                                        } catch (e: kotlinx.coroutines.CancellationException) {
+                                            withContext(Dispatchers.Main) {
+                                                accountStatusMap[account.uid] = "Đã dừng"
+                                            }
+                                        } catch (e: Throwable) {
+                                            val errMsg = e.localizedMessage ?: "Lỗi xử lý"
+                                            withContext(Dispatchers.Main) {
+                                                accountStatusMap[account.uid] = "Lỗi: $errMsg"
+                                            }
+                                        } finally {
+                                            withContext(Dispatchers.Main) {
+                                                runningJobs.remove(account.uid)
+                                                if (runningJobs.isEmpty()) {
+                                                    isRunning = false
+                                                    facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
                                                 }
-                                            } catch (_: Throwable) {}
-                                        }
-                                    } catch (e: Throwable) {
-                                        val errMsg = e.localizedMessage ?: "Lỗi xử lý"
-                                        withContext(Dispatchers.Main) {
-                                            try {
-                                                runningAccountUid?.let { uid ->
-                                                    accountStatusMap[uid] = "Lỗi: $errMsg"
-                                                }
-                                                Toast.makeText(context.applicationContext, "Lỗi thực thi: $errMsg", Toast.LENGTH_SHORT).show()
-                                            } catch (_: Throwable) {}
-                                        }
-                                    } finally {
-                                        withContext(Dispatchers.Main) {
-                                            isRunning = false
-                                            runningAccountUid = null
-                                            runJob = null
+                                            }
                                         }
                                     }
+                                    runningJobs[account.uid] = job
                                 }
                             } else {
+                                if (isRunning) return@Button
                                 // Chuyển Page với Full quyền hoặc No full
                                 val receiverUid = transferReceiverUid.trim()
                                 if (receiverUid.isBlank()) {
@@ -589,7 +597,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 }
                             }
                         },
-                        enabled = !isRunning && (
+                        enabled = (if (activeTab == 0) runningJobs.isEmpty() else !isRunning) && (
                             if (activeTab == 0) selectedForRunUids.isNotEmpty()
                             else selectedPageKeys.isNotEmpty() && transferReceiverUid.trim().isNotBlank()
                         ),
@@ -612,19 +620,32 @@ fun RegAndTransferPageScreen(navController: NavController) {
                     // Nút ô vuông đỏ nhỏ Dừng chạy (Cạnh bên, không có chữ)
                     Button(
                         onClick = {
-                            if (!isRunning) return@Button
-                            try {
-                                runJob?.cancel()
-                                runJob = null
-                                runningAccountUid?.let { uid ->
-                                    accountStatusMap[uid] = "Đã dừng"
-                                }
-                                isRunning = false
-                                runningAccountUid = null
-                                Toast.makeText(context.applicationContext, "Đã dừng tiến trình!", Toast.LENGTH_SHORT).show()
-                            } catch (_: Throwable) {}
+                            if (activeTab == 0) {
+                                if (runningJobs.isEmpty()) return@Button
+                                try {
+                                    runningJobs.forEach { (uid, job) ->
+                                        job.cancel()
+                                        accountStatusMap[uid] = "Đã dừng"
+                                    }
+                                    runningJobs.clear()
+                                    isRunning = false
+                                    Toast.makeText(context.applicationContext, "Đã dừng tất cả tiến trình!", Toast.LENGTH_SHORT).show()
+                                } catch (_: Throwable) {}
+                            } else {
+                                if (!isRunning) return@Button
+                                try {
+                                    runJob?.cancel()
+                                    runJob = null
+                                    runningAccountUid?.let { uid ->
+                                        accountStatusMap[uid] = "Đã dừng"
+                                    }
+                                    isRunning = false
+                                    runningAccountUid = null
+                                    Toast.makeText(context.applicationContext, "Đã dừng tiến trình!", Toast.LENGTH_SHORT).show()
+                                } catch (_: Throwable) {}
+                            }
                         },
-                        enabled = isRunning,
+                        enabled = if (activeTab == 0) runningJobs.isNotEmpty() else isRunning,
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = DangerRed,
@@ -1108,7 +1129,10 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                     Spacer(Modifier.width(10.dp))
 
                                     Column(modifier = Modifier.weight(1f, fill = false)) {
-                                        val isLive = account.isLive
+                                        val hasNoAvatar = account.avatar.isBlank() ||
+                                                account.avatar.contains("silhouette") ||
+                                                account.avatar.contains("blank_avatar")
+                                        val isCheckpoint = account.uid in checkpointUids || hasNoAvatar || !account.isLive
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 text = account.name.ifBlank { account.uid },
@@ -1119,12 +1143,18 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             Spacer(Modifier.width(6.dp))
-                                            // Badge Live gọn gàng
+                                            // Badge Live / Checkpoint
                                             Text(
-                                                text = if (isLive) "• Live" else "• Die",
-                                                color = if (isLive) Color(0xFF16A34A) else DangerRed,
-                                                fontSize = 11.5.sp,
-                                                fontWeight = FontWeight.SemiBold
+                                                text = if (isCheckpoint) "• Checkpoint" else "• Live",
+                                                color = if (isCheckpoint) Color(0xFFD32F2F) else Color(0xFF16A34A),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier
+                                                    .background(
+                                                        color = if (isCheckpoint) Color(0xFFFFEBEE) else Color(0xFFE8F5E9),
+                                                        shape = RoundedCornerShape(4.dp)
+                                                    )
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
                                             )
                                         }
 
@@ -1335,8 +1365,8 @@ fun RegAndTransferPageScreen(navController: NavController) {
 
                             // Khu vực hiển thị trạng thái chạy trực tiếp của tài khoản này
                             val liveStatus = accountStatusMap[account.uid]
-                            val isRunningThis = isRunning && runningAccountUid == account.uid
-                            val isAccError = liveStatus != null && (liveStatus.contains("Lỗi", ignoreCase = true) || liveStatus.contains("Thất bại", ignoreCase = true))
+                            val isRunningThis = (activeTab == 0 && runningJobs.containsKey(account.uid)) || (activeTab == 1 && isRunning && runningAccountUid == account.uid)
+                            val isAccError = liveStatus != null && (liveStatus.contains("Lỗi", ignoreCase = true) || liveStatus.contains("Thất bại", ignoreCase = true) || liveStatus.contains("Checkpoint", ignoreCase = true))
                             val isAccStopped = liveStatus != null && liveStatus.contains("Đã dừng", ignoreCase = true)
 
                             if (liveStatus != null || isRunningThis) {
@@ -1430,12 +1460,21 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 .background(DangerRed.copy(alpha = 0.15f))
                                                 .clickable {
                                                     try {
-                                                        runJob?.cancel()
-                                                        runJob = null
-                                                        accountStatusMap[account.uid] = "Đã dừng"
-                                                        isRunning = false
-                                                        runningAccountUid = null
-                                                        Toast.makeText(context.applicationContext, "Đã dừng tài khoản ${account.name}!", Toast.LENGTH_SHORT).show()
+                                                        if (activeTab == 0) {
+                                                            runningJobs[account.uid]?.cancel()
+                                                            runningJobs.remove(account.uid)
+                                                            accountStatusMap[account.uid] = "Đã dừng"
+                                                            if (runningJobs.isEmpty()) {
+                                                                isRunning = false
+                                                            }
+                                                        } else {
+                                                            runJob?.cancel()
+                                                            runJob = null
+                                                            accountStatusMap[account.uid] = "Đã dừng"
+                                                            isRunning = false
+                                                            runningAccountUid = null
+                                                        }
+                                                        Toast.makeText(context.applicationContext, "Đã dừng tài khoản ${account.name.ifBlank { account.uid }}!", Toast.LENGTH_SHORT).show()
                                                     } catch (_: Throwable) {}
                                                 }
                                                 .padding(horizontal = 8.dp, vertical = 3.dp)
