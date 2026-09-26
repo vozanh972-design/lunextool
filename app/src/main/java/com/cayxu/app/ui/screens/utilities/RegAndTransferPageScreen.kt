@@ -858,15 +858,10 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
                                     .clickable {
-                                        if (isAllSelected) {
-                                            selectedForRunUids = emptySet()
-                                            if (activeTab == 1) selectedPageKeys = emptySet()
+                                        selectedForRunUids = if (isAllSelected) {
+                                            emptySet()
                                         } else {
-                                            selectedForRunUids = allValidUids.toSet()
-                                            if (activeTab == 1) {
-                                                val nonReceiverAccounts = facebookAccounts.filter { it.uid != transferReceiverUid.trim() }
-                                                selectedPageKeys = nonReceiverAccounts.flatMap { acc -> acc.pages.map { "${acc.uid}_${it.pageId}" } }.toSet()
-                                            }
+                                            allValidUids.toSet()
                                         }
                                     }
                                     .padding(horizontal = 6.dp, vertical = 4.dp)
@@ -980,7 +975,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                 items(facebookAccounts, key = { it.uid }) { account ->
                     val isReceiver = activeTab == 1 && transferReceiverUid.isNotBlank() && account.uid.trim() == transferReceiverUid.trim()
                     val selectedPagesCount = if (activeTab == 1) account.pages.count { "${account.uid}_${it.pageId}" in selectedPageKeys } else 0
-                    val isChecked = if (activeTab == 1) (if (isReceiver) false else selectedPagesCount > 0) else account.uid in selectedForRunUids
+                    val isChecked = account.uid in selectedForRunUids
                     val isSourceAccount = activeTab == 1 && !isReceiver && selectedPagesCount > 0
 
                     val fbAvatarModel = remember(account.avatar, avatarVersion) {
@@ -1030,15 +1025,11 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Checkbox Profile chủ: Dùng để tick chọn Xóa nick (🗑) hoặc chọn nhanh page con
+                                // Checkbox Profile chủ: Dùng độc lập để tick chọn Xóa nick (🗑) hoặc chạy Reg
                                 Checkbox(
                                     checked = account.uid in selectedForRunUids,
                                     onCheckedChange = { checked ->
                                         selectedForRunUids = if (checked) selectedForRunUids + account.uid else selectedForRunUids - account.uid
-                                        if (activeTab == 1 && account.pages.isNotEmpty() && !isReceiver) {
-                                            val childKeys = account.pages.map { "${account.uid}_${it.pageId}" }.toSet()
-                                            selectedPageKeys = if (checked) selectedPageKeys + childKeys else selectedPageKeys - childKeys
-                                        }
                                     },
                                     colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2)),
                                     modifier = Modifier.size(24.dp)
@@ -1527,12 +1518,10 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     .clip(RoundedCornerShape(4.dp))
                                                     .clickable {
                                                         val myKeys = account.pages.map { "${account.uid}_${it.pageId}" }.toSet()
-                                                        if (isAllThisPagesSelected) {
-                                                            selectedPageKeys = selectedPageKeys - myKeys
-                                                            selectedForRunUids = selectedForRunUids - account.uid
+                                                        selectedPageKeys = if (isAllThisPagesSelected) {
+                                                            selectedPageKeys - myKeys
                                                         } else {
-                                                            selectedPageKeys = selectedPageKeys + myKeys
-                                                            selectedForRunUids = selectedForRunUids + account.uid
+                                                            selectedPageKeys + myKeys
                                                         }
                                                     }
                                                     .padding(horizontal = 4.dp, vertical = 2.dp)
@@ -1602,16 +1591,10 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     RoundedCornerShape(10.dp)
                                                 )
                                                 .clickable(enabled = activeTab == 1 && !isReceiver) {
-                                                    val willCheck = !isPageChecked
-                                                    if (willCheck) {
-                                                        selectedPageKeys = selectedPageKeys + pageKey
-                                                        selectedForRunUids = selectedForRunUids + account.uid
+                                                    selectedPageKeys = if (isPageChecked) {
+                                                        selectedPageKeys - pageKey
                                                     } else {
-                                                        selectedPageKeys = selectedPageKeys - pageKey
-                                                        val remaining = account.pages.any { it.pageId != page.pageId && "${account.uid}_${it.pageId}" in selectedPageKeys }
-                                                        if (!remaining) {
-                                                            selectedForRunUids = selectedForRunUids - account.uid
-                                                        }
+                                                        selectedPageKeys + pageKey
                                                     }
                                                 }
                                                 .padding(horizontal = 8.dp, vertical = 7.dp)
@@ -1622,15 +1605,10 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     checked = isPageChecked,
                                                     enabled = !isReceiver,
                                                     onCheckedChange = { checked ->
-                                                        if (checked) {
-                                                            selectedPageKeys = selectedPageKeys + pageKey
-                                                            selectedForRunUids = selectedForRunUids + account.uid
+                                                        selectedPageKeys = if (checked) {
+                                                            selectedPageKeys + pageKey
                                                         } else {
-                                                            selectedPageKeys = selectedPageKeys - pageKey
-                                                            val remaining = account.pages.any { it.pageId != page.pageId && "${account.uid}_${it.pageId}" in selectedPageKeys }
-                                                            if (!remaining) {
-                                                                selectedForRunUids = selectedForRunUids - account.uid
-                                                            }
+                                                            selectedPageKeys - pageKey
                                                         }
                                                     },
                                                     colors = CheckboxDefaults.colors(
