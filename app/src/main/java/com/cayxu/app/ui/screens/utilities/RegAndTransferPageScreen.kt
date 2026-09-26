@@ -105,6 +105,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
     var checkpointUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     var runningAccountUid by remember { mutableStateOf<String?>(null) }
     val accountStatusMap = remember { mutableStateMapOf<String, String>() }
+    val accountErrorDetailMap = remember { mutableStateMapOf<String, String>() }
     var selectedErrorDetail by remember { mutableStateOf<Pair<String, String>?>(null) } // Pair(AccountName, ErrorMessage)
 
     val pageService = remember { FacebookPageService() }
@@ -571,6 +572,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 val res = if (isFullPermission) {
                                                     engine.chuyenPageFullQuyen(
                                                         pageUid615 = page615Uid,
+                                                        rawPageId = page.pageId,
                                                         targetUserId = receiverUid,
                                                         pageAccessToken = tokenToUse,
                                                         motherToken = motherToken,
@@ -580,6 +582,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                 } else {
                                                     engine.chuyenPageKhongFullQuyen(
                                                         pageUid615 = page615Uid,
+                                                        rawPageId = page.pageId,
                                                         targetUserId = receiverUid,
                                                         pageAccessToken = tokenToUse,
                                                         motherToken = motherToken,
@@ -599,6 +602,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     withContext(Dispatchers.Main) {
                                                         accountStatusMap[pageKey] = "Lỗi: $msg"
                                                         accountStatusMap[account.uid] = "Lỗi ($pName): $msg"
+                                                        accountErrorDetailMap[account.uid] = res.debugDetails.ifBlank { "Lỗi ($pName): $msg\nPhản hồi Facebook: ${res.rawResponse}" }
                                                     }
                                                 }
                                                 delay(1200L)
@@ -1526,7 +1530,8 @@ fun RegAndTransferPageScreen(navController: NavController) {
                                                     .clip(CircleShape)
                                                     .background(DangerRed.copy(alpha = 0.15f))
                                                     .clickable {
-                                                        selectedErrorDetail = Pair(account.name.ifBlank { account.uid }, liveStatus ?: "Lỗi từ Facebook")
+                                                        val detail = accountErrorDetailMap[account.uid] ?: (liveStatus ?: "Lỗi từ Facebook")
+                                                        selectedErrorDetail = Pair(account.name.ifBlank { account.uid }, detail)
                                                     },
                                                 contentAlignment = Alignment.Center
                                             ) {
@@ -2016,7 +2021,7 @@ fun RegAndTransferPageScreen(navController: NavController) {
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 350.dp)
+                        .heightIn(max = 450.dp)
                 ) {
                     Column(
                         modifier = Modifier
@@ -2024,12 +2029,15 @@ fun RegAndTransferPageScreen(navController: NavController) {
                             .padding(12.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
-                        Text(
-                            text = errDetail,
-                            fontSize = 12.5.sp,
-                            color = DangerRed,
-                            lineHeight = 18.sp
-                        )
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            Text(
+                                text = errDetail,
+                                fontSize = 11.5.sp,
+                                color = DangerRed,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                lineHeight = 16.sp
+                            )
+                        }
                     }
                 }
 

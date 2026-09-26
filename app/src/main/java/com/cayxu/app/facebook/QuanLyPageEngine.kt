@@ -36,10 +36,37 @@ class QuanLyPageEngine(
         val pageId: String,
         val targetUserId: String? = null,
         val message: String? = null,
-        val rawResponse: String = ""
+        val rawResponse: String = "",
+        val debugDetails: String = ""
     ) {
         fun asResult(): Result<Boolean> =
             if (isSuccess) Result.success(true) else Result.failure(Exception(message ?: rawResponse))
+    }
+
+    @Keep
+    data class StepExecutionResult(
+        val stepName: String,
+        val isSuccess: Boolean,
+        val httpCode: Int,
+        val requestUrl: String,
+        val profileId: String,
+        val requestVariables: String,
+        val responseBody: String,
+        val errorMessage: String? = null
+    ) {
+        fun toDebugString(): String = buildString {
+            appendLine("=== [$stepName] ===")
+            appendLine("• URL: $requestUrl")
+            appendLine("• HTTP Code: $httpCode")
+            if (profileId.isNotBlank()) appendLine("• profile_id: $profileId")
+            appendLine("• Request Variables:")
+            appendLine(requestVariables)
+            appendLine("• Raw Response Facebook:")
+            appendLine(responseBody.ifBlank { "(empty response)" })
+            if (!errorMessage.isNullOrBlank()) {
+                appendLine("• Error Message: $errorMessage")
+            }
+        }
     }
 
     private val httpClient: OkHttpClient by lazy {
@@ -225,6 +252,60 @@ class QuanLyPageEngine(
         return reqBuilder.build()
     }
 
+    private fun executeGraphQLStep(
+        stepName: String,
+        token: String,
+        docId: String,
+        friendlyName: String,
+        variablesJson: String,
+        profileId: String = "",
+        extraHeaders: Map<String, String> = emptyMap()
+    ): StepExecutionResult {
+        val request = buildGraphQLRequest(
+            token = token,
+            docId = docId,
+            friendlyName = friendlyName,
+            variablesJson = variablesJson,
+            extraHeaders = extraHeaders
+        )
+
+        return try {
+            httpClient.newCall(request).execute().use { res ->
+                val code = res.code
+                val body = res.body?.string() ?: ""
+                val hasErrors = body.contains("\"errors\":") || (body.contains("\"error\":") && !body.contains("\"error\":false"))
+                val isSuccess = res.isSuccessful && !hasErrors
+                val errMsg = if (!isSuccess) parseErrorMessage(body) else null
+
+                val stepRes = StepExecutionResult(
+                    stepName = stepName,
+                    isSuccess = isSuccess,
+                    httpCode = code,
+                    requestUrl = LUNEX_GRAPHQL_URL,
+                    profileId = profileId,
+                    requestVariables = variablesJson,
+                    responseBody = body,
+                    errorMessage = errMsg
+                )
+                android.util.Log.d("FB_PAGE_DEBUG", stepRes.toDebugString())
+                stepRes
+            }
+        } catch (e: Exception) {
+            val stepRes = StepExecutionResult(
+                stepName = stepName,
+                isSuccess = false,
+                httpCode = 0,
+                requestUrl = LUNEX_GRAPHQL_URL,
+                profileId = profileId,
+                requestVariables = variablesJson,
+                responseBody = "",
+                errorMessage = e.message ?: "Lỗi kết nối mạng"
+            )
+            android.util.Log.e("FB_PAGE_DEBUG", stepRes.toDebugString(), e)
+            stepRes
+        }
+    }
+
     /**
      * BƯỚC 1: XÁC THỰC MẬT KHẨU NICK GỬI (STEP_1_SEND_INVITATION)
      * Chuẩn Bytecode 0x28E2C4 - 0x28E2F2 từ lunexAUTO: sensitive_string_value là JSON mảng 2 chiều [["password", "<PASS>"]]
@@ -235,7 +316,7 @@ class QuanLyPageEngine(
         pageId: String,
         targetUserId: String,
         adminType: String
-    ): Result<String> {
+    ): StepExecutionResult {
         val inner = JSONArray().apply {
             put("password")
             put(senderPassword)
@@ -267,27 +348,14 @@ class QuanLyPageEngine(
             put("params", paramsObj)
         }
 
-        val request = buildGraphQLRequest(
+        return executeGraphQLStep(
+            stepName = "BƯỚC 1: permissions_reauth",
             token = senderToken,
             docId = "30749539927629244093798192451",
             friendlyName = "NativeTemplateAsyncQuery",
-            variablesJson = variablesObj.toString()
+            variablesJson = variablesObj.toString(),
+            profileId = pageId
         )
-
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val hasErrors = body.contains("\"errors\":") || (body.contains("\"error\":") && !body.contains("\"error\":false"))
-                if (res.isSuccessful && !hasErrors) {
-                    Result.success(body)
-                } else {
-                    val parsedErr = parseErrorMessage(body)
-                    Result.failure(Exception(parsedErr))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(Exception(e.message ?: "Lỗi kết nối bước 1"))
-        }
     }
 
     /**
@@ -303,7 +371,7 @@ class QuanLyPageEngine(
         boolInsights: Boolean = true,
         boolMessages: Boolean = true,
         boolModerate: Boolean = true
-    ): Result<String> {
+    ): StepExecutionResult {
         val path = "/nt/profile/admin_management/permissions/update?admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D&entry_point_screen_id=%5B%227o2xil%3A5%22%2Cnull%5D&admin_type=$adminType&profile_id=$pageId&target_admin_id=$targetUserId&secured_sensitive_actions%5B0%5D=page_admin_access_addition&state_ids%5Bshow_entry_point_saving_spinner%5D=8bxxoh%3A0&state_ids%5Bads%5D=8clnk7%3A2&state_ids%5Bcontent%5D=8clnk7%3A3&state_ids%5Binsights%5D=8clnk7%3A4&state_ids%5Bmessages%5D=8clnk7%3A5&state_ids%5Bmoderate%5D=8clnk7%3A6"
 
         val paramsObj = JSONObject().apply {
@@ -333,27 +401,14 @@ class QuanLyPageEngine(
             put("params", paramsObj)
         }
 
-        val request = buildGraphQLRequest(
+        return executeGraphQLStep(
+            stepName = "BƯỚC 2: permissions/update ($adminType)",
             token = senderToken,
             docId = "30749539927629244093798192451",
             friendlyName = "NativeTemplateAsyncQuery",
-            variablesJson = variablesObj.toString()
+            variablesJson = variablesObj.toString(),
+            profileId = pageId
         )
-
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val hasErrors = body.contains("\"errors\":") || (body.contains("\"error\":") && !body.contains("\"error\":false"))
-                if (res.isSuccessful && !hasErrors) {
-                    Result.success(body)
-                } else {
-                    val parsedErr = parseErrorMessage(body)
-                    Result.failure(Exception(parsedErr))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(Exception(e.message ?: "Lỗi kết nối bước 2"))
-        }
     }
 
     /**
@@ -363,7 +418,7 @@ class QuanLyPageEngine(
         receiverToken: String,
         pageId: String,
         receiverUid: String
-    ): Result<String> {
+    ): Pair<StepExecutionResult, String?> {
         val paramsObj = JSONObject().apply {
             put("path", "/nt/profile/admin_management/invitation")
             put("screen_id", "[\"sz9fnp:17\",null]")
@@ -380,41 +435,35 @@ class QuanLyPageEngine(
             put("params", paramsObj)
         }
 
-        val request = buildGraphQLRequest(
+        val stepRes = executeGraphQLStep(
+            stepName = "BƯỚC 3: admin_management/invitation",
             token = receiverToken,
             docId = "221080835214205752894689842827",
             friendlyName = "NativeTemplateScreenQuery",
             variablesJson = variablesObj.toString(),
+            profileId = pageId,
             extraHeaders = mapOf("x-graphql-request-purpose" to "fetch")
         )
 
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val regexes = listOf(
-                    Regex("""invitation_id(?:%3D|=)([\d]+)"""),
-                    Regex("""["']invitation_id["']\s*:\s*["']?([\d]+)"""),
-                    Regex("""(?:%22|")invitation_id(?:%22|")%3A(?:%22|")([\d]+)"""),
-                    Regex("""invitation_id\\":\\"([\d]+)"""),
-                    Regex("""invitation_id\\%3D([\d]+)"""),
-                    Regex("""intent_value["']?\s*:\s*["'][^"']*(?:invitation_id|invite_id)(?:%3D|=)([\d]+)"""),
-                    Regex("""intent_value["']?\s*:\s*["'][^"']*?([\d]{8,})""")
-                )
-                for (rg in regexes) {
-                    val match = rg.find(body)
-                    if (match != null && match.groupValues[1].isNotBlank()) {
-                        return Result.success(match.groupValues[1])
-                    }
-                }
-                if (body.contains("\"errors\":") || body.contains("\"error\":")) {
-                    Result.failure(Exception(parseErrorMessage(body)))
-                } else {
-                    Result.failure(Exception("Không tìm thấy invitation_id trong phản hồi của acc nhận"))
-                }
+        if (!stepRes.isSuccess) return Pair(stepRes, null)
+
+        val body = stepRes.responseBody
+        val regexes = listOf(
+            Regex("""invitation_id(?:%3D|=)([\d]+)"""),
+            Regex("""["']invitation_id["']\s*:\s*["']?([\d]+)"""),
+            Regex("""(?:%22|")invitation_id(?:%22|")%3A(?:%22|")([\d]+)"""),
+            Regex("""invitation_id\\":\\"([\d]+)"""),
+            Regex("""invitation_id\\%3D([\d]+)"""),
+            Regex("""intent_value["']?\s*:\s*["'][^"']*(?:invitation_id|invite_id)(?:%3D|=)([\d]+)"""),
+            Regex("""intent_value["']?\s*:\s*["'][^"']*?([\d]{8,})""")
+        )
+        for (rg in regexes) {
+            val match = rg.find(body)
+            if (match != null && match.groupValues[1].isNotBlank()) {
+                return Pair(stepRes, match.groupValues[1])
             }
-        } catch (e: Exception) {
-            Result.failure(Exception(e.message ?: "Lỗi kết nối bước 3"))
         }
+        return Pair(stepRes, null)
     }
 
     /**
@@ -424,7 +473,7 @@ class QuanLyPageEngine(
         receiverToken: String,
         invitationId: String,
         adminType: String = "full_access"
-    ): Result<String> {
+    ): StepExecutionResult {
         val path = "/nt/profile/admin_management/invitation_response?accept_invitation=1&invitation_id=$invitationId&admin_type=$adminType"
 
         val paramsObj = JSONObject().apply {
@@ -438,157 +487,200 @@ class QuanLyPageEngine(
             put("params", paramsObj)
         }
 
-        val request = buildGraphQLRequest(
+        return executeGraphQLStep(
+            stepName = "BƯỚC 4: invitation_response ($adminType)",
             token = receiverToken,
             docId = "30749539927629244093798192451",
             friendlyName = "NativeTemplateAsyncQuery",
-            variablesJson = variablesObj.toString()
+            variablesJson = variablesObj.toString(),
+            profileId = invitationId
         )
-
-        return try {
-            httpClient.newCall(request).execute().use { res ->
-                val body = res.body?.string() ?: ""
-                val hasErrors = body.contains("\"errors\":") || (body.contains("\"error\":") && !body.contains("\"error\":false"))
-                if (res.isSuccessful && !hasErrors) {
-                    Result.success(body)
-                } else {
-                    val parsedErr = parseErrorMessage(body)
-                    Result.failure(Exception(parsedErr))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(Exception(e.message ?: "Lỗi kết nối bước 4"))
-        }
     }
 
     /**
-     * QUY TRÌNH CHUYỂN PAGE HOÀN CHỈNH 4 BƯỚC THEO CHUẨN LUNEXAUTO
+     * QUY TRÌNH CHUYỂN PAGE HOÀN CHỈNH THEO CHUẨN LUNEXAUTO
+     * Tự động thử nghiệm các candidate profile_id (ID số thực thể Page và UID 615).
+     * Ghi nhận và trả về toàn bộ trace log HTTP (URL, code, request variables, raw response) cho Dialog và Logcat.
      */
     fun chuyenPageLunexAuto(
         pageUid615: String,
+        rawPageId: String? = null,
         targetUserId: String,
         senderToken: String,
         senderPassword: String = "",
         receiverToken: String = "",
-        isFullPermission: Boolean = true
+        isFullPermission: Boolean = true,
+        taskAllowAds: Boolean = false
     ): PageActionResult {
         val cleanTargetId = targetUserId.trim()
         val cleanSenderToken = senderToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
         if (cleanSenderToken.isEmpty()) {
-            return PageActionResult(false, pageUid615, cleanTargetId, "Thiếu Token nick gửi", "")
+            return PageActionResult(false, pageUid615, cleanTargetId, "Thiếu Token nick gửi", "", "Lỗi: Không tìm thấy Access Token của tài khoản gửi")
         }
 
-        // 1. Tự động đọc ID gốc của Page phục vụ riêng lệnh GraphQL (Không ghi đè UID 615 trong app)
-        val realPageId = resolveGraphPageId(pageUid615, cleanSenderToken)
         val adminType = if (isFullPermission) "full_access" else "task_access"
+        val allowAds = if (isFullPermission) true else taskAllowAds
 
-        // MẸO TỐI ƯU CHUẨN LUNEXAUTO:
-        // Thử gọi thẳng Bước 2 trước. Nếu token của nick gửi đang hợp lệ và chưa bị Facebook bắt re-auth mật khẩu, Bước 2 sẽ thành công ngay lập tức!
-        var step2Res = step2ActivateAdmin(
-            senderToken = cleanSenderToken,
-            pageId = realPageId,
-            targetUserId = cleanTargetId,
-            adminType = adminType,
-            boolAds = true,
-            boolContent = true,
-            boolInsights = true,
-            boolMessages = true,
-            boolModerate = true
-        )
+        // 1. Thu thập danh sách Candidate profile_id:
+        val candidatePageIds = linkedSetOf<String>().apply {
+            // Ưu tiên 1: rawPageId nếu là ID số thực thể của Page (không bắt đầu bằng 615):
+            if (!rawPageId.isNullOrBlank() && !rawPageId.startsWith("615")) {
+                add(rawPageId.trim())
+            }
+            // Ưu tiên 2: Thử giải mã qua Graph API nếu tìm được ID số khác 615:
+            val resolved = resolveGraphPageId(pageUid615, cleanSenderToken)
+            if (resolved.isNotBlank() && !resolved.startsWith("615")) {
+                add(resolved.trim())
+            }
+            // Ưu tiên 3: UID 615 của Page:
+            if (pageUid615.isNotBlank()) {
+                add(pageUid615.trim())
+            }
+            // Ưu tiên 4: rawPageId nếu bắt đầu bằng 615 mà chưa có:
+            if (!rawPageId.isNullOrBlank()) {
+                add(rawPageId.trim())
+            }
+        }.toList()
 
-        // Chỉ khi nào Bước 2 gặp lỗi (cần re-auth mật khẩu hoặc gặp lỗi), mới kích hoạt Bước 1 rồi gọi lại Bước 2
-        if (step2Res.isFailure) {
-            if (senderPassword.isNotBlank()) {
-                val step1Res = step1SendInvitation(
-                    senderToken = cleanSenderToken,
-                    senderPassword = senderPassword,
-                    pageId = realPageId,
-                    targetUserId = cleanTargetId,
-                    adminType = adminType
-                )
-                if (step1Res.isFailure) {
-                    val s1Err = step1Res.exceptionOrNull()?.message ?: "Xác thực mật khẩu thất bại"
-                    return PageActionResult(false, pageUid615, cleanTargetId, s1Err, "")
+        val traceHistory = StringBuilder()
+        traceHistory.appendLine("▶ BẮT ĐẦU CHUYỂN PAGE (${if (isFullPermission) "Full quyền" else "No full - Quyền tác vụ"})")
+        traceHistory.appendLine("• Page UID: $pageUid615")
+        traceHistory.appendLine("• Raw Page ID: $rawPageId")
+        traceHistory.appendLine("• Danh sách Candidate profile_id: $candidatePageIds")
+        traceHistory.appendLine("• Target Admin UID: $cleanTargetId")
+        traceHistory.appendLine("==================================================")
+
+        var lastStepResult: StepExecutionResult? = null
+        var successfulProfileId: String? = null
+
+        for ((idx, candidateId) in candidatePageIds.withIndex()) {
+            traceHistory.appendLine("\n[THỬ NGHIỆM CANDIDATE #${idx + 1}: profile_id = $candidateId]")
+
+            // Thử gọi thẳng Bước 2 trước (Permissions Update)
+            var step2 = step2ActivateAdmin(
+                senderToken = cleanSenderToken,
+                pageId = candidateId,
+                targetUserId = cleanTargetId,
+                adminType = adminType,
+                boolAds = allowAds,
+                boolContent = true,
+                boolInsights = true,
+                boolMessages = true,
+                boolModerate = true
+            )
+            traceHistory.appendLine(step2.toDebugString())
+            lastStepResult = step2
+
+            if (!step2.isSuccess) {
+                if (senderPassword.isNotBlank()) {
+                    traceHistory.appendLine("Step 2 không thành công, kích hoạt Step 1 re-auth mật khẩu...")
+                    val step1 = step1SendInvitation(
+                        senderToken = cleanSenderToken,
+                        senderPassword = senderPassword,
+                        pageId = candidateId,
+                        targetUserId = cleanTargetId,
+                        adminType = adminType
+                    )
+                    traceHistory.appendLine(step1.toDebugString())
+                    lastStepResult = step1
+
+                    if (step1.isSuccess) {
+                        traceHistory.appendLine("Step 1 re-auth thành công, gọi lại Step 2...")
+                        step2 = step2ActivateAdmin(
+                            senderToken = cleanSenderToken,
+                            pageId = candidateId,
+                            targetUserId = cleanTargetId,
+                            adminType = adminType,
+                            boolAds = allowAds,
+                            boolContent = true,
+                            boolInsights = true,
+                            boolMessages = true,
+                            boolModerate = true
+                        )
+                        traceHistory.appendLine(step2.toDebugString())
+                        lastStepResult = step2
+                    }
                 }
-                // Sau khi re-auth thành công, gọi lại Bước 2
-                step2Res = step2ActivateAdmin(
-                    senderToken = cleanSenderToken,
-                    pageId = realPageId,
-                    targetUserId = cleanTargetId,
-                    adminType = adminType,
-                    boolAds = true,
-                    boolContent = true,
-                    boolInsights = true,
-                    boolMessages = true,
-                    boolModerate = true
-                )
+            }
+
+            if (step2.isSuccess) {
+                successfulProfileId = candidateId
+                traceHistory.appendLine("=> Step 2 THÀNH CÔNG VỚI profile_id = $candidateId!")
+                break
             } else {
-                val err2 = step2Res.exceptionOrNull()?.message ?: "Facebook yêu cầu xác thực mật khẩu"
-                return PageActionResult(false, pageUid615, cleanTargetId, "$err2 (Vui lòng nhập mật khẩu tài khoản gửi)", "")
+                traceHistory.appendLine("=> Candidate $candidateId thất bại. Đang thử tiếp candidate khác nếu có...")
             }
         }
 
-        if (step2Res.isFailure) {
-            val err = step2Res.exceptionOrNull()?.message ?: "Gửi lời mời quản trị thất bại"
-            return PageActionResult(false, pageUid615, cleanTargetId, err, "")
+        if (successfulProfileId == null) {
+            val finalErr = lastStepResult?.errorMessage ?: "Gửi lời mời quản trị thất bại"
+            return PageActionResult(
+                isSuccess = false,
+                pageId = pageUid615,
+                targetUserId = cleanTargetId,
+                message = finalErr,
+                rawResponse = lastStepResult?.responseBody ?: "",
+                debugDetails = traceHistory.toString()
+            )
         }
 
         val cleanReceiverToken = receiverToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
 
-        // BƯỚC 3 & 4: Nếu có Token nick nhận -> Tự động tìm Invitation ID và Accept luôn
+        // BƯỚC 3 & 4: Nếu có token nick nhận -> Tự động tìm Invitation ID và Accept luôn
         if (cleanReceiverToken.isNotEmpty()) {
-            val step3Res = step3GetInvitationId(
+            val (step3, invitationId) = step3GetInvitationId(
                 receiverToken = cleanReceiverToken,
-                pageId = realPageId,
+                pageId = successfulProfileId,
                 receiverUid = cleanTargetId
             )
+            traceHistory.appendLine(step3.toDebugString())
 
-            if (step3Res.isSuccess) {
-                val invitationId = step3Res.getOrNull() ?: ""
-                if (invitationId.isNotEmpty()) {
-                    val step4Res = step4AcceptInvitation(
-                        receiverToken = cleanReceiverToken,
-                        invitationId = invitationId,
-                        adminType = adminType
+            if (invitationId != null && invitationId.isNotBlank()) {
+                val step4 = step4AcceptInvitation(
+                    receiverToken = cleanReceiverToken,
+                    invitationId = invitationId,
+                    adminType = adminType
+                )
+                traceHistory.appendLine(step4.toDebugString())
+
+                if (step4.isSuccess) {
+                    return PageActionResult(
+                        isSuccess = true,
+                        pageId = pageUid615,
+                        targetUserId = cleanTargetId,
+                        message = "Chuyển thành công & Đã tự động nhận quyền Admin (4 bước hoàn tất)",
+                        rawResponse = step4.responseBody,
+                        debugDetails = traceHistory.toString()
                     )
-                    if (step4Res.isSuccess) {
-                        return PageActionResult(
-                            isSuccess = true,
-                            pageId = pageUid615,
-                            targetUserId = cleanTargetId,
-                            message = "Chuyển và tự động nhận Admin thành công (4 bước hoàn tất)",
-                            rawResponse = step4Res.getOrNull() ?: ""
-                        )
-                    } else {
-                        val err4 = step4Res.exceptionOrNull()?.message ?: ""
-                        return PageActionResult(
-                            isSuccess = true,
-                            pageId = pageUid615,
-                            targetUserId = cleanTargetId,
-                            message = "Đã gửi lời mời thành công (Lỗi tự động Accept bước 4: $err4)",
-                            rawResponse = ""
-                        )
-                    }
+                } else {
+                    return PageActionResult(
+                        isSuccess = true,
+                        pageId = pageUid615,
+                        targetUserId = cleanTargetId,
+                        message = "Đã gửi lời mời thành công (Lỗi tự động Accept bước 4: ${step4.errorMessage})",
+                        rawResponse = step4.responseBody,
+                        debugDetails = traceHistory.toString()
+                    )
                 }
             } else {
-                val err3 = step3Res.exceptionOrNull()?.message ?: ""
                 return PageActionResult(
                     isSuccess = true,
                     pageId = pageUid615,
                     targetUserId = cleanTargetId,
-                    message = "Đã gửi lời mời thành công (Lỗi tìm lời mời bước 3: $err3)",
-                    rawResponse = ""
+                    message = "Đã gửi lời mời thành công (Lỗi tìm lời mời bước 3: ${step3.errorMessage})",
+                    rawResponse = step3.responseBody,
+                    debugDetails = traceHistory.toString()
                 )
             }
         }
 
-        // Trường hợp không có token nick nhận: Đã gửi lời mời thành công ở bước 2
         return PageActionResult(
             isSuccess = true,
             pageId = pageUid615,
             targetUserId = cleanTargetId,
             message = "Đã gửi lời mời quản trị thành công (Chờ nick nhận chấp nhận)",
-            rawResponse = step2Res.getOrNull() ?: ""
+            rawResponse = lastStepResult?.responseBody ?: "",
+            debugDetails = traceHistory.toString()
         )
     }
 
@@ -597,6 +689,7 @@ class QuanLyPageEngine(
      */
     fun chuyenPageFullQuyen(
         pageUid615: String,
+        rawPageId: String? = null,
         targetUserId: String,
         pageAccessToken: String? = null,
         motherToken: String? = null,
@@ -606,6 +699,7 @@ class QuanLyPageEngine(
         val effectiveSenderToken = (motherToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
         return chuyenPageLunexAuto(
             pageUid615 = pageUid615,
+            rawPageId = rawPageId,
             targetUserId = targetUserId,
             senderToken = effectiveSenderToken,
             senderPassword = senderPassword,
@@ -621,6 +715,7 @@ class QuanLyPageEngine(
      */
     fun chuyenPageKhongFullQuyen(
         pageUid615: String,
+        rawPageId: String? = null,
         targetUserId: String,
         pageAccessToken: String? = null,
         motherToken: String? = null,
@@ -628,126 +723,17 @@ class QuanLyPageEngine(
         receiverToken: String = "",
         customTasks: List<String>? = null
     ): PageActionResult {
-        val cleanTargetId = targetUserId.trim()
         val effectiveSenderToken = (motherToken ?: accessToken ?: "").removePrefix("OAuth ").removePrefix("Bearer ").trim()
-        if (effectiveSenderToken.isEmpty()) {
-            return PageActionResult(false, pageUid615, cleanTargetId, "Thiếu Token nick gửi", "")
-        }
-
-        // Tự động đọc ID gốc của Page phục vụ riêng GraphQL (Giữ nguyên UID 615 trong app/database)
-        val realPageId = resolveGraphPageId(pageUid615, effectiveSenderToken)
-        val adminType = "task_access"
-
-        // Phân quyền chuẩn tác vụ: Quản lý bài viết, tin nhắn Messenger, kiểm duyệt bình luận, xem insights
-        // ads = false (hoặc true nếu customTasks có yêu cầu ADS)
         val allowAds = customTasks?.any { it.contains("ADS", ignoreCase = true) || it.contains("QUANG_CAO", ignoreCase = true) } ?: false
-
-        // BƯỚC 2: Cấp quyền tác vụ & Gửi lời mời (permissions/update)
-        // Mẹo tối ưu LunexAuto: Thử gọi thẳng Bước 2 trước nếu token chưa bị bắt re-auth
-        var step2Res = step2ActivateAdmin(
+        return chuyenPageLunexAuto(
+            pageUid615 = pageUid615,
+            rawPageId = rawPageId,
+            targetUserId = targetUserId,
             senderToken = effectiveSenderToken,
-            pageId = realPageId,
-            targetUserId = cleanTargetId,
-            adminType = adminType,
-            boolAds = allowAds,
-            boolContent = true,
-            boolInsights = true,
-            boolMessages = true,
-            boolModerate = true
-        )
-
-        // Nếu Bước 2 gặp lỗi (cần re-auth mật khẩu), kích hoạt Bước 1 rồi gọi lại Bước 2
-        if (step2Res.isFailure) {
-            if (senderPassword.isNotBlank()) {
-                val step1Res = step1SendInvitation(
-                    senderToken = effectiveSenderToken,
-                    senderPassword = senderPassword,
-                    pageId = realPageId,
-                    targetUserId = cleanTargetId,
-                    adminType = adminType
-                )
-                if (step1Res.isFailure) {
-                    val s1Err = step1Res.exceptionOrNull()?.message ?: "Xác thực mật khẩu thất bại"
-                    return PageActionResult(false, pageUid615, cleanTargetId, s1Err, "")
-                }
-                // Sau khi re-auth thành công, gọi lại Bước 2
-                step2Res = step2ActivateAdmin(
-                    senderToken = effectiveSenderToken,
-                    pageId = realPageId,
-                    targetUserId = cleanTargetId,
-                    adminType = adminType,
-                    boolAds = allowAds,
-                    boolContent = true,
-                    boolInsights = true,
-                    boolMessages = true,
-                    boolModerate = true
-                )
-            } else {
-                val err2 = step2Res.exceptionOrNull()?.message ?: "Facebook yêu cầu xác thực mật khẩu"
-                return PageActionResult(false, pageUid615, cleanTargetId, "$err2 (Vui lòng nhập mật khẩu tài khoản gửi)", "")
-            }
-        }
-
-        if (step2Res.isFailure) {
-            val err = step2Res.exceptionOrNull()?.message ?: "Gửi lời mời quyền tác vụ (Task Access) thất bại"
-            return PageActionResult(false, pageUid615, cleanTargetId, err, "")
-        }
-
-        val cleanReceiverToken = receiverToken.removePrefix("OAuth ").removePrefix("Bearer ").trim()
-
-        // BƯỚC 3 & 4: Nếu có Token nick nhận -> Tự động tìm Invitation ID và Accept quyền task_access
-        if (cleanReceiverToken.isNotEmpty()) {
-            val step3Res = step3GetInvitationId(
-                receiverToken = cleanReceiverToken,
-                pageId = realPageId,
-                receiverUid = cleanTargetId
-            )
-
-            if (step3Res.isSuccess) {
-                val invitationId = step3Res.getOrNull() ?: ""
-                if (invitationId.isNotEmpty()) {
-                    val step4Res = step4AcceptInvitation(
-                        receiverToken = cleanReceiverToken,
-                        invitationId = invitationId,
-                        adminType = adminType // task_access
-                    )
-                    if (step4Res.isSuccess) {
-                        return PageActionResult(
-                            isSuccess = true,
-                            pageId = pageUid615,
-                            targetUserId = cleanTargetId,
-                            message = "Chuyển quyền tác vụ (Task Access) & Đã tự động chấp nhận thành công",
-                            rawResponse = step4Res.getOrNull() ?: ""
-                        )
-                    } else {
-                        val err4 = step4Res.exceptionOrNull()?.message ?: ""
-                        return PageActionResult(
-                            isSuccess = true,
-                            pageId = pageUid615,
-                            targetUserId = cleanTargetId,
-                            message = "Đã gửi lời mời quyền tác vụ thành công (Lỗi tự động Accept: $err4)",
-                            rawResponse = ""
-                        )
-                    }
-                }
-            } else {
-                val err3 = step3Res.exceptionOrNull()?.message ?: ""
-                return PageActionResult(
-                    isSuccess = true,
-                    pageId = pageUid615,
-                    targetUserId = cleanTargetId,
-                    message = "Đã gửi lời mời quyền tác vụ thành công (Lỗi tìm lời mời bước 3: $err3)",
-                    rawResponse = ""
-                )
-            }
-        }
-
-        return PageActionResult(
-            isSuccess = true,
-            pageId = pageUid615,
-            targetUserId = cleanTargetId,
-            message = "Đã gửi lời mời quyền tác vụ (Task Access) thành công (Chờ nick nhận chấp nhận)",
-            rawResponse = step2Res.getOrNull() ?: ""
+            senderPassword = senderPassword,
+            receiverToken = receiverToken,
+            isFullPermission = false,
+            taskAllowAds = allowAds
         )
     }
 
