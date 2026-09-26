@@ -227,9 +227,15 @@ class QuanLyPageEngine(
     ): Request {
         val cleanToken = token.removePrefix("OAuth ").removePrefix("Bearer ").trim()
         val formBody = FormBody.Builder()
-            .add("client_doc_id", docId)
+            .add("method", "post")
+            .add("pretty", "false")
+            .add("format", "json")
+            .add("server_timestamps", "true")
+            .add("locale", "vi_VN")
             .add("fb_api_req_friendly_name", friendlyName)
             .add("fb_api_caller_class", "graphservice")
+            .add("client_doc_id", docId)
+            .add("fb_api_client_context", "{\"is_background\":false}")
             .add("variables", variablesJson)
             .build()
 
@@ -333,19 +339,23 @@ class QuanLyPageEngine(
         val paramsObj = JSONObject().apply {
             put("path", path)
             put("client_data", clientData)
-            put("nt_context", JSONObject().apply {
-                put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
-                put("using_white_navbar", true)
-                put("pixel_ratio", 2)
-                put("theme_params", JSONObject().apply {
-                    put("design_system_name", "FDS")
-                })
-                put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
+        }
+
+        val ntContextObj = JSONObject().apply {
+            put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+            put("using_white_navbar", true)
+            put("pixel_ratio", 2)
+            put("theme_params", JSONObject().apply {
+                put("design_system_name", "FDS")
             })
+            put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
         }
 
         val variablesObj = JSONObject().apply {
             put("params", paramsObj)
+            put("nt_context", ntContextObj)
+            put("scale", "2")
+            put("use_native_entrypoint_for_stars_on_reels", false)
         }
 
         return executeGraphQLStep(
@@ -374,31 +384,39 @@ class QuanLyPageEngine(
     ): StepExecutionResult {
         val path = "/nt/profile/admin_management/permissions/update?admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D&entry_point_screen_id=%5B%227o2xil%3A5%22%2Cnull%5D&admin_type=$adminType&profile_id=$pageId&target_admin_id=$targetUserId&secured_sensitive_actions%5B0%5D=page_admin_access_addition&state_ids%5Bshow_entry_point_saving_spinner%5D=8bxxoh%3A0&state_ids%5Bads%5D=8clnk7%3A2&state_ids%5Bcontent%5D=8clnk7%3A3&state_ids%5Binsights%5D=8clnk7%3A4&state_ids%5Bmessages%5D=8clnk7%3A5&state_ids%5Bmoderate%5D=8clnk7%3A6"
 
+        val stateDataObj = JSONObject().apply {
+            put("ads", boolAds)
+            put("content", boolContent)
+            put("insights", boolInsights)
+            put("messages", boolMessages)
+            put("moderate", boolModerate)
+            put("show_entry_point_saving_spinner", "NONE")
+        }
+
+        val payloadObj = JSONObject().apply {
+            put("state_data", stateDataObj.toString())
+        }
+
         val paramsObj = JSONObject().apply {
             put("path", path)
-            put("payload", JSONObject().apply {
-                put("state_data", JSONObject().apply {
-                    put("ads", boolAds)
-                    put("content", boolContent)
-                    put("insights", boolInsights)
-                    put("messages", boolMessages)
-                    put("moderate", boolModerate)
-                    put("show_entry_point_saving_spinner", "NONE")
-                })
+            put("payload", payloadObj)
+        }
+
+        val ntContextObj = JSONObject().apply {
+            put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+            put("using_white_navbar", true)
+            put("pixel_ratio", 2)
+            put("theme_params", JSONObject().apply {
+                put("design_system_name", "FDS")
             })
-            put("nt_context", JSONObject().apply {
-                put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
-                put("using_white_navbar", true)
-                put("pixel_ratio", 2)
-                put("theme_params", JSONObject().apply {
-                    put("design_system_name", "FDS")
-                })
-                put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
-            })
+            put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
         }
 
         val variablesObj = JSONObject().apply {
             put("params", paramsObj)
+            put("nt_context", ntContextObj)
+            put("scale", "2")
+            put("use_native_entrypoint_for_stars_on_reels", false)
         }
 
         return executeGraphQLStep(
@@ -424,15 +442,23 @@ class QuanLyPageEngine(
             put("screen_id", "[\"sz9fnp:17\",null]")
             put("profile_id", pageId)
             put("invitee_id", receiverUid)
-            put("scale", "2")
-            put("use_native_entrypoint_for_stars_on_reels", false)
-            put("nt_context", JSONObject().apply {
-                put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+        }
+
+        val ntContextObj = JSONObject().apply {
+            put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+            put("using_white_navbar", true)
+            put("pixel_ratio", 2)
+            put("theme_params", JSONObject().apply {
+                put("design_system_name", "FDS")
             })
+            put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
         }
 
         val variablesObj = JSONObject().apply {
             put("params", paramsObj)
+            put("nt_context", ntContextObj)
+            put("scale", "2")
+            put("use_native_entrypoint_for_stars_on_reels", false)
         }
 
         val stepRes = executeGraphQLStep(
@@ -478,13 +504,23 @@ class QuanLyPageEngine(
 
         val paramsObj = JSONObject().apply {
             put("path", path)
-            put("nt_context", JSONObject().apply {
-                put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+        }
+
+        val ntContextObj = JSONObject().apply {
+            put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+            put("using_white_navbar", true)
+            put("pixel_ratio", 2)
+            put("theme_params", JSONObject().apply {
+                put("design_system_name", "FDS")
             })
+            put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
         }
 
         val variablesObj = JSONObject().apply {
             put("params", paramsObj)
+            put("nt_context", ntContextObj)
+            put("scale", "2")
+            put("use_native_entrypoint_for_stars_on_reels", false)
         }
 
         return executeGraphQLStep(
@@ -498,9 +534,9 @@ class QuanLyPageEngine(
     }
 
     /**
-     * QUY TRÌNH CHUYỂN PAGE HOÀN CHỈNH THEO CHUẨN LUNEXAUTO
-     * Tự động thử nghiệm các candidate profile_id (ID số thực thể Page và UID 615).
-     * Ghi nhận và trả về toàn bộ trace log HTTP (URL, code, request variables, raw response) cho Dialog và Logcat.
+     * QUY TRÌNH CHUYỂN PAGE HOÀN CHỈNH THEO CHUẨN LUNEXAUTO (1 REQUEST CHUẨN XÁC DUY NHẤT)
+     * Không chạy vòng lặp candidate loop. Tự động xác định ID số thực thể của Page.
+     * Bảo toàn tuyệt đối 100% UID Page 615 trong Database / Room Entity / Models.
      */
     fun chuyenPageLunexAuto(
         pageUid615: String,
@@ -521,105 +557,75 @@ class QuanLyPageEngine(
         val adminType = if (isFullPermission) "full_access" else "task_access"
         val allowAds = if (isFullPermission) true else taskAllowAds
 
-        // 1. Thu thập danh sách Candidate profile_id:
-        val candidatePageIds = linkedSetOf<String>().apply {
-            // Ưu tiên 1: rawPageId nếu là ID số thực thể của Page (không bắt đầu bằng 615):
-            if (!rawPageId.isNullOrBlank() && !rawPageId.startsWith("615")) {
-                add(rawPageId.trim())
-            }
-            // Ưu tiên 2: Thử giải mã qua Graph API nếu tìm được ID số khác 615:
-            val resolved = resolveGraphPageId(pageUid615, cleanSenderToken)
-            if (resolved.isNotBlank() && !resolved.startsWith("615")) {
-                add(resolved.trim())
-            }
-            // Ưu tiên 3: UID 615 của Page:
-            if (pageUid615.isNotBlank()) {
-                add(pageUid615.trim())
-            }
-            // Ưu tiên 4: rawPageId nếu bắt đầu bằng 615 mà chưa có:
-            if (!rawPageId.isNullOrBlank()) {
-                add(rawPageId.trim())
-            }
-        }.toList()
-
-        val traceHistory = StringBuilder()
-        traceHistory.appendLine("▶ BẮT ĐẦU CHUYỂN PAGE (${if (isFullPermission) "Full quyền" else "No full - Quyền tác vụ"})")
-        traceHistory.appendLine("• Page UID: $pageUid615")
-        traceHistory.appendLine("• Raw Page ID: $rawPageId")
-        traceHistory.appendLine("• Danh sách Candidate profile_id: $candidatePageIds")
-        traceHistory.appendLine("• Target Admin UID: $cleanTargetId")
-        traceHistory.appendLine("==================================================")
-
-        var lastStepResult: StepExecutionResult? = null
-        var successfulProfileId: String? = null
-
-        for ((idx, candidateId) in candidatePageIds.withIndex()) {
-            traceHistory.appendLine("\n[THỬ NGHIỆM CANDIDATE #${idx + 1}: profile_id = $candidateId]")
-
-            // Thử gọi thẳng Bước 2 trước (Permissions Update)
-            var step2 = step2ActivateAdmin(
-                senderToken = cleanSenderToken,
-                pageId = candidateId,
-                targetUserId = cleanTargetId,
-                adminType = adminType,
-                boolAds = allowAds,
-                boolContent = true,
-                boolInsights = true,
-                boolMessages = true,
-                boolModerate = true
-            )
-            traceHistory.appendLine(step2.toDebugString())
-            lastStepResult = step2
-
-            if (!step2.isSuccess) {
-                if (senderPassword.isNotBlank()) {
-                    traceHistory.appendLine("Step 2 không thành công, kích hoạt Step 1 re-auth mật khẩu...")
-                    val step1 = step1SendInvitation(
-                        senderToken = cleanSenderToken,
-                        senderPassword = senderPassword,
-                        pageId = candidateId,
-                        targetUserId = cleanTargetId,
-                        adminType = adminType
-                    )
-                    traceHistory.appendLine(step1.toDebugString())
-                    lastStepResult = step1
-
-                    if (step1.isSuccess) {
-                        traceHistory.appendLine("Step 1 re-auth thành công, gọi lại Step 2...")
-                        step2 = step2ActivateAdmin(
-                            senderToken = cleanSenderToken,
-                            pageId = candidateId,
-                            targetUserId = cleanTargetId,
-                            adminType = adminType,
-                            boolAds = allowAds,
-                            boolContent = true,
-                            boolInsights = true,
-                            boolMessages = true,
-                            boolModerate = true
-                        )
-                        traceHistory.appendLine(step2.toDebugString())
-                        lastStepResult = step2
-                    }
+        // Xác định DUY NHẤT 1 ID số thực thể của Page cho API GraphQL (bảo toàn 100% UID 615 trong app/database)
+        val pageNumericId = when {
+            !rawPageId.isNullOrBlank() && !rawPageId.startsWith("615") -> rawPageId.trim()
+            pageUid615.isNotBlank() && !pageUid615.startsWith("615") -> pageUid615.trim()
+            else -> {
+                val resolved = resolveGraphPageId(pageUid615, cleanSenderToken)
+                if (resolved.isNotBlank() && !resolved.startsWith("615")) {
+                    resolved.trim()
+                } else if (!rawPageId.isNullOrBlank()) {
+                    rawPageId.trim()
+                } else {
+                    pageUid615.trim()
                 }
-            }
-
-            if (step2.isSuccess) {
-                successfulProfileId = candidateId
-                traceHistory.appendLine("=> Step 2 THÀNH CÔNG VỚI profile_id = $candidateId!")
-                break
-            } else {
-                traceHistory.appendLine("=> Candidate $candidateId thất bại. Đang thử tiếp candidate khác nếu có...")
             }
         }
 
-        if (successfulProfileId == null) {
-            val finalErr = lastStepResult?.errorMessage ?: "Gửi lời mời quản trị thất bại"
+        val traceHistory = StringBuilder()
+        traceHistory.appendLine("▶ BẮT ĐẦU CHUYỂN PAGE (${if (isFullPermission) "Full quyền" else "No full - Quyền tác vụ"})")
+        traceHistory.appendLine("• Page UID (DB): $pageUid615")
+        traceHistory.appendLine("• Page Numeric ID (GraphQL): $pageNumericId")
+        traceHistory.appendLine("• Target Admin UID: $cleanTargetId")
+        traceHistory.appendLine("==================================================")
+
+        // BƯỚC 1: Nếu người dùng có nhập mật khẩu nick gửi, thực hiện xác thực trước
+        if (senderPassword.isNotBlank()) {
+            traceHistory.appendLine("\n[BƯỚC 1: XÁC THỰC MẬT KHẨU]")
+            val step1 = step1SendInvitation(
+                senderToken = cleanSenderToken,
+                senderPassword = senderPassword,
+                pageId = pageNumericId,
+                targetUserId = cleanTargetId,
+                adminType = adminType
+            )
+            traceHistory.appendLine(step1.toDebugString())
+            if (!step1.isSuccess) {
+                return PageActionResult(
+                    isSuccess = false,
+                    pageId = pageUid615,
+                    targetUserId = cleanTargetId,
+                    message = step1.errorMessage ?: "Xác thực mật khẩu không thành công",
+                    rawResponse = step1.responseBody,
+                    debugDetails = traceHistory.toString()
+                )
+            }
+        }
+
+        // BƯỚC 2: Cấp quyền (Permissions Update) - ĐÚNG 1 REQUEST DUY NHẤT
+        traceHistory.appendLine("\n[BƯỚC 2: CẤP QUYỀN QUẢN TRỊ]")
+        val step2 = step2ActivateAdmin(
+            senderToken = cleanSenderToken,
+            pageId = pageNumericId,
+            targetUserId = cleanTargetId,
+            adminType = adminType,
+            boolAds = allowAds,
+            boolContent = true,
+            boolInsights = true,
+            boolMessages = true,
+            boolModerate = true
+        )
+        traceHistory.appendLine(step2.toDebugString())
+
+        if (!step2.isSuccess) {
+            val errMsg = step2.errorMessage ?: "Gửi lời mời quản trị thất bại"
             return PageActionResult(
                 isSuccess = false,
                 pageId = pageUid615,
                 targetUserId = cleanTargetId,
-                message = finalErr,
-                rawResponse = lastStepResult?.responseBody ?: "",
+                message = errMsg,
+                rawResponse = step2.responseBody,
                 debugDetails = traceHistory.toString()
             )
         }
@@ -630,7 +636,7 @@ class QuanLyPageEngine(
         if (cleanReceiverToken.isNotEmpty()) {
             val (step3, invitationId) = step3GetInvitationId(
                 receiverToken = cleanReceiverToken,
-                pageId = successfulProfileId,
+                pageId = pageNumericId,
                 receiverUid = cleanTargetId
             )
             traceHistory.appendLine(step3.toDebugString())
@@ -667,7 +673,7 @@ class QuanLyPageEngine(
                     isSuccess = true,
                     pageId = pageUid615,
                     targetUserId = cleanTargetId,
-                    message = "Đã gửi lời mời thành công (Lỗi tìm lời mời bước 3: ${step3.errorMessage})",
+                    message = "Đã gửi lời mời thành công (Chờ nick nhận chấp nhận)",
                     rawResponse = step3.responseBody,
                     debugDetails = traceHistory.toString()
                 )
@@ -679,7 +685,7 @@ class QuanLyPageEngine(
             pageId = pageUid615,
             targetUserId = cleanTargetId,
             message = "Đã gửi lời mời quản trị thành công (Chờ nick nhận chấp nhận)",
-            rawResponse = lastStepResult?.responseBody ?: "",
+            rawResponse = step2.responseBody,
             debugDetails = traceHistory.toString()
         )
     }
