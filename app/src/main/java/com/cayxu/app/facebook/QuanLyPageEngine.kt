@@ -313,8 +313,11 @@ class QuanLyPageEngine(
     }
 
     /**
-     * BƯỚC 1: XÁC THỰC MẬT KHẨU NICK GỬI (STEP_1_SEND_INVITATION)
-     * Chuẩn Bytecode 0x28E2C4 - 0x28E2F2 từ lunexAUTO: sensitive_string_value là JSON mảng 2 chiều [["password", "<PASS>"]]
+     * BƯỚC 1: XÁC THỰC MẬT KHẨU NICK GỬI (STEP_1_SEND_INVITATION / permissions_reauth)
+     * Chuẩn Bytecode 0x28E2C4 - 0x28E2F2 từ lunexAUTO:
+     * - nt_context và client_data là TOP-LEVEL SIBLINGS ngang hàng params.
+     * - client_data.sensitive_string_value là JSON stringify của mảng 2 chiều [["password", "<PASS>"]].
+     * - params chỉ chứa path và payload rỗng {}.
      */
     fun step1SendInvitation(
         senderToken: String,
@@ -323,24 +326,40 @@ class QuanLyPageEngine(
         targetUserId: String,
         adminType: String
     ): StepExecutionResult {
-        val inner = JSONArray().apply {
-            put("password")
-            put(senderPassword)
-        }
-        val outer = JSONArray().apply {
-            put(inner)
-        }
-        val clientData = JSONObject().apply {
-            put("sensitive_string_value", outer.toString())
-        }
+        val path = "/nt/profile/admin_management/permissions_reauth?" +
+            "admin_id=$targetUserId&" +
+            "admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D&" +
+            "admin_type=$adminType&" +
+            "entry_point_screen_id=%5B%227o2xil%3A5%22%2Cnull%5D&" +
+            "profile_id=$pageId&" +
+            "state_ids%5Bauthenticated%5D=8csr9g%3A0&" +
+            "state_ids%5Bauthentication_attempted%5D=8csr9g%3A1&" +
+            "state_ids%5Bshow_entry_point_saving_spinner%5D=8bxxoh%3A0&" +
+            "state_ids%5Bshow_saving_spinner%5D=8csr9g%3A3&" +
+            "state_ids%5Bads%5D=8clnk7%3A2&" +
+            "state_ids%5Bcontent%5D=8clnk7%3A3&" +
+            "state_ids%5Binsights%5D=8clnk7%3A4&" +
+            "state_ids%5Bmessages%5D=8clnk7%3A5&" +
+            "state_ids%5Bmoderate%5D=8clnk7%3A6"
 
-        val path = "/nt/profile/admin_management/permissions_reauth?admin_id=$targetUserId&admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D&admin_type=$adminType&entry_point_screen_id=%5B%227o2xil%3A5%22%2Cnull%5D&profile_id=$pageId&state_ids%5Bauthenticated%5D=8csr9g%3A0&state_ids%5Bauthentication_attempted%5D=8csr9g%3A1&state_ids%5Bshow_entry_point_saving_spinner%5D=8bxxoh%3A0&state_ids%5Bshow_saving_spinner%5D=8csr9g%3A3&state_ids%5Bads%5D=8clnk7%3A2&state_ids%5Bcontent%5D=8clnk7%3A3&state_ids%5Binsights%5D=8clnk7%3A4&state_ids%5Bmessages%5D=8clnk7%3A5&state_ids%5Bmoderate%5D=8clnk7%3A6"
-
+        // params object: chỉ có path và payload rỗng {}
         val paramsObj = JSONObject().apply {
             put("path", path)
-            put("client_data", clientData)
+            put("payload", JSONObject())
         }
 
+        // client_data: sensitive_string_value là chuỗi stringify của mảng 2 chiều [["password", "<PASS>"]]
+        val sensitiveArray = JSONArray().apply {
+            put(JSONArray().apply {
+                put("password")
+                put(senderPassword)
+            })
+        }
+        val clientDataObj = JSONObject().apply {
+            put("sensitive_string_value", sensitiveArray.toString())
+        }
+
+        // nt_context: top-level (KHÔNG nằm trong params)
         val ntContextObj = JSONObject().apply {
             put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
             put("using_white_navbar", true)
@@ -351,11 +370,13 @@ class QuanLyPageEngine(
             put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
         }
 
+        // variables: params, nt_context, client_data đều là TOP-LEVEL
         val variablesObj = JSONObject().apply {
-            put("params", paramsObj)
-            put("nt_context", ntContextObj)
-            put("scale", "2")
-            put("use_native_entrypoint_for_stars_on_reels", false)
+            put("params", paramsObj)                        // top-level
+            put("nt_context", ntContextObj)                 // top-level
+            put("client_data", clientDataObj)               // top-level
+            put("scale", "2")                               // top-level
+            put("use_native_entrypoint_for_stars_on_reels", false) // top-level
         }
 
         return executeGraphQLStep(
