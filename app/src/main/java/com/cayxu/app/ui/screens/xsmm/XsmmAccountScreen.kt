@@ -2119,6 +2119,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         .padding(12.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
+                                    val isLinked = igAcc?.isXsmmLinked == true
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.fillMaxWidth()
@@ -2222,7 +2223,6 @@ fun XsmmAccountScreen(navController: NavController) {
                                             val displayName = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(rawDisplayName)
                                             val cleanUname = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(igAcc?.username ?: cleanIg)
                                             val isLive = igAcc?.isLive ?: true
-                                            val isLinked = igAcc?.isXsmmLinked == true
                                             val isAddingThis = cleanUname in addingIgUsernames
 
                                             // Hàng trên: Tên hiển thị (Bold, 15sp, #000000) + • Live/Die
