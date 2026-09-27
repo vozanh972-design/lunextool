@@ -1,11 +1,18 @@
 package com.cayxu.app.ui.screens.account
 
 import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.Settings
 import android.widget.Toast
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -254,29 +261,28 @@ fun AccountScreen(navController: NavController) {
                     color = TextSecondary
                 )
 
-                if (update.changelog.isNotBlank()) {
-                    Spacer(Modifier.height(16.dp))
-                    Card(
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
-                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Text(
-                                text = "Nội dung cập nhật:",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                color = TextPrimary
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = update.changelog,
-                                fontSize = 12.5.sp,
-                                color = TextSecondary,
-                                lineHeight = 18.sp
-                            )
-                        }
+                val displayChangelog = update.changelog.ifBlank { "- Cập nhật phiên bản mới" }
+                Spacer(Modifier.height(16.dp))
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+                    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "Nội dung cập nhật:",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            color = TextPrimary
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = displayChangelog,
+                            fontSize = 12.5.sp,
+                            color = TextSecondary,
+                            lineHeight = 18.sp
+                        )
                     }
                 }
 
@@ -285,28 +291,10 @@ fun AccountScreen(navController: NavController) {
                 Button(
                     onClick = {
                         val downloadUrl = update.apkUrl
+                        val verName = update.versionName
                         pendingUpdate = null
                         if (downloadUrl.isNotBlank()) {
-                            try {
-                                val dm = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as? DownloadManager
-                                if (dm != null && (downloadUrl.endsWith(".apk") || downloadUrl.contains(".apk?"))) {
-                                    val req = DownloadManager.Request(Uri.parse(downloadUrl)).apply {
-                                        setTitle("Lunex Update v${update.versionName}")
-                                        setDescription("Đang tải bản cập nhật...")
-                                        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                        setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Lunex_${update.versionName}.apk")
-                                        setMimeType("application/vnd.android.package-archive")
-                                    }
-                                    dm.enqueue(req)
-                                    Toast.makeText(context, "Đang tải bản cập nhật trong thanh thông báo...", Toast.LENGTH_LONG).show()
-                                }
-                                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)).apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                context.startActivity(browserIntent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Lỗi mở liên kết cập nhật: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
+                            checkInstallPermissionAndDownload(context, downloadUrl, verName)
                         } else {
                             Toast.makeText(context, "Chưa có đường dẫn tải về bản cập nhật này", Toast.LENGTH_SHORT).show()
                         }
@@ -661,9 +649,9 @@ fun AccountScreen(navController: NavController) {
                                     val body = response.body?.string().orEmpty()
                                     val json = JSONObject(body)
                                     val vCode = if (json.has("version_code")) json.getInt("version_code") else json.optInt("versionCode", 0)
-                                    val vName = if (json.has("version_name")) json.getString("version_name") else json.optString("versionName", "")
-                                    val changelog = if (json.has("changelog")) json.getString("changelog") else json.optString("change_log", json.optString("description", ""))
-                                    val apkUrl = if (json.has("apk_url")) json.getString("apk_url") else json.optString("download_url", json.optString("url", ""))
+                                    val vName = if (json.has("version_name")) json.getString("version_name") else json.optString("versionName", json.optString("version", ""))
+                                    val changelog = if (json.has("changelog")) json.getString("changelog") else json.optString("change_log", json.optString("description", "- Cập nhật phiên bản mới"))
+                                    val apkUrl = if (json.has("apk_url")) json.getString("apk_url") else json.optString("apkUrl", json.optString("download_url", json.optString("url", "")))
                                     AppUpdateData(vCode, vName, changelog, apkUrl)
                                 }
                                 if (result.versionCode > BuildConfig.VERSION_CODE) {
@@ -717,6 +705,140 @@ private fun getUpdateApiEndpoint(): String {
     val key = 0x5B.toByte()
     val decoded = ByteArray(OBF_UPDATE_URL.size) { i -> (OBF_UPDATE_URL[i].toInt() xor key.toInt()).toByte() }
     return String(decoded, Charsets.UTF_8)
+}
+
+// ── Tải APK ngầm dùng DownloadManager ──────────────────────────────
+private fun downloadAndInstallApk(context: Context, apkUrl: String, version: String) {
+    val fileName = "Lunex_${version}.apk"
+    val downloadDir = context.getExternalFilesDir("downloads") ?: File(context.filesDir, "downloads")
+    if (!downloadDir.exists()) downloadDir.mkdirs()
+    val destFile = File(downloadDir, fileName)
+
+    if (destFile.exists() && destFile.length() > 500_000) {
+        installApk(context, destFile)
+        return
+    } else if (destFile.exists()) {
+        destFile.delete()
+    }
+
+    Toast.makeText(context, "Đang tải bản cập nhật ngầm trong hệ thống...", Toast.LENGTH_SHORT).show()
+
+    val request = DownloadManager.Request(Uri.parse(apkUrl)).apply {
+        setTitle("Đang cập nhật Lunex...")
+        setDescription("Phiên bản $version")
+        setDestinationUri(Uri.fromFile(destFile))
+        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+        setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE)
+        setMimeType("application/vnd.android.package-archive")
+    }
+
+    val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+    if (dm == null) {
+        Toast.makeText(context, "Không thể khởi động trình quản lý tải xuống", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    val downloadId = dm.enqueue(request)
+
+    val receiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
+            if (id == downloadId) {
+                try {
+                    ctx.unregisterReceiver(this)
+                } catch (_: Exception) {}
+                val query = DownloadManager.Query().setFilterById(downloadId)
+                val cursor = dm.query(query)
+                if (cursor != null && cursor.moveToFirst()) {
+                    val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                    if (statusIndex != -1) {
+                        val status = cursor.getInt(statusIndex)
+                        if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                            installApk(ctx, destFile)
+                        } else {
+                            Toast.makeText(ctx, "Tải bản cập nhật không thành công", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    cursor.close()
+                }
+            }
+        }
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        context.registerReceiver(
+            receiver,
+            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+            Context.RECEIVER_NOT_EXPORTED
+        )
+    } else {
+        context.registerReceiver(
+            receiver,
+            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+        )
+    }
+}
+
+// ── Cài APK sau khi tải xong bằng FileProvider ──────────────────────
+private fun installApk(context: Context, apkFile: File) {
+    if (!apkFile.exists()) {
+        Toast.makeText(context, "Không tìm thấy tệp cài đặt APK", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (!context.packageManager.canRequestPackageInstalls()) {
+            Toast.makeText(context, "Vui lòng cho phép quyền 'Cài đặt ứng dụng không rõ nguồn' cho Lunex", Toast.LENGTH_LONG).show()
+            val intent = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:${context.packageName}")
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            return
+        }
+    }
+
+    try {
+        val apkUri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            apkFile
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(apkUri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        Toast.makeText(context, "Lỗi khởi chạy cài đặt: ${e.message}", Toast.LENGTH_LONG).show()
+    }
+}
+
+// ── Kiểm tra quyền REQUEST_INSTALL_PACKAGES và tải APK ─────────────
+private fun checkInstallPermissionAndDownload(
+    context: Context,
+    apkUrl: String,
+    version: String
+) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (!context.packageManager.canRequestPackageInstalls()) {
+            Toast.makeText(context, "Vui lòng cho phép quyền cài đặt APK không rõ nguồn gốc rồi tiến hành cập nhật", Toast.LENGTH_LONG).show()
+            val intent = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:${context.packageName}")
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            // Đồng thời bắt đầu tải ngầm luôn để khi user bật quyền xong là đã tải xong, sẵn sàng cài!
+            downloadAndInstallApk(context, apkUrl, version)
+            return
+        }
+    }
+    downloadAndInstallApk(context, apkUrl, version)
 }
 
 private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
