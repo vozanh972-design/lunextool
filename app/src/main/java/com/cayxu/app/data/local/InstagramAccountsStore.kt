@@ -19,7 +19,8 @@ data class InstagramAccount(
     val followingCount: Int = 0,
     val postsCount: Int = 0,
     val password: String = "",
-    val twoFactor: String = ""
+    val twoFactor: String = "",
+    val isXsmmLinked: Boolean = false
 )
 
 object InstagramAccountsStore {
@@ -67,7 +68,8 @@ object InstagramAccountsStore {
                         followingCount = parts.getOrElse(12) { "0" }.toIntOrNull() ?: 0,
                         postsCount = parts.getOrElse(13) { "0" }.toIntOrNull() ?: 0,
                         password = parts.getOrElse(14) { "" },
-                        twoFactor = parts.getOrElse(15) { "" }
+                        twoFactor = parts.getOrElse(15) { "" },
+                        isXsmmLinked = parts.getOrElse(16) { "false" } == "true"
                     )
                 } catch (e: Exception) {
                     null
@@ -116,12 +118,29 @@ object InstagramAccountsStore {
                 (it.userId.isNotBlank() && ("IG_" + it.userId).equals(entry.username, ignoreCase = true))
             }
             if (idx >= 0) {
-                current[idx] = entry
+                val existing = current[idx]
+                current[idx] = entry.copy(
+                    isXsmmLinked = entry.isXsmmLinked || existing.isXsmmLinked
+                )
             } else {
                 current.add(entry)
             }
         }
         save(context, current)
+    }
+
+    fun setXsmmLinked(context: Context, usernameOrId: String, linked: Boolean) {
+        val clean = usernameOrId.trim().removePrefix("@").lowercase()
+        val current = getAccounts(context).toMutableList()
+        val idx = current.indexOfFirst {
+            it.username.trim().removePrefix("@").lowercase() == clean ||
+            (it.userId.isNotBlank() && ("IG_" + it.userId).lowercase() == clean) ||
+            it.userId.lowercase() == clean
+        }
+        if (idx >= 0) {
+            current[idx] = current[idx].copy(isXsmmLinked = linked)
+            save(context, current)
+        }
     }
 
     fun updateAccount(context: Context, account: InstagramAccount) {
@@ -164,7 +183,8 @@ object InstagramAccountsStore {
                 acc.followingCount.toString(),
                 acc.postsCount.toString(),
                 acc.password,
-                acc.twoFactor
+                acc.twoFactor,
+                if (acc.isXsmmLinked) "true" else "false"
             ).joinToString(FIELD_SEPARATOR)
         }
         prefs(context).edit().putString(KEY_ACCOUNTS, raw).apply()

@@ -440,6 +440,34 @@ object XsmmAccountsRepository {
         }
     }
 
+    /** Thêm acc Instagram mới vào XSMM đa luồng (POST /api/taskapi/accounts2) */
+    suspend fun addInstagramAccount2(rawToken: String, username: String): XsmmAddAccountResult {
+        val cleanName = username.trim().removePrefix("@").trim('/')
+        if (cleanName.isBlank()) return XsmmAddAccountResult.Error("Thiếu username Instagram để thêm")
+
+        val body = JsonObject().apply {
+            addProperty("type", "instagram")
+            addProperty("link_account", "https://www.instagram.com/$cleanName")
+        }
+
+        return try {
+            val response = XsmmRetrofitClient.api.addAccount2(authHeader(rawToken), body)
+            if (!response.isSuccessful) {
+                return XsmmAddAccountResult.Error(readError(response.errorBody()?.string(), "Lỗi ${response.code()}"))
+            }
+            val json = response.body() ?: return XsmmAddAccountResult.Error("Phản hồi rỗng từ XSMM")
+            val errorField = json.get("error")?.takeIf { it.isJsonPrimitive }?.asString
+            if (!errorField.isNullOrBlank()) return XsmmAddAccountResult.Error(errorField)
+
+            val accountObj = json.takeIf { it.has("id") || it.has("account_id") }
+                ?: json.get("account")?.takeIf { it.isJsonObject }?.asJsonObject
+                ?: json
+            XsmmAddAccountResult.Success(parseAccount(accountObj))
+        } catch (e: Exception) {
+            XsmmAddAccountResult.Error(e.message ?: "Lỗi kết nối mạng")
+        }
+    }
+
     /**
      * Thêm tài khoản Facebook mới vào XSMM đa luồng (POST /api/taskapi/accounts2).
      * Body: {"type": "facebook", "link_account": "https://facebook.com/..."}

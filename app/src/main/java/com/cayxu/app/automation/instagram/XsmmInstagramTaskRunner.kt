@@ -221,7 +221,6 @@ class XsmmInstagramTaskRunner(
                     else -> randType
                 }
 
-                notify("Nhận việc: $readableName")
                 val tasks = runner.getTasks(randType)
 
                 if (tasks.isEmpty()) {
@@ -233,7 +232,7 @@ class XsmmInstagramTaskRunner(
                     }
                     for (x in fetchInterval downTo 1) {
                         if (!coroutineContext.isActive) break
-                        notify("Chờ job (${x}s)...")
+                        notify("• Chờ ${x}s nhận nhiệm vụ tiếp...")
                         delay(1000L)
                     }
                     continue
@@ -248,22 +247,26 @@ class XsmmInstagramTaskRunner(
                     val targetUrl = task.optString("target_url")
                     val idOrLink = task.optString("idorlink")
                     val commentText = task.optString("comment").ifBlank { "Tuyệt vời!" }
-
-                    notify("Làm $readableName: ${targetId.ifBlank { idOrLink }}")
+                    val mediaOrTargetId = targetId.ifBlank { idOrLink }
 
                     val success = when (randType) {
                         "instagram_follow" -> {
                             val userToFollow = targetUrl.trim().trimEnd('/').substringAfterLast("/").ifBlank { idOrLink }
-                            runner.doFollow(targetId.ifBlank { idOrLink }, userToFollow)
+                            notify("• Đang Follow @$userToFollow (ID: $mediaOrTargetId)")
+                            runner.doFollow(mediaOrTargetId, userToFollow)
                         }
                         "instagram_like" -> {
-                            runner.doLike(targetUrl.ifBlank { idOrLink }, targetId.ifBlank { idOrLink })
+                            notify("• Đang Tym bài viết (ID: $mediaOrTargetId)")
+                            runner.doLike(targetUrl.ifBlank { idOrLink }, mediaOrTargetId)
                         }
                         "instagram_comment" -> {
-                            runner.doComment(targetUrl.ifBlank { idOrLink }, targetId.ifBlank { idOrLink }, commentText)
+                            val preview = if (commentText.length > 15) commentText.take(15) + "..." else commentText
+                            notify("• Đang Comment (ID: $mediaOrTargetId): \"$preview\"")
+                            runner.doComment(targetUrl.ifBlank { idOrLink }, mediaOrTargetId, commentText)
                         }
                         "instagram_likecmt" -> {
-                            runner.doLike(targetUrl.ifBlank { idOrLink }, targetId.ifBlank { idOrLink })
+                            notify("• Đang Tym bài viết (ID: $mediaOrTargetId)")
+                            runner.doLike(targetUrl.ifBlank { idOrLink }, mediaOrTargetId)
                         }
                         else -> false
                     }
@@ -271,7 +274,8 @@ class XsmmInstagramTaskRunner(
                     maxJob++
 
                     if (success) {
-                        notify("$readableName xong -> Nhận xu...")
+                        val shortTaskId = if (taskId.length > 8) taskId.take(8) else taskId
+                        notify("• Đang xác nhận hoàn thành (Task: $shortTaskId)...")
                         val compRes = runner.completeTask(randType, taskId)
                         val points = compRes?.optInt("points") ?: compRes?.optJSONObject("data")?.optInt("points") ?: 35
                         val totalPts = compRes?.optLong("total_points") ?: compRes?.optJSONObject("data")?.optLong("total_points") ?: 0L
@@ -287,18 +291,16 @@ class XsmmInstagramTaskRunner(
                             updatePointsUi(cur)
                         }
 
-                        notify("$readableName: +$points xu (Xong: $totalCompleted)")
-
                         for (x in doDuration downTo 1) {
                             if (!coroutineContext.isActive) break
-                            notify("Nghỉ ${x}s...")
+                            notify("• Thành công +$points xu | Chờ ${x}s...")
                             delay(1000L)
                         }
                     } else {
                         totalErrors++
                         consecutiveErrors++
-                        notify("$readableName lỗi: ${targetId.ifBlank { idOrLink }}")
-                        reportError(cleanUsername, "$readableName lỗi: ${targetId.ifBlank { idOrLink }}")
+                        notify("• Lỗi làm $readableName (ID: $mediaOrTargetId)")
+                        reportError(cleanUsername, "$readableName lỗi: $mediaOrTargetId")
 
                         if (consecutiveErrors >= maxErrors) {
                             notify("Lỗi liên tiếp $consecutiveErrors lần -> Đổi nick")

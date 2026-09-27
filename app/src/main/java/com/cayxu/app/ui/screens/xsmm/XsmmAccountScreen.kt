@@ -103,6 +103,7 @@ fun XsmmAccountScreen(navController: NavController) {
     var linkedHandles by remember { mutableStateOf<Set<String>>(emptySet()) }
     var linkedFbUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     var addingFbUids by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var addingIgUsernames by remember { mutableStateOf<Set<String>>(emptySet()) }
     var linkedSyncTrigger by remember { mutableStateOf(0L) }
     var isCheckingLinked by remember { mutableStateOf(false) }
     var addingUid by remember { mutableStateOf<String?>(null) }
@@ -632,6 +633,31 @@ fun XsmmAccountScreen(navController: NavController) {
                 .associate { it.accountId.trim() to it.id.trim() }
             XsmmAccountStore.saveAccountIdMap(context, accMap)
             XsmmAccountStore.saveInternalIdMap(context, internalMap)
+        } else if (selectedPlatform == "instagram") {
+            try {
+                val allIgOnXsmm = XsmmAccountsRepository.getAllAccounts2(token, accountType = "instagram")
+                val xsmmIgHandles = allIgOnXsmm.mapNotNull { acc ->
+                    val raw = acc.linkAccount.substringAfterLast("/").trim().removePrefix("@").lowercase()
+                    if (raw.isNotBlank()) raw else acc.accountId.takeIf { it.isNotBlank() }
+                }.toSet()
+
+                val localAccs = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context)
+                var hasChanges = false
+                localAccs.forEach { local ->
+                    val cleanUname = local.username.trim().removePrefix("@").lowercase()
+                    val cleanUid = local.userId.trim().lowercase()
+                    val isMatched = xsmmIgHandles.contains(cleanUname) ||
+                            (cleanUid.isNotBlank() && xsmmIgHandles.contains(cleanUid)) ||
+                            allIgOnXsmm.any { it.linkAccount.contains(cleanUname, ignoreCase = true) }
+                    if (isMatched && !local.isXsmmLinked) {
+                        com.cayxu.app.data.local.InstagramAccountsStore.setXsmmLinked(context, local.username, true)
+                        hasChanges = true
+                    }
+                }
+                if (hasChanges) {
+                    avatarVersion = System.currentTimeMillis()
+                }
+            } catch (_: Exception) {}
         } else {
             val allPlatformOnXsmm = if (selectedPlatform == "tiktok") {
                 XsmmAccountsRepository.getAllAccounts2(token, accountType = "tiktok")
@@ -2221,6 +2247,105 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         color = if (isLive) Color(0xFF16A34A) else DangerRed
                                                     )
                                                 }
+
+                                                // Trạng thái liên kết XSMM
+                                                val isLinked = igAcc?.isXsmmLinked == true
+                                                val isAddingThis = cleanUname in addingIgUsernames
+                                                if (isLinked) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .background(Color(0xFF22C55E).copy(alpha = 0.12f))
+                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Text(
+                                                            "Đã liên kết XSMM",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color(0xFF16A34A)
+                                                        )
+                                                    }
+                                                } else {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .background(Color(0xFF3B82F6).copy(alpha = 0.12f))
+                                                            .clickable(enabled = !isAddingThis) {
+                                                                if (cleanUname in addingIgUsernames) return@clickable
+                                                                addingIgUsernames = addingIgUsernames + cleanUname
+                                                                scope.launch(Dispatchers.IO) {
+                                                                    try {
+                                                                        val token = XsmmAccountStore.getToken(context)
+                                                                        if (token.isNullOrBlank()) {
+                                                                            withContext(Dispatchers.Main) {
+                                                                                android.widget.Toast.makeText(context, "Chưa đăng nhập tài khoản XSMM!", android.widget.Toast.LENGTH_SHORT).show()
+                                                                                addingIgUsernames = addingIgUsernames - cleanUname
+                                                                            }
+                                                                            return@launch
+                                                                        }
+                                                                        val res = XsmmAccountsRepository.addInstagramAccount2(token, cleanUname)
+                                                                        when (res) {
+                                                                            is XsmmAddAccountResult.Success -> {
+                                                                                com.cayxu.app.data.local.InstagramAccountsStore.setXsmmLinked(context, cleanUname, true)
+                                                                                withContext(Dispatchers.Main) {
+                                                                                    avatarVersion = System.currentTimeMillis()
+                                                                                    android.widget.Toast.makeText(context, "Đã thêm @$cleanUname vào XSMM thành công!", android.widget.Toast.LENGTH_SHORT).show()
+                                                                                    addingIgUsernames = addingIgUsernames - cleanUname
+                                                                                }
+                                                                            }
+                                                                            is XsmmAddAccountResult.Error -> {
+                                                                                if (res.message.contains("đã tồn tại", ignoreCase = true) ||
+                                                                                    res.message.contains("already exists", ignoreCase = true) ||
+                                                                                    res.message.contains("đã có", ignoreCase = true)) {
+                                                                                    com.cayxu.app.data.local.InstagramAccountsStore.setXsmmLinked(context, cleanUname, true)
+                                                                                    withContext(Dispatchers.Main) {
+                                                                                        avatarVersion = System.currentTimeMillis()
+                                                                                        android.widget.Toast.makeText(context, "Đã liên kết @$cleanUname với XSMM!", android.widget.Toast.LENGTH_SHORT).show()
+                                                                                        addingIgUsernames = addingIgUsernames - cleanUname
+                                                                                    }
+                                                                                } else {
+                                                                                    withContext(Dispatchers.Main) {
+                                                                                        android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
+                                                                                        addingIgUsernames = addingIgUsernames - cleanUname
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    } catch (e: Exception) {
+                                                                        withContext(Dispatchers.Main) {
+                                                                            android.widget.Toast.makeText(context, "Lỗi kết nối: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                                                            addingIgUsernames = addingIgUsernames - cleanUname
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    ) {
+                                                        if (isAddingThis) {
+                                                            CircularProgressIndicator(
+                                                                color = Color(0xFF2563EB),
+                                                                strokeWidth = 1.5.dp,
+                                                                modifier = Modifier.size(10.dp)
+                                                            )
+                                                            Spacer(Modifier.width(4.dp))
+                                                            Text(
+                                                                "Đang thêm...",
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = Color(0xFF2563EB)
+                                                            )
+                                                        } else {
+                                                            Text(
+                                                                "+ Thêm vào XSMM",
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = Color(0xFF2563EB)
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                             }
 
                                             Text(
@@ -2346,6 +2471,10 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(cleanIg)
                                                     android.widget.Toast.makeText(context, "Đã dừng chạy $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
                                                 } else {
+                                                    if (igAcc?.isXsmmLinked != true) {
+                                                        android.widget.Toast.makeText(context, "Cần thêm nick @${igAcc?.username ?: cleanIg} vào XSMM trước khi chạy!", android.widget.Toast.LENGTH_SHORT).show()
+                                                        return@IconButton
+                                                    }
                                                     com.cayxu.app.automation.instagram.XsmmInstagramManager.start(context, cleanIg)
                                                     android.widget.Toast.makeText(context, "Bắt đầu chạy $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
                                                 }
@@ -2713,13 +2842,22 @@ fun XsmmAccountScreen(navController: NavController) {
                                         com.cayxu.app.automation.instagram.XsmmInstagramManager.stopAll()
                                         android.widget.Toast.makeText(context, "Đã dừng tất cả tác vụ Instagram", android.widget.Toast.LENGTH_SHORT).show()
                                     } else {
-                                        val accountsToRun = if (selectedForRunUids.isNotEmpty()) {
+                                        val allIgAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context)
+                                        val rawList = if (selectedForRunUids.isNotEmpty()) {
                                             selectedForRunUids.toList()
                                         } else {
                                             instagramAccounts
                                         }
-                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.startAccounts(context, accountsToRun)
-                                        android.widget.Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Instagram", android.widget.Toast.LENGTH_SHORT).show()
+                                        val accountsToRun = rawList.filter { uname ->
+                                            val clean = uname.trim().removePrefix("@").lowercase()
+                                            allIgAccounts.any { (it.username.trim().removePrefix("@").lowercase() == clean || it.userId == clean) && it.isXsmmLinked }
+                                        }
+                                        if (accountsToRun.isEmpty()) {
+                                            android.widget.Toast.makeText(context, "Chưa có tài khoản nào được liên kết XSMM! Hãy thêm nick vào XSMM trước.", android.widget.Toast.LENGTH_LONG).show()
+                                        } else {
+                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.startAccounts(context, accountsToRun)
+                                            android.widget.Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Instagram", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 },
                                 modifier = Modifier.size(38.dp)
