@@ -23,8 +23,8 @@ import java.util.regex.Pattern
 import kotlin.coroutines.coroutineContext
 
 data class IgXsmmAccount(
-    val userId: String,
-    val username: String,
+    var userId: String,
+    var username: String,
     val cookie: String,
     val proxy: String? = null,
     var fbDtsg: String? = null,
@@ -48,6 +48,13 @@ class XsmmInstagramTaskRunner(
             val totalErrors: Int,
             val totalEarnedPoints: Int,
             val message: String
+        )
+
+        data class TasksResponse(
+            val tasks: List<JSONObject> = emptyList(),
+            val errorMessage: String? = null,
+            val message: String? = null,
+            val countdown: Int = 10
         )
 
         fun shortcodeToMediaId(shortcode: String): String? {
@@ -176,9 +183,10 @@ class XsmmInstagramTaskRunner(
             }
             val cookieTokens = extractTokensFromCookie(localAcc.cookie)
             val dsUserId = localAcc.userId.ifBlank { cookieTokens["ds_user_id"] ?: "" }
+            val initialUname = localAcc.username.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) } ?: cleanUsername
             val igAccount = IgXsmmAccount(
                 userId = dsUserId,
-                username = localAcc.username.ifBlank { cleanUsername },
+                username = initialUname,
                 cookie = localAcc.cookie,
                 proxy = localAcc.proxy.takeIf { it.isNotBlank() },
                 fbDtsg = localAcc.fbDtsg.takeIf { !it.isNullOrBlank() },
@@ -194,16 +202,27 @@ class XsmmInstagramTaskRunner(
                 notify(msg, 0, 1)
                 return RunResult(0, 1, 0, msg)
             }
-            // Lưu lại token mới nếu có thay đổi
-            if (tokens.isNotEmpty()) {
-                val updated = localAcc.copy(
-                    isLive = true,
-                    fbDtsg = tokens["fb_dtsg"] ?: localAcc.fbDtsg,
-                    lsd = tokens["lsd"] ?: localAcc.lsd,
-                    userId = tokens["userId"] ?: localAcc.userId
-                )
-                InstagramAccountsStore.updateAccount(context, updated)
+
+            // Tự động khôi phục username thật nếu bị dính chuỗi rác "Người dùng Instagram"
+            val extractedUsername = tokens["username"]?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
+            val realUsername = extractedUsername 
+                ?: localAcc.username.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
+                ?: localAcc.fullName.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) && !it.contains(" ") }
+                ?: cleanUsername
+            
+            val updated = localAcc.copy(
+                username = realUsername,
+                isLive = true,
+                fbDtsg = tokens["fb_dtsg"] ?: localAcc.fbDtsg,
+                lsd = tokens["lsd"] ?: localAcc.lsd,
+                userId = tokens["userId"] ?: localAcc.userId.ifBlank { dsUserId }
+            )
+            if (localAcc.username.isNotBlank() && localAcc.username != realUsername) {
+                InstagramAccountsStore.removeAccount(context, localAcc.username)
             }
+            InstagramAccountsStore.updateAccount(context, updated)
+            igAccount.username = realUsername
+            if (updated.userId.isNotBlank()) igAccount.userId = updated.userId
 
             // Bước 2: Đảm bảo nick đã có trên XSMM.NET qua /api/taskapi/accounts2
             notify("Đồng bộ liên kết XSMM...")
@@ -212,6 +231,7 @@ class XsmmInstagramTaskRunner(
                 notify("Thêm nick XSMM: Thử lại...")
                 delay(2000L)
             } else {
+                InstagramAccountsStore.setXsmmLinked(context, realUsername, true)
                 InstagramAccountsStore.setXsmmLinked(context, cleanUsername, true)
             }
 
@@ -244,12 +264,32 @@ class XsmmInstagramTaskRunner(
                     break
                 }
                 val jobType = listnv.random()
-                val tasks = runner.getTasks(jobType)
+                notify("• Đang nhận job $jobType...", completedCount, errorCount)
+                val taskRes = runner.getTasks(jobType)
+                val tasks = taskRes.tasks
                 if (tasks.isEmpty()) {
-                    notify("Hết job $jobType, chờ 10s...", completedCount, errorCount)
-                    delay(10000L)
+                    val errMsg = taskRes.errorMessage
+                    val infoMsg = taskRes.message
+                    val waitSec = if (taskRes.countdown > 0) taskRes.countdown else 10
+
+                    if (!errMsg.isNullOrBlank()) {
+                        notify("XSMM Lỗi: $errMsg", completedCount, errorCount)
+                        onErrorDetail?.invoke(cleanUsername, "XSMM Lỗi ($jobType):\n$errMsg")
+                    } else if (!infoMsg.isNullOrBlank()) {
+                        notify("XSMM: $infoMsg", completedCount, errorCount)
+                    } else {
+                        notify("Hết job $jobType (chờ ${waitSec}s)...", completedCount, errorCount)
+                    }
+
+                    for (x in waitSec downTo 1) {
+                        if (!coroutineContext.isActive) break
+                        val prefix = if (!errMsg.isNullOrBlank()) "XSMM: $errMsg" else if (!infoMsg.isNullOrBlank()) "XSMM: $infoMsg" else "Chờ job $jobType"
+                        notify("• $prefix (${x}s)...", completedCount, errorCount)
+                        delay(1000L)
+                    }
                     continue
                 }
+
                 for (task in tasks) {
                     if (!coroutineContext.isActive) break
                     val taskId = task.optString("id")
@@ -282,7 +322,7 @@ class XsmmInstagramTaskRunner(
                     if (success) {
                         notify("• Xác nhận nhận xu...", completedCount, errorCount)
                         val comp = runner.completeTask(jobType, taskId)
-                        val pts = comp?.optInt("points") ?: 35
+                        val pts = comp?.optInt("points") ?: comp?.optJSONObject("data")?.optInt("points") ?: 35
                         completedCount++
                         totalPoints += pts
                         consecutiveErrors = 0
@@ -346,16 +386,24 @@ class XsmmInstagramTaskRunner(
             ?: extract("\"lsd\"\\s*:\\s*\"([^\"]+)\"")
             ?: ""
         val uName = extract("\"username\"\\s*:\\s*\"([^\"]+)\"")
+            ?: extract("<meta property=\"og:title\" content=\"[^(]+\\(@([^)]+)\\)")
+            ?: extract("\"viewer\":\\s*\\{[^}]*\"username\"\\s*:\\s*\"([^\"]+)\"")
         val uId = extract("\"viewerId\"\\s*:\\s*\"?(\\d+)\"?")
             ?: extract("\"ds_user_id\"\\s*:\\s*\"?(\\d+)\"?")
 
         if (dtsg.isNotBlank()) account.fbDtsg = dtsg
         if (lsdVal.isNotBlank()) account.lsd = lsdVal
+        if (!uName.isNullOrBlank() && !uName.contains("người dùng", ignoreCase = true) && !uName.contains("instagram user", ignoreCase = true)) {
+            account.username = uName
+        }
+        if (!uId.isNullOrBlank()) {
+            account.userId = uId
+        }
 
         val tokenMap = mutableMapOf<String, String>()
         if (dtsg.isNotBlank()) tokenMap["fb_dtsg"] = dtsg
         if (lsdVal.isNotBlank()) tokenMap["lsd"] = lsdVal
-        if (!uName.isNullOrBlank()) tokenMap["username"] = uName
+        if (!uName.isNullOrBlank() && !uName.contains("người dùng", ignoreCase = true)) tokenMap["username"] = uName
         if (!uId.isNullOrBlank()) tokenMap["userId"] = uId
 
         return Pair(true, tokenMap)
@@ -363,48 +411,78 @@ class XsmmInstagramTaskRunner(
 
     // ── 2. ĐẢM BẢO NICK LIÊN KẾT XSMM THEO /api/taskapi/accounts2 ─────
     fun ensureAccountLinked(): Boolean {
+        val cleanUser = account.username.trim().removePrefix("@").trim('/')
         // Kiểm tra xem đã có chưa
         try {
             val checkReq = Request.Builder()
                 .url("${XSMM_API}accounts2?account_type=instagram")
                 .header("Authorization", "Bearer $xsmmToken")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
                 .get().build()
             val checkRes = execute(checkReq)
-            if (checkRes != null && (checkRes.contains(account.username) || (account.userId.isNotBlank() && checkRes.contains(account.userId)))) {
+            if (checkRes != null && (checkRes.contains(cleanUser) || (account.userId.isNotBlank() && checkRes.contains(account.userId)))) {
                 return true
             }
         } catch (_: Exception) {}
         // Thêm vào XSMM
         val body = JSONObject().apply {
             put("type", "instagram")
-            put("link_account", "https://www.instagram.com/${account.username}/")
+            put("account_type", "instagram")
+            put("link_account", "https://www.instagram.com/$cleanUser/")
         }.toString().toRequestBody(JSON_TYPE)
         val addReq = Request.Builder()
             .url("${XSMM_API}accounts2")
             .header("Authorization", "Bearer $xsmmToken")
             .header("Content-Type", "application/json")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
             .post(body).build()
         val addRes = execute(addReq)
         return addRes != null && (!addRes.contains("\"error\":") || addRes.contains("đã tồn tại") || addRes.contains("\"id\":"))
     }
 
     // ── 3. LẤY NHIỆM VỤ THEO /api/taskapi/tasks2 ───────────────────────
-    fun getTasks(type: String): List<JSONObject> {
+    fun getTasks(type: String): TasksResponse {
         val uidParam = account.userId.ifBlank { extractTokensFromCookie(account.cookie)["ds_user_id"] ?: "" }
         val url = "${XSMM_API}tasks2?type=$type&uid=$uidParam&typejob=normal,better,best"
         val req = Request.Builder()
             .url(url)
             .header("Authorization", "Bearer $xsmmToken")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
             .get().build()
-        val res = execute(req) ?: return emptyList()
-        val list = mutableListOf<JSONObject>()
-        try {
-            val arr = JSONArray(res)
-            for (i in 0 until arr.length()) {
-                list.add(arr.getJSONObject(i))
+        val res = execute(req) ?: return TasksResponse(errorMessage = "Không thể kết nối máy chủ XSMM")
+        val trimmed = res.trim()
+        if (trimmed.startsWith("[")) {
+            val list = mutableListOf<JSONObject>()
+            try {
+                val arr = JSONArray(trimmed)
+                for (i in 0 until arr.length()) {
+                    list.add(arr.getJSONObject(i))
+                }
+                return TasksResponse(tasks = list)
+            } catch (e: Exception) {
+                return TasksResponse(errorMessage = "Lỗi đọc dữ liệu nhiệm vụ: ${e.message}")
             }
-        } catch (_: Exception) {}
-        return list
+        } else if (trimmed.startsWith("{")) {
+            return try {
+                val obj = JSONObject(trimmed)
+                val err = obj.optString("error").takeIf { it.isNotBlank() }
+                val msg = obj.optString("message").takeIf { it.isNotBlank() }
+                val cd = obj.optInt("countdown", 10)
+                val dataArr = obj.optJSONArray("data")
+                if (dataArr != null && dataArr.length() > 0) {
+                    val list = mutableListOf<JSONObject>()
+                    for (i in 0 until dataArr.length()) {
+                        list.add(dataArr.getJSONObject(i))
+                    }
+                    TasksResponse(tasks = list, countdown = cd)
+                } else {
+                    TasksResponse(errorMessage = err, message = msg, countdown = cd)
+                }
+            } catch (e: Exception) {
+                TasksResponse(errorMessage = "Lỗi phản hồi JSON: ${e.message}")
+            }
+        }
+        return TasksResponse(errorMessage = "Phản hồi không xác định: ${trimmed.take(100)}")
     }
 
     // ── 4. HOÀN THÀNH NHẬN XU THEO /api/taskapi/tasks2/complete ───────
@@ -419,6 +497,7 @@ class XsmmInstagramTaskRunner(
             .url("${XSMM_API}tasks2/complete")
             .header("Authorization", "Bearer $xsmmToken")
             .header("Content-Type", "application/json")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
             .post(body).build()
         val res = execute(req) ?: return null
         return try { JSONObject(res) } catch (_: Exception) { null }
@@ -428,6 +507,7 @@ class XsmmInstagramTaskRunner(
         val req = Request.Builder()
             .url("${XSMM_API}user")
             .header("Authorization", "Bearer $xsmmToken")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
             .get().build()
         val res = execute(req) ?: return 0L
         return try {

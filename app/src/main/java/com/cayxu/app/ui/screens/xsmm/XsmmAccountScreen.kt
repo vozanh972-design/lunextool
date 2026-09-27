@@ -482,10 +482,15 @@ fun XsmmAccountScreen(navController: NavController) {
 
     if (selectedErrorDetailAccount != null) {
         val targetUser = selectedErrorDetailAccount ?: ""
+        val cleanTarget = targetUser.trim().removePrefix("@").lowercase()
         val detail = fbErrorDetailMap[targetUser]
+            ?: fbErrorDetailMap[cleanTarget]
             ?: igErrorDetailMap[targetUser]
+            ?: igErrorDetailMap[cleanTarget]
             ?: fbStatusMap[targetUser]
+            ?: fbStatusMap[cleanTarget]
             ?: igStatusMap[targetUser]
+            ?: igStatusMap[cleanTarget]
             ?: "Không có thông tin lỗi chi tiết."
         val displayName = remember(targetUser, facebookAccounts, instagramAccounts) {
             val fb = facebookAccounts.firstOrNull { it.uid.equals(targetUser, ignoreCase = true) }
@@ -496,6 +501,15 @@ fun XsmmAccountScreen(navController: NavController) {
                 it.additionalProfileId.equals(targetUser, ignoreCase = true)
             }
             if (page != null) return@remember "Page: ${page.pageName.ifBlank { targetUser }}"
+            val ig = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, targetUser)
+                ?: com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanTarget)
+            if (ig != null) {
+                val uname = ig.username.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
+                    ?: ig.userId.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
+                    ?: ig.fullName.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
+                    ?: ig.username
+                return@remember uname
+            }
             targetUser
         }
         ErrorDetailBottomSheet(
@@ -2216,11 +2230,21 @@ fun XsmmAccountScreen(navController: NavController) {
                                             modifier = Modifier.weight(1f),
                                             verticalArrangement = Arrangement.spacedBy(3.dp)
                                         ) {
-                                            val rawDisplayName = igAcc?.fullName?.takeIf { it.isNotBlank() } ?: cleanIg
+                                            val cleanUname = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(
+                                                (igAcc?.username?.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
+                                                    ?: igAcc?.userId?.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
+                                                    ?: cleanIg.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
+                                                    ?: igAcc?.fullName?.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
+                                                    ?: igAcc?.username
+                                                    ?: cleanIg)
+                                            ).trim().removePrefix("@")
+                                            val lookupKey = cleanUname.lowercase()
+                                            val rawDisplayName = igAcc?.fullName?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
+                                                ?: igAcc?.username?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
+                                                ?: cleanUname
                                             val displayName = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(rawDisplayName)
-                                            val cleanUname = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(igAcc?.username ?: cleanIg)
                                             val isLive = igAcc?.isLive ?: true
-                                            val isAddingThis = cleanUname in addingIgUsernames
+                                            val isAddingThis = cleanUname in addingIgUsernames || lookupKey in addingIgUsernames || cleanIg in addingIgUsernames
 
                                             // Hàng trên: Tên hiển thị (Bold, 15sp, #000000) + • Live/Die
                                             Row(
@@ -2378,28 +2402,33 @@ fun XsmmAccountScreen(navController: NavController) {
                                         Spacer(Modifier.width(8.dp))
 
                                         // Nút Reload (Làm mới) 32dp
-                                        val isRunningThis = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanIg)
+                                        val isRunningThis = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(lookupKey)
+                                            || com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanUname)
+                                            || com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanIg)
                                         IconButton(
                                             onClick = {
                                                 scope.launch(Dispatchers.IO) {
-                                                    val acc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanIg)
+                                                    val acc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanUname)
+                                                        ?: com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanIg)
                                                     if (acc == null || acc.cookie.isBlank()) {
                                                         withContext(Dispatchers.Main) {
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[lookupKey] = "• Chưa lưu cookie"
                                                             com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "• Chưa lưu cookie"
                                                         }
                                                         return@launch
                                                     }
                                                     
                                                     withContext(Dispatchers.Main) {
+                                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[lookupKey] = "• Đang kiểm tra cookie..."
                                                         com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "• Đang kiểm tra cookie..."
                                                     }
-                                                    val igAcc = com.cayxu.app.automation.instagram.IgXsmmAccount(
+                                                    val igAccObj = com.cayxu.app.automation.instagram.IgXsmmAccount(
                                                         userId = acc.userId,
                                                         username = acc.username,
                                                         cookie = acc.cookie,
                                                         proxy = acc.proxy.takeIf { it.isNotBlank() }
                                                     )
-                                                    val runner = com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner("", igAcc)
+                                                    val runner = com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner("", igAccObj)
                                                     val (isLive, tokens) = runner.syncSessionTokens()
                                                     val updatedAcc = acc.copy(
                                                         isLive = isLive,
@@ -2409,10 +2438,13 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     )
                                                     com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updatedAcc)
                                                     withContext(Dispatchers.Main) {
-                                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = 
-                                                            if (isLive) "• Sẵn sàng" else "• Lỗi: Cookie DIE / Checkpoint"
-                                                        val msg = if (isLive) "Đã cập nhật: ${acc.username}" else "Cookie DIE / Checkpoint: ${acc.username}"
+                                                        val statusText = if (isLive) "• Sẵn sàng" else "• Lỗi: Cookie DIE / Checkpoint"
+                                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[lookupKey] = statusText
+                                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = statusText
+                                                        val msg = if (isLive) "Đã cập nhật: ${updatedAcc.username}" else "Cookie DIE / Checkpoint: ${updatedAcc.username}"
                                                         android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                                        avatarVersion = System.currentTimeMillis()
+                                                        instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
                                                     }
                                                 }
                                             },
@@ -2440,16 +2472,18 @@ fun XsmmAccountScreen(navController: NavController) {
                                         // Nút Chạy (Play tam giác 36dp) / Dừng (Stop ô vuông đỏ)
                                         IconButton(
                                             onClick = {
+                                                val targetRunAccount = cleanUname.ifBlank { cleanIg }
                                                 if (isRunningThis) {
+                                                    com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(cleanUname)
                                                     com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(cleanIg)
-                                                    android.widget.Toast.makeText(context, "Đã dừng chạy $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
+                                                    android.widget.Toast.makeText(context, "Đã dừng chạy $targetRunAccount", android.widget.Toast.LENGTH_SHORT).show()
                                                 } else {
                                                     if (!isLinked) {
                                                         android.widget.Toast.makeText(context, "BẮT BUỘC: Bạn cần bấm '+ Thêm XSMM' để liên kết tài khoản trước khi chạy!", android.widget.Toast.LENGTH_SHORT).show()
                                                         return@IconButton
                                                     }
-                                                    com.cayxu.app.automation.instagram.XsmmInstagramManager.start(context, cleanIg)
-                                                    android.widget.Toast.makeText(context, "Bắt đầu chạy $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
+                                                    com.cayxu.app.automation.instagram.XsmmInstagramManager.start(context, targetRunAccount)
+                                                    android.widget.Toast.makeText(context, "Bắt đầu chạy $targetRunAccount", android.widget.Toast.LENGTH_SHORT).show()
                                                 }
                                             },
                                             modifier = Modifier
@@ -2483,16 +2517,28 @@ fun XsmmAccountScreen(navController: NavController) {
                                     }
 
                                     // 🔹 DÒNG 2: TRẠNG THÁI HIỆN TẠI (LOG REALTIME)
-                                    val rawStatus = igStatusMap[cleanIg] ?: "• Sẵn sàng"
+                                    val rawStatus = igStatusMap[lookupKey]
+                                        ?: igStatusMap[cleanUname]
+                                        ?: igStatusMap[cleanIg.lowercase()]
+                                        ?: igStatusMap[cleanIg]
+                                        ?: "• Sẵn sàng"
                                     val currentStatus = when {
                                         rawStatus.equals("Live", ignoreCase = true) || rawStatus.isBlank() -> "• Sẵn sàng"
                                         !rawStatus.startsWith("•") -> "• $rawStatus"
                                         else -> rawStatus
                                     }
-                                    val successCount = igSuccessCountMap[cleanIg] ?: 0
-                                    val errorCount = igErrorCountMap[cleanIg] ?: 0
+                                    val successCount = igSuccessCountMap[lookupKey]
+                                        ?: igSuccessCountMap[cleanUname]
+                                        ?: igSuccessCountMap[cleanIg.lowercase()]
+                                        ?: igSuccessCountMap[cleanIg]
+                                        ?: 0
+                                    val errorCount = igErrorCountMap[lookupKey]
+                                        ?: igErrorCountMap[cleanUname]
+                                        ?: igErrorCountMap[cleanIg.lowercase()]
+                                        ?: igErrorCountMap[cleanIg]
+                                        ?: 0
                                     val isError = currentStatus.contains("Lỗi", ignoreCase = true) || currentStatus.contains("DIE", ignoreCase = true) || currentStatus.contains("Không tìm thấy", ignoreCase = true)
-                                    val isRunningNow = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanIg)
+                                    val isRunningNow = isRunningThis
 
                                     Text(
                                         text = currentStatus,
@@ -2575,10 +2621,14 @@ fun XsmmAccountScreen(navController: NavController) {
                                             }
                                         }
 
-                                        val errorDetail = igErrorDetailMap[cleanIg] ?: (if (errorCount > 0) currentStatus else null)
+                                        val errorDetail = igErrorDetailMap[lookupKey]
+                                            ?: igErrorDetailMap[cleanUname]
+                                            ?: igErrorDetailMap[cleanIg.lowercase()]
+                                            ?: igErrorDetailMap[cleanIg]
+                                            ?: (if (errorCount > 0) currentStatus else null)
                                         if (errorDetail != null || errorCount > 0) {
                                             IconButton(
-                                                onClick = { selectedErrorDetailAccount = cleanIg },
+                                                onClick = { selectedErrorDetailAccount = cleanUname.ifBlank { cleanIg } },
                                                 modifier = Modifier.size(28.dp)
                                             ) {
                                                 Box(
@@ -2785,10 +2835,19 @@ fun XsmmAccountScreen(navController: NavController) {
                                         } else {
                                             instagramAccounts
                                         }
-                                        val accountsToRun = rawList.filter { uname ->
+                                        val accountsToRun = rawList.mapNotNull { uname ->
                                             val clean = uname.trim().removePrefix("@").lowercase()
-                                            allIgAccounts.any { (it.username.trim().removePrefix("@").lowercase() == clean || it.userId == clean) && it.isXsmmLinked }
-                                        }
+                                            val match = allIgAccounts.firstOrNull { acc ->
+                                                val accUname = acc.username.trim().removePrefix("@").lowercase()
+                                                val accUid = acc.userId.trim().lowercase()
+                                                (accUname == clean || accUid == clean || acc.username == uname || acc.userId == uname) && acc.isXsmmLinked
+                                            }
+                                            match?.let { acc ->
+                                                val candidate = acc.username.trim().removePrefix("@")
+                                                if (candidate.isNotBlank() && !candidate.contains("người dùng", ignoreCase = true)) candidate
+                                                else acc.userId.trim().takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) } ?: candidate
+                                            }
+                                        }.distinct()
                                         if (accountsToRun.isEmpty()) {
                                             android.widget.Toast.makeText(context, "Chưa có tài khoản nào được liên kết XSMM! Hãy thêm nick vào XSMM trước.", android.widget.Toast.LENGTH_LONG).show()
                                         } else {

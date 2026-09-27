@@ -32,11 +32,11 @@ object XsmmInstagramManager {
 
     fun isRunning(accountUsername: String): Boolean {
         val clean = accountUsername.trim().lowercase()
-        return runningJobs.containsKey(clean)
+        return runningJobs.containsKey(clean) || runningAccounts.contains(clean)
     }
 
     fun isAnyRunning(): Boolean {
-        return runningJobs.isNotEmpty()
+        return runningJobs.isNotEmpty() || runningAccounts.isNotEmpty()
     }
 
     /**
