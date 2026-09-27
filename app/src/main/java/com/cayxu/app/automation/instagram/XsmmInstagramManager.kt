@@ -123,13 +123,13 @@ object XsmmInstagramManager {
         val hasDistinctProxies = accounts.size > 1 && accounts.all { it.proxy.isNotBlank() } &&
                 accounts.map { it.proxy.trim() }.distinct().size == accounts.size
 
-        if (hasDistinctProxies) {
-            // Có proxy riêng từng nick -> Chạy đa luồng song song
+        if (cleanList.size == 1 || hasDistinctProxies) {
+            // Có 1 nick hoặc có proxy riêng từng nick -> Chạy độc lập từng luồng Coroutine
             for ((index, username) in cleanList.withIndex()) {
                 start(context, username, startDelayMs = index * 2000L)
             }
         } else {
-            // Không proxy hoặc chung IP -> Chạy xoay vòng tuần tự y hệt vòng lặp `while True: for ...` của Python
+            // Nhiều nick chung IP -> Chạy xoay vòng tuần tự y hệt vòng lặp `while True: for ...` của Python
             val rotationJobKey = "__rotation_loop__"
             val existingJob = runningJobs[rotationJobKey]
             if (existingJob != null && existingJob.isActive) return
@@ -146,6 +146,7 @@ object XsmmInstagramManager {
                     while (isActive) {
                         for (username in cleanList) {
                             if (!isActive) break
+                            if (!runningAccounts.contains(username)) continue
                             val currentAcc = InstagramAccountsStore.getAccount(context, username)
                             if (currentAcc == null || currentAcc.cookie.isBlank()) {
                                 scope.launch(Dispatchers.Main) {
@@ -186,10 +187,11 @@ object XsmmInstagramManager {
                                 statusMap[username] = "Đã đổi nick"
                             }
                         }
+                        if (runningAccounts.isEmpty()) break
                     }
                 } catch (_: kotlinx.coroutines.CancellationException) {
                     cleanList.forEach { user ->
-                        scope.launch(Dispatchers.Main) { statusMap[user] = "Đã dừng chạy" }
+                        scope.launch(Dispatchers.Main) { statusMap[user] = "• Đã dừng chạy" }
                     }
                 } catch (e: Exception) {
                     cleanList.forEach { user ->
@@ -210,8 +212,22 @@ object XsmmInstagramManager {
         val clean = accountUsername.trim().lowercase()
         val job = runningJobs.remove(clean)
         job?.cancel()
-        runningAccounts.remove(clean)
-        statusMap[clean] = "Đã dừng chạy"
+
+        // Hủy mọi job liên quan nếu có alias khác nhau
+        runningJobs.keys.filter { it == clean || it.contains(clean) || clean.contains(it) }.forEach { k ->
+            if (k != "__rotation_loop__") {
+                runningJobs.remove(k)?.cancel()
+            }
+        }
+
+        scope.launch(Dispatchers.Main) {
+            runningAccounts.removeAll { it == clean || it.lowercase() == clean }
+            statusMap[clean] = "• Đã dừng chạy"
+            if (runningAccounts.isEmpty()) {
+                val rot = runningJobs.remove("__rotation_loop__")
+                rot?.cancel()
+            }
+        }
     }
 
     fun stopAll() {
@@ -219,9 +235,11 @@ object XsmmInstagramManager {
             job.cancel()
         }
         runningJobs.clear()
-        for (user in runningAccounts) {
-            statusMap[user] = "Đã dừng chạy"
+        scope.launch(Dispatchers.Main) {
+            for (user in runningAccounts) {
+                statusMap[user] = "• Đã dừng chạy"
+            }
+            runningAccounts.clear()
         }
-        runningAccounts.clear()
     }
 }

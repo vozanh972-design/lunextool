@@ -198,8 +198,10 @@ class XsmmInstagramTaskRunner(
             notify("Kiểm tra cookie & token...")
             val (isLive, tokens) = runner.syncSessionTokens()
             if (!isLive) {
-                val msg = "Cookie DIE hoặc bị Checkpoint"
+                val msg = "• Lỗi: Cookie DIE / Checkpoint"
                 notify(msg, 0, 1)
+                onErrorDetail?.invoke(cleanUsername, "Cookie DIE hoặc bị Checkpoint khi kiểm tra phiên")
+                InstagramAccountsStore.updateAccount(context, localAcc.copy(isLive = false))
                 return RunResult(0, 1, 0, msg)
             }
 
@@ -305,6 +307,19 @@ class XsmmInstagramTaskRunner(
                             val res = runner.doFollow(finalTarget, userToFollow)
                             if (!res.isSuccess) {
                                 val bodyPreview = if (res.rawBody.length > 500) res.rawBody.take(500) else res.rawBody
+                                val isDieOrCheckpoint = res.rawBody.contains("login_required", true) ||
+                                    res.rawBody.contains("checkpoint", true) ||
+                                    res.rawBody.contains("accounts/suspended", true) ||
+                                    res.rawBody.contains("1357031") ||
+                                    res.httpCode == 401 || res.httpCode == 403
+                                if (isDieOrCheckpoint) {
+                                    val dieMsg = "• Lỗi: Cookie DIE / Checkpoint"
+                                    notify(dieMsg, completedCount, errorCount + 1)
+                                    onErrorDetail?.invoke(cleanUsername, "Tài khoản bị DIE hoặc dính Checkpoint [HTTP ${res.httpCode}]:\n$bodyPreview")
+                                    InstagramAccountsStore.updateAccount(context, updated.copy(isLive = false))
+                                    InstagramAccountsStore.updateAccount(context, localAcc.copy(isLive = false))
+                                    return RunResult(completedCount, errorCount + 1, totalPoints, dieMsg)
+                                }
                                 onErrorDetail?.invoke(cleanUsername, "Instagram Follow lỗi [HTTP ${res.httpCode}]:\n$bodyPreview")
                             }
                             res.isSuccess
@@ -369,7 +384,7 @@ class XsmmInstagramTaskRunner(
         } catch (_: Exception) { "" }
         if (html.isBlank()) return Pair(false, emptyMap())
         val lower = html.lowercase()
-        if (lower.contains("login_required") || lower.contains("checkpoint_required") || lower.contains("\"is_logged_in\":false") || lower.contains("accounts/suspended") || lower.contains("1357031")) {
+        if (lower.contains("login_required") || lower.contains("checkpoint_required") || lower.contains("\"is_logged_in\":false") || lower.contains("accounts/suspended") || lower.contains("1357031") || lower.contains("/accounts/login/") || lower.contains("loginform")) {
             return Pair(false, emptyMap())
         }
         fun extract(pattern: String): String? {
@@ -381,6 +396,9 @@ class XsmmInstagramTaskRunner(
             ?: extract("\"dtsg\"\\s*:\\s*\"([^\"]+)\"")
             ?: extract("\"fb_dtsg\"\\s*:\\s*\"([^\"]+)\"")
             ?: ""
+        if (dtsg.isBlank()) {
+            return Pair(false, emptyMap())
+        }
         val lsdVal = extract("name=\"lsd\"\\s+value=\"(.*?)\"")
             ?: extract("\\[\"LSD\",\\[\\],\\{\"token\":\"(.*?)\"\\}")
             ?: extract("\"lsd\"\\s*:\\s*\"([^\"]+)\"")
