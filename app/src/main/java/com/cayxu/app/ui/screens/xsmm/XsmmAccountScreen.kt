@@ -2130,15 +2130,20 @@ fun XsmmAccountScreen(navController: NavController) {
                             val isRunningThis = runningIgAccounts.any { it.lowercase() in accountKeys }
                                 || accountKeys.any { com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(it) }
                             val rawStatus = accountKeys.firstNotNullOfOrNull { igStatusMap[it] } ?: "• Sẵn sàng"
+                            val isStatusDie = rawStatus.contains("DIE", ignoreCase = true) ||
+                                rawStatus.contains("Checkpoint", ignoreCase = true) ||
+                                rawStatus.contains("Kháng nghị", ignoreCase = true) ||
+                                rawStatus.contains("suspended", ignoreCase = true) ||
+                                rawStatus.contains("challenge", ignoreCase = true) ||
+                                rawStatus.contains("login_required", ignoreCase = true) ||
+                                rawStatus.contains("1357031")
                             val currentStatus = when {
+                                isStatusDie -> if (!rawStatus.startsWith("•")) "• $rawStatus" else rawStatus
+                                igAcc?.isLive == false -> "• Lỗi: Kháng nghị / Checkpoint / DIE"
                                 rawStatus.equals("Live", ignoreCase = true) || rawStatus.isBlank() -> "• Sẵn sàng"
                                 !rawStatus.startsWith("•") -> "• $rawStatus"
                                 else -> rawStatus
                             }
-                            val isStatusDie = currentStatus.contains("DIE", ignoreCase = true) ||
-                                currentStatus.contains("Checkpoint", ignoreCase = true) ||
-                                currentStatus.contains("login_required", ignoreCase = true) ||
-                                currentStatus.contains("1357031")
                             val isLive = (igAcc?.isLive != false) && !isStatusDie
                             val avatarModel = remember(igAcc?.avatar, avatarVersion) {
                                 val av = igAcc?.avatar?.trim().orEmpty()
@@ -2466,13 +2471,19 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     )
                                                     com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updatedAcc)
                                                     withContext(Dispatchers.Main) {
-                                                        val statusText = if (isLiveResult) "• Sẵn sàng" else "• Lỗi: Cookie DIE / Checkpoint"
+                                                        val statusText = if (isLiveResult) "• Sẵn sàng" else "• Lỗi: Kháng nghị / Checkpoint / DIE"
                                                         accountKeys.forEach { k ->
                                                             com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[k] = statusText
                                                         }
                                                         com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[bestUname] = statusText
                                                         com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[bestUname.lowercase()] = statusText
-                                                        val msg = if (isLiveResult) "Đã cập nhật: $displayName" else "Cookie DIE / Checkpoint: $displayName"
+                                                        if (!isLiveResult) {
+                                                            val errDetail = runner.account.lastErrorMessage ?: "Tài khoản bị Kháng nghị / Checkpoint / DIE"
+                                                            accountKeys.forEach { k ->
+                                                                com.cayxu.app.automation.instagram.XsmmInstagramManager.errorDetailMap[k] = errDetail
+                                                            }
+                                                        }
+                                                        val msg = if (isLiveResult) "Đã cập nhật: $displayName" else "Tài khoản bị Kháng nghị / Checkpoint / DIE: $displayName"
                                                         android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                                                         avatarVersion = System.currentTimeMillis()
                                                         instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }

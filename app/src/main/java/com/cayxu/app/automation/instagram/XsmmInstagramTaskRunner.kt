@@ -198,9 +198,10 @@ class XsmmInstagramTaskRunner(
             notify("Kiểm tra cookie & token...")
             val (isLive, tokens) = runner.syncSessionTokens()
             if (!isLive) {
-                val msg = "• Lỗi: Cookie DIE / Checkpoint"
+                val msg = "• Lỗi: Kháng nghị / Checkpoint / DIE"
                 notify(msg, 0, 1)
-                onErrorDetail?.invoke(cleanUsername, "Cookie DIE hoặc bị Checkpoint khi kiểm tra phiên")
+                val detailMsg = runner.account.lastErrorMessage ?: "Tài khoản bị Kháng nghị / Checkpoint / DIE khi kiểm tra phiên"
+                onErrorDetail?.invoke(cleanUsername, detailMsg)
                 InstagramAccountsStore.updateAccount(context, localAcc.copy(isLive = false))
                 return RunResult(0, 1, 0, msg)
             }
@@ -379,14 +380,68 @@ class XsmmInstagramTaskRunner(
             .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
             .header("Cookie", account.cookie)
             .get().build()
-        val html = try {
-            client.newCall(req).execute().use { it.body?.string().orEmpty() }
-        } catch (_: Exception) { "" }
-        if (html.isBlank()) return Pair(false, emptyMap())
-        val lower = html.lowercase()
-        if (lower.contains("login_required") || lower.contains("checkpoint_required") || lower.contains("\"is_logged_in\":false") || lower.contains("accounts/suspended") || lower.contains("1357031") || lower.contains("/accounts/login/") || lower.contains("loginform")) {
+        
+        var finalUrl = ""
+        var html = ""
+        try {
+            client.newCall(req).execute().use { res ->
+                finalUrl = res.request.url.toString()
+                html = res.body?.string().orEmpty()
+            }
+        } catch (e: Exception) {
+            account.lastErrorMessage = "Lỗi kết nối kiểm tra phiên: ${e.message}"
             return Pair(false, emptyMap())
         }
+
+        // 🔹 Lớp 1: Kiểm tra URL điều hướng (Final Redirect URL)
+        val finalUrlLower = finalUrl.lowercase()
+        val redirectDiePatterns = listOf(
+            "/challenge/",
+            "/suspended/",
+            "/accounts/suspended/",
+            "/consent/",
+            "/login/",
+            "/checkpoint/",
+            "/terms/unblock/"
+        )
+        if (redirectDiePatterns.any { finalUrlLower.contains(it) }) {
+            account.lastErrorMessage = "Tài khoản bị Kháng nghị / Checkpoint / DIE (Redirect: $finalUrl)"
+            return Pair(false, emptyMap())
+        }
+
+        // 🔹 Lớp 2: Quét nội dung HTML bóc tách Checkpoint / Kháng nghị
+        if (html.isBlank()) {
+            account.lastErrorMessage = "Không nhận được phản hồi HTML từ Instagram"
+            return Pair(false, emptyMap())
+        }
+        val lower = html.lowercase()
+        val htmlDiePatterns = listOf(
+            "checkpoint_required",
+            "challenge_required",
+            "login_required",
+            "\"is_suspended\":true",
+            "\"is_suspended\": true",
+            "is_suspended",
+            "is_appealable",
+            "\"has_blocked_dialog\":true",
+            "\"has_blocked_dialog\": true",
+            "bạn đã gửi đơn kháng nghị",
+            "đơn kháng nghị",
+            "your account has been suspended",
+            "help us confirm you own this account",
+            "name=\"choice\"",
+            "\"is_logged_in\":false",
+            "\"is_logged_in\": false",
+            "1357031",
+            "/accounts/login/",
+            "loginform"
+        )
+        if (htmlDiePatterns.any { lower.contains(it) }) {
+            account.lastErrorMessage = "Tài khoản bị Kháng nghị / Checkpoint / DIE"
+            return Pair(false, emptyMap())
+        }
+
+        // 🔹 Lớp 3: Kiểm tra tính hợp lệ của Viewer Session (Bắt buộc phải có để tính là LIVE)
         fun extract(pattern: String): String? {
             val m = Pattern.compile(pattern).matcher(html)
             return if (m.find()) m.group(1) else null
@@ -395,34 +450,56 @@ class XsmmInstagramTaskRunner(
             ?: extract("\\[\"DTSGInitialData\",\\[\\],\\{\"token\":\"(.*?)\"\\}")
             ?: extract("\"dtsg\"\\s*:\\s*\"([^\"]+)\"")
             ?: extract("\"fb_dtsg\"\\s*:\\s*\"([^\"]+)\"")
+            ?: extract("\\\\\"dtsg\\\\\"\\s*:\\s*\\\\\"([^\\\\\"]+)\\\\\"")
+            ?: extract("\\\\\"fb_dtsg\\\\\"\\s*:\\s*\\\\\"([^\\\\\"]+)\\\\\"")
             ?: ""
-        if (dtsg.isBlank()) {
-            return Pair(false, emptyMap())
-        }
         val lsdVal = extract("name=\"lsd\"\\s+value=\"(.*?)\"")
             ?: extract("\\[\"LSD\",\\[\\],\\{\"token\":\"(.*?)\"\\}")
             ?: extract("\"lsd\"\\s*:\\s*\"([^\"]+)\"")
+            ?: extract("\\\\\"lsd\\\\\"\\s*:\\s*\\\\\"([^\\\\\"]+)\\\\\"")
             ?: ""
         val uName = extract("\"username\"\\s*:\\s*\"([^\"]+)\"")
+            ?: extract("\\\\\"username\\\\\"\\s*:\\s*\\\\\"([^\\\\\"]+)\\\\\"")
             ?: extract("<meta property=\"og:title\" content=\"[^(]+\\(@([^)]+)\\)")
             ?: extract("\"viewer\":\\s*\\{[^}]*\"username\"\\s*:\\s*\"([^\"]+)\"")
-        val uId = extract("\"viewerId\"\\s*:\\s*\"?(\\d+)\"?")
-            ?: extract("\"ds_user_id\"\\s*:\\s*\"?(\\d+)\"?")
 
-        if (dtsg.isNotBlank()) account.fbDtsg = dtsg
-        if (lsdVal.isNotBlank()) account.lsd = lsdVal
+        val uId = extract("\"viewerId\"\\s*:\\s*\"?(\\d+)\"?")
+            ?: extract("\\\\\"viewerId\\\\\"\\s*:\\s*\\\\\"?(\\d+)\\\\*\"?")
+            ?: extract("\\[\"Viewer\",\\[\\],\\{[^}]*\"id\"\\s*:\\s*\"?(\\d+)\"?")
+            ?: extract("\"actorID\"\\s*:\\s*\"?(\\d+)\"?")
+            ?: extract("\\\\\"actorID\\\\\"\\s*:\\s*\\\\\"?(\\d+)\\\\*\"?")
+            ?: extract("\"ds_user_id\"\\s*:\\s*\"?(\\d+)\"?")
+            ?: extract("\\\\\"ds_user_id\\\\\"\\s*:\\s*\\\\\"?(\\d+)\\\\*\"?")
+
+        val cookieTokens = extractTokensFromCookie(account.cookie)
+        val dsUserId = cookieTokens["ds_user_id"]?.trim()
+
+        val resolvedUserId = when {
+            !uId.isNullOrBlank() && uId != "0" -> uId
+            !dsUserId.isNullOrBlank() && dsUserId != "0" && html.contains(dsUserId) -> dsUserId
+            else -> ""
+        }
+        val isUserIdValid = resolvedUserId.isNotBlank() && (dsUserId.isNullOrBlank() || resolvedUserId == dsUserId)
+
+        if (!isUserIdValid || dtsg.isBlank() || lsdVal.isBlank()) {
+            account.lastErrorMessage = "Tài khoản bị Kháng nghị / Checkpoint / DIE (Session không hợp lệ)"
+            return Pair(false, emptyMap())
+        }
+
+        account.userId = resolvedUserId
+        account.fbDtsg = dtsg
+        account.lsd = lsdVal
         if (!uName.isNullOrBlank() && !uName.contains("người dùng", ignoreCase = true) && !uName.contains("instagram user", ignoreCase = true)) {
             account.username = uName
         }
-        if (!uId.isNullOrBlank()) {
-            account.userId = uId
-        }
 
         val tokenMap = mutableMapOf<String, String>()
-        if (dtsg.isNotBlank()) tokenMap["fb_dtsg"] = dtsg
-        if (lsdVal.isNotBlank()) tokenMap["lsd"] = lsdVal
-        if (!uName.isNullOrBlank() && !uName.contains("người dùng", ignoreCase = true)) tokenMap["username"] = uName
-        if (!uId.isNullOrBlank()) tokenMap["userId"] = uId
+        tokenMap["fb_dtsg"] = dtsg
+        tokenMap["lsd"] = lsdVal
+        tokenMap["userId"] = resolvedUserId
+        if (!uName.isNullOrBlank() && !uName.contains("người dùng", ignoreCase = true)) {
+            tokenMap["username"] = uName
+        }
 
         return Pair(true, tokenMap)
     }
