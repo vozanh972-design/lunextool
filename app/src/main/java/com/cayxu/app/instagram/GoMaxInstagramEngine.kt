@@ -1,11 +1,15 @@
 package com.cayxu.app.instagram
 
+import okhttp3.Credentials
 import okhttp3.FormBody
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.math.BigInteger
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 data class IgAccount(
@@ -50,9 +54,63 @@ class GoMaxInstagramEngine(private val client: OkHttpClient) {
             return if (m.find()) m.group(1) else null
         }
 
+        fun buildClientForAccount(proxyStr: String?, timeoutSec: Long = 20L): OkHttpClient {
+            val builder = OkHttpClient.Builder()
+                .connectTimeout(timeoutSec.coerceAtLeast(15L), TimeUnit.SECONDS)
+                .readTimeout(timeoutSec.coerceAtLeast(20L), TimeUnit.SECONDS)
+                .writeTimeout(timeoutSec.coerceAtLeast(20L), TimeUnit.SECONDS)
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .retryOnConnectionFailure(true)
+
+            if (!proxyStr.isNullOrBlank()) {
+                var s = proxyStr.trim()
+                if (s.contains("://")) {
+                    s = s.substringAfter("://")
+                }
+                try {
+                    if (s.contains("@")) {
+                        val atParts = s.split("@", limit = 2)
+                        val auth = atParts[0].split(":", limit = 2)
+                        val hostPort = atParts[1].split(":", limit = 2)
+                        val host = hostPort[0].trim()
+                        val port = hostPort.getOrNull(1)?.trim()?.toIntOrNull() ?: 8080
+                        builder.proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress(host, port)))
+                        if (auth.size >= 2) {
+                            val user = auth[0].trim()
+                            val pass = auth[1].trim()
+                            builder.proxyAuthenticator { _, response ->
+                                if (response.request.header("Proxy-Authorization") != null) null
+                                else {
+                                    val credential = Credentials.basic(user, pass)
+                                    response.request.newBuilder().header("Proxy-Authorization", credential).build()
+                                }
+                            }
+                        }
+                    } else {
+                        val parts = s.split(":")
+                        val host = parts[0].trim()
+                        val port = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: 8080
+                        builder.proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress(host, port)))
+                        if (parts.size >= 4) {
+                            val user = parts[2].trim()
+                            val pass = parts[3].trim()
+                            builder.proxyAuthenticator { _, response ->
+                                if (response.request.header("Proxy-Authorization") != null) null
+                                else {
+                                    val credential = Credentials.basic(user, pass)
+                                    response.request.newBuilder().header("Proxy-Authorization", credential).build()
+                                }
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            return builder.build()
+        }
+
         fun create(proxy: String? = null, timeoutSec: Long = 20L): GoMaxInstagramEngine {
-            val proxyConfig = InstagramApiClient.parseProxy(proxy)
-            val client = InstagramApiClient.buildOkHttpClient(proxyConfig, timeoutSec)
+            val client = buildClientForAccount(proxy, timeoutSec)
             return GoMaxInstagramEngine(client)
         }
     }
@@ -121,8 +179,15 @@ class GoMaxInstagramEngine(private val client: OkHttpClient) {
 
     // ── 2. FOLLOW ─────────────────────────────────────────────────────
     fun follow(acc: IgAccount, targetUid: String, targetUsername: String): Boolean {
+        var uid = targetUid.trim()
+        if ((!uid.all { it.isDigit() } || uid.isBlank()) && targetUsername.isNotBlank()) {
+            val resolved = InstagramApiClient.resolveTargetUserId(targetUsername, acc.proxy)
+            if (!resolved.isNullOrBlank()) {
+                uid = resolved
+            }
+        }
         val vars = JSONObject().apply {
-            put("target_user_id", targetUid)
+            put("target_user_id", uid)
             put("container_module", "profile")
             put("nav_chain", "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:3:unexpected")
         }
