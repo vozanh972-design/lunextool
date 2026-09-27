@@ -889,8 +889,8 @@ class InstagramApiClient(
                 biography = bio,
                 profilePicUrl = pic,
                 rawJson = "LIVE",
-                fbDtsg = igSession.fbDtsg.orEmpty(),
-                lsd = igSession.lsd.orEmpty(),
+                fbDtsg = session.fbDtsg,
+                lsd = session.lsd,
                 followersCount = followers,
                 followingCount = following,
                 postsCount = posts
