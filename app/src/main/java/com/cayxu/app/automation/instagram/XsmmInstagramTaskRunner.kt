@@ -28,7 +28,9 @@ data class IgXsmmAccount(
     val userId: String,
     val username: String,
     val cookie: String,
-    val proxy: String? = null
+    val proxy: String? = null,
+    val fbDtsg: String? = null,
+    val lsd: String? = null
 )
 
 /**
@@ -155,7 +157,9 @@ class XsmmInstagramTaskRunner(
                 userId = userId,
                 username = account.username.ifBlank { cleanUsername },
                 cookie = account.cookie,
-                proxy = account.proxy.takeIf { it.isNotBlank() }
+                proxy = account.proxy.takeIf { it.isNotBlank() },
+                fbDtsg = account.fbDtsg.takeIf { it.isNotBlank() },
+                lsd = account.lsd.takeIf { it.isNotBlank() }
             )
 
             val runner = XsmmInstagramTaskRunner(token, igAccount)
@@ -423,7 +427,7 @@ class XsmmInstagramTaskRunner(
     }
 
     // ── 3. THỰC HIỆN TƯƠNG TÁC INSTAGRAM TRỰC TIẾP ──────────────────
-    fun doFollow(targetUid: String, targetUsername: String): Boolean {
+    fun doFollow(targetUid: String, targetUsername: String = ""): Boolean {
         var uid = targetUid.trim()
         if ((!uid.all { it.isDigit() } || uid.isBlank()) && targetUsername.isNotBlank()) {
             val resolved = InstagramApiClient.resolveTargetUserId(targetUsername, account.proxy)
@@ -431,23 +435,93 @@ class XsmmInstagramTaskRunner(
                 uid = resolved
             }
         }
+        val csrf = getCsrf(account.cookie)
+        val referer = if (targetUsername.isNotBlank()) {
+            if (targetUsername.startsWith("http")) targetUsername else "https://www.instagram.com/$targetUsername/"
+        } else "https://www.instagram.com/"
+
+        val avActor = if (account.userId.isNotBlank()) "178414${account.userId}" else {
+            val uidFromCookie = extractUserId(account.cookie)
+            if (uidFromCookie.isNotBlank()) "178414$uidFromCookie" else "178414"
+        }
+
         val vars = JSONObject().apply {
             put("target_user_id", uid)
             put("container_module", "profile")
             put("nav_chain", "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:3:unexpected")
         }
-        val referer = if (targetUsername.isNotBlank()) {
-            if (targetUsername.startsWith("http")) targetUsername else "https://www.instagram.com/$targetUsername/"
-        } else "https://www.instagram.com/"
 
-        val headers = igHeaders(account.cookie, referer).newBuilder()
+        val headerBuilder = Headers.Builder()
+            .add("Accept", "*/*")
+            .add("Accept-Language", "vi,en;q=0.9")
+            .add("Cache-Control", "no-cache")
+            .add("Content-Type", "application/x-www-form-urlencoded")
+            .add("Origin", "https://www.instagram.com")
+            .add("Pragma", "no-cache")
+            .add("Referer", referer)
+            .add("Sec-Ch-Ua", "\"Not:A-Brand\";v=\"99\", \"Google Chrome\";v=\"145\", \"Chromium\";v=\"145\"")
+            .add("Sec-Ch-Ua-Mobile", "?0")
+            .add("Sec-Ch-Ua-Platform", "\"Windows\"")
+            .add("Sec-Fetch-Dest", "empty")
+            .add("Sec-Fetch-Mode", "cors")
+            .add("Sec-Fetch-Site", "same-origin")
+            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+            .add("X-ASBD-ID", "359341")
+            .add("X-Bloks-Version-Id", "61fc9465e13b77eaa110f317859102ba7fb93a0a2bcc08c46473da6713640739")
+            .add("X-CSRFToken", csrf)
             .add("X-FB-Friendly-Name", "usePolarisFollowMutation")
+            .add("X-IG-App-ID", "936619743392459")
             .add("X-Root-Field-Name", "xdt_create_friendship")
+            .add("Cookie", account.cookie)
+        account.fbDtsg?.takeIf { it.isNotBlank() }?.let { headerBuilder.add("X-FB-DTSG", it) }
+        account.lsd?.takeIf { it.isNotBlank() }?.let { headerBuilder.add("X-FB-LSD", it) }
+
+        val formBuilder = FormBody.Builder()
+            .add("av", avActor)
+            .add("__d", "www")
+            .add("__user", "0")
+            .add("__a", "1")
+            .add("__req", "1j")
+            .add("__hs", "20519.HYP:instagram_web_pkg.2.1...0")
+            .add("dpr", "1")
+            .add("__ccg", "EXCELLENT")
+            .add("__comet_req", "7")
+            .add("jazoest", "26738")
+            .add("fb_api_caller_class", "RelayModern")
+            .add("fb_api_req_friendly_name", "usePolarisFollowMutation")
+            .add("variables", vars.toString())
+            .add("server_timestamps", "true")
+            .add("doc_id", "9740159112729312")
+        account.fbDtsg?.takeIf { it.isNotBlank() }?.let { formBuilder.add("fb_dtsg", it) }
+        account.lsd?.takeIf { it.isNotBlank() }?.let { formBuilder.add("lsd", it) }
+
+        val req = Request.Builder()
+            .url("https://www.instagram.com/graphql/query")
+            .headers(headerBuilder.build())
+            .post(formBuilder.build())
             .build()
-        val body = igFormBody("9740159112729312", "usePolarisFollowMutation", vars.toString())
-        val req = Request.Builder().url("https://www.instagram.com/graphql/query").headers(headers).post(body).build()
-        val res = execute(req) ?: return false
-        return res.contains("\"following\":true") || res.contains("\"status\":\"ok\"") || res.contains("already")
+        val resStr = execute(req) ?: return false
+        return parseMethodU(resStr)
+    }
+
+    private fun parseMethodU(response: String): Boolean {
+        if (response.isBlank()) return false
+        return try {
+            val root = JSONObject(response)
+            val data = root.optJSONObject("data")
+            val friendship = data?.optJSONObject("xdt_create_friendship")
+            val statusObj = friendship?.optJSONObject("friendship_status")
+            if (statusObj?.optBoolean("following") == true || statusObj?.optBoolean("outgoing_request") == true) return true
+            if (root.optString("status").equals("ok", ignoreCase = true)) return true
+            val errors = root.optJSONArray("errors")
+            if (errors != null && errors.length() > 0) {
+                val msg = errors.getJSONObject(0).optString("message").lowercase()
+                if (msg.contains("already")) return true
+            }
+            false
+        } catch (_: Exception) {
+            response.contains("\"following\":true") || response.contains("\"outgoing_request\":true") || response.contains("already")
+        }
     }
 
     fun doLike(targetUrl: String, targetId: String): Boolean {

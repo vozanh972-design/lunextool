@@ -186,22 +186,93 @@ class GoMaxInstagramEngine(private val client: OkHttpClient) {
                 uid = resolved
             }
         }
+        val csrf = csrf(acc.cookie)
+        val referer = if (targetUsername.isNotBlank()) {
+            if (targetUsername.startsWith("http")) targetUsername else "https://www.instagram.com/$targetUsername/"
+        } else "https://www.instagram.com/"
+
+        val avActor = if (acc.userId.isNotBlank()) "178414${acc.userId}" else {
+            val uidFromCookie = parseCookie(acc.cookie)["ds_user_id"] ?: ""
+            if (uidFromCookie.isNotBlank()) "178414$uidFromCookie" else "178414"
+        }
+
         val vars = JSONObject().apply {
             put("target_user_id", uid)
             put("container_module", "profile")
             put("nav_chain", "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:3:unexpected")
         }
-        val referer = if (targetUsername.isNotBlank()) {
-            if (targetUsername.startsWith("http")) targetUsername else "https://www.instagram.com/$targetUsername/"
-        } else "https://www.instagram.com/"
 
-        val headers = commonHeaders(acc.cookie, csrf(acc.cookie), referer).newBuilder()
+        val headerBuilder = Headers.Builder()
+            .add("Accept", "*/*")
+            .add("Accept-Language", "vi,en;q=0.9")
+            .add("Cache-Control", "no-cache")
+            .add("Content-Type", "application/x-www-form-urlencoded")
+            .add("Origin", "https://www.instagram.com")
+            .add("Pragma", "no-cache")
+            .add("Referer", referer)
+            .add("Sec-Ch-Ua", "\"Not:A-Brand\";v=\"99\", \"Google Chrome\";v=\"145\", \"Chromium\";v=\"145\"")
+            .add("Sec-Ch-Ua-Mobile", "?0")
+            .add("Sec-Ch-Ua-Platform", "\"Windows\"")
+            .add("Sec-Fetch-Dest", "empty")
+            .add("Sec-Fetch-Mode", "cors")
+            .add("Sec-Fetch-Site", "same-origin")
+            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+            .add("X-ASBD-ID", ASBD_ID)
+            .add("X-Bloks-Version-Id", BLOKS_VER)
+            .add("X-CSRFToken", csrf)
             .add("X-FB-Friendly-Name", "usePolarisFollowMutation")
+            .add("X-IG-App-ID", APP_ID)
             .add("X-Root-Field-Name", "xdt_create_friendship")
+            .add("Cookie", acc.cookie)
+        acc.fbDtsg?.takeIf { it.isNotBlank() }?.let { headerBuilder.add("X-FB-DTSG", it) }
+        acc.lsd?.takeIf { it.isNotBlank() }?.let { headerBuilder.add("X-FB-LSD", it) }
+
+        val formBuilder = FormBody.Builder()
+            .add("av", avActor)
+            .add("__d", "www")
+            .add("__user", "0")
+            .add("__a", "1")
+            .add("__req", "1j")
+            .add("__hs", "20519.HYP:instagram_web_pkg.2.1...0")
+            .add("dpr", "1")
+            .add("__ccg", "EXCELLENT")
+            .add("__comet_req", "7")
+            .add("jazoest", "26738")
+            .add("fb_api_caller_class", "RelayModern")
+            .add("fb_api_req_friendly_name", "usePolarisFollowMutation")
+            .add("variables", vars.toString())
+            .add("server_timestamps", "true")
+            .add("doc_id", DOC_FOLLOW)
+        acc.fbDtsg?.takeIf { it.isNotBlank() }?.let { formBuilder.add("fb_dtsg", it) }
+        acc.lsd?.takeIf { it.isNotBlank() }?.let { formBuilder.add("lsd", it) }
+
+        val req = Request.Builder()
+            .url(GRAPHQL_URL)
+            .headers(headerBuilder.build())
+            .post(formBuilder.build())
             .build()
-        val body = formBody(DOC_FOLLOW, "usePolarisFollowMutation", vars.toString(), acc.fbDtsg, acc.lsd)
-        val res = execute(Request.Builder().url(GRAPHQL_URL).headers(headers).post(body).build()) ?: return false
-        return res.contains("\"following\":true") || res.contains("\"status\":\"ok\"") || res.contains("already")
+        val resStr = execute(req) ?: return false
+        return parseMethodU(resStr)
+    }
+
+    private fun parseMethodU(response: String): Boolean {
+        if (response.isBlank()) return false
+        return try {
+            val root = JSONObject(response)
+            val data = root.optJSONObject("data")
+            val friendship = data?.optJSONObject("xdt_create_friendship")
+            val statusObj = friendship?.optJSONObject("friendship_status")
+            if (statusObj?.optBoolean("following") == true || statusObj?.optBoolean("outgoing_request") == true) return true
+            if (root.optString("status").equals("ok", ignoreCase = true)) return true
+            val errors = root.optJSONArray("errors")
+            if (errors != null && errors.length() > 0) {
+                val msg = errors.getJSONObject(0).optString("message").lowercase()
+                if (msg.contains("already")) return true
+            }
+            false
+        } catch (_: Exception) {
+            response.contains("\"following\":true") || response.contains("\"outgoing_request\":true") || response.contains("already")
+        }
     }
 
     // ── 3. LIKE MEDIA ─────────────────────────────────────────────────
