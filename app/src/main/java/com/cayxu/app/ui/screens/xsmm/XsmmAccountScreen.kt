@@ -2480,7 +2480,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         if (!isLiveResult) {
                                                             val errDetail = runner.account.lastErrorMessage ?: "Tài khoản bị Kháng nghị / Checkpoint / DIE"
                                                             accountKeys.forEach { k ->
-                                                                com.cayxu.app.automation.instagram.XsmmInstagramManager.errorDetailMap[k] = errDetail
+                                                                com.cayxu.app.automation.instagram.XsmmInstagramManager.lastErrorDetail[k] = errDetail
                                                             }
                                                         }
                                                         val msg = if (isLiveResult) "Đã cập nhật: $displayName" else "Tài khoản bị Kháng nghị / Checkpoint / DIE: $displayName"

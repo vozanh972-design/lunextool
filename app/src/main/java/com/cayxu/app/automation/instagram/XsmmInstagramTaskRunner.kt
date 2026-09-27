@@ -34,7 +34,7 @@ data class IgXsmmAccount(
 
 class XsmmInstagramTaskRunner(
     private val xsmmToken: String,
-    private val account: IgXsmmAccount
+    val account: IgXsmmAccount
 ) {
     private val client: OkHttpClient = buildClient(account.proxy)
 
