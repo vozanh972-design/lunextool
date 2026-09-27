@@ -222,130 +222,124 @@ class GoMaxInstagramEngine(private val client: OkHttpClient) {
         var lastHttpCode = -1
         var lastBodyStr = ""
 
-        // ── CÁCH 1: NẾU CÓ fb_dtsg -> GỌI GRAPHQL MUTATION VỚI JAZOEST CHUẨN ──
-        if (!acc.fbDtsg.isNullOrBlank()) {
-            try {
-                val realJazoest = computeJazoest(acc.fbDtsg)
-                val avActor = if (acc.userId.isNotBlank()) "178414${acc.userId}" else {
-                    val uidFromCookie = parseCookie(acc.cookie)["ds_user_id"] ?: ""
-                    if (uidFromCookie.isNotBlank()) "178414$uidFromCookie" else "178414"
-                }
-
-                val vars = JSONObject().apply {
-                    put("target_user_id", uid)
-                    put("container_module", "profile")
-                    put("nav_chain", "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:3:unexpected")
-                }
-
-                val headerBuilder = Headers.Builder()
-                    .add("Accept", "*/*")
-                    .add("Accept-Language", "vi,en;q=0.9")
-                    .add("Cache-Control", "no-cache")
-                    .add("Content-Type", "application/x-www-form-urlencoded")
-                    .add("Origin", "https://www.instagram.com")
-                    .add("Pragma", "no-cache")
-                    .add("Referer", referer)
-                    .add("Sec-Ch-Ua", "\"Not:A-Brand\";v=\"99\", \"Google Chrome\";v=\"145\", \"Chromium\";v=\"145\"")
-                    .add("Sec-Ch-Ua-Mobile", "?0")
-                    .add("Sec-Ch-Ua-Platform", "\"Windows\"")
-                    .add("Sec-Fetch-Dest", "empty")
-                    .add("Sec-Fetch-Mode", "cors")
-                    .add("Sec-Fetch-Site", "same-origin")
-                    .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
-                    .add("X-ASBD-ID", ASBD_ID)
-                    .add("X-Bloks-Version-Id", BLOKS_VER)
-                    .add("X-CSRFToken", csrf)
-                    .add("X-FB-Friendly-Name", "usePolarisFollowMutation")
-                    .add("X-IG-App-ID", APP_ID)
-                    .add("X-Root-Field-Name", "xdt_create_friendship")
-                    .add("Cookie", acc.cookie)
-                    .add("X-FB-DTSG", acc.fbDtsg)
-                acc.lsd?.takeIf { it.isNotBlank() }?.let { headerBuilder.add("X-FB-LSD", it) }
-
-                val formBuilder = FormBody.Builder()
-                    .add("av", avActor)
-                    .add("__d", "www")
-                    .add("__user", "0")
-                    .add("__a", "1")
-                    .add("__req", "1j")
-                    .add("__hs", "20519.HYP:instagram_web_pkg.2.1...0")
-                    .add("dpr", "1")
-                    .add("__ccg", "EXCELLENT")
-                    .add("__comet_req", "7")
-                    .add("jazoest", realJazoest)
-                    .add("fb_api_caller_class", "RelayModern")
-                    .add("fb_api_req_friendly_name", "usePolarisFollowMutation")
-                    .add("variables", vars.toString())
-                    .add("server_timestamps", "true")
-                    .add("doc_id", DOC_FOLLOW)
-                    .add("fb_dtsg", acc.fbDtsg)
-                acc.lsd?.takeIf { it.isNotBlank() }?.let { formBuilder.add("lsd", it) }
-
-                val req = Request.Builder()
-                    .url(GRAPHQL_URL)
-                    .headers(headerBuilder.build())
-                    .post(formBuilder.build())
-                    .build()
-
-                val response = client.newCall(req).execute()
-                lastHttpCode = response.code
-                lastBodyStr = response.use { it.body?.string().orEmpty() }
-                if (parseMethodU(lastBodyStr)) {
-                    return IgFollowResponse(isSuccess = true, httpCode = lastHttpCode, rawBody = lastBodyStr)
-                }
-            } catch (e: Exception) {
-                lastHttpCode = -1
-                lastBodyStr = e.message ?: "Exception GraphQL"
-            }
+        val realJazoest = computeJazoest(acc.fbDtsg)
+        val avActor = if (acc.userId.isNotBlank()) "178414${acc.userId}" else {
+            val uidFromCookie = parseCookie(acc.cookie)["ds_user_id"] ?: ""
+            if (uidFromCookie.isNotBlank()) "178414$uidFromCookie" else "178414"
         }
 
-        // ── CÁCH 2: NẾU THIẾU fb_dtsg HOẶC GRAPHQL BỊ TỪ CHỐI -> GỌI REST API WEB ──
-        try {
-            val restHeaders = Headers.Builder()
-                .add("Accept", "*/*")
-                .add("Accept-Language", "vi,en;q=0.9")
-                .add("Content-Type", "application/x-www-form-urlencoded")
-                .add("Origin", "https://www.instagram.com")
-                .add("Referer", referer)
-                .add("Sec-Ch-Ua", "\"Not:A-Brand\";v=\"99\", \"Google Chrome\";v=\"145\", \"Chromium\";v=\"145\"")
-                .add("Sec-Ch-Ua-Mobile", "?0")
-                .add("Sec-Ch-Ua-Platform", "\"Windows\"")
-                .add("Sec-Fetch-Dest", "empty")
-                .add("Sec-Fetch-Mode", "cors")
-                .add("Sec-Fetch-Site", "same-origin")
-                .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
-                .add("X-CSRFToken", csrf)
-                .add("X-Instagram-AJAX", "1006309104")
-                .add("X-IG-App-ID", APP_ID)
-                .add("X-Requested-With", "XMLHttpRequest")
-                .add("Cookie", acc.cookie)
-                .build()
+        val vars = JSONObject().apply {
+            put("target_user_id", uid)
+            put("container_module", "profile")
+            put("nav_chain", "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:3:unexpected")
+        }.toString()
 
-            val restReq = Request.Builder()
-                .url("https://www.instagram.com/api/v1/web/friendships/$uid/follow/")
-                .headers(restHeaders)
-                .post(FormBody.Builder().build())
-                .build()
+        val headerBuilder = Headers.Builder()
+            .add("Accept", "*/*")
+            .add("Accept-Language", "vi,en;q=0.9")
+            .add("Cache-Control", "no-cache")
+            .add("Content-Type", "application/x-www-form-urlencoded")
+            .add("Origin", "https://www.instagram.com")
+            .add("Pragma", "no-cache")
+            .add("Referer", referer)
+            .add("Sec-Ch-Ua", "\"Not:A-Brand\";v=\"99\", \"Google Chrome\";v=\"145\", \"Chromium\";v=\"145\"")
+            .add("Sec-Ch-Ua-Mobile", "?0")
+            .add("Sec-Ch-Ua-Platform", "\"Windows\"")
+            .add("Sec-Fetch-Dest", "empty")
+            .add("Sec-Fetch-Mode", "cors")
+            .add("Sec-Fetch-Site", "same-origin")
+            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+            .add("X-ASBD-ID", ASBD_ID)
+            .add("X-Bloks-Version-Id", BLOKS_VER)
+            .add("X-CSRFToken", csrf)
+            .add("X-FB-Friendly-Name", "usePolarisFollowMutation")
+            .add("X-IG-App-ID", APP_ID)
+            .add("X-Root-Field-Name", "xdt_create_friendship")
+            .add("Cookie", acc.cookie)
 
-            val response = client.newCall(restReq).execute()
-            val code = response.code
-            val bodyStr = response.use { it.body?.string().orEmpty() }
-            if (bodyStr.contains("\"following\":true") || bodyStr.contains("\"status\":\"ok\"") ||
-                bodyStr.contains("\"outgoing_request\":true") || bodyStr.contains("already") ||
-                bodyStr.contains("\"result\":\"following\"")) {
-                return IgFollowResponse(isSuccess = true, httpCode = code, rawBody = bodyStr)
+        if (!acc.fbDtsg.isNullOrBlank()) {
+            headerBuilder.add("X-FB-DTSG", acc.fbDtsg)
+        }
+        if (!acc.lsd.isNullOrBlank()) {
+            headerBuilder.add("X-FB-LSD", acc.lsd)
+        }
+        val headers = headerBuilder.build()
+
+        fun createFormBody(docId: String, reqParam: String): FormBody {
+            val formBuilder = FormBody.Builder()
+                .add("av", avActor)
+                .add("__d", "www")
+                .add("__user", "0")
+                .add("__a", "1")
+                .add("__req", reqParam)
+                .add("__hs", "20519.HYP:instagram_web_pkg.2.1...0")
+                .add("dpr", "1")
+                .add("__ccg", "EXCELLENT")
+                .add("__hsi", System.currentTimeMillis().toString())
+                .add("__comet_req", "7")
+                .add("jazoest", realJazoest)
+                .add("fb_api_caller_class", "RelayModern")
+                .add("fb_api_req_friendly_name", "usePolarisFollowMutation")
+                .add("variables", vars)
+                .add("server_timestamps", "true")
+                .add("doc_id", docId)
+
+            if (!acc.fbDtsg.isNullOrBlank()) {
+                formBuilder.add("fb_dtsg", acc.fbDtsg)
             }
+            if (!acc.lsd.isNullOrBlank()) {
+                formBuilder.add("lsd", acc.lsd)
+            }
+            return formBuilder.build()
+        }
+
+        // 1. Thử GraphQL chính (GoMax Doc ID 9740159112729312, __req: 1j)
+        try {
+            val req1 = Request.Builder()
+                .url(GRAPHQL_URL)
+                .headers(headers)
+                .post(createFormBody(DOC_FOLLOW, "1j"))
+                .build()
+
+            val res1 = client.newCall(req1).execute()
+            lastHttpCode = res1.code
+            lastBodyStr = res1.use { it.body?.string().orEmpty() }
+
+            if (parseMethodU(lastBodyStr)) {
+                return IgFollowResponse(isSuccess = true, httpCode = lastHttpCode, rawBody = lastBodyStr)
+            }
+        } catch (e: Exception) {
+            lastHttpCode = -1
+            lastBodyStr = e.message ?: "Exception GraphQL 1"
+        }
+
+        // 2. Fallback GraphQL dự phòng (GoMax Doc ID 9663809173698092, __req: 15)
+        try {
+            val req2 = Request.Builder()
+                .url(GRAPHQL_URL)
+                .headers(headers)
+                .post(createFormBody("9663809173698092", "15"))
+                .build()
+
+            val res2 = client.newCall(req2).execute()
+            val code2 = res2.code
+            val body2 = res2.use { it.body?.string().orEmpty() }
+
+            if (parseMethodU(body2)) {
+                return IgFollowResponse(isSuccess = true, httpCode = code2, rawBody = body2)
+            }
+
             return IgFollowResponse(
                 isSuccess = false,
-                httpCode = code,
-                rawBody = bodyStr,
-                errorMessage = "HTTP $code: $bodyStr"
+                httpCode = if (code2 != 0) code2 else lastHttpCode,
+                rawBody = body2.ifBlank { lastBodyStr },
+                errorMessage = "GraphQL Thất bại: HTTP ${if (code2 != 0) code2 else lastHttpCode}"
             )
         } catch (e: Exception) {
             return IgFollowResponse(
                 isSuccess = false,
-                httpCode = lastHttpCode.takeIf { it != -1 } ?: -1,
-                rawBody = lastBodyStr.ifBlank { e.message ?: "Exception REST" },
+                httpCode = lastHttpCode,
+                rawBody = lastBodyStr.ifBlank { e.message ?: "Exception GraphQL 2" },
                 errorMessage = "Lỗi kết nối mạng: ${e.message}"
             )
         }
