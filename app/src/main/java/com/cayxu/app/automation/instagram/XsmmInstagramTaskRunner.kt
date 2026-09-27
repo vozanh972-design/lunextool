@@ -7,6 +7,9 @@ import com.cayxu.app.data.local.XsmmAccountStore
 import com.cayxu.app.data.local.XsmmRunConfigStore
 import com.cayxu.app.data.repository.*
 import com.cayxu.app.instagram.InstagramApiClient
+import com.cayxu.app.instagram.InstagramEngine
+import com.cayxu.app.instagram.IgResult
+import com.cayxu.app.instagram.IgSession
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge
 import com.cayxu.app.ui.screens.xsmm.XsmmSession
 import kotlinx.coroutines.Dispatchers
@@ -104,31 +107,36 @@ object XsmmInstagramTaskRunner {
         }
 
         // ====================================================================
-        // 1. KIỂM TRA ĐỘ SỐNG CỦA COOKIE INSTAGRAM & KHỞI TẠO SESSION
+        // 1. KIỂM TRA ĐỘ SỐNG CỦA COOKIE INSTAGRAM & KHỞI TẠO SESSION (GoMax 1.2.2)
         // ====================================================================
         notify("Kiểm tra acc")
         val proxyConfig = InstagramApiClient.parseProxy(account.proxy)
+        val igEngine = InstagramEngine.create(proxyConfig, timeoutSec = 20L)
+        val verifyRes = igEngine.verifySession(account.cookie)
+        if (verifyRes is IgResult.Error) {
+            val errMsg = if (verifyRes.isCheckpoint) "Tài khoản CHECKPOINT / DIE: ${verifyRes.message}" else verifyRes.message
+            notify(errMsg)
+            reportError(cleanUsername, errMsg)
+            if (verifyRes.isCheckpoint) {
+                val deadAccount = account.copy(isLive = false)
+                InstagramAccountsStore.updateAccount(context, deadAccount)
+            }
+            return RunResult(0, 1, 0, errMsg)
+        }
+
+        val igSession = (verifyRes as IgResult.Success).data
         val igClient = InstagramApiClient(
             cookie = account.cookie,
             userAgent = account.userAgent,
             proxyConfig = proxyConfig,
-            initialFbDtsg = account.fbDtsg,
-            initialLsd = account.lsd
+            initialFbDtsg = igSession.fbDtsg,
+            initialLsd = igSession.lsd
         )
         val session = igClient.ensureSession()
-
         val checkRes = igClient.checkCookieIg()
-        if (!checkRes.isLive || checkRes.userId.isBlank()) {
-            val errMsg = if (checkRes.rawJson.isNotBlank()) checkRes.rawJson else "Cookie Die / Proxy lỗi"
-            notify(errMsg)
-            reportError(cleanUsername, errMsg)
-            val deadAccount = account.copy(isLive = false)
-            InstagramAccountsStore.updateAccount(context, deadAccount)
-            return RunResult(0, 1, 0, errMsg)
-        }
 
-        val tenfb = checkRes.username.ifBlank { cleanUsername }
-        val idfb = checkRes.userId
+        val tenfb = igSession.username.ifBlank { checkRes.username }.ifBlank { cleanUsername }
+        val idfb = igSession.userId.ifBlank { checkRes.userId }
         notify("Nick Live [$tenfb]")
 
         // Cập nhật lại thông tin mới nhất vào store (kèm avatar & token)
@@ -138,8 +146,8 @@ object XsmmInstagramTaskRunner {
             fullName = checkRes.fullName.ifBlank { account.fullName },
             biography = checkRes.biography.ifBlank { account.biography },
             avatar = checkRes.profilePicUrl.ifBlank { account.avatar },
-            fbDtsg = checkRes.fbDtsg.ifBlank { account.fbDtsg }.ifBlank { session.fbDtsg },
-            lsd = checkRes.lsd.ifBlank { account.lsd }.ifBlank { session.lsd },
+            fbDtsg = igSession.fbDtsg.orEmpty().ifBlank { account.fbDtsg }.ifBlank { session.fbDtsg },
+            lsd = igSession.lsd.orEmpty().ifBlank { account.lsd }.ifBlank { session.lsd },
             followersCount = if (checkRes.followersCount > 0) checkRes.followersCount else account.followersCount,
             followingCount = if (checkRes.followingCount > 0) checkRes.followingCount else account.followingCount,
             postsCount = if (checkRes.postsCount > 0) checkRes.postsCount else account.postsCount,
@@ -277,20 +285,41 @@ object XsmmInstagramTaskRunner {
             consecutiveNoTasks = 0
 
             // ================================================================
-            // XỬ LÝ NHIỆM VỤ TYM
+            // XỬ LÝ NHIỆM VỤ TYM (LIKE - GoMax 1.2.2)
             // ================================================================
             if (randJob == "instagram_like") {
                 var soloitym = 0
                 for (nv in tasks) {
                     if (!coroutineContext.isActive) break
                     val taskId = nv.id
-                    val idm = nv.targetId.ifBlank { nv.idorlink }
+                    var idm = nv.targetId.trim().ifBlank { nv.idorlink.trim() }
                     val linkJob = nv.targetUrl
+
+                    if (!idm.all { it.isDigit() } || idm.isBlank()) {
+                        val shortcode = InstagramEngine.extractShortcode(linkJob.ifBlank { idm })
+                        val decoded = shortcode?.let { InstagramEngine.shortcodeToMediaId(it) }
+                        if (!decoded.isNullOrBlank()) {
+                            idm = decoded
+                        } else {
+                            val resolved = InstagramApiClient.resolveMediaId(linkJob, account.proxy)
+                            if (!resolved.isNullOrBlank()) {
+                                idm = resolved
+                            }
+                        }
+                    }
+
                     notify("Job Tym: $idm")
-                    val chayfl = igClient.tym(idm, linkJob)
+                    if (idm.isBlank()) {
+                        notify("Tym lỗi: Thiếu Media ID")
+                        soloitym++
+                        totalErrors++
+                        continue
+                    }
+
+                    val chayfl = igEngine.likeMedia(igSession, idm)
                     maxJob++
 
-                    if (chayfl.success) {
+                    if (chayfl is IgResult.Success) {
                         notify("Tym xong -> Nhận xu...")
                         val claimRes = XsmmTasksRepository.completeTasks2(
                             rawToken = token,
@@ -315,10 +344,25 @@ object XsmmInstagramTaskRunner {
                             delay(claimRes.countdown * 1000L)
                         }
                     } else {
+                        val err = chayfl as IgResult.Error
                         totalErrors++
                         soloitym++
-                        notify("Tym lỗi: ${chayfl.message}")
-                        reportError(cleanUsername, "Tym lỗi: ${chayfl.message}")
+                        notify("Tym lỗi: ${err.message}")
+                        reportError(cleanUsername, "Tym lỗi: ${err.message}")
+
+                        if (err.isRateLimited) {
+                            notify("Action Block (feedback_required) -> Dừng nick!")
+                            com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                                context = context,
+                                platform = "Instagram",
+                                accountName = account.fullName.ifBlank { cleanUsername },
+                                accountUid = cleanUsername,
+                                consecutiveErrors = soloitym,
+                                errorDetail = "Action Block: ${err.message}"
+                            )
+                            break
+                        }
+
                         if (soloitym >= 3) {
                             com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
                                 context = context,
@@ -326,7 +370,7 @@ object XsmmInstagramTaskRunner {
                                 accountName = account.fullName.ifBlank { cleanUsername },
                                 accountUid = cleanUsername,
                                 consecutiveErrors = soloitym,
-                                errorDetail = "Tym lỗi: ${chayfl.message ?: "Thất bại"}"
+                                errorDetail = "Tym lỗi: ${err.message}"
                             )
                         }
                     }
@@ -352,7 +396,7 @@ object XsmmInstagramTaskRunner {
             }
 
             // ================================================================
-            // XỬ LÝ NHIỆM VỤ FOLLOW
+            // XỬ LÝ NHIỆM VỤ FOLLOW (GoMax 1.2.2 - DOC 9740159112729312)
             // ================================================================
             else if (randJob == "instagram_follow") {
                 var soloisub = 0
@@ -378,10 +422,10 @@ object XsmmInstagramTaskRunner {
                         continue
                     }
 
-                    val chaySub = igClient.follow(targetId, linkJob)
+                    val chaySub = igEngine.follow(igSession, targetId, linkJob)
                     maxJob++
 
-                    if (chaySub.success) {
+                    if (chaySub is IgResult.Success) {
                         notify("Follow xong: $targetId")
                         cacheBatchNv.add(taskId)
                         soloisub = 0
@@ -415,10 +459,25 @@ object XsmmInstagramTaskRunner {
                             break
                         }
                     } else {
+                        val err = chaySub as IgResult.Error
                         totalErrors++
                         soloisub++
-                        notify("Follow lỗi: ${chaySub.message}")
-                        reportError(cleanUsername, "Follow thất bại: ${chaySub.message}")
+                        notify("Follow lỗi: ${err.message}")
+                        reportError(cleanUsername, "Follow thất bại: ${err.message}")
+
+                        if (err.isRateLimited) {
+                            notify("Action Block (feedback_required) -> Dừng nick!")
+                            com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                                context = context,
+                                platform = "Instagram",
+                                accountName = account.fullName.ifBlank { cleanUsername },
+                                accountUid = cleanUsername,
+                                consecutiveErrors = soloisub,
+                                errorDetail = "Action Block: ${err.message}"
+                            )
+                            break
+                        }
+
                         if (soloisub >= 3) {
                             com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
                                 context = context,
@@ -426,7 +485,7 @@ object XsmmInstagramTaskRunner {
                                 accountName = account.fullName.ifBlank { cleanUsername },
                                 accountUid = cleanUsername,
                                 consecutiveErrors = soloisub,
-                                errorDetail = "Follow lỗi: ${chaySub.message ?: "Thất bại"}"
+                                errorDetail = "Follow lỗi: ${err.message}"
                             )
                         }
                     }
@@ -479,7 +538,7 @@ object XsmmInstagramTaskRunner {
             }
 
             // ================================================================
-            // XỬ LÝ NHIỆM VỤ COMMENT
+            // XỬ LÝ NHIỆM VỤ COMMENT (GoMax 1.2.2 - DOC 7755358241198424)
             // ================================================================
             else if (randJob == "instagram_comment") {
                 var soloicmt = 0
@@ -490,10 +549,16 @@ object XsmmInstagramTaskRunner {
                     val noidung = nv.comment.ifBlank { "❤️❤️❤️" }
                     val linkJob = nv.targetUrl
 
-                    if (idm.isBlank()) {
-                        val resolved = InstagramApiClient.resolveMediaId(linkJob, account.proxy)
-                        if (!resolved.isNullOrBlank()) {
-                            idm = resolved
+                    if (!idm.all { it.isDigit() } || idm.isBlank()) {
+                        val shortcode = InstagramEngine.extractShortcode(linkJob.ifBlank { idm })
+                        val decoded = shortcode?.let { InstagramEngine.shortcodeToMediaId(it) }
+                        if (!decoded.isNullOrBlank()) {
+                            idm = decoded
+                        } else {
+                            val resolved = InstagramApiClient.resolveMediaId(linkJob, account.proxy)
+                            if (!resolved.isNullOrBlank()) {
+                                idm = resolved
+                            }
                         }
                     }
 
@@ -506,10 +571,10 @@ object XsmmInstagramTaskRunner {
                         continue
                     }
 
-                    val chayCmt = igClient.cmt(idm, noidung, linkJob)
+                    val chayCmt = igEngine.comment(igSession, idm, noidung)
                     maxJob++
 
-                    if (chayCmt.success) {
+                    if (chayCmt is IgResult.Success) {
                         notify("CMT xong -> Nhận xu...")
                         val claimRes = XsmmTasksRepository.completeTasks2(
                             rawToken = token,
@@ -534,10 +599,35 @@ object XsmmInstagramTaskRunner {
                             delay(claimRes.countdown * 1000L)
                         }
                     } else {
+                        val err = chayCmt as IgResult.Error
                         totalErrors++
                         soloicmt++
-                        notify("CMT lỗi: ${chayCmt.message}")
-                        reportError(cleanUsername, "Comment thất bại: ${chayCmt.message}")
+                        notify("CMT lỗi: ${err.message}")
+                        reportError(cleanUsername, "Comment thất bại: ${err.message}")
+
+                        if (err.isRateLimited) {
+                            notify("Action Block (feedback_required) -> Dừng nick!")
+                            com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                                context = context,
+                                platform = "Instagram",
+                                accountName = account.fullName.ifBlank { cleanUsername },
+                                accountUid = cleanUsername,
+                                consecutiveErrors = soloicmt,
+                                errorDetail = "Action Block: ${err.message}"
+                            )
+                            break
+                        }
+
+                        if (soloicmt >= 3) {
+                            com.cayxu.app.worker.AppAlertNotifier.notifyAccountError(
+                                context = context,
+                                platform = "Instagram",
+                                accountName = account.fullName.ifBlank { cleanUsername },
+                                accountUid = cleanUsername,
+                                consecutiveErrors = soloicmt,
+                                errorDetail = "Comment lỗi: ${err.message}"
+                            )
+                        }
                     }
 
                     // Delay

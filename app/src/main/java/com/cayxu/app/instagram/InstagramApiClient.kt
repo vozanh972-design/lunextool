@@ -480,38 +480,19 @@ class InstagramApiClient(
             proxyConfig: ProxyConfig?
         ): IgActionResult {
             if (targetId.isBlank()) return IgActionResult(false, "Lỗi Target ID")
-            val client = buildOkHttpClient(proxyConfig, timeoutSec = 15L)
-
-            val formBody = FormBody.Builder()
-                .add("user_id", targetId)
-                .add("radio_type", "wifi-none")
-                .build()
-
-            val reqBuilder = Request.Builder()
-                .url("https://i.instagram.com/api/v1/friendships/create/$targetId/")
-                .post(formBody)
-                .header("User-Agent", IG_APP_UA)
-                .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
-                .header("X-IG-Connection-Type", IG_CONN_TYPE)
-                .header("X-IG-Capabilities", IG_CAPABILITIES)
-                .header("Cookie", session.cookie)
-
-            val csrf = Regex("csrftoken=([^;]+)").find(session.cookie)?.groupValues?.get(1).orEmpty()
-            if (csrf.isNotBlank()) reqBuilder.header("X-CSRFToken", csrf)
-
-            return try {
-                val res = client.newCall(reqBuilder.build()).execute()
-                val rawBody = res.body?.string().orEmpty()
-                val json = try { JSONObject(rawBody) } catch (_: Exception) { null }
-                val isOk = res.isSuccessful && (json?.optString("status") == "ok" || rawBody.contains("\"following\":true"))
-                if (isOk) {
-                    IgActionResult(true, "Theo dõi thành công", rawBody)
-                } else {
-                    val msg = json?.optString("message", "Lỗi gửi Follow") ?: "Lỗi gửi Follow"
-                    IgActionResult(false, msg, rawBody)
-                }
-            } catch (e: Exception) {
-                IgActionResult(false, e.message ?: "Lỗi gửi Follow", "")
+            val engine = InstagramEngine.create(proxyConfig, timeoutSec = 20L)
+            val igSession = IgSession(
+                rawCookie = session.cookie,
+                userId = session.actorId,
+                username = "",
+                csrfToken = session.csrfToken,
+                fbDtsg = session.fbDtsg.takeIf { it.isNotBlank() },
+                lsd = session.lsd.takeIf { it.isNotBlank() }
+            )
+            val res = engine.follow(igSession, targetId, profileUrl)
+            return when (res) {
+                is IgResult.Success -> IgActionResult(true, "Theo dõi thành công", "ok")
+                is IgResult.Error -> IgActionResult(false, res.message, res.message)
             }
         }
 
@@ -521,39 +502,28 @@ class InstagramApiClient(
             linkJob: String,
             proxyConfig: ProxyConfig?
         ): IgActionResult {
-            if (mediaId.isBlank()) return IgActionResult(false, "Lỗi Media ID")
-            val client = buildOkHttpClient(proxyConfig, timeoutSec = 15L)
-
-            val formBody = FormBody.Builder()
-                .add("media_id", mediaId)
-                .add("radio_type", "wifi-none")
-                .build()
-
-            val reqBuilder = Request.Builder()
-                .url("https://i.instagram.com/api/v1/media/$mediaId/like/")
-                .post(formBody)
-                .header("User-Agent", IG_APP_UA)
-                .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
-                .header("X-IG-Connection-Type", IG_CONN_TYPE)
-                .header("X-IG-Capabilities", IG_CAPABILITIES)
-                .header("Cookie", session.cookie)
-
-            val csrf = Regex("csrftoken=([^;]+)").find(session.cookie)?.groupValues?.get(1).orEmpty()
-            if (csrf.isNotBlank()) reqBuilder.header("X-CSRFToken", csrf)
-
-            return try {
-                val res = client.newCall(reqBuilder.build()).execute()
-                val rawBody = res.body?.string().orEmpty()
-                val json = try { JSONObject(rawBody) } catch (_: Exception) { null }
-                val isOk = res.isSuccessful && json?.optString("status") == "ok"
-                if (isOk) {
-                    IgActionResult(true, "Thả tim thành công", rawBody)
-                } else {
-                    val msg = json?.optString("message", "Lỗi thả tim") ?: "Lỗi thả tim"
-                    IgActionResult(false, msg, rawBody)
+            var finalId = mediaId.trim()
+            if (!finalId.all { it.isDigit() }) {
+                val shortcode = InstagramEngine.extractShortcode(linkJob.ifBlank { finalId })
+                val decoded = shortcode?.let { InstagramEngine.shortcodeToMediaId(it) }
+                if (!decoded.isNullOrBlank()) {
+                    finalId = decoded
                 }
-            } catch (e: Exception) {
-                IgActionResult(false, e.message ?: "Lỗi gửi Tym", "")
+            }
+            if (finalId.isBlank()) return IgActionResult(false, "Lỗi Media ID")
+            val engine = InstagramEngine.create(proxyConfig, timeoutSec = 20L)
+            val igSession = IgSession(
+                rawCookie = session.cookie,
+                userId = session.actorId,
+                username = "",
+                csrfToken = session.csrfToken,
+                fbDtsg = session.fbDtsg.takeIf { it.isNotBlank() },
+                lsd = session.lsd.takeIf { it.isNotBlank() }
+            )
+            val res = engine.likeMedia(igSession, finalId)
+            return when (res) {
+                is IgResult.Success -> IgActionResult(true, "Thả tim thành công", "ok")
+                is IgResult.Error -> IgActionResult(false, res.message, res.message)
             }
         }
 
@@ -564,39 +534,28 @@ class InstagramApiClient(
             linkJob: String,
             proxyConfig: ProxyConfig?
         ): IgActionResult {
-            if (mediaId.isBlank()) return IgActionResult(false, "Lỗi Media ID")
-            val client = buildOkHttpClient(proxyConfig, timeoutSec = 15L)
-
-            val formBody = FormBody.Builder()
-                .add("comment_text", text)
-                .add("radio_type", "wifi-none")
-                .build()
-
-            val reqBuilder = Request.Builder()
-                .url("https://i.instagram.com/api/v1/media/$mediaId/comment/")
-                .post(formBody)
-                .header("User-Agent", IG_APP_UA)
-                .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
-                .header("X-IG-Connection-Type", IG_CONN_TYPE)
-                .header("X-IG-Capabilities", IG_CAPABILITIES)
-                .header("Cookie", session.cookie)
-
-            val csrf = Regex("csrftoken=([^;]+)").find(session.cookie)?.groupValues?.get(1).orEmpty()
-            if (csrf.isNotBlank()) reqBuilder.header("X-CSRFToken", csrf)
-
-            return try {
-                val res = client.newCall(reqBuilder.build()).execute()
-                val rawBody = res.body?.string().orEmpty()
-                val json = try { JSONObject(rawBody) } catch (_: Exception) { null }
-                val isOk = res.isSuccessful && json?.optString("status") == "ok"
-                if (isOk) {
-                    IgActionResult(true, "Bình luận thành công", rawBody)
-                } else {
-                    val msg = json?.optString("message", "Lỗi gửi bình luận") ?: "Lỗi gửi bình luận"
-                    IgActionResult(false, msg, rawBody)
+            var finalId = mediaId.trim()
+            if (!finalId.all { it.isDigit() }) {
+                val shortcode = InstagramEngine.extractShortcode(linkJob.ifBlank { finalId })
+                val decoded = shortcode?.let { InstagramEngine.shortcodeToMediaId(it) }
+                if (!decoded.isNullOrBlank()) {
+                    finalId = decoded
                 }
-            } catch (e: Exception) {
-                IgActionResult(false, e.message ?: "Lỗi gửi CMT", "")
+            }
+            if (finalId.isBlank()) return IgActionResult(false, "Lỗi Media ID")
+            val engine = InstagramEngine.create(proxyConfig, timeoutSec = 20L)
+            val igSession = IgSession(
+                rawCookie = session.cookie,
+                userId = session.actorId,
+                username = "",
+                csrfToken = session.csrfToken,
+                fbDtsg = session.fbDtsg.takeIf { it.isNotBlank() },
+                lsd = session.lsd.takeIf { it.isNotBlank() }
+            )
+            val res = engine.comment(igSession, finalId, text)
+            return when (res) {
+                is IgResult.Success -> IgActionResult(true, "Bình luận thành công", "ok")
+                is IgResult.Error -> IgActionResult(false, res.message, res.message)
             }
         }
 
@@ -863,18 +822,39 @@ class InstagramApiClient(
         }
 
         /**
-         * KIỂM TRA ĐỘ SỐNG CỦA COOKIE THEO 100% INSTAGRAM APP REST API:
-         * 1. GET https://i.instagram.com/api/v1/users/{userId}/info/ (Lấy Full Profile, Followers, Avatar HD)
-         * 2. GET https://i.instagram.com/api/v1/accounts/current_user/?edit=true (Lấy Email, Phone, First Name)
-         * Loại bỏ 100% Web GraphQL Polaris & web_form_data.
+         * KIỂM TRA ĐỘ SỐNG CỦA COOKIE THEO INSTAGRAM ENGINE (GoMax 1.2.2):
+         * 1. Kiểm tra 3 trường bắt buộc: sessionid, ds_user_id, csrftoken
+         * 2. Quét trang chủ phát hiện Live / Checkpoint / Die
+         * 3. Trích xuất username, fb_dtsg, lsd và lấy thông tin chi tiết qua App REST API
          */
         fun checkCookieIg(cookie: String, proxy: String? = null): CookieCheckResult {
             val unquoted = normalizeToIosCookie(unquoteCookie(cookie))
-            val session = getOrCreateSession(unquoted, proxyConfig = parseProxy(proxy))
-            val client = buildOkHttpClient(parseProxy(proxy), timeoutSec = 20L)
-            val actorId = session.actorId.ifBlank { extractActorId(unquoted) }
+            val proxyCfg = parseProxy(proxy)
+            val engine = InstagramEngine.create(proxyCfg, timeoutSec = 20L)
+            val verify = engine.verifySession(unquoted)
+            if (verify is IgResult.Error) {
+                val isBlocked = verify.isCheckpoint
+                val msg = if (isBlocked) "Checkpoint / Xác minh danh tính (${verify.message})" else verify.message
+                val actorId = extractActorId(unquoted)
+                return CookieCheckResult(isLive = false, userId = actorId, rawJson = msg)
+            }
 
-            // 1. Kiểm tra bằng App REST API: /api/v1/users/{actorId}/info/
+            val igSession = (verify as IgResult.Success).data
+            val session = getOrCreateSession(unquoted, proxyConfig = proxyCfg, initialFbDtsg = igSession.fbDtsg, initialLsd = igSession.lsd)
+            if (!igSession.fbDtsg.isNullOrBlank()) session.fbDtsg = igSession.fbDtsg
+            if (!igSession.lsd.isNullOrBlank()) session.lsd = igSession.lsd
+
+            // Fetch extra user details (fullName, avatar, counts) for UI display
+            val actorId = igSession.userId
+            var username = igSession.username
+            var fullName = ""
+            var bio = ""
+            var pic = ""
+            var followers = 0
+            var following = 0
+            var posts = 0
+            val client = buildOkHttpClient(proxyCfg, timeoutSec = 15L)
+
             if (actorId.isNotBlank() && actorId != "0") {
                 try {
                     val req = Request.Builder()
@@ -890,104 +870,40 @@ class InstagramApiClient(
                     val res = client.newCall(req).execute()
                     val rawBody = res.body?.string().orEmpty()
                     val body = cleanJsonResponse(rawBody)
-
-                    if (body.contains("checkpoint_required") || body.contains("accounts/suspended") || body.contains("1357031")) {
-                        val isSuspended = body.contains("accounts/suspended") || body.contains("1357031")
-                        val msg = if (isSuspended) "Tài khoản bị tạm khóa / Checkpoint (accounts/suspended)" else "Checkpoint / Xác minh danh tính"
-                        return CookieCheckResult(isLive = false, userId = actorId, rawJson = msg)
-                    }
-                    if (body.contains("login_required") || res.code == 401 || res.code == 403) {
-                        return CookieCheckResult(isLive = false, userId = actorId, rawJson = "Cookie hết hạn / Cần đăng nhập lại")
-                    }
-
                     val json = try { JSONObject(body) } catch (_: Exception) { null }
                     val user = json?.optJSONObject("user")
-                    val username = user?.optString("username").orEmpty()
-                    if (username.isNotBlank()) {
-                        val fullName = user?.optString("full_name").orEmpty()
-                        val bio = user?.optString("biography").orEmpty()
-                        val hdPic = user?.optJSONObject("hd_profile_pic_url_info")?.optString("url")
-                        val regPic = user?.optString("profile_pic_url").orEmpty()
-                        val pic = hdPic?.takeIf { it.isNotBlank() && it.startsWith("http") } ?: regPic
-                        val followers = user?.optInt("follower_count") ?: 0
-                        val following = user?.optInt("following_count") ?: 0
-                        val posts = user?.optInt("media_count") ?: 0
-
-                        if (pic.isNotBlank() && pic.startsWith("http")) {
-                            session.profilePicUrl = pic
-                        }
-
-                        return CookieCheckResult(
-                            isLive = true,
-                            username = username,
-                            userId = actorId,
-                            fullName = fullName,
-                            biography = bio,
-                            profilePicUrl = pic,
-                            rawJson = body,
-                            followersCount = followers,
-                            followingCount = following,
-                            postsCount = posts
-                        )
+                    if (user != null) {
+                        if (username.isBlank()) username = user.optString("username").orEmpty()
+                        fullName = user.optString("full_name").orEmpty()
+                        bio = user.optString("biography").orEmpty()
+                        val hdPic = user.optJSONObject("hd_profile_pic_url_info")?.optString("url")
+                        val regPic = user.optString("profile_pic_url").orEmpty()
+                        pic = hdPic?.takeIf { it.isNotBlank() && it.startsWith("http") } ?: regPic
+                        followers = user.optInt("follower_count")
+                        following = user.optInt("following_count")
+                        posts = user.optInt("media_count")
                     }
                 } catch (_: Exception) {}
             }
 
-            // 2. Fallback App API: /api/v1/accounts/current_user/?edit=true
-            try {
-                val req = Request.Builder()
-                    .url("https://i.instagram.com/api/v1/accounts/current_user/?edit=true")
-                    .get()
-                    .header("User-Agent", session.deviceProfile.userAgent)
-                    .header("X-IG-App-ID", IG_APP_ID_PRIVATE)
-                    .header("X-IG-Connection-Type", IG_CONN_TYPE)
-                    .header("X-IG-Capabilities", IG_CAPABILITIES)
-                    .header("Cookie", unquoted)
-                    .build()
+            if (pic.isNotBlank() && pic.startsWith("http")) {
+                session.profilePicUrl = pic
+            }
 
-                val res = client.newCall(req).execute()
-                val rawBody = res.body?.string().orEmpty()
-                val body = cleanJsonResponse(rawBody)
-
-                if (body.contains("checkpoint_required") || body.contains("accounts/suspended") || body.contains("1357031")) {
-                    val isSuspended = body.contains("accounts/suspended") || body.contains("1357031")
-                    val msg = if (isSuspended) "Tài khoản bị tạm khóa / Checkpoint (accounts/suspended)" else "Checkpoint / Xác minh danh tính"
-                    return CookieCheckResult(isLive = false, userId = actorId, rawJson = msg)
-                }
-                if (body.contains("login_required") || res.code == 401 || res.code == 403) {
-                    return CookieCheckResult(isLive = false, userId = actorId, rawJson = "Cookie hết hạn / Cần đăng nhập lại")
-                }
-
-                val json = try { JSONObject(body) } catch (_: Exception) { null }
-                val user = json?.optJSONObject("user")
-                val username = user?.optString("username").orEmpty()
-                if (username.isNotBlank()) {
-                    val fullName = user?.optString("first_name").orEmpty().ifBlank { user?.optString("full_name").orEmpty() }
-                    val bio = user?.optString("biography").orEmpty()
-                    val email = user?.optString("email").orEmpty()
-                    val phone = user?.optString("phone_number").orEmpty()
-                    val pic = user?.optString("profile_pic_url").orEmpty()
-                    val uid = user?.optString("pk").orEmpty().ifBlank { actorId }
-
-                    if (pic.isNotBlank() && pic.startsWith("http")) {
-                        session.profilePicUrl = pic
-                    }
-
-                    return CookieCheckResult(
-                        isLive = true,
-                        username = username,
-                        userId = uid,
-                        fullName = fullName,
-                        biography = bio,
-                        email = email,
-                        phoneNumber = phone,
-                        profilePicUrl = pic,
-                        rawJson = body
-                    )
-                }
-            } catch (_: Exception) {}
-
-            return CookieCheckResult(isLive = false, userId = actorId, rawJson = "Không thể xác thực cookie Instagram")
+            return CookieCheckResult(
+                isLive = true,
+                username = username,
+                userId = actorId,
+                fullName = fullName,
+                biography = bio,
+                profilePicUrl = pic,
+                rawJson = "LIVE",
+                fbDtsg = igSession.fbDtsg.orEmpty(),
+                lsd = igSession.lsd.orEmpty(),
+                followersCount = followers,
+                followingCount = following,
+                postsCount = posts
+            )
         }
 
 
@@ -1078,6 +994,13 @@ class InstagramApiClient(
 
         fun resolveMediaId(linkJob: String, proxy: String? = null): String? {
             if (linkJob.isBlank()) return null
+
+            // 1. Trích xuất shortcode và giải mã trực tiếp bằng BigInteger (GoMax 1.2.2)
+            val shortcode = InstagramEngine.extractShortcode(linkJob)
+            val decodedId = shortcode?.let { InstagramEngine.shortcodeToMediaId(it) }
+            if (!decodedId.isNullOrBlank()) return decodedId
+
+            // 2. Tra cứu qua HTML nếu link dạng khác
             val client = buildOkHttpClient(parseProxy(proxy), timeoutSec = 10L)
             return try {
                 val req = Request.Builder()
