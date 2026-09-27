@@ -315,9 +315,11 @@ class QuanLyPageEngine(
     /**
      * BƯỚC 1: XÁC THỰC MẬT KHẨU NICK GỬI (STEP_1_SEND_INVITATION / permissions_reauth)
      * Chuẩn Bytecode 0x28E2C4 - 0x28E2F2 từ lunexAUTO:
-     * - nt_context và client_data là TOP-LEVEL SIBLINGS ngang hàng params.
-     * - client_data.sensitive_string_value là JSON stringify của mảng 2 chiều [["password", "<PASS>"]].
-     * - params chỉ chứa path và payload rỗng {}.
+     * - params.payload = URL STRING (KHÔNG có key "path", KHÔNG phải JSONObject).
+     * - params CÓ chứa nt_context + client_data bên trong.
+     * - nt_context lặp lại ở top-level.
+     * - KHÔNG có client_data ở top-level.
+     * - sensitive_string_value là JSON stringify của mảng 2 chiều [["password", "<PASS>"]].
      */
     fun step1SendInvitation(
         senderToken: String,
@@ -326,7 +328,17 @@ class QuanLyPageEngine(
         targetUserId: String,
         adminType: String
     ): StepExecutionResult {
-        val path = "/nt/profile/admin_management/permissions_reauth?" +
+        fun buildNtContext() = JSONObject().apply {
+            put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
+            put("using_white_navbar", true)
+            put("pixel_ratio", 2)
+            put("theme_params", JSONObject().apply {
+                put("design_system_name", "FDS")
+            })
+            put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
+        }
+
+        val reAuthUrl = "/nt/profile/admin_management/permissions_reauth?" +
             "admin_id=$targetUserId&" +
             "admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D&" +
             "admin_type=$adminType&" +
@@ -342,41 +354,31 @@ class QuanLyPageEngine(
             "state_ids%5Bmessages%5D=8clnk7%3A5&" +
             "state_ids%5Bmoderate%5D=8clnk7%3A6"
 
-        // params object: chỉ có path và payload rỗng {}
-        val paramsObj = JSONObject().apply {
-            put("path", path)
-            put("payload", JSONObject())
-        }
-
-        // client_data: sensitive_string_value là chuỗi stringify của mảng 2 chiều [["password", "<PASS>"]]
-        val sensitiveArray = JSONArray().apply {
+        // client_data: [["password", "matkhau"]].toString()
+        val sensitiveArr = JSONArray().apply {
             put(JSONArray().apply {
                 put("password")
                 put(senderPassword)
             })
         }
-        val clientDataObj = JSONObject().apply {
-            put("sensitive_string_value", sensitiveArray.toString())
+        val clientData = JSONObject().apply {
+            put("sensitive_string_value", sensitiveArr.toString())
         }
 
-        // nt_context: top-level (KHÔNG nằm trong params)
-        val ntContextObj = JSONObject().apply {
-            put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
-            put("using_white_navbar", true)
-            put("pixel_ratio", 2)
-            put("theme_params", JSONObject().apply {
-                put("design_system_name", "FDS")
-            })
-            put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
+        // params bước 1: nt_context + payload(URL string) + client_data
+        // KHÔNG CÓ KEY "path", payload = URL STRING
+        val step1Params = JSONObject().apply {
+            put("nt_context", buildNtContext())
+            put("payload", reAuthUrl)
+            put("client_data", clientData)
         }
 
-        // variables: params, nt_context, client_data đều là TOP-LEVEL
-        val variablesObj = JSONObject().apply {
-            put("params", paramsObj)                        // top-level
-            put("nt_context", ntContextObj)                 // top-level
-            put("client_data", clientDataObj)               // top-level
-            put("scale", "2")                               // top-level
-            put("use_native_entrypoint_for_stars_on_reels", false) // top-level
+        // variables bước 1
+        val step1Variables = JSONObject().apply {
+            put("params", step1Params)
+            put("nt_context", buildNtContext()) // nt_context lặp lại ở top-level
+            put("scale", "2")
+            put("use_native_entrypoint_for_stars_on_reels", false)
         }
 
         return executeGraphQLStep(
@@ -384,7 +386,7 @@ class QuanLyPageEngine(
             token = senderToken,
             docId = "30749539927629244093798192451",
             friendlyName = "NativeTemplateAsyncQuery",
-            variablesJson = variablesObj.toString(),
+            variablesJson = step1Variables.toString(),
             profileId = pageId
         )
     }
