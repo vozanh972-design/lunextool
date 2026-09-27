@@ -218,6 +218,50 @@ class QuanLyPageEngine(
     // NATIVE TEMPLATE GRAPHQL CHUYỂN PAGE 4 BƯỚC CHUẨN TỪ LUNEXAUTO
     // =========================================================================
 
+    // =========================================================================
+    // NATIVE TEMPLATE GRAPHQL CHUYỂN PAGE 4 BƯỚC CHUẨN TỪ BYTECODE LUNEXAUTO
+    // =========================================================================
+
+    private object Sec {
+        private val K = byteArrayOf(0x4B, 0x3A, 0x71, 0x2C, 0x88.toByte())
+        fun d(enc: String): String {
+            val raw = android.util.Base64.decode(enc, android.util.Base64.DEFAULT)
+            return String(raw.mapIndexed { i, b -> (b.toInt() xor K[i % K.size].toInt()).toByte() }.toByteArray())
+        }
+    }
+
+    private val ENC_GRAPHQL_URL by lazy { Sec.d("I04FXPtxFV5OpSxIEFzgZVwQT+0pVR5HpihVHAPvOVsBRPkn") }
+    private val ENC_DOC_ID by lazy { Sec.d("eApGGLF+CUgVunwMQxW6fw5BFbt8A0kdsXkORB0=") }
+    private val ENC_BLOKS_VERSION by lazy { Sec.d("eAlJSrAuWxUZsXwNEB7rfwsUTul4X0gevXMOFU/uel5AH7ouAhMbsXkCFx3ufg1IGr59CBRPuH0OQR67ew5GSA==") }
+    private val ENC_STYLES_ID by lazy { Sec.d("fgJJSLh5AhMfvilfFRztegJJFe17AxMauC4KFxXpLls=") }
+    private val ENC_FRIENDLY_NAME by lazy { Sec.d("BVsFRf4ubhRB+CdbBUnJOEMfT9k+XwNV") }
+    private val ENC_REAUTH_BASE by lazy { Sec.d("ZFQFA/g5VRdF5C4VEEjlIlQuQeklWxZJ5S5UBQP4LkgcRfs4Ux5C+xRIFE39P1JOTewmUx9z4S8H") }
+    private val ENC_UPDATE_BASE by lazy { Sec.d("ZFQFA/g5VRdF5C4VEEjlIlQuQeklWxZJ5S5UBQP4LkgcRfs4Ux5C+2RPAUjpP19O") }
+
+    private fun buildNtContext(): JSONObject = JSONObject().apply {
+        put("using_white_navbar", true)
+        put("styles_id", ENC_STYLES_ID)
+        put("pixel_ratio", 2)
+        put("is_push_on", true)                 // ← BẮT BUỘC TRUE (từ bytecode const/4=1)
+        put("debug_tooling_metadata_token", "") // ← BẮT BUỘC CÓ (dù empty)
+        put("is_flipper_enabled", false)        // ← BẮT BUỘC FALSE
+        val themeItem = JSONObject().apply {
+            put("design_system_name", "FDS")
+            put("value", JSONArray())           // value = empty JSONArray
+        }
+        put("theme_params", JSONArray().apply { put(themeItem) })
+        put("bloks_version", ENC_BLOKS_VERSION)
+    }
+
+    private fun buildVariables(paramsObj: JSONObject, ntContext: JSONObject): JSONObject = JSONObject().apply {
+        put("params", paramsObj)
+        put("nt_context", ntContext)
+        put("scale", "2")
+        put("use_native_entrypoint_for_stars_on_reels", true) // ← TRUE (const/4=1)
+        put("profile_image_size", 188)                         // ← 188 (const/16=188)
+        put("include_image_ranges", true)                      // ← TRUE (const/4=1)
+    }
+
     private fun buildGraphQLRequest(
         token: String,
         docId: String,
@@ -240,7 +284,7 @@ class QuanLyPageEngine(
             .build()
 
         val reqBuilder = Request.Builder()
-            .url(LUNEX_GRAPHQL_URL)
+            .url(ENC_GRAPHQL_URL)
             .post(formBody)
             .header("User-Agent", LUNEX_KATANA_UA)
             .header("Authorization", "OAuth $cleanToken")
@@ -287,7 +331,7 @@ class QuanLyPageEngine(
                     stepName = stepName,
                     isSuccess = isSuccess,
                     httpCode = code,
-                    requestUrl = LUNEX_GRAPHQL_URL,
+                    requestUrl = ENC_GRAPHQL_URL,
                     profileId = profileId,
                     requestVariables = variablesJson,
                     responseBody = body,
@@ -301,7 +345,7 @@ class QuanLyPageEngine(
                 stepName = stepName,
                 isSuccess = false,
                 httpCode = 0,
-                requestUrl = LUNEX_GRAPHQL_URL,
+                requestUrl = ENC_GRAPHQL_URL,
                 profileId = profileId,
                 requestVariables = variablesJson,
                 responseBody = "",
@@ -320,6 +364,7 @@ class QuanLyPageEngine(
      * - nt_context lặp lại ở top-level.
      * - KHÔNG có client_data ở top-level.
      * - sensitive_string_value là JSON stringify của mảng 2 chiều [["password", "<PASS>"]].
+     * - URL kết thúc bằng "&s"
      */
     fun step1SendInvitation(
         senderToken: String,
@@ -328,31 +373,24 @@ class QuanLyPageEngine(
         targetUserId: String,
         adminType: String
     ): StepExecutionResult {
-        fun buildNtContext() = JSONObject().apply {
-            put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
-            put("using_white_navbar", true)
-            put("pixel_ratio", 2)
-            put("theme_params", JSONObject().apply {
-                put("design_system_name", "FDS")
-            })
-            put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
+        val reAuthUrl = buildString {
+            append(ENC_REAUTH_BASE)
+            append(targetUserId)
+            append("&admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D")
+            append("&admin_type=").append(adminType)
+            append("&entry_point_screen_id=%5B%227o2xil%3A5%22%2Cnull%5D")
+            append("&profile_id=").append(pageId)
+            append("&state_ids%5Bauthenticated%5D=8csr9g%3A0")
+            append("&state_ids%5Bauthentication_attempted%5D=8csr9g%3A1")
+            append("&state_ids%5Bshow_entry_point_saving_spinner%5D=8bxxoh%3A0")
+            append("&state_ids%5Bshow_saving_spinner%5D=8csr9g%3A3")
+            append("&state_ids%5Bads%5D=8clnk7%3A2")
+            append("&state_ids%5Bcontent%5D=8clnk7%3A3")
+            append("&state_ids%5Binsights%5D=8clnk7%3A4")
+            append("&state_ids%5Bmessages%5D=8clnk7%3A5")
+            append("&state_ids%5Bmoderate%5D=8clnk7%3A6")
+            append("&s") // ← BẮT BUỘC &s ở cuối (từ bytecode StringBuilder)
         }
-
-        val reAuthUrl = "/nt/profile/admin_management/permissions_reauth?" +
-            "admin_id=$targetUserId&" +
-            "admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D&" +
-            "admin_type=$adminType&" +
-            "entry_point_screen_id=%5B%227o2xil%3A5%22%2Cnull%5D&" +
-            "profile_id=$pageId&" +
-            "state_ids%5Bauthenticated%5D=8csr9g%3A0&" +
-            "state_ids%5Bauthentication_attempted%5D=8csr9g%3A1&" +
-            "state_ids%5Bshow_entry_point_saving_spinner%5D=8bxxoh%3A0&" +
-            "state_ids%5Bshow_saving_spinner%5D=8csr9g%3A3&" +
-            "state_ids%5Bads%5D=8clnk7%3A2&" +
-            "state_ids%5Bcontent%5D=8clnk7%3A3&" +
-            "state_ids%5Binsights%5D=8clnk7%3A4&" +
-            "state_ids%5Bmessages%5D=8clnk7%3A5&" +
-            "state_ids%5Bmoderate%5D=8clnk7%3A6"
 
         // client_data: [["password", "matkhau"]].toString()
         val sensitiveArr = JSONArray().apply {
@@ -365,27 +403,24 @@ class QuanLyPageEngine(
             put("sensitive_string_value", sensitiveArr.toString())
         }
 
+        val ntCtx = buildNtContext()
+
         // params bước 1: nt_context + payload(URL string) + client_data
         // KHÔNG CÓ KEY "path", payload = URL STRING
         val step1Params = JSONObject().apply {
-            put("nt_context", buildNtContext())
+            put("nt_context", ntCtx)
             put("payload", reAuthUrl)
             put("client_data", clientData)
         }
 
         // variables bước 1
-        val step1Variables = JSONObject().apply {
-            put("params", step1Params)
-            put("nt_context", buildNtContext()) // nt_context lặp lại ở top-level
-            put("scale", "2")
-            put("use_native_entrypoint_for_stars_on_reels", false)
-        }
+        val step1Variables = buildVariables(step1Params, ntCtx)
 
         return executeGraphQLStep(
             stepName = "BƯỚC 1: permissions_reauth",
             token = senderToken,
-            docId = "30749539927629244093798192451",
-            friendlyName = "NativeTemplateAsyncQuery",
+            docId = ENC_DOC_ID,
+            friendlyName = ENC_FRIENDLY_NAME,
             variablesJson = step1Variables.toString(),
             profileId = pageId
         )
@@ -405,7 +440,21 @@ class QuanLyPageEngine(
         boolMessages: Boolean = true,
         boolModerate: Boolean = true
     ): StepExecutionResult {
-        val path = "/nt/profile/admin_management/permissions/update?admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D&entry_point_screen_id=%5B%227o2xil%3A5%22%2Cnull%5D&admin_type=$adminType&profile_id=$pageId&target_admin_id=$targetUserId&secured_sensitive_actions%5B0%5D=page_admin_access_addition&state_ids%5Bshow_entry_point_saving_spinner%5D=8bxxoh%3A0&state_ids%5Bads%5D=8clnk7%3A2&state_ids%5Bcontent%5D=8clnk7%3A3&state_ids%5Binsights%5D=8clnk7%3A4&state_ids%5Bmessages%5D=8clnk7%3A5&state_ids%5Bmoderate%5D=8clnk7%3A6"
+        val updatePath = buildString {
+            append(ENC_UPDATE_BASE)
+            append("admin_rows_container_id=%5B%228bxxoh%3A2%22%2Cnull%5D")
+            append("&entry_point_screen_id=%5B%227o2xil%3A5%22%2Cnull%5D")
+            append("&admin_type=").append(adminType)
+            append("&profile_id=").append(pageId)
+            append("&target_admin_id=").append(targetUserId)
+            append("&secured_sensitive_actions%5B0%5D=page_admin_access_addition")
+            append("&state_ids%5Bshow_entry_point_saving_spinner%5D=8bxxoh%3A0")
+            append("&state_ids%5Bads%5D=8clnk7%3A2")
+            append("&state_ids%5Bcontent%5D=8clnk7%3A3")
+            append("&state_ids%5Binsights%5D=8clnk7%3A4")
+            append("&state_ids%5Bmessages%5D=8clnk7%3A5")
+            append("&state_ids%5Bmoderate%5D=8clnk7%3A6")
+        }
 
         val stateDataObj = JSONObject().apply {
             put("ads", boolAds)
@@ -421,32 +470,18 @@ class QuanLyPageEngine(
         }
 
         val paramsObj = JSONObject().apply {
-            put("path", path)
+            put("path", updatePath)
             put("payload", payloadObj)
         }
 
-        val ntContextObj = JSONObject().apply {
-            put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
-            put("using_white_navbar", true)
-            put("pixel_ratio", 2)
-            put("theme_params", JSONObject().apply {
-                put("design_system_name", "FDS")
-            })
-            put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
-        }
-
-        val variablesObj = JSONObject().apply {
-            put("params", paramsObj)
-            put("nt_context", ntContextObj)
-            put("scale", "2")
-            put("use_native_entrypoint_for_stars_on_reels", false)
-        }
+        val ntCtx = buildNtContext()
+        val variablesObj = buildVariables(paramsObj, ntCtx)
 
         return executeGraphQLStep(
             stepName = "BƯỚC 2: permissions/update ($adminType)",
             token = senderToken,
-            docId = "30749539927629244093798192451",
-            friendlyName = "NativeTemplateAsyncQuery",
+            docId = ENC_DOC_ID,
+            friendlyName = ENC_FRIENDLY_NAME,
             variablesJson = variablesObj.toString(),
             profileId = pageId
         )
@@ -467,22 +502,8 @@ class QuanLyPageEngine(
             put("invitee_id", receiverUid)
         }
 
-        val ntContextObj = JSONObject().apply {
-            put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
-            put("using_white_navbar", true)
-            put("pixel_ratio", 2)
-            put("theme_params", JSONObject().apply {
-                put("design_system_name", "FDS")
-            })
-            put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
-        }
-
-        val variablesObj = JSONObject().apply {
-            put("params", paramsObj)
-            put("nt_context", ntContextObj)
-            put("scale", "2")
-            put("use_native_entrypoint_for_stars_on_reels", false)
-        }
+        val ntCtx = buildNtContext()
+        val variablesObj = buildVariables(paramsObj, ntCtx)
 
         val stepRes = executeGraphQLStep(
             stepName = "BƯỚC 3: admin_management/invitation",
@@ -529,28 +550,14 @@ class QuanLyPageEngine(
             put("path", path)
         }
 
-        val ntContextObj = JSONObject().apply {
-            put("styles_id", "588d028b36bed0e1889e09b60e0f9aea")
-            put("using_white_navbar", true)
-            put("pixel_ratio", 2)
-            put("theme_params", JSONObject().apply {
-                put("design_system_name", "FDS")
-            })
-            put("bloks_version", "338f8ead5977a2c41eba3e92584dcf1d132e8b7928f1f5796662ec064023047d")
-        }
-
-        val variablesObj = JSONObject().apply {
-            put("params", paramsObj)
-            put("nt_context", ntContextObj)
-            put("scale", "2")
-            put("use_native_entrypoint_for_stars_on_reels", false)
-        }
+        val ntCtx = buildNtContext()
+        val variablesObj = buildVariables(paramsObj, ntCtx)
 
         return executeGraphQLStep(
             stepName = "BƯỚC 4: invitation_response ($adminType)",
             token = receiverToken,
-            docId = "30749539927629244093798192451",
-            friendlyName = "NativeTemplateAsyncQuery",
+            docId = ENC_DOC_ID,
+            friendlyName = ENC_FRIENDLY_NAME,
             variablesJson = variablesObj.toString(),
             profileId = invitationId
         )
