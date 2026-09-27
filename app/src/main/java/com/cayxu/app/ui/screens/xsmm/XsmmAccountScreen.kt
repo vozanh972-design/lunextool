@@ -2098,6 +2098,28 @@ fun XsmmAccountScreen(navController: NavController) {
                             val igAcc = remember(cleanIg, instagramAccounts, avatarVersion) {
                                 com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanIg)
                             }
+                            val cleanUname = remember(cleanIg, igAcc) {
+                                com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(
+                                    (igAcc?.username?.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
+                                        ?: igAcc?.userId?.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
+                                        ?: cleanIg.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
+                                        ?: igAcc?.fullName?.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
+                                        ?: igAcc?.username
+                                        ?: cleanIg)
+                                ).trim().removePrefix("@")
+                            }
+                            val lookupKey = cleanUname.lowercase()
+                            val rawDisplayName = remember(cleanIg, igAcc, cleanUname) {
+                                igAcc?.fullName?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
+                                    ?: igAcc?.username?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
+                                    ?: cleanUname
+                            }
+                            val displayName = remember(rawDisplayName) {
+                                com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(rawDisplayName)
+                            }
+                            val isRunningThis = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(lookupKey)
+                                || com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanUname)
+                                || com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanIg)
                             val avatarModel = remember(igAcc?.avatar, avatarVersion) {
                                 val av = igAcc?.avatar?.trim().orEmpty()
                                 if (av.isBlank() || !av.startsWith("http")) null
@@ -2230,19 +2252,6 @@ fun XsmmAccountScreen(navController: NavController) {
                                             modifier = Modifier.weight(1f),
                                             verticalArrangement = Arrangement.spacedBy(3.dp)
                                         ) {
-                                            val cleanUname = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(
-                                                (igAcc?.username?.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
-                                                    ?: igAcc?.userId?.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
-                                                    ?: cleanIg.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
-                                                    ?: igAcc?.fullName?.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
-                                                    ?: igAcc?.username
-                                                    ?: cleanIg)
-                                            ).trim().removePrefix("@")
-                                            val lookupKey = cleanUname.lowercase()
-                                            val rawDisplayName = igAcc?.fullName?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
-                                                ?: igAcc?.username?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
-                                                ?: cleanUname
-                                            val displayName = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(rawDisplayName)
                                             val isLive = igAcc?.isLive ?: true
                                             val isAddingThis = cleanUname in addingIgUsernames || lookupKey in addingIgUsernames || cleanIg in addingIgUsernames
 
@@ -2402,9 +2411,6 @@ fun XsmmAccountScreen(navController: NavController) {
                                         Spacer(Modifier.width(8.dp))
 
                                         // Nút Reload (Làm mới) 32dp
-                                        val isRunningThis = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(lookupKey)
-                                            || com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanUname)
-                                            || com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanIg)
                                         IconButton(
                                             onClick = {
                                                 scope.launch(Dispatchers.IO) {
