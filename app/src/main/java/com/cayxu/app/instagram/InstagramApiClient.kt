@@ -490,8 +490,8 @@ class InstagramApiClient(
                 fbDtsg = session.fbDtsg.takeIf { it.isNotBlank() },
                 lsd = session.lsd.takeIf { it.isNotBlank() }
             )
-            val ok = engine.follow(igAcc, targetId, profileUrl)
-            return if (ok) IgActionResult(true, "Theo dõi thành công", "ok") else IgActionResult(false, "Lỗi gửi Follow", "")
+            val followRes = engine.follow(igAcc, targetId, profileUrl)
+            return if (followRes.isSuccess) IgActionResult(true, "Theo dõi thành công", "ok") else IgActionResult(false, followRes.errorMessage ?: "Lỗi gửi Follow", "")
         }
 
         private fun executeTym(

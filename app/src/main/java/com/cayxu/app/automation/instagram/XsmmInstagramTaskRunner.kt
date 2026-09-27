@@ -5,6 +5,7 @@ import com.cayxu.app.data.local.InstagramAccount
 import com.cayxu.app.data.local.InstagramAccountsStore
 import com.cayxu.app.data.local.XsmmAccountStore
 import com.cayxu.app.data.local.XsmmRunConfigStore
+import com.cayxu.app.instagram.IgFollowResponse
 import com.cayxu.app.instagram.InstagramApiClient
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge
 import com.cayxu.app.ui.screens.xsmm.XsmmSession
@@ -30,7 +31,8 @@ data class IgXsmmAccount(
     val cookie: String,
     val proxy: String? = null,
     val fbDtsg: String? = null,
-    val lsd: String? = null
+    val lsd: String? = null,
+    var lastErrorMessage: String? = null
 )
 
 /**
@@ -149,6 +151,13 @@ class XsmmInstagramTaskRunner(
 
             fun reportError(user: String, detail: String) {
                 onErrorDetail?.invoke(user, detail)
+                if (cleanUsername.isNotBlank() && cleanUsername != user) {
+                    onErrorDetail?.invoke(cleanUsername, detail)
+                }
+                val rawUser = account.username.trim().lowercase()
+                if (rawUser.isNotBlank() && rawUser != user && rawUser != cleanUsername) {
+                    onErrorDetail?.invoke(rawUser, detail)
+                }
             }
 
             // 1. Kiểm tra cookie và trích xuất UID
@@ -253,11 +262,20 @@ class XsmmInstagramTaskRunner(
                     val commentText = task.optString("comment").ifBlank { "Tuyệt vời!" }
                     val mediaOrTargetId = targetId.ifBlank { idOrLink }
 
+                    var detailedErrorMsg: String? = null
                     val success = when (randType) {
                         "instagram_follow" -> {
                             val userToFollow = targetUrl.trim().trimEnd('/').substringAfterLast("/").ifBlank { idOrLink }
                             notify("• Đang Follow @$userToFollow (ID: $mediaOrTargetId)")
-                            runner.doFollow(mediaOrTargetId, userToFollow)
+                            val followResult = runner.doFollow(mediaOrTargetId, userToFollow)
+                            if (!followResult.isSuccess) {
+                                val bodyText = followResult.rawBody.ifBlank { followResult.errorMessage ?: "Không có dữ liệu phản hồi" }
+                                val bodyPreview = if (bodyText.length > 500) bodyText.take(500) else bodyText
+                                val detailedError = "Instagram trả về [HTTP ${followResult.httpCode}]:\n$bodyPreview"
+                                igAccount.lastErrorMessage = detailedError
+                                detailedErrorMsg = detailedError
+                            }
+                            followResult.isSuccess
                         }
                         "instagram_like" -> {
                             notify("• Đang Tym bài viết (ID: $mediaOrTargetId)")
@@ -304,7 +322,8 @@ class XsmmInstagramTaskRunner(
                         totalErrors++
                         consecutiveErrors++
                         notify("• Lỗi làm $readableName (ID: $mediaOrTargetId)")
-                        reportError(cleanUsername, "$readableName lỗi: $mediaOrTargetId")
+                        val err = detailedErrorMsg ?: igAccount.lastErrorMessage ?: "$readableName lỗi: $mediaOrTargetId"
+                        reportError(cleanUsername, err)
 
                         if (consecutiveErrors >= maxErrors) {
                             notify("Lỗi liên tiếp $consecutiveErrors lần -> Đổi nick")
@@ -427,7 +446,9 @@ class XsmmInstagramTaskRunner(
     }
 
     // ── 3. THỰC HIỆN TƯƠNG TÁC INSTAGRAM TRỰC TIẾP ──────────────────
-    fun doFollow(targetUid: String, targetUsername: String = ""): Boolean {
+    fun follow(targetUid: String, targetUsername: String = ""): IgFollowResponse = doFollow(targetUid, targetUsername)
+
+    fun doFollow(targetUid: String, targetUsername: String = ""): IgFollowResponse {
         var uid = targetUid.trim()
         if ((!uid.all { it.isDigit() } || uid.isBlank()) && targetUsername.isNotBlank()) {
             val resolved = InstagramApiClient.resolveTargetUserId(targetUsername, account.proxy)
@@ -500,8 +521,30 @@ class XsmmInstagramTaskRunner(
             .headers(headerBuilder.build())
             .post(formBuilder.build())
             .build()
-        val resStr = execute(req) ?: return false
-        return parseMethodU(resStr)
+
+        return try {
+            val response = client.newCall(req).execute()
+            val code = response.code
+            val bodyStr = response.use { it.body?.string().orEmpty() }
+            val isOk = parseMethodU(bodyStr)
+            if (isOk) {
+                IgFollowResponse(isSuccess = true, httpCode = code, rawBody = bodyStr)
+            } else {
+                IgFollowResponse(
+                    isSuccess = false,
+                    httpCode = code,
+                    rawBody = bodyStr,
+                    errorMessage = "HTTP $code: $bodyStr"
+                )
+            }
+        } catch (e: Exception) {
+            IgFollowResponse(
+                isSuccess = false,
+                httpCode = -1,
+                rawBody = e.message ?: "Exception",
+                errorMessage = "Lỗi kết nối mạng: ${e.message}"
+            )
+        }
     }
 
     private fun parseMethodU(response: String): Boolean {

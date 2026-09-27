@@ -3406,8 +3406,9 @@ private fun ErrorDetailBottomSheet(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(Modifier.padding(14.dp)) {
+                    val displayError = if (errorMessage.length > 500) errorMessage.take(500) + "..." else errorMessage
                     Text(
-                        errorMessage,
+                        displayError,
                         color = Color(0xFF991B1B),
                         fontSize = 13.sp,
                         lineHeight = 19.sp

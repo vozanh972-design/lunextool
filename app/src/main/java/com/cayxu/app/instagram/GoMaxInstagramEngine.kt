@@ -22,6 +22,13 @@ data class IgAccount(
     var isLive: Boolean = true
 )
 
+data class IgFollowResponse(
+    val isSuccess: Boolean,
+    val httpCode: Int,
+    val rawBody: String,
+    val errorMessage: String? = null
+)
+
 class GoMaxInstagramEngine(private val client: OkHttpClient) {
     companion object {
         private const val GRAPHQL_URL = "https://www.instagram.com/graphql/query"
@@ -178,7 +185,19 @@ class GoMaxInstagramEngine(private val client: OkHttpClient) {
     }
 
     // ── 2. FOLLOW ─────────────────────────────────────────────────────
-    fun follow(acc: IgAccount, targetUid: String, targetUsername: String): Boolean {
+    fun follow(account: com.cayxu.app.automation.instagram.IgXsmmAccount, targetUid: String, targetUsername: String = ""): IgFollowResponse {
+        val igAcc = IgAccount(
+            userId = account.userId,
+            username = account.username,
+            cookie = account.cookie,
+            proxy = account.proxy,
+            fbDtsg = account.fbDtsg,
+            lsd = account.lsd
+        )
+        return follow(igAcc, targetUid, targetUsername)
+    }
+
+    fun follow(acc: IgAccount, targetUid: String, targetUsername: String = ""): IgFollowResponse {
         var uid = targetUid.trim()
         if ((!uid.all { it.isDigit() } || uid.isBlank()) && targetUsername.isNotBlank()) {
             val resolved = InstagramApiClient.resolveTargetUserId(targetUsername, acc.proxy)
@@ -251,8 +270,30 @@ class GoMaxInstagramEngine(private val client: OkHttpClient) {
             .headers(headerBuilder.build())
             .post(formBuilder.build())
             .build()
-        val resStr = execute(req) ?: return false
-        return parseMethodU(resStr)
+
+        return try {
+            val response = client.newCall(req).execute()
+            val code = response.code
+            val bodyStr = response.use { it.body?.string().orEmpty() }
+            val isOk = parseMethodU(bodyStr)
+            if (isOk) {
+                IgFollowResponse(isSuccess = true, httpCode = code, rawBody = bodyStr)
+            } else {
+                IgFollowResponse(
+                    isSuccess = false,
+                    httpCode = code,
+                    rawBody = bodyStr,
+                    errorMessage = "HTTP $code: $bodyStr"
+                )
+            }
+        } catch (e: Exception) {
+            IgFollowResponse(
+                isSuccess = false,
+                httpCode = -1,
+                rawBody = e.message ?: "Exception",
+                errorMessage = "Lỗi kết nối mạng: ${e.message}"
+            )
+        }
     }
 
     private fun parseMethodU(response: String): Boolean {

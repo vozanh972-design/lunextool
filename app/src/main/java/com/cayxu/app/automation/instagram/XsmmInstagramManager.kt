@@ -81,9 +81,11 @@ object XsmmInstagramManager {
                             errorCountMap[clean] = errors
                         }
                     },
-                    onErrorDetail = { _, detail ->
+                    onErrorDetail = { user, detail ->
                         scope.launch(Dispatchers.Main) {
                             lastErrorDetail[clean] = detail
+                            val u = user.trim().lowercase()
+                            if (u.isNotBlank()) lastErrorDetail[u] = detail
                         }
                     }
                 )
@@ -171,9 +173,11 @@ object XsmmInstagramManager {
                                         errorCountMap[username] = errors
                                     }
                                 },
-                                onErrorDetail = { _, detail ->
+                                onErrorDetail = { user, detail ->
                                     scope.launch(Dispatchers.Main) {
                                         lastErrorDetail[username] = detail
+                                        val u = user.trim().lowercase()
+                                        if (u.isNotBlank()) lastErrorDetail[u] = detail
                                     }
                                 }
                             )
