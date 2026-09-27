@@ -147,9 +147,9 @@ object XsmmInstagramManager {
                         for (username in cleanList) {
                             if (!isActive) break
                             val currentAcc = InstagramAccountsStore.getAccount(context, username)
-                            if (currentAcc == null || !currentAcc.isLive || currentAcc.cookie.isBlank()) {
+                            if (currentAcc == null || currentAcc.cookie.isBlank()) {
                                 scope.launch(Dispatchers.Main) {
-                                    statusMap[username] = "Cookie Die / Bỏ qua"
+                                    statusMap[username] = "Chưa lưu cookie / Bỏ qua"
                                 }
                                 continue
                             }

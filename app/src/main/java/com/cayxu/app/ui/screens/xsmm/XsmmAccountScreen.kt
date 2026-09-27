@@ -241,32 +241,29 @@ fun XsmmAccountScreen(navController: NavController) {
         if (selectedPlatform == "instagram") {
             val needCheck = instagramAccounts.mapNotNull { username ->
                 val acc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, username)
-                if (acc != null && (acc.username.startsWith("IG_") || !acc.isLive || acc.avatar.isBlank() || !acc.avatar.startsWith("http") || acc.fullName.isBlank()) && acc.cookie.isNotBlank()) acc else null
+                if (acc != null && (!acc.isLive || acc.fbDtsg.isNullOrBlank()) && acc.cookie.isNotBlank()) acc else null
             }
             if (needCheck.isNotEmpty()) {
                 scope.launch(Dispatchers.IO) {
                     var hasUpdates = false
                     needCheck.forEach { acc ->
                         try {
-                            val client = com.cayxu.app.instagram.InstagramApiClient(
+                            val igAcc = com.cayxu.app.automation.instagram.IgXsmmAccount(
+                                userId = acc.userId,
+                                username = acc.username,
                                 cookie = acc.cookie,
-                                proxyConfig = com.cayxu.app.instagram.InstagramApiClient.parseProxy(acc.proxy)
+                                proxy = acc.proxy.takeIf { it.isNotBlank() }
                             )
-                            val info = client.fetchAccountDetails(acc.username)
-                            val freshPic = info.profilePicUrl?.takeIf { it.startsWith("http") }
-                            if (freshPic != null || info.fullName.isNotBlank() || (info.username.isNotBlank() && acc.username.startsWith("IG_")) || info.isLive != acc.isLive) {
-                                val updated = acc.copy(
-                                    username = if (info.username.isNotBlank() && !info.username.startsWith("IG_")) info.username else acc.username,
-                                    fullName = info.fullName.ifBlank { acc.fullName },
-                                    avatar = freshPic ?: acc.avatar,
-                                    followersCount = if (info.followersCount > 0) info.followersCount else acc.followersCount,
-                                    followingCount = if (info.followingCount > 0) info.followingCount else acc.followingCount,
-                                    postsCount = if (info.postsCount > 0) info.postsCount else acc.postsCount,
-                                    isLive = info.isLive
-                                )
-                                com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updated)
-                                hasUpdates = true
-                            }
+                            val runner = com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner("", igAcc)
+                            val (isLive, tokens) = runner.syncSessionTokens()
+                            val updated = acc.copy(
+                                isLive = isLive,
+                                fbDtsg = tokens["fb_dtsg"] ?: acc.fbDtsg,
+                                lsd = tokens["lsd"] ?: acc.lsd,
+                                userId = tokens["userId"] ?: acc.userId
+                            )
+                            com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updated)
+                            hasUpdates = true
                         } catch (_: Exception) {}
                     }
                     if (hasUpdates) {
@@ -2388,57 +2385,34 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     val acc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanIg)
                                                     if (acc == null || acc.cookie.isBlank()) {
                                                         withContext(Dispatchers.Main) {
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Chưa lưu cookie"
-                                                            android.widget.Toast.makeText(context, "Không tìm thấy cookie cho $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
+                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "• Chưa lưu cookie"
                                                         }
                                                         return@launch
                                                     }
-                                                    try {
-                                                        withContext(Dispatchers.Main) {
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Đang lấy thông tin..."
-                                                        }
-                                                        val proxyConfig = com.cayxu.app.instagram.InstagramApiClient.parseProxy(acc.proxy)
-                                                        val client = com.cayxu.app.instagram.InstagramApiClient(
-                                                            cookie = acc.cookie,
-                                                            proxyConfig = proxyConfig
-                                                        )
-                                                        val info = client.fetchAccountDetails(acc.username)
-                                                        val finalUsername = info.username.ifBlank { acc.username }
-                                                        val updatedAcc = acc.copy(
-                                                            username = finalUsername,
-                                                            userId = info.userId.ifBlank { acc.userId },
-                                                            fullName = info.fullName.ifBlank { acc.fullName },
-                                                            avatar = info.profilePicUrl?.takeIf { it.startsWith("http") } ?: acc.avatar,
-                                                            fbDtsg = info.fbDtsg ?: acc.fbDtsg,
-                                                            lsd = info.lsd ?: acc.lsd,
-                                                            biography = info.biography.ifBlank { acc.biography },
-                                                            followersCount = if (info.followersCount > 0) info.followersCount else acc.followersCount,
-                                                            followingCount = if (info.followingCount > 0) info.followingCount else acc.followingCount,
-                                                            postsCount = if (info.postsCount > 0) info.postsCount else acc.postsCount,
-                                                            isLive = info.isLive
-                                                        )
-                                                        com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updatedAcc)
-                                                        if (cleanIg != finalUsername) {
-                                                            com.cayxu.app.data.local.LinkedAccountsStore.removeAccount(context, "Instagram", cleanIg)
-                                                            com.cayxu.app.data.local.LinkedAccountsStore.addAccount(context, "Instagram", finalUsername)
-                                                        }
-                                                        withContext(Dispatchers.Main) {
-                                                            avatarVersion = System.currentTimeMillis()
-                                                            val nameDisplay = if (updatedAcc.fullName.isNotBlank()) updatedAcc.fullName else updatedAcc.username
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[finalUsername] = if (info.isLive) "Sẵn sàng" else "Lỗi: Checkpoint / DIE"
-                                                            instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
-                                                            val toastMsg = if (info.isLive) "Đã cập nhật: $nameDisplay" else "Cookie DIE hoặc bị Checkpoint: $nameDisplay"
-                                                            android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    } catch (e: Exception) {
-                                                        val deadAcc = acc.copy(isLive = false)
-                                                        com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, deadAcc)
-                                                        withContext(Dispatchers.Main) {
-                                                            avatarVersion = System.currentTimeMillis()
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "Lỗi: Cookie DIE / Checkpoint"
-                                                            instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
-                                                            android.widget.Toast.makeText(context, "Lỗi kiểm tra $cleanIg: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                                                        }
+                                                    
+                                                    withContext(Dispatchers.Main) {
+                                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = "• Đang kiểm tra cookie..."
+                                                    }
+                                                    val igAcc = com.cayxu.app.automation.instagram.IgXsmmAccount(
+                                                        userId = acc.userId,
+                                                        username = acc.username,
+                                                        cookie = acc.cookie,
+                                                        proxy = acc.proxy.takeIf { it.isNotBlank() }
+                                                    )
+                                                    val runner = com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner("", igAcc)
+                                                    val (isLive, tokens) = runner.syncSessionTokens()
+                                                    val updatedAcc = acc.copy(
+                                                        isLive = isLive,
+                                                        fbDtsg = tokens["fb_dtsg"] ?: acc.fbDtsg,
+                                                        lsd = tokens["lsd"] ?: acc.lsd,
+                                                        userId = tokens["userId"] ?: acc.userId
+                                                    )
+                                                    com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updatedAcc)
+                                                    withContext(Dispatchers.Main) {
+                                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[cleanIg] = 
+                                                            if (isLive) "• Sẵn sàng" else "• Lỗi: Cookie DIE / Checkpoint"
+                                                        val msg = if (isLive) "Đã cập nhật: ${acc.username}" else "Cookie DIE / Checkpoint: ${acc.username}"
+                                                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                                                     }
                                                 }
                                             },

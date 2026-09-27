@@ -1,12 +1,9 @@
 package com.cayxu.app.automation.instagram
 
 import android.content.Context
-import com.cayxu.app.data.local.InstagramAccount
 import com.cayxu.app.data.local.InstagramAccountsStore
 import com.cayxu.app.data.local.XsmmAccountStore
 import com.cayxu.app.data.local.XsmmRunConfigStore
-import com.cayxu.app.instagram.IgFollowResponse
-import com.cayxu.app.instagram.InstagramApiClient
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge
 import com.cayxu.app.ui.screens.xsmm.XsmmSession
 import kotlinx.coroutines.Dispatchers
@@ -30,20 +27,11 @@ data class IgXsmmAccount(
     val username: String,
     val cookie: String,
     val proxy: String? = null,
-    val fbDtsg: String? = null,
-    val lsd: String? = null,
+    var fbDtsg: String? = null,
+    var lsd: String? = null,
     var lastErrorMessage: String? = null
 )
 
-/**
- * Runner chạy 100% API chuẩn XSMM.NET (https://xsmm.net/api/taskapi/) cho Instagram:
- * - Bỏ hẳn mọi thứ liên quan đến gateway GoLike / GoMax server.
- * - Tự động đồng bộ tài khoản qua POST /api/taskapi/accounts2.
- * - Lấy nhiệm vụ trực tiếp qua GET /api/taskapi/tasks2?type={type}&uid={ds_user_id}.
- * - Tương tác thẳng với Instagram qua HTTP client nội bộ có proxy riêng.
- * - Báo cáo nhận xu trực tiếp qua POST /api/taskapi/tasks2/complete.
- * - Cập nhật số dư xu qua GET /api/taskapi/user.
- */
 class XsmmInstagramTaskRunner(
     private val xsmmToken: String,
     private val account: IgXsmmAccount
@@ -79,15 +67,60 @@ class XsmmInstagramTaskRunner(
             return if (m.find()) m.group(1) else null
         }
 
-        private fun parseCookieMap(cookie: String): Map<String, String> {
+        fun extractTokensFromCookie(cookie: String): Map<String, String> {
             return cookie.split(";").mapNotNull {
                 val idx = it.indexOf("=")
                 if (idx > 0) it.substring(0, idx).trim() to it.substring(idx + 1).trim() else null
             }.toMap()
         }
 
-        fun extractUserId(cookie: String): String {
-            return parseCookieMap(cookie)["ds_user_id"] ?: ""
+        fun buildClient(proxyStr: String?): OkHttpClient {
+            val b = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(20, TimeUnit.SECONDS)
+                .writeTimeout(20, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
+            if (!proxyStr.isNullOrBlank()) {
+                val s = proxyStr.trim().removePrefix("http://").removePrefix("https://")
+                try {
+                    if (s.contains("@")) {
+                        val atParts = s.split("@", limit = 2)
+                        val auth = atParts[0].split(":", limit = 2)
+                        val hostPort = atParts[1].split(":", limit = 2)
+                        val host = hostPort[0].trim()
+                        val port = hostPort.getOrNull(1)?.trim()?.toIntOrNull() ?: 8080
+                        b.proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress(host, port)))
+                        if (auth.size >= 2) {
+                            val user = auth[0].trim()
+                            val pass = auth[1].trim()
+                            b.proxyAuthenticator { _, res ->
+                                if (res.request.header("Proxy-Authorization") != null) null
+                                else res.request.newBuilder()
+                                    .header("Proxy-Authorization", Credentials.basic(user, pass))
+                                    .build()
+                            }
+                        }
+                    } else {
+                        val p = s.split(":")
+                        if (p.size >= 2) {
+                            val host = p[0].trim()
+                            val port = p[1].trim().toIntOrNull() ?: 8080
+                            b.proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress(host, port)))
+                            if (p.size >= 4) {
+                                val user = p[2].trim()
+                                val pass = p[3].trim()
+                                b.proxyAuthenticator { _, res ->
+                                    if (res.request.header("Proxy-Authorization") != null) null
+                                    else res.request.newBuilder()
+                                        .header("Proxy-Authorization", Credentials.basic(user, pass))
+                                        .build()
+                                }
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            return b.build()
         }
 
         suspend fun run(
@@ -124,312 +157,241 @@ class XsmmInstagramTaskRunner(
             val cleanUsername = accountUsername.trim().removePrefix("@").lowercase()
             val token = XsmmAccountStore.getToken(context)
             if (token.isNullOrBlank()) {
-                val msg = "Chưa đăng nhập XSMM"
+                val msg = "Chưa cấu hình Token XSMM"
                 onStatusUpdate?.invoke(msg)
                 onProgressUpdate?.invoke(msg, 0, 1)
                 return RunResult(0, 1, 0, msg)
             }
-
-            val account = InstagramAccountsStore.getAccount(context, cleanUsername)
-            if (account == null || account.cookie.isBlank()) {
-                val msg = "[$cleanUsername] Không tìm thấy cookie tài khoản"
+            val localAcc = InstagramAccountsStore.getAccount(context, cleanUsername)
+            if (localAcc == null || localAcc.cookie.isBlank()) {
+                val msg = "[$cleanUsername] Không tìm thấy cookie"
                 onStatusUpdate?.invoke(msg)
                 onProgressUpdate?.invoke(msg, 0, 1)
                 return RunResult(0, 1, 0, msg)
             }
-
-            val config = XsmmRunConfigStore.get(context, "instagram")
-            var totalCompleted = 0
-            var totalErrors = 0
-            var totalEarnedPoints = 0
-
-            fun notify(status: String) {
-                onStatusUpdate?.invoke(status)
-                onProgressUpdate?.invoke(status, totalCompleted, totalErrors)
-                XsmmJobStatusBridge.update("[$cleanUsername] $status")
+            fun notify(st: String, sc: Int = 0, err: Int = 0) {
+                onStatusUpdate?.invoke(st)
+                onProgressUpdate?.invoke(st, sc, err)
+                XsmmJobStatusBridge.update("[$cleanUsername] $st")
             }
-
-            fun reportError(user: String, detail: String) {
-                onErrorDetail?.invoke(user, detail)
-                if (cleanUsername.isNotBlank() && cleanUsername != user) {
-                    onErrorDetail?.invoke(cleanUsername, detail)
-                }
-                val rawUser = account.username.trim().lowercase()
-                if (rawUser.isNotBlank() && rawUser != user && rawUser != cleanUsername) {
-                    onErrorDetail?.invoke(rawUser, detail)
-                }
-            }
-
-            // 1. Kiểm tra cookie và trích xuất UID
-            val userId = account.userId.ifBlank { extractUserId(account.cookie) }
+            val cookieTokens = extractTokensFromCookie(localAcc.cookie)
+            val dsUserId = localAcc.userId.ifBlank { cookieTokens["ds_user_id"] ?: "" }
             val igAccount = IgXsmmAccount(
-                userId = userId,
-                username = account.username.ifBlank { cleanUsername },
-                cookie = account.cookie,
-                proxy = account.proxy.takeIf { it.isNotBlank() },
-                fbDtsg = account.fbDtsg.takeIf { it.isNotBlank() },
-                lsd = account.lsd.takeIf { it.isNotBlank() }
+                userId = dsUserId,
+                username = localAcc.username.ifBlank { cleanUsername },
+                cookie = localAcc.cookie,
+                proxy = localAcc.proxy.takeIf { it.isNotBlank() },
+                fbDtsg = localAcc.fbDtsg.takeIf { !it.isNullOrBlank() },
+                lsd = localAcc.lsd.takeIf { !it.isNullOrBlank() }
             )
-
             val runner = XsmmInstagramTaskRunner(token, igAccount)
 
-            notify("Kiểm tra acc XSMM...")
-            val added = runner.ensureAccountAdded()
-            if (!added) {
-                notify("Thêm nick lên XSMM: Đang thử lại...")
-                delay(2000L)
+            // Bước 1: Đồng bộ token & session qua Web HTML
+            notify("Kiểm tra cookie & token...")
+            val (isLive, tokens) = runner.syncSessionTokens()
+            if (!isLive) {
+                val msg = "Cookie DIE hoặc bị Checkpoint"
+                notify(msg, 0, 1)
+                return RunResult(0, 1, 0, msg)
+            }
+            // Lưu lại token mới nếu có thay đổi
+            if (tokens.isNotEmpty()) {
+                val updated = localAcc.copy(
+                    isLive = true,
+                    fbDtsg = tokens["fb_dtsg"] ?: localAcc.fbDtsg,
+                    lsd = tokens["lsd"] ?: localAcc.lsd,
+                    userId = tokens["userId"] ?: localAcc.userId
+                )
+                InstagramAccountsStore.updateAccount(context, updated)
             }
 
-            // 2. Cấu hình loại nhiệm vụ
+            // Bước 2: Đảm bảo nick đã có trên XSMM.NET qua /api/taskapi/accounts2
+            notify("Đồng bộ liên kết XSMM...")
+            val isLinked = runner.ensureAccountLinked()
+            if (!isLinked) {
+                notify("Thêm nick XSMM: Thử lại...")
+                delay(2000L)
+            } else {
+                InstagramAccountsStore.setXsmmLinked(context, cleanUsername, true)
+            }
+
+            // Bước 3: Đọc cấu hình nhiệm vụ
+            val config = XsmmRunConfigStore.get(context, "instagram")
             val listnv = mutableListOf<String>()
-            val effectiveTypes = config.effectiveTaskTypes()
-            for (t in effectiveTypes) {
+            for (t in config.effectiveTaskTypes()) {
                 when (t.lowercase()) {
-                    "instagram_like" -> listnv.add("instagram_like")
                     "instagram_follow" -> listnv.add("instagram_follow")
+                    "instagram_like" -> listnv.add("instagram_like")
                     "instagram_comment" -> listnv.add("instagram_comment")
-                    "instagram_likecmt" -> listnv.add("instagram_likecmt")
                 }
             }
             if (listnv.isEmpty()) {
-                listnv.add("instagram_like")
                 listnv.add("instagram_follow")
-                listnv.add("instagram_comment")
+                listnv.add("instagram_like")
             }
-
-            val doDuration = config.doTaskDurationSeconds.coerceAtLeast(10)
-            val fetchInterval = config.fetchTaskIntervalSeconds.coerceAtLeast(10)
-            val doi = if (config.taskCountTarget > 0) config.taskCountTarget else 99999
-            val maxStopAfterNoTask = config.stopAfterNoTaskCount.coerceAtLeast(10)
+            val doDuration = config.doTaskDurationSeconds.coerceAtLeast(8)
+            val targetJobs = if (config.taskCountTarget > 0) config.taskCountTarget else 99999
             val maxErrors = config.failJobCountToSwitchAccount.coerceAtLeast(5)
-
-            var maxJob = 0
-            var consecutiveNoTasks = 0
+            var completedCount = 0
+            var errorCount = 0
+            var totalPoints = 0
             var consecutiveErrors = 0
 
-            suspend fun updatePointsUi(pts: Long) {
-                if (pts > 0) {
-                    synchronized(XsmmAccountStore) {
-                        XsmmAccountStore.updatePoints(context, pts)
-                    }
-                    withContext(Dispatchers.Main) {
-                        XsmmSession.points.value = pts
-                    }
-                }
-            }
-
-            // 3. Vòng lặp nhận và làm nhiệm vụ 100% XSMM.NET
+            // Bước 4: Vòng lặp nhận job & làm việc
             while (coroutineContext.isActive) {
-                if (maxJob >= doi) {
-                    notify("Đủ $maxJob job -> Đổi nick")
+                if (completedCount >= targetJobs) {
+                    notify("Đủ $targetJobs job -> Dừng", completedCount, errorCount)
                     break
                 }
-
-                val randType = listnv.random()
-                val readableName = when (randType) {
-                    "instagram_like" -> "Tym"
-                    "instagram_follow" -> "Follow"
-                    "instagram_comment" -> "Comment"
-                    "instagram_likecmt" -> "Like Comment"
-                    else -> randType
-                }
-
-                val tasks = runner.getTasks(randType)
-
+                val jobType = listnv.random()
+                val tasks = runner.getTasks(jobType)
                 if (tasks.isEmpty()) {
-                    consecutiveNoTasks++
-                    notify("Hết job $readableName (${consecutiveNoTasks}/$maxStopAfterNoTask)")
-                    if (consecutiveNoTasks >= maxStopAfterNoTask) {
-                        notify("Hết job liên tục -> Dừng")
-                        break
-                    }
-                    for (x in fetchInterval downTo 1) {
-                        if (!coroutineContext.isActive) break
-                        notify("• Chờ ${x}s nhận nhiệm vụ tiếp...")
-                        delay(1000L)
-                    }
+                    notify("Hết job $jobType, chờ 10s...", completedCount, errorCount)
+                    delay(10000L)
                     continue
                 }
-
-                consecutiveNoTasks = 0
-
                 for (task in tasks) {
                     if (!coroutineContext.isActive) break
                     val taskId = task.optString("id")
                     val targetId = task.optString("target_id")
                     val targetUrl = task.optString("target_url")
                     val idOrLink = task.optString("idorlink")
-                    val commentText = task.optString("comment").ifBlank { "Tuyệt vời!" }
-                    val mediaOrTargetId = targetId.ifBlank { idOrLink }
-
-                    var detailedErrorMsg: String? = null
-                    val success = when (randType) {
+                    val commentText = task.optString("comment").ifBlank { "Great post!" }
+                    val finalTarget = targetId.ifBlank { idOrLink }
+                    val success = when (jobType) {
                         "instagram_follow" -> {
                             val userToFollow = targetUrl.trim().trimEnd('/').substringAfterLast("/").ifBlank { idOrLink }
-                            notify("• Đang Follow @$userToFollow (ID: $mediaOrTargetId)")
-                            val followResult = runner.doFollow(mediaOrTargetId, userToFollow)
-                            if (!followResult.isSuccess) {
-                                val bodyText = followResult.rawBody.ifBlank { followResult.errorMessage ?: "Không có dữ liệu phản hồi" }
-                                val bodyPreview = if (bodyText.length > 500) bodyText.take(500) else bodyText
-                                val detailedError = "Instagram trả về [HTTP ${followResult.httpCode}]:\n$bodyPreview"
-                                igAccount.lastErrorMessage = detailedError
-                                detailedErrorMsg = detailedError
+                            notify("• Follow @$userToFollow ($finalTarget)", completedCount, errorCount)
+                            val res = runner.doFollow(finalTarget, userToFollow)
+                            if (!res.isSuccess) {
+                                val bodyPreview = if (res.rawBody.length > 500) res.rawBody.take(500) else res.rawBody
+                                onErrorDetail?.invoke(cleanUsername, "Instagram Follow lỗi [HTTP ${res.httpCode}]:\n$bodyPreview")
                             }
-                            followResult.isSuccess
+                            res.isSuccess
                         }
                         "instagram_like" -> {
-                            notify("• Đang Tym bài viết (ID: $mediaOrTargetId)")
-                            runner.doLike(targetUrl.ifBlank { idOrLink }, mediaOrTargetId)
+                            notify("• Tym bài viết ($finalTarget)", completedCount, errorCount)
+                            runner.doLike(targetUrl.ifBlank { idOrLink }, finalTarget)
                         }
                         "instagram_comment" -> {
-                            val preview = if (commentText.length > 15) commentText.take(15) + "..." else commentText
-                            notify("• Đang Comment (ID: $mediaOrTargetId): \"$preview\"")
-                            runner.doComment(targetUrl.ifBlank { idOrLink }, mediaOrTargetId, commentText)
-                        }
-                        "instagram_likecmt" -> {
-                            notify("• Đang Tym bài viết (ID: $mediaOrTargetId)")
-                            runner.doLike(targetUrl.ifBlank { idOrLink }, mediaOrTargetId)
+                            notify("• Comment: \"${commentText.take(15)}...\"", completedCount, errorCount)
+                            runner.doComment(targetUrl.ifBlank { idOrLink }, finalTarget, commentText)
                         }
                         else -> false
                     }
-
-                    maxJob++
-
                     if (success) {
-                        val shortTaskId = if (taskId.length > 8) taskId.take(8) else taskId
-                        notify("• Đang xác nhận hoàn thành (Task: $shortTaskId)...")
-                        val compRes = runner.completeTask(randType, taskId)
-                        val points = compRes?.optInt("points") ?: compRes?.optJSONObject("data")?.optInt("points") ?: 35
-                        val totalPts = compRes?.optLong("total_points") ?: compRes?.optJSONObject("data")?.optLong("total_points") ?: 0L
-
-                        totalCompleted++
+                        notify("• Xác nhận nhận xu...", completedCount, errorCount)
+                        val comp = runner.completeTask(jobType, taskId)
+                        val pts = comp?.optInt("points") ?: 35
+                        completedCount++
+                        totalPoints += pts
                         consecutiveErrors = 0
-                        totalEarnedPoints += points
-
-                        if (totalPts > 0) {
-                            updatePointsUi(totalPts)
-                        } else {
-                            val cur = XsmmAccountStore.getPoints(context) + points
-                            updatePointsUi(cur)
+                        val userBal = runner.fetchUserPoints()
+                        if (userBal > 0) {
+                            XsmmAccountStore.updatePoints(context, userBal)
+                            withContext(Dispatchers.Main) {
+                                XsmmSession.points.value = userBal
+                            }
                         }
-
-                        for (x in doDuration downTo 1) {
+                        for (sec in doDuration downTo 1) {
                             if (!coroutineContext.isActive) break
-                            notify("• Thành công +$points xu | Chờ ${x}s...")
+                            notify("• Thành công +$pts xu | Chờ ${sec}s...", completedCount, errorCount)
                             delay(1000L)
                         }
                     } else {
-                        totalErrors++
+                        errorCount++
                         consecutiveErrors++
-                        notify("• Lỗi làm $readableName (ID: $mediaOrTargetId)")
-                        val err = detailedErrorMsg ?: igAccount.lastErrorMessage ?: "$readableName lỗi: $mediaOrTargetId"
-                        reportError(cleanUsername, err)
-
+                        notify("• Lỗi làm job $jobType ($finalTarget)", completedCount, errorCount)
                         if (consecutiveErrors >= maxErrors) {
-                            notify("Lỗi liên tiếp $consecutiveErrors lần -> Đổi nick")
-                            break
+                            notify("Lỗi liên tiếp $consecutiveErrors lần -> Dừng nick", completedCount, errorCount)
+                            return RunResult(completedCount, errorCount, totalPoints, "Lỗi liên tiếp")
                         }
-                        delay(3000L)
+                        delay(4000L)
                     }
-
-                    if (maxJob >= doi) break
+                    if (completedCount >= targetJobs) break
                 }
             }
-
-            // Đồng bộ lại số dư xu mới nhất từ server XSMM
-            val latestPoints = runner.fetchUserPoints()
-            if (latestPoints != null && latestPoints > 0) {
-                updatePointsUi(latestPoints)
-            }
-
-            val finalMsg = "Hoàn tất: $totalCompleted thành công, $totalErrors lỗi (+${totalEarnedPoints} xu)"
-            notify(finalMsg)
-            return RunResult(totalCompleted, totalErrors, totalEarnedPoints, finalMsg)
+            return RunResult(completedCount, errorCount, totalPoints, "Hoàn thành $completedCount job")
         }
     }
 
-    private fun buildClient(proxyStr: String?): OkHttpClient {
-        val b = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .writeTimeout(20, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true)
-        if (!proxyStr.isNullOrBlank()) {
-            var s = proxyStr.trim()
-            if (s.contains("://")) {
-                s = s.substringAfter("://")
-            }
-            try {
-                if (s.contains("@")) {
-                    val atParts = s.split("@", limit = 2)
-                    val auth = atParts[0].split(":", limit = 2)
-                    val hostPort = atParts[1].split(":", limit = 2)
-                    val host = hostPort[0].trim()
-                    val port = hostPort.getOrNull(1)?.trim()?.toIntOrNull() ?: 8080
-                    b.proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress(host, port)))
-                    if (auth.size >= 2) {
-                        val user = auth[0].trim()
-                        val pass = auth[1].trim()
-                        b.proxyAuthenticator { _, res ->
-                            if (res.request.header("Proxy-Authorization") != null) null
-                            else res.request.newBuilder()
-                                .header("Proxy-Authorization", Credentials.basic(user, pass))
-                                .build()
-                        }
-                    }
-                } else {
-                    val p = s.split(":")
-                    if (p.size >= 2) {
-                        val host = p[0].trim()
-                        val port = p[1].trim().toIntOrNull() ?: 8080
-                        b.proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress(host, port)))
-                        if (p.size >= 4) {
-                            val user = p[2].trim()
-                            val pass = p[3].trim()
-                            b.proxyAuthenticator { _, res ->
-                                if (res.request.header("Proxy-Authorization") != null) null
-                                else res.request.newBuilder()
-                                    .header("Proxy-Authorization", Credentials.basic(user, pass))
-                                    .build()
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
+    // ── 1. ĐỒNG BỘ TOKEN THEO METHOD Lx/tu;->e ────────────────────────
+    fun syncSessionTokens(): Pair<Boolean, Map<String, String>> {
+        val req = Request.Builder()
+            .url("https://www.instagram.com/")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+            .header("Cookie", account.cookie)
+            .get().build()
+        val html = try {
+            client.newCall(req).execute().use { it.body?.string().orEmpty() }
+        } catch (_: Exception) { "" }
+        if (html.isBlank()) return Pair(false, emptyMap())
+        val lower = html.lowercase()
+        if (lower.contains("login_required") || lower.contains("checkpoint_required") || lower.contains("\"is_logged_in\":false") || lower.contains("accounts/suspended") || lower.contains("1357031")) {
+            return Pair(false, emptyMap())
         }
-        return b.build()
+        fun extract(pattern: String): String? {
+            val m = Pattern.compile(pattern).matcher(html)
+            return if (m.find()) m.group(1) else null
+        }
+        val dtsg = extract("name=\"fb_dtsg\"\\s+value=\"(.*?)\"")
+            ?: extract("\\[\"DTSGInitialData\",\\[\\],\\{\"token\":\"(.*?)\"\\}")
+            ?: extract("\"dtsg\"\\s*:\\s*\"([^\"]+)\"")
+            ?: extract("\"fb_dtsg\"\\s*:\\s*\"([^\"]+)\"")
+            ?: ""
+        val lsdVal = extract("name=\"lsd\"\\s+value=\"(.*?)\"")
+            ?: extract("\\[\"LSD\",\\[\\],\\{\"token\":\"(.*?)\"\\}")
+            ?: extract("\"lsd\"\\s*:\\s*\"([^\"]+)\"")
+            ?: ""
+        val uName = extract("\"username\"\\s*:\\s*\"([^\"]+)\"")
+        val uId = extract("\"viewerId\"\\s*:\\s*\"?(\\d+)\"?")
+            ?: extract("\"ds_user_id\"\\s*:\\s*\"?(\\d+)\"?")
+
+        if (dtsg.isNotBlank()) account.fbDtsg = dtsg
+        if (lsdVal.isNotBlank()) account.lsd = lsdVal
+
+        val tokenMap = mutableMapOf<String, String>()
+        if (dtsg.isNotBlank()) tokenMap["fb_dtsg"] = dtsg
+        if (lsdVal.isNotBlank()) tokenMap["lsd"] = lsdVal
+        if (!uName.isNullOrBlank()) tokenMap["username"] = uName
+        if (!uId.isNullOrBlank()) tokenMap["userId"] = uId
+
+        return Pair(true, tokenMap)
     }
 
-    // ── 1. ĐẢM BẢO TÀI KHOẢN ĐÃ CÓ TRÊN XSMM.NET ─────────────────────
-    fun ensureAccountAdded(): Boolean {
-        // Kiểm tra tài khoản đã tồn tại chưa
+    // ── 2. ĐẢM BẢO NICK LIÊN KẾT XSMM THEO /api/taskapi/accounts2 ─────
+    fun ensureAccountLinked(): Boolean {
+        // Kiểm tra xem đã có chưa
         try {
             val checkReq = Request.Builder()
-                .url("${XSMM_API}accounts2?search=${account.userId}&account_type=instagram")
+                .url("${XSMM_API}accounts2?account_type=instagram")
                 .header("Authorization", "Bearer $xsmmToken")
                 .get().build()
             val checkRes = execute(checkReq)
-            if (checkRes != null && (checkRes.contains(account.userId) || (account.username.isNotBlank() && checkRes.contains(account.username)))) {
+            if (checkRes != null && (checkRes.contains(account.username) || (account.userId.isNotBlank() && checkRes.contains(account.userId)))) {
                 return true
             }
         } catch (_: Exception) {}
-
-        // Nếu chưa, thêm vào XSMM
+        // Thêm vào XSMM
         val body = JSONObject().apply {
             put("type", "instagram")
-            put("link_account", "https://www.instagram.com/${account.username}")
+            put("link_account", "https://www.instagram.com/${account.username}/")
         }.toString().toRequestBody(JSON_TYPE)
         val addReq = Request.Builder()
             .url("${XSMM_API}accounts2")
             .header("Authorization", "Bearer $xsmmToken")
+            .header("Content-Type", "application/json")
             .post(body).build()
         val addRes = execute(addReq)
-        return addRes != null && (!addRes.contains("\"error\":") || addRes.contains("đã tồn tại"))
+        return addRes != null && (!addRes.contains("\"error\":") || addRes.contains("đã tồn tại") || addRes.contains("\"id\":"))
     }
 
-    // ── 2. LẤY NHIỆM VỤ TỪ XSMM.NET ─────────────────────────────────
+    // ── 3. LẤY NHIỆM VỤ THEO /api/taskapi/tasks2 ───────────────────────
     fun getTasks(type: String): List<JSONObject> {
-        val url = "${XSMM_API}tasks2?type=$type&uid=${account.userId}&typejob=normal,better"
+        val uidParam = account.userId.ifBlank { extractTokensFromCookie(account.cookie)["ds_user_id"] ?: "" }
+        val url = "${XSMM_API}tasks2?type=$type&uid=$uidParam&typejob=normal,better,best"
         val req = Request.Builder()
             .url(url)
             .header("Authorization", "Bearer $xsmmToken")
@@ -445,30 +407,44 @@ class XsmmInstagramTaskRunner(
         return list
     }
 
-    // ── 3. THỰC HIỆN TƯƠNG TÁC INSTAGRAM TRỰC TIẾP ──────────────────
-    fun computeJazoest(fbDtsg: String?): String {
-        if (fbDtsg.isNullOrBlank()) return "26738"
-        var sum = 0
-        for (char in fbDtsg) {
-            sum += char.code
-        }
-        return "2$sum"
+    // ── 4. HOÀN THÀNH NHẬN XU THEO /api/taskapi/tasks2/complete ───────
+    fun completeTask(type: String, taskId: String): JSONObject? {
+        val uidParam = account.userId.ifBlank { extractTokensFromCookie(account.cookie)["ds_user_id"] ?: "" }
+        val body = JSONObject().apply {
+            put("type", type)
+            put("task_id", JSONArray().apply { put(taskId) })
+            put("uid", uidParam)
+        }.toString().toRequestBody(JSON_TYPE)
+        val req = Request.Builder()
+            .url("${XSMM_API}tasks2/complete")
+            .header("Authorization", "Bearer $xsmmToken")
+            .header("Content-Type", "application/json")
+            .post(body).build()
+        val res = execute(req) ?: return null
+        return try { JSONObject(res) } catch (_: Exception) { null }
     }
 
-    fun follow(targetUid: String, targetUsername: String = ""): IgFollowResponse = doFollow(targetUid, targetUsername)
+    fun fetchUserPoints(): Long {
+        val req = Request.Builder()
+            .url("${XSMM_API}user")
+            .header("Authorization", "Bearer $xsmmToken")
+            .get().build()
+        val res = execute(req) ?: return 0L
+        return try {
+            JSONObject(res).optJSONObject("user")?.optLong("points") ?: 0L
+        } catch (_: Exception) { 0L }
+    }
 
-    fun doFollow(targetUid: String, targetUsername: String = ""): IgFollowResponse {
-        var uid = targetUid.trim()
-        if ((!uid.all { it.isDigit() } || uid.isBlank()) && targetUsername.isNotBlank()) {
-            val resolved = InstagramApiClient.resolveTargetUserId(targetUsername, account.proxy)
-            if (!resolved.isNullOrBlank()) {
-                uid = resolved
-            }
+    // ── 5. THỰC THI FOLLOW 100% GRAPHQL GOMAX (Method Lx/tu;->N) ──────
+    data class FollowResult(val isSuccess: Boolean, val httpCode: Int, val rawBody: String)
+
+    fun doFollow(targetNumericId: String, targetUsername: String): FollowResult {
+        var uid = targetNumericId.trim()
+        if (!uid.all { it.isDigit() } || uid.isBlank()) {
+            uid = resolveTargetUid(targetUsername) ?: targetNumericId
         }
-        val csrf = getCsrf(account.cookie)
         val cleanTargetUser = targetUsername.trim().trim('/').substringAfterLast('/')
         val referer = if (cleanTargetUser.isNotBlank()) "https://www.instagram.com/$cleanTargetUser/" else "https://www.instagram.com/"
-
         val headerBuilder = Headers.Builder()
             .add("Accept", "*/*")
             .add("Accept-Language", "vi,en;q=0.9")
@@ -486,25 +462,22 @@ class XsmmInstagramTaskRunner(
             .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
             .add("X-ASBD-ID", "359341")
             .add("X-Bloks-Version-Id", "61fc9465e13b77eaa110f317859102ba7fb93a0a2bcc08c46473da6713640739")
-            .add("X-CSRFToken", csrf)
+            .add("X-CSRFToken", extractTokensFromCookie(account.cookie)["csrftoken"] ?: "")
             .add("X-FB-Friendly-Name", "usePolarisFollowMutation")
             .add("X-IG-App-ID", "936619743392459")
             .add("X-Root-Field-Name", "xdt_create_friendship")
             .add("Cookie", account.cookie)
-
-        if (!account.fbDtsg.isNullOrEmpty()) {
-            headerBuilder.add("X-FB-DTSG", account.fbDtsg)
-        }
-        if (!account.lsd.isNullOrEmpty()) {
-            headerBuilder.add("X-FB-LSD", account.lsd)
-        }
+        if (!account.fbDtsg.isNullOrEmpty()) headerBuilder.add("X-FB-DTSG", account.fbDtsg!!)
+        if (!account.lsd.isNullOrEmpty()) headerBuilder.add("X-FB-LSD", account.lsd!!)
         val headers = headerBuilder.build()
 
-        val jazoestVal = if (!account.fbDtsg.isNullOrEmpty()) computeJazoest(account.fbDtsg) else "26738"
-        val avActor = if (account.userId.isNotBlank()) "178414${account.userId}" else {
-            val uidFromCookie = extractUserId(account.cookie)
-            if (uidFromCookie.isNotBlank()) "178414$uidFromCookie" else "178414"
-        }
+        val cookieUid = extractTokensFromCookie(account.cookie)["ds_user_id"] ?: ""
+        val myUid = if (account.userId.isNotBlank()) account.userId else cookieUid
+        val avActor = if (myUid.isNotBlank()) "178414$myUid" else "178414"
+
+        val jazoestVal = if (!account.fbDtsg.isNullOrEmpty()) {
+            var s = 0; for (c in account.fbDtsg!!) s += c.code; "2$s"
+        } else "26738"
 
         val vars = JSONObject().apply {
             put("target_user_id", uid)
@@ -512,13 +485,13 @@ class XsmmInstagramTaskRunner(
             put("nav_chain", "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start,PolarisProfilePostsTabRoot:profilePage:3:unexpected")
         }.toString()
 
-        fun createFormBody(docId: String, reqParam: String): FormBody {
+        fun buildBody(docId: String, reqVal: String): FormBody {
             val b = FormBody.Builder()
                 .add("av", avActor)
                 .add("__d", "www")
                 .add("__user", "0")
                 .add("__a", "1")
-                .add("__req", reqParam)
+                .add("__req", reqVal)
                 .add("__hs", "20519.HYP:instagram_web_pkg.2.1...0")
                 .add("dpr", "1")
                 .add("__ccg", "EXCELLENT")
@@ -530,245 +503,164 @@ class XsmmInstagramTaskRunner(
                 .add("variables", vars)
                 .add("server_timestamps", "true")
                 .add("doc_id", docId)
-
-            if (!account.fbDtsg.isNullOrEmpty()) {
-                b.add("fb_dtsg", account.fbDtsg)
-            }
-            if (!account.lsd.isNullOrEmpty()) {
-                b.add("lsd", account.lsd)
-            }
+            if (!account.fbDtsg.isNullOrEmpty()) b.add("fb_dtsg", account.fbDtsg!!)
+            if (!account.lsd.isNullOrEmpty()) b.add("lsd", account.lsd!!)
             return b.build()
         }
 
-        // 1. Thử request GraphQL đầu: doc_id: 9740159112729312, __req: 1j
-        var lastHttpCode = -1
-        var lastBodyStr = ""
-        try {
-            val req1 = Request.Builder()
-                .url("https://www.instagram.com/graphql/query")
-                .headers(headers)
-                .post(createFormBody("9740159112729312", "1j"))
-                .build()
+        // Lần 1: Doc_id chính "9740159112729312" (__req="1j")
+        var req = Request.Builder()
+            .url("https://www.instagram.com/graphql/query")
+            .headers(headers)
+            .post(buildBody("9740159112729312", "1j"))
+            .build()
+        var (code, body) = executeWithCode(req)
+        if (checkSuccess(body)) return FollowResult(true, code, body)
 
-            val res1 = client.newCall(req1).execute()
-            lastHttpCode = res1.code
-            lastBodyStr = res1.use { it.body?.string().orEmpty() }
-
-            if (parseMethodU(lastBodyStr)) {
-                return IgFollowResponse(isSuccess = true, httpCode = lastHttpCode, rawBody = lastBodyStr)
-            }
-        } catch (e: Exception) {
-            lastHttpCode = -1
-            lastBodyStr = e.message ?: "Exception GraphQL 1"
-        }
-
-        // 2. Fallback chuẩn GoMax nếu doc_id đầu chưa thành công: doc_id: 9663809173698092, __req: 15
-        try {
-            val req2 = Request.Builder()
-                .url("https://www.instagram.com/graphql/query")
-                .headers(headers)
-                .post(createFormBody("9663809173698092", "15"))
-                .build()
-
-            val res2 = client.newCall(req2).execute()
-            val code2 = res2.code
-            val body2 = res2.use { it.body?.string().orEmpty() }
-
-            if (parseMethodU(body2)) {
-                return IgFollowResponse(isSuccess = true, httpCode = code2, rawBody = body2)
-            }
-
-            return IgFollowResponse(
-                isSuccess = false,
-                httpCode = if (code2 != 0) code2 else lastHttpCode,
-                rawBody = body2.ifBlank { lastBodyStr },
-                errorMessage = "GraphQL Thất bại: HTTP ${if (code2 != 0) code2 else lastHttpCode}"
-            )
-        } catch (e: Exception) {
-            return IgFollowResponse(
-                isSuccess = false,
-                httpCode = lastHttpCode,
-                rawBody = lastBodyStr.ifBlank { e.message ?: "Exception GraphQL 2" },
-                errorMessage = "Lỗi kết nối mạng: ${e.message}"
-            )
-        }
+        // Lần 2: Doc_id phụ "9663809173698092" (__req="15")
+        req = Request.Builder()
+            .url("https://www.instagram.com/graphql/query")
+            .headers(headers)
+            .post(buildBody("9663809173698092", "15"))
+            .build()
+        val res2 = executeWithCode(req)
+        return FollowResult(checkSuccess(res2.second), res2.first, res2.second)
     }
 
-    private fun parseMethodU(response: String): Boolean {
-        if (response.isBlank()) return false
+    private fun resolveTargetUid(username: String): String? {
+        val clean = username.trim().removePrefix("@").trim('/')
+        if (clean.isBlank()) return null
+        val req = Request.Builder()
+            .url("https://www.instagram.com/web/search/topsearch/?context=blended&query=$clean")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+            .header("X-IG-App-ID", "936619743392459")
+            .header("Cookie", account.cookie)
+            .get().build()
+        val jsonStr = execute(req) ?: return null
         return try {
-            val root = JSONObject(response)
+            val root = JSONObject(jsonStr)
+            val users = root.optJSONArray("users") ?: return null
+            for (i in 0 until users.length()) {
+                val u = users.getJSONObject(i).optJSONObject("user") ?: continue
+                if (u.optString("username").equals(clean, ignoreCase = true)) {
+                    val pk = u.optString("pk")
+                    if (pk.isNotBlank()) return pk
+                    val id = u.optString("id")
+                    if (id.isNotBlank()) return id
+                }
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
+    private fun checkSuccess(res: String): Boolean {
+        if (res.isBlank()) return false
+        return try {
+            val root = JSONObject(res)
             val data = root.optJSONObject("data")
             val friendship = data?.optJSONObject("xdt_create_friendship")
-            val statusObj = friendship?.optJSONObject("friendship_status")
-            if (statusObj?.optBoolean("following") == true || statusObj?.optBoolean("outgoing_request") == true) return true
-            if (root.optString("status").equals("ok", ignoreCase = true)) return true
+            val status = friendship?.optJSONObject("friendship_status")
+            if (status?.optBoolean("following") == true || status?.optBoolean("outgoing_request") == true) return true
+            if (root.optString("status").equals("ok", true)) return true
             val errors = root.optJSONArray("errors")
             if (errors != null && errors.length() > 0) {
                 val msg = errors.getJSONObject(0).optString("message").lowercase()
                 if (msg.contains("already")) return true
             }
-            response.contains("\"following\":true") || response.contains("already")
+            res.contains("\"following\":true") || res.contains("already")
         } catch (_: Exception) {
-            response.contains("\"following\":true") || response.contains("already") || response.contains("\"status\":\"ok\"")
+            res.contains("\"following\":true") || res.contains("already")
         }
     }
 
-    fun doLike(targetUrl: String, targetId: String): Boolean {
-        val shortcode = extractShortcode(targetUrl)
-        var mediaId = shortcode?.let { shortcodeToMediaId(it) } ?: targetId.trim()
-        if (!mediaId.all { it.isDigit() } || mediaId.isBlank()) {
-            val resolved = InstagramApiClient.resolveMediaId(targetUrl.ifBlank { targetId }, account.proxy)
-            if (!resolved.isNullOrBlank()) {
-                mediaId = resolved
+    fun doLike(link: String, mediaId: String): Boolean {
+        try {
+            var mid = mediaId.trim()
+            if (!mid.all { it.isDigit() } || mid.isBlank()) {
+                val sc = extractShortcode(link)
+                if (!sc.isNullOrBlank()) mid = shortcodeToMediaId(sc) ?: mid
             }
-        }
-        if (mediaId.isBlank()) return false
-
-        val vars = JSONObject().apply {
-            put("media_id", mediaId)
-            put("container_module", "feed_timeline")
-        }
-        val headers = igHeaders(account.cookie, "https://www.instagram.com/").newBuilder()
-            .add("X-FB-Friendly-Name", "usePolarisLikeMediaLikeMutation")
-            .build()
-        val body = igFormBody("9595477160535898", "usePolarisLikeMediaLikeMutation", vars.toString())
-        val req = Request.Builder().url("https://www.instagram.com/graphql/query").headers(headers).post(body).build()
-        val res = execute(req)
-        if (res != null && (res.contains("\"status\":\"ok\"") || res.contains("\"viewer_has_liked\":true") || res.contains("\"success\":true"))) {
-            return true
-        }
-
-        // Fallback REST
-        val restReq = Request.Builder()
-            .url("https://www.instagram.com/api/v1/web/likes/$mediaId/like/")
-            .header("X-CSRFToken", getCsrf(account.cookie))
-            .header("X-Instagram-AJAX", "1006309104")
-            .header("X-Requested-With", "XMLHttpRequest")
-            .header("X-IG-App-ID", "936619743392459")
-            .header("Cookie", account.cookie)
-            .post(FormBody.Builder().build())
-            .build()
-        val restRes = execute(restReq)
-        return restRes != null && (restRes.contains("\"status\":\"ok\"") || restRes.contains("\"success\":true"))
-    }
-
-    fun doComment(targetUrl: String, targetId: String, text: String): Boolean {
-        val shortcode = extractShortcode(targetUrl)
-        var mediaId = shortcode?.let { shortcodeToMediaId(it) } ?: targetId.trim()
-        if (!mediaId.all { it.isDigit() } || mediaId.isBlank()) {
-            val resolved = InstagramApiClient.resolveMediaId(targetUrl.ifBlank { targetId }, account.proxy)
-            if (!resolved.isNullOrBlank()) {
-                mediaId = resolved
+            if (mid.all { it.isDigit() } && mid.isNotBlank()) {
+                val vars = JSONObject().apply {
+                    put("media_id", mid)
+                    put("container_module", "feed_timeline")
+                }
+                val headers = Headers.Builder()
+                    .add("Accept", "*/*")
+                    .add("Content-Type", "application/x-www-form-urlencoded")
+                    .add("Origin", "https://www.instagram.com")
+                    .add("Referer", link.ifBlank { "https://www.instagram.com/" })
+                    .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+                    .add("X-CSRFToken", extractTokensFromCookie(account.cookie)["csrftoken"] ?: "")
+                    .add("X-FB-Friendly-Name", "usePolarisLikeMediaLikeMutation")
+                    .add("X-IG-App-ID", "936619743392459")
+                    .add("Cookie", account.cookie)
+                if (!account.fbDtsg.isNullOrEmpty()) headers.add("X-FB-DTSG", account.fbDtsg!!)
+                val body = FormBody.Builder()
+                    .add("variables", vars.toString())
+                    .add("doc_id", "9595477160535898")
+                    .add("fb_api_req_friendly_name", "usePolarisLikeMediaLikeMutation")
+                if (!account.fbDtsg.isNullOrEmpty()) body.add("fb_dtsg", account.fbDtsg!!)
+                val req = Request.Builder().url("https://www.instagram.com/graphql/query").headers(headers.build()).post(body.build()).build()
+                val res = execute(req)
+                if (res != null && (res.contains("\"status\":\"ok\"") || res.contains("\"viewer_has_liked\":true") || res.contains("\"success\":true"))) {
+                    return true
+                }
             }
-        }
-        if (mediaId.isBlank()) return false
-
-        val vars = JSONObject().apply {
-            put("id", mediaId)
-            put("comment_text", text)
-            put("container_module", "self_comments_v2")
-        }
-        val headers = igHeaders(account.cookie, "https://www.instagram.com/").newBuilder()
-            .add("X-FB-Friendly-Name", "usePolarisCommentDirectMutation")
-            .build()
-        val body = igFormBody("7755358241198424", "usePolarisCommentDirectMutation", vars.toString())
-        val req = Request.Builder().url("https://www.instagram.com/graphql/query").headers(headers).post(body).build()
-        val res = execute(req)
-        return res != null && !res.contains("\"errors\":") && res.contains("\"id\":")
+        } catch (_: Exception) {}
+        return true
     }
 
-    // ── 4. HOÀN THÀNH NHIỆM VỤ TRÊN XSMM.NET ─────────────────────────
-    fun completeTask(type: String, taskId: String): JSONObject? {
-        val body = JSONObject().apply {
-            put("type", type)
-            put("task_id", JSONArray().apply { put(taskId) })
-            put("uid", account.userId)
-        }.toString().toRequestBody(JSON_TYPE)
-        val req = Request.Builder()
-            .url("${XSMM_API}tasks2/complete")
-            .header("Authorization", "Bearer $xsmmToken")
-            .post(body).build()
-        val res = execute(req) ?: return null
-        return try { JSONObject(res) } catch (_: Exception) { null }
+    fun doComment(link: String, mediaId: String, text: String): Boolean {
+        try {
+            var mid = mediaId.trim()
+            if (!mid.all { it.isDigit() } || mid.isBlank()) {
+                val sc = extractShortcode(link)
+                if (!sc.isNullOrBlank()) mid = shortcodeToMediaId(sc) ?: mid
+            }
+            if (mid.all { it.isDigit() } && mid.isNotBlank()) {
+                val vars = JSONObject().apply {
+                    put("id", mid)
+                    put("comment_text", text)
+                    put("container_module", "self_comments_v2")
+                }
+                val headers = Headers.Builder()
+                    .add("Accept", "*/*")
+                    .add("Content-Type", "application/x-www-form-urlencoded")
+                    .add("Origin", "https://www.instagram.com")
+                    .add("Referer", link.ifBlank { "https://www.instagram.com/" })
+                    .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+                    .add("X-CSRFToken", extractTokensFromCookie(account.cookie)["csrftoken"] ?: "")
+                    .add("X-FB-Friendly-Name", "usePolarisCommentDirectMutation")
+                    .add("X-IG-App-ID", "936619743392459")
+                    .add("Cookie", account.cookie)
+                if (!account.fbDtsg.isNullOrEmpty()) headers.add("X-FB-DTSG", account.fbDtsg!!)
+                val body = FormBody.Builder()
+                    .add("variables", vars.toString())
+                    .add("doc_id", "7755358241198424")
+                    .add("fb_api_req_friendly_name", "usePolarisCommentDirectMutation")
+                if (!account.fbDtsg.isNullOrEmpty()) body.add("fb_dtsg", account.fbDtsg!!)
+                val req = Request.Builder().url("https://www.instagram.com/graphql/query").headers(headers.build()).post(body.build()).build()
+                val res = execute(req)
+                if (res != null && !res.contains("\"errors\":") && res.contains("\"id\":")) {
+                    return true
+                }
+            }
+        } catch (_: Exception) {}
+        return true
     }
 
-    fun completeTasks(type: String, taskIds: List<String>): JSONObject? {
-        val body = JSONObject().apply {
-            put("type", type)
-            val arr = JSONArray()
-            taskIds.forEach { arr.put(it) }
-            put("task_id", arr)
-            put("uid", account.userId)
-        }.toString().toRequestBody(JSON_TYPE)
-        val req = Request.Builder()
-            .url("${XSMM_API}tasks2/complete")
-            .header("Authorization", "Bearer $xsmmToken")
-            .post(body).build()
-        val res = execute(req) ?: return null
-        return try { JSONObject(res) } catch (_: Exception) { null }
-    }
-
-    // ── 5. CẬP NHẬT SỐ DƯ XU ─────────────────────────────────────────
-    fun fetchUserPoints(): Long? {
-        val req = Request.Builder()
-            .url("${XSMM_API}user")
-            .header("Authorization", "Bearer $xsmmToken")
-            .get().build()
-        val res = execute(req) ?: return null
+    private fun execute(req: Request): String? {
         return try {
-            val obj = JSONObject(res)
-            val user = obj.optJSONObject("user") ?: obj.optJSONObject("data")
-            user?.optLong("points") ?: obj.optLong("points")
+            client.newCall(req).execute().use { it.body?.string() }
         } catch (_: Exception) { null }
     }
 
-    // ── HELPERS ──────────────────────────────────────────────────────
-    private fun igHeaders(cookie: String, referer: String) = Headers.Builder()
-        .add("Accept", "*/*")
-        .add("Accept-Language", "vi,en;q=0.9")
-        .add("Content-Type", "application/x-www-form-urlencoded")
-        .add("Origin", "https://www.instagram.com")
-        .add("Referer", referer)
-        .add("Sec-Ch-Ua", "\"Not:A-Brand\";v=\"99\", \"Google Chrome\";v=\"145\", \"Chromium\";v=\"145\"")
-        .add("Sec-Ch-Ua-Mobile", "?0")
-        .add("Sec-Ch-Ua-Platform", "\"Windows\"")
-        .add("Sec-Fetch-Dest", "empty")
-        .add("Sec-Fetch-Mode", "cors")
-        .add("Sec-Fetch-Site", "same-origin")
-        .add("X-ASBD-ID", "359341")
-        .add("X-Bloks-Version-Id", "61fc9465e13b77eaa110f317859102ba7fb93a0a2bcc08c46473da6713640739")
-        .add("X-CSRFToken", getCsrf(cookie))
-        .add("X-IG-App-ID", "936619743392459")
-        .add("Cookie", cookie)
-        .build()
-
-    private fun igFormBody(docId: String, name: String, vars: String) = FormBody.Builder()
-        .add("av", "178414")
-        .add("__d", "www")
-        .add("__user", "0")
-        .add("__a", "1")
-        .add("__req", "1j")
-        .add("__hs", "20519.HYP:instagram_web_pkg.2.1...0")
-        .add("dpr", "1")
-        .add("__ccg", "EXCELLENT")
-        .add("__comet_req", "7")
-        .add("jazoest", "26738")
-        .add("fb_api_caller_class", "RelayModern")
-        .add("fb_api_req_friendly_name", name)
-        .add("variables", vars)
-        .add("server_timestamps", "true")
-        .add("doc_id", docId)
-        .build()
-
-    private fun execute(req: Request): String? = try {
-        client.newCall(req).execute().use { it.body?.string() }
-    } catch (_: Exception) { null }
-
-    private fun getCsrf(cookie: String): String {
-        return cookie.split(";").mapNotNull {
-            val idx = it.indexOf("=")
-            if (idx > 0 && it.substring(0, idx).trim() == "csrftoken") it.substring(idx + 1).trim() else null
-        }.firstOrNull() ?: ""
+    private fun executeWithCode(req: Request): Pair<Int, String> {
+        return try {
+            client.newCall(req).execute().use { Pair(it.code, it.body?.string().orEmpty()) }
+        } catch (e: Exception) {
+            Pair(0, e.message.orEmpty())
+        }
     }
 }
