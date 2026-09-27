@@ -35,6 +35,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -2079,7 +2080,7 @@ fun XsmmAccountScreen(navController: NavController) {
                         }
                     }
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         instagramAccounts.forEach { igUid ->
                             val cleanIg = igUid.trim()
                             val isChecked = cleanIg in selectedForRunUids
@@ -2097,13 +2098,13 @@ fun XsmmAccountScreen(navController: NavController) {
                                     .build()
                             }
                             Card(
-                                shape = RoundedCornerShape(16.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 colors = CardDefaults.cardColors(containerColor = CardWhite),
-                                border = if (isChecked) androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFE1306C)) else null,
+                                border = if (isChecked) androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFE1306C)) else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEEEEEE)),
                                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(16.dp))
+                                    .clip(RoundedCornerShape(12.dp))
                                     .clickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = null
@@ -2112,7 +2113,12 @@ fun XsmmAccountScreen(navController: NavController) {
                                         else selectedForRunUids + cleanIg
                                     }
                             ) {
-                                Column(modifier = Modifier.padding(14.dp)) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.fillMaxWidth()
@@ -2123,15 +2129,16 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 selectedForRunUids = if (checked) selectedForRunUids + cleanIg
                                                 else selectedForRunUids - cleanIg
                                             },
-                                            colors = CheckboxDefaults.colors(checkedColor = Color(0xFFE1306C))
+                                            colors = CheckboxDefaults.colors(checkedColor = Color(0xFFE1306C)),
+                                            modifier = Modifier.size(24.dp)
                                         )
-                                        Spacer(Modifier.width(6.dp))
+                                        Spacer(Modifier.width(8.dp))
 
-                                        // Avatar Instagram có nút camera đổi ảnh nằm gọn BÊN TRONG avatar
+                                        // Avatar tròn 40dp có nút camera đổi ảnh nằm gọn BÊN TRONG avatar
                                         val isThisUploading = isUploadingAvatar && targetAvatarChangeUsername == cleanIg
                                         Box(
                                             modifier = Modifier
-                                                .size(46.dp)
+                                                .size(40.dp)
                                                 .clip(CircleShape)
                                                 .border(1.5.dp, Color(0xFFE1306C).copy(alpha = 0.6f), CircleShape)
                                                 .clickable(enabled = !isUploadingAvatar) {
@@ -2166,7 +2173,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                         imageVector = Icons.Filled.Person,
                                                         contentDescription = null,
                                                         tint = Color.White,
-                                                        modifier = Modifier.size(24.dp)
+                                                        modifier = Modifier.size(22.dp)
                                                     )
                                                 }
                                             }
@@ -2175,7 +2182,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .height(16.dp)
+                                                    .height(14.dp)
                                                     .align(Alignment.BottomCenter)
                                                     .background(Color.Black.copy(alpha = 0.45f)),
                                                 contentAlignment = Alignment.Center
@@ -2184,7 +2191,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     imageVector = Icons.Filled.Edit,
                                                     contentDescription = "Đổi avatar",
                                                     tint = Color.White,
-                                                    modifier = Modifier.size(11.dp)
+                                                    modifier = Modifier.size(10.dp)
                                                 )
                                             }
 
@@ -2198,7 +2205,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                                     CircularProgressIndicator(
                                                         color = Color.White,
                                                         strokeWidth = 2.dp,
-                                                        modifier = Modifier.size(20.dp)
+                                                        modifier = Modifier.size(18.dp)
                                                     )
                                                 }
                                             }
@@ -2206,12 +2213,19 @@ fun XsmmAccountScreen(navController: NavController) {
 
                                         Spacer(Modifier.width(10.dp))
 
-                                        Column(Modifier.weight(1f)) {
+                                        // Cột Tên & Trạng thái (layout_weight="1")
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                                        ) {
                                             val rawDisplayName = igAcc?.fullName?.takeIf { it.isNotBlank() } ?: cleanIg
                                             val displayName = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(rawDisplayName)
                                             val cleanUname = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(igAcc?.username ?: cleanIg)
                                             val isLive = igAcc?.isLive ?: true
+                                            val isLinked = igAcc?.isXsmmLinked == true
+                                            val isAddingThis = cleanUname in addingIgUsernames
 
+                                            // Hàng trên: Tên hiển thị (Bold, 15sp, #000000) + • Live/Die
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -2219,59 +2233,74 @@ fun XsmmAccountScreen(navController: NavController) {
                                                 Text(
                                                     text = displayName,
                                                     fontWeight = FontWeight.Bold,
-                                                    fontSize = 14.5.sp,
-                                                    color = TextPrimary,
+                                                    fontSize = 15.sp,
+                                                    color = Color(0xFF000000),
                                                     maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false)
                                                 )
 
-                                                // Nút Live/Die nằm ngay cạnh tên acc (không lặp lại tên)
+                                                // Chấm + chữ "• Live" (#E8F5E9, #00C853, 11sp, bold)
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     modifier = Modifier
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(if (isLive) Color(0xFF22C55E).copy(alpha = 0.12f) else DangerRed.copy(alpha = 0.12f))
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                        .background(if (isLive) Color(0xFFE8F5E9) else Color(0xFFFFEBEE))
+                                                        .padding(horizontal = 4.dp, vertical = 2.dp)
                                                 ) {
                                                     Box(
                                                         modifier = Modifier
-                                                            .size(6.dp)
+                                                            .size(5.dp)
                                                             .clip(CircleShape)
-                                                            .background(if (isLive) Color(0xFF16A34A) else DangerRed)
+                                                            .background(if (isLive) Color(0xFF00C853) else Color(0xFFD32F2F))
                                                     )
-                                                    Spacer(Modifier.width(4.dp))
+                                                    Spacer(Modifier.width(3.dp))
                                                     Text(
-                                                        if (isLive) "Live" else "Die",
-                                                        fontSize = 10.sp,
+                                                        text = if (isLive) "Live" else "Die",
+                                                        fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = if (isLive) Color(0xFF16A34A) else DangerRed
+                                                        color = if (isLive) Color(0xFF00C853) else Color(0xFFD32F2F)
                                                     )
                                                 }
+                                            }
 
-                                                // Trạng thái liên kết XSMM
-                                                val isLinked = igAcc?.isXsmmLinked == true
-                                                val isAddingThis = cleanUname in addingIgUsernames
+                                            // Hàng dưới: Username "@username" (#757575, 12sp) + Nút [+ Thêm XSMM] HOẶC badge [✓ Đã liên kết XSMM]
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "@$cleanUname",
+                                                    color = Color(0xFF757575),
+                                                    fontSize = 12.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                )
+
                                                 if (isLinked) {
+                                                    // Badge: [✓ Đã liên kết XSMM]
                                                     Row(
                                                         verticalAlignment = Alignment.CenterVertically,
                                                         modifier = Modifier
-                                                            .clip(RoundedCornerShape(8.dp))
-                                                            .background(Color(0xFF22C55E).copy(alpha = 0.12f))
-                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            .clip(RoundedCornerShape(6.dp))
+                                                            .background(Color(0xFFE8F5E9))
+                                                            .padding(horizontal = 8.dp, vertical = 3.dp)
                                                     ) {
                                                         Text(
-                                                            "Đã liên kết XSMM",
-                                                            fontSize = 10.sp,
+                                                            text = "✓ Đã liên kết XSMM",
+                                                            fontSize = 11.sp,
                                                             fontWeight = FontWeight.Bold,
-                                                            color = Color(0xFF16A34A)
+                                                            color = Color(0xFF2E7D32)
                                                         )
                                                     }
                                                 } else {
+                                                    // Nút: [+ Thêm XSMM]
                                                     Row(
                                                         verticalAlignment = Alignment.CenterVertically,
                                                         modifier = Modifier
-                                                            .clip(RoundedCornerShape(8.dp))
-                                                            .background(Color(0xFF3B82F6).copy(alpha = 0.12f))
+                                                            .clip(RoundedCornerShape(6.dp))
+                                                            .background(Color(0xFFFF4081))
                                                             .clickable(enabled = !isAddingThis) {
                                                                 if (cleanUname in addingIgUsernames) return@clickable
                                                                 addingIgUsernames = addingIgUsernames + cleanUname
@@ -2321,67 +2350,37 @@ fun XsmmAccountScreen(navController: NavController) {
                                                                     }
                                                                 }
                                                             }
-                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            .padding(horizontal = 8.dp, vertical = 3.dp)
                                                     ) {
                                                         if (isAddingThis) {
                                                             CircularProgressIndicator(
-                                                                color = Color(0xFF2563EB),
+                                                                color = Color.White,
                                                                 strokeWidth = 1.5.dp,
                                                                 modifier = Modifier.size(10.dp)
                                                             )
                                                             Spacer(Modifier.width(4.dp))
                                                             Text(
-                                                                "Đang thêm...",
-                                                                fontSize = 10.sp,
+                                                                text = "Đang thêm...",
+                                                                fontSize = 11.sp,
                                                                 fontWeight = FontWeight.Bold,
-                                                                color = Color(0xFF2563EB)
+                                                                color = Color.White
                                                             )
                                                         } else {
                                                             Text(
-                                                                "+ Thêm vào XSMM",
-                                                                fontSize = 10.sp,
+                                                                text = "+ Thêm XSMM",
+                                                                fontSize = 11.sp,
                                                                 fontWeight = FontWeight.Bold,
-                                                                color = Color(0xFF2563EB)
+                                                                color = Color.White
                                                             )
                                                         }
                                                     }
                                                 }
                                             }
-
-                                            Text(
-                                                text = "@$cleanUname",
-                                                color = TextSecondary,
-                                                fontSize = 12.sp,
-                                                maxLines = 1
-                                            )
-                                            if (!igAcc?.biography.isNullOrBlank()) {
-                                                val cleanBio = com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(igAcc!!.biography)
-                                                Spacer(Modifier.height(2.dp))
-                                                Text(
-                                                    text = cleanBio,
-                                                    color = TextSecondary.copy(alpha = 0.9f),
-                                                    fontSize = 11.5.sp,
-                                                    maxLines = 2,
-                                                    lineHeight = 14.sp
-                                                )
-                                            }
-                                            val stats = buildList {
-                                                if ((igAcc?.followersCount ?: 0) > 0) add("${igAcc?.followersCount} follower")
-                                                if ((igAcc?.followingCount ?: 0) > 0) add("${igAcc?.followingCount} đang theo dõi")
-                                                if ((igAcc?.postsCount ?: 0) > 0) add("${igAcc?.postsCount} bài viết")
-                                            }
-                                            if (stats.isNotEmpty()) {
-                                                Spacer(Modifier.height(2.dp))
-                                                Text(
-                                                    text = stats.joinToString(" • "),
-                                                    color = Color(0xFFE1306C),
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Medium
-                                                )
-                                            }
                                         }
 
-                                        // Nút Reload (Làm mới)
+                                        Spacer(Modifier.width(8.dp))
+
+                                        // Nút Reload (Làm mới) 32dp
                                         val isRunningThis = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanIg)
                                         IconButton(
                                             onClick = {
@@ -2464,28 +2463,30 @@ fun XsmmAccountScreen(navController: NavController) {
 
                                         Spacer(Modifier.width(6.dp))
 
-                                        // Nút Chạy (Play tam giác) / Dừng (Stop ô vuông đỏ)
+                                        // Nút Chạy (Play tam giác 36dp) / Dừng (Stop ô vuông đỏ)
                                         IconButton(
                                             onClick = {
                                                 if (isRunningThis) {
                                                     com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(cleanIg)
                                                     android.widget.Toast.makeText(context, "Đã dừng chạy $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
                                                 } else {
-                                                    if (igAcc?.isXsmmLinked != true) {
-                                                        android.widget.Toast.makeText(context, "Cần thêm nick @${igAcc?.username ?: cleanIg} vào XSMM trước khi chạy!", android.widget.Toast.LENGTH_SHORT).show()
+                                                    if (!isLinked) {
+                                                        android.widget.Toast.makeText(context, "BẮT BUỘC: Bạn cần bấm '+ Thêm XSMM' để liên kết tài khoản trước khi chạy!", android.widget.Toast.LENGTH_SHORT).show()
                                                         return@IconButton
                                                     }
                                                     com.cayxu.app.automation.instagram.XsmmInstagramManager.start(context, cleanIg)
                                                     android.widget.Toast.makeText(context, "Bắt đầu chạy $cleanIg", android.widget.Toast.LENGTH_SHORT).show()
                                                 }
                                             },
-                                            modifier = Modifier.size(32.dp)
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .alpha(if (isLinked || isRunningThis) 1.0f else 0.5f)
                                         ) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(28.dp)
+                                                    .size(32.dp)
                                                     .clip(CircleShape)
-                                                    .background(if (isRunningThis) DangerRed else Color(0xFFE1306C)),
+                                                    .background(if (isRunningThis) DangerRed else Color(0xFFFF4081)),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 if (isRunningThis) {
@@ -2507,21 +2508,28 @@ fun XsmmAccountScreen(navController: NavController) {
                                         }
                                     }
 
-                                    HorizontalDivider(
-                                        color = Color(0xFFF3F4F6),
-                                        thickness = 1.dp,
-                                        modifier = Modifier.padding(vertical = 10.dp)
-                                    )
-
-                                    // Khu vực hiển thị trạng thái + thống kê Hoàn thành / Lỗi + Proxy
-                                    val rawStatus = igStatusMap[cleanIg] ?: "Trạng thái: Sẵn sàng"
-                                    val currentStatus = if (rawStatus.equals("Live", ignoreCase = true)) "Trạng thái: Sẵn sàng" else rawStatus
+                                    // 🔹 DÒNG 2: TRẠNG THÁI HIỆN TẠI (LOG REALTIME)
+                                    val rawStatus = igStatusMap[cleanIg] ?: "• Sẵn sàng"
+                                    val currentStatus = when {
+                                        rawStatus.equals("Live", ignoreCase = true) || rawStatus.isBlank() -> "• Sẵn sàng"
+                                        !rawStatus.startsWith("•") -> "• $rawStatus"
+                                        else -> rawStatus
+                                    }
                                     val successCount = igSuccessCountMap[cleanIg] ?: 0
                                     val errorCount = igErrorCountMap[cleanIg] ?: 0
                                     val isError = currentStatus.contains("Lỗi", ignoreCase = true) || currentStatus.contains("DIE", ignoreCase = true) || currentStatus.contains("Không tìm thấy", ignoreCase = true)
                                     val isRunningNow = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(cleanIg)
 
-                                    // Hàm rút gọn proxy: 128.0.0.1:3098:user:pass -> 128......pass hoặc 128...3098
+                                    Text(
+                                        text = currentStatus,
+                                        fontSize = 12.sp,
+                                        color = if (isError) Color(0xFFC62828) else if (isRunningNow) Color(0xFF1E40AF) else Color(0xFF424242),
+                                        fontWeight = if (isRunningNow) FontWeight.SemiBold else FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+
+                                    // 🔹 DÒNG 3: THỐNG KÊ GỌN (Hoàn thành, Lỗi, Proxy)
                                     val proxyDisplay = remember(igAcc?.proxy) {
                                         val p = igAcc?.proxy?.trim().orEmpty()
                                         if (p.isBlank()) null
@@ -2529,143 +2537,98 @@ fun XsmmAccountScreen(navController: NavController) {
                                             val parts = p.split(":")
                                             val first = parts.getOrNull(0)?.take(3) ?: "prx"
                                             val last = parts.lastOrNull()?.takeLast(4) ?: "..."
-                                            "$first......$last"
+                                            "$first...$last"
                                         }
                                     }
 
-                                    Column(
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        // Dòng 1: Status text kèm chấm tròn trạng thái (đếm ngược thời gian)
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.fillMaxWidth()
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                    .background(
-                                                        when {
-                                                            isRunningNow -> Color(0xFF3B82F6)
-                                                            isError -> DangerRed
-                                                            else -> Color(0xFF16A34A)
-                                                        }
-                                                    )
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(
-                                                currentStatus,
-                                                fontSize = 12.sp,
-                                                color = if (isError) DangerRed else if (isRunningNow) Color(0xFF1E40AF) else TextSecondary,
-                                                fontWeight = if (isRunningNow) FontWeight.SemiBold else FontWeight.Medium,
-                                                maxLines = 2,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                        }
-
-                                        // Dòng 2: Hiển thị Thống kê Hoàn thành / Lỗi + Proxy bên cạnh
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
+                                            // Hoàn thành
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(Color(0xFFE8F5E9))
+                                                    .padding(horizontal = 8.dp, vertical = 3.dp)
                                             ) {
-                                                // Thành công
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier
-                                                        .background(Color(0xFF16A34A).copy(alpha = 0.12f), RoundedCornerShape(6.dp))
-                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.Check,
-                                                        contentDescription = null,
-                                                        tint = Color(0xFF16A34A),
-                                                        modifier = Modifier.size(13.dp)
-                                                    )
-                                                    Spacer(Modifier.width(4.dp))
-                                                    Text(
-                                                        "Hoàn thành: $successCount",
-                                                        fontSize = 11.5.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = Color(0xFF15803D)
-                                                    )
-                                                }
-
-                                                // Thất bại / Lỗi
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier
-                                                        .background(DangerRed.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
-                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(6.dp)
-                                                            .clip(CircleShape)
-                                                            .background(DangerRed)
-                                                    )
-                                                    Spacer(Modifier.width(5.dp))
-                                                    Text(
-                                                        "Lỗi: $errorCount",
-                                                        fontSize = 11.5.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = DangerRed
-                                                    )
-                                                }
-
-                                                // Proxy rút gọn bên cạnh nút Lỗi (nếu acc có gán proxy)
-                                                if (proxyDisplay != null) {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier
-                                                            .background(Color(0xFF6B7280).copy(alpha = 0.1f), RoundedCornerShape(6.dp))
-                                                            .padding(horizontal = 7.dp, vertical = 3.dp)
-                                                    ) {
-                                                        Text(
-                                                            proxyDisplay,
-                                                            fontSize = 11.sp,
-                                                            fontWeight = FontWeight.Medium,
-                                                            color = Color(0xFF4B5563)
-                                                        )
-                                                    }
-                                                }
-                                            }
-
-                                            val errorDetail = igErrorDetailMap[cleanIg] ?: (if (errorCount > 0) currentStatus else null)
-                                            if (errorDetail != null || errorCount > 0) {
-                                                IconButton(
-                                                    onClick = { selectedErrorDetailAccount = cleanIg },
-                                                    modifier = Modifier.size(28.dp)
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(24.dp)
-                                                            .clip(CircleShape)
-                                                            .background(DangerRed.copy(alpha = 0.12f)),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Filled.Warning,
-                                                            contentDescription = "Xem chi tiết lỗi",
-                                                            tint = DangerRed,
-                                                            modifier = Modifier.size(14.dp)
-                                                        )
-                                                    }
-                                                }
-                                            } else if (isRunningNow) {
                                                 Text(
-                                                    "Đang chạy...",
+                                                    text = "✓ Hoàn thành: $successCount",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = Color(0xFFE1306C)
+                                                    color = Color(0xFF2E7D32)
                                                 )
                                             }
+
+                                            // Lỗi
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(Color(0xFFFFEBEE))
+                                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                                            ) {
+                                                Text(
+                                                    text = "• Lỗi: $errorCount",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFFC62828)
+                                                )
+                                            }
+
+                                            // Proxy (nếu có)
+                                            if (proxyDisplay != null) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(Color(0xFFF5F5F5))
+                                                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "Proxy: $proxyDisplay",
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = Color(0xFF616161)
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        val errorDetail = igErrorDetailMap[cleanIg] ?: (if (errorCount > 0) currentStatus else null)
+                                        if (errorDetail != null || errorCount > 0) {
+                                            IconButton(
+                                                onClick = { selectedErrorDetailAccount = cleanIg },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(24.dp)
+                                                        .clip(CircleShape)
+                                                        .background(DangerRed.copy(alpha = 0.12f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Warning,
+                                                        contentDescription = "Xem chi tiết lỗi",
+                                                        tint = DangerRed,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                }
+                                            }
+                                        } else if (isRunningNow) {
+                                            Text(
+                                                text = "Đang chạy...",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFFFF4081)
+                                            )
                                         }
                                     }
                                 }
