@@ -73,11 +73,11 @@ fun FacebookNurtureScreen(navController: NavController) {
     var targetFbAvatarChangeUid by remember { mutableStateOf<String?>(null) }
     var isUploadingAvatar by remember { mutableStateOf(false) }
 
-    val runningFbAccounts = com.cayxu.app.automation.facebook.XsmmFacebookManager.runningAccounts
-    val fbStatusMap = com.cayxu.app.automation.facebook.XsmmFacebookManager.statusMap
-    val fbSuccessCountMap = com.cayxu.app.automation.facebook.XsmmFacebookManager.successCountMap
-    val fbErrorCountMap = com.cayxu.app.automation.facebook.XsmmFacebookManager.errorCountMap
-    val fbErrorDetailMap = com.cayxu.app.automation.facebook.XsmmFacebookManager.lastErrorDetail
+    val runningFbAccounts = com.cayxu.app.automation.facebook.FbNuoiManager.runningAccounts
+    val fbStatusMap = com.cayxu.app.automation.facebook.FbNuoiManager.statusMap
+    val fbSuccessCountMap = com.cayxu.app.automation.facebook.FbNuoiManager.successCountMap
+    val fbErrorCountMap = com.cayxu.app.automation.facebook.FbNuoiManager.errorCountMap
+    val fbErrorDetailMap = com.cayxu.app.automation.facebook.FbNuoiManager.lastErrorDetail
 
     val pickFbAvatarLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -292,7 +292,7 @@ fun FacebookNurtureScreen(navController: NavController) {
                 ) {
                     items(facebookAccounts, key = { it.uid }) { account ->
                         val isChecked = account.uid in selectedForRunUids
-                        val isRunningFbThis = com.cayxu.app.automation.facebook.XsmmFacebookManager.isRunning(account.uid)
+                        val isRunningFbThis = com.cayxu.app.automation.facebook.FbNuoiManager.isRunning(account.uid)
                         val currentFbAvatar = liveFbAvatars[account.uid] ?: account.avatar
                         val fbAvatarModel = remember(currentFbAvatar, avatarVersion) {
                             if (currentFbAvatar.isBlank()) null
@@ -525,11 +525,11 @@ fun FacebookNurtureScreen(navController: NavController) {
                                     IconButton(
                                         onClick = {
                                             if (isRunningFbThis) {
-                                                com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(account.uid)
-                                                Toast.makeText(context, "Đã dừng chạy: ${account.name.ifBlank { account.uid }}", Toast.LENGTH_SHORT).show()
+                                                com.cayxu.app.automation.facebook.FbNuoiManager.stop(account.uid)
+                                                Toast.makeText(context, "Đã dừng nuôi nick: ${account.name.ifBlank { account.uid }}", Toast.LENGTH_SHORT).show()
                                             } else {
-                                                com.cayxu.app.automation.facebook.XsmmFacebookManager.start(context, account.uid)
-                                                Toast.makeText(context, "Bắt đầu chạy: ${account.name.ifBlank { account.uid }}", Toast.LENGTH_SHORT).show()
+                                                com.cayxu.app.automation.facebook.FbNuoiManager.start(context, account.uid)
+                                                Toast.makeText(context, "Bắt đầu nuôi nick: ${account.name.ifBlank { account.uid }}", Toast.LENGTH_SHORT).show()
                                             }
                                         },
                                         modifier = Modifier.size(32.dp)
@@ -809,13 +809,13 @@ fun FacebookNurtureScreen(navController: NavController) {
                                                     IconButton(
                                                         onClick = {
                                                             if (isPageRunning) {
-                                                                com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(effectivePageUid)
-                                                                com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(page.pageId)
-                                                                if (page.additionalProfileId.isNotBlank()) com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(page.additionalProfileId)
+                                                                com.cayxu.app.automation.facebook.FbNuoiManager.stop(effectivePageUid)
+                                                                com.cayxu.app.automation.facebook.FbNuoiManager.stop(page.pageId)
+                                                                if (page.additionalProfileId.isNotBlank()) com.cayxu.app.automation.facebook.FbNuoiManager.stop(page.additionalProfileId)
                                                                 Toast.makeText(context, "Đã dừng Page: ${page.pageName.ifBlank { effectivePageUid }}", Toast.LENGTH_SHORT).show()
                                                             } else {
-                                                                com.cayxu.app.automation.facebook.XsmmFacebookManager.start(context, effectivePageUid)
-                                                                Toast.makeText(context, "Bắt đầu chạy Page: ${page.pageName.ifBlank { effectivePageUid }}", Toast.LENGTH_SHORT).show()
+                                                                com.cayxu.app.automation.facebook.FbNuoiManager.start(context, effectivePageUid)
+                                                                Toast.makeText(context, "Bắt đầu nuôi Page: ${page.pageName.ifBlank { effectivePageUid }}", Toast.LENGTH_SHORT).show()
                                                             }
                                                         },
                                                         modifier = Modifier.size(28.dp)
@@ -957,9 +957,9 @@ fun FacebookNurtureScreen(navController: NavController) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Nút Cấu hình chạy
+                // Nút Cấu hình chạy nuôi Facebook
                 OutlinedButton(
-                    onClick = { navController.navigate(Routes.XSMM_RUN_CONFIG) },
+                    onClick = { navController.navigate(Routes.FB_NUOI_CONFIG) },
                     shape = RoundedCornerShape(12.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, CardBorderColor),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
@@ -1027,12 +1027,12 @@ fun FacebookNurtureScreen(navController: NavController) {
                     }
 
                     // Nút Chạy tất cả / Dừng tất cả
-                    val isAnyRunning = com.cayxu.app.automation.facebook.XsmmFacebookManager.isAnyRunning()
+                    val isAnyRunning = com.cayxu.app.automation.facebook.FbNuoiManager.isAnyRunning()
                     IconButton(
                         onClick = {
                             if (isAnyRunning) {
-                                com.cayxu.app.automation.facebook.XsmmFacebookManager.stopAll()
-                                Toast.makeText(context, "Đã dừng tất cả tác vụ Facebook", Toast.LENGTH_SHORT).show()
+                                com.cayxu.app.automation.facebook.FbNuoiManager.stopAll()
+                                Toast.makeText(context, "Đã dừng tất cả tác vụ nuôi Facebook", Toast.LENGTH_SHORT).show()
                             } else {
                                 val targetToRun = if (selectedForRunUids.isNotEmpty()) {
                                     selectedForRunUids.toList()
@@ -1042,8 +1042,8 @@ fun FacebookNurtureScreen(navController: NavController) {
                                 if (targetToRun.isEmpty()) {
                                     Toast.makeText(context, "Chưa có tài khoản Facebook nào!", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    com.cayxu.app.automation.facebook.XsmmFacebookManager.startAccounts(context, targetToRun)
-                                    Toast.makeText(context, "Bắt đầu chạy ${targetToRun.size} tài khoản Facebook", Toast.LENGTH_SHORT).show()
+                                    com.cayxu.app.automation.facebook.FbNuoiManager.startAccounts(context, targetToRun)
+                                    Toast.makeText(context, "Bắt đầu nuôi ${targetToRun.size} tài khoản Facebook", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         },
