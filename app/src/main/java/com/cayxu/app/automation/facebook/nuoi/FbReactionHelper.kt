@@ -1,95 +1,70 @@
 package com.cayxu.app.automation.facebook.nuoi
 
+import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.regex.Pattern
 
 object FbReactionHelper {
-    private const val BASE_URL = "https://mbasic.facebook.com"
-    private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    private const val GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
 
     /**
-     * Thả cảm xúc ngẫu nhiên vào bài viết thông qua Picker Reaction của mbasic
+     * Thả cảm xúc dạo vào bài viết bằng Access Token theo chuẩn Graph API của Kahara Mod
      */
     fun sendReaction(
         client: OkHttpClient,
-        cookie: String,
+        token: String,
+        cookie: String = "",
         post: FbPost,
         selectedReactionTypes: Set<String>,
         targetActorId: String? = null
     ): Boolean {
-        val pickerUrl = if (post.reactionPickerUrl.isNotBlank()) {
-            post.reactionPickerUrl
-        } else {
-            "$BASE_URL/reactions/picker/?is_permalink=1&ft_id=${post.postId}"
+        // 1. Chuẩn hóa loại cảm xúc (LIKE, LOVE, CARE, HAHA, WOW, SAD, ANGRY)
+        val rawTarget = selectedReactionTypes.randomOrNull() ?: "LIKE"
+        val reactionType = when (rawTarget.uppercase()) {
+            "1", "LIKE" -> "LIKE"
+            "2", "LOVE" -> "LOVE"
+            "16", "CARE" -> "CARE"
+            "4", "HAHA" -> "HAHA"
+            "3", "WOW" -> "WOW"
+            "7", "SAD" -> "SAD"
+            "8", "ANGRY" -> "ANGRY"
+            else -> "LIKE"
         }
 
-        // 1. Tải giao diện Picker cảm xúc
-        val reqBuilder = Request.Builder()
-            .url(pickerUrl)
-            .header("User-Agent", USER_AGENT)
-            .header("Cookie", cookie)
-            .header("Referer", "$BASE_URL/home.php")
+        if (token.isNotBlank()) {
+            // Thử postId đầy đủ (VD: 1000123_456789) hoặc ID số (456789)
+            val candidateIds = linkedSetOf(post.postId, post.ftEntIdentifier).filter { it.isNotBlank() }
 
-        if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
-            reqBuilder.header("X-FB-Actor-ID", targetActorId)
-        }
+            for (targetId in candidateIds) {
+                val url = "$GRAPH_API_BASE/$targetId/reactions"
+                val formBody = FormBody.Builder()
+                    .add("type", reactionType)
+                    .add("access_token", token)
+                    .build()
 
-        val pickerHtml = try {
-            client.newCall(reqBuilder.build()).execute().use { res ->
-                if (res.isSuccessful) res.body?.string() ?: "" else ""
-            }
-        } catch (_: Exception) { "" }
+                val reqBuilder = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .post(formBody)
 
-        if (pickerHtml.isBlank()) return false
+                if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
+                    reqBuilder.header("X-FB-Actor-ID", targetActorId)
+                }
 
-        // 2. Chọn 1 cảm xúc ngẫu nhiên từ danh sách đã cấu hình (hoặc mặc định Like)
-        val rawTarget = selectedReactionTypes.randomOrNull() ?: "1"
-        val targetTypeId = when (rawTarget.uppercase()) {
-            "1", "LIKE" -> "1"
-            "2", "LOVE" -> "2"
-            "16", "CARE" -> "16"
-            "4", "HAHA" -> "4"
-            "3", "WOW" -> "3"
-            "7", "SAD" -> "7"
-            "8", "ANGRY" -> "8"
-            else -> rawTarget
-        }
+                val success = try {
+                    client.newCall(reqBuilder.build()).execute().use { res ->
+                        val code = res.code
+                        val body = res.body?.string().orEmpty()
+                        code in 200..299 || body.contains("\"success\":true") || body.contains("\"success\": true")
+                    }
+                } catch (_: Exception) {
+                    false
+                }
 
-        // 3. Bóc link thực thi cảm xúc tương ứng trong picker HTML
-        val reactionLinkPattern = Pattern.compile("href=\"(/ufi/reaction/[^\"]*reaction_type=$targetTypeId[^\"]*)\"")
-        var matcher = reactionLinkPattern.matcher(pickerHtml)
-        var actionPath: String? = null
-
-        if (matcher.find()) {
-            actionPath = matcher.group(1).replace("&amp;", "&")
-        } else {
-            // Fallback: Tìm link reaction bất kỳ nếu không khớp đúng loại
-            val anyReactionPattern = Pattern.compile("href=\"(/ufi/reaction/[^\"]+)\"")
-            matcher = anyReactionPattern.matcher(pickerHtml)
-            if (matcher.find()) {
-                actionPath = matcher.group(1).replace("&amp;", "&")
+                if (success) return true
             }
         }
 
-        if (actionPath.isNullOrBlank()) return false
-
-        val fullActionUrl = if (actionPath.startsWith("http")) actionPath else BASE_URL + actionPath
-
-        // 4. Gửi GET để kích hoạt thả cảm xúc
-        val submitReq = Request.Builder()
-            .url(fullActionUrl)
-            .header("User-Agent", USER_AGENT)
-            .header("Cookie", cookie)
-            .header("Referer", pickerUrl)
-            .build()
-
-        return try {
-            client.newCall(submitReq).execute().use { response ->
-                response.isSuccessful || response.isRedirect
-            }
-        } catch (_: Exception) {
-            false
-        }
+        return false
     }
 }

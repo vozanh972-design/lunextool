@@ -1,94 +1,72 @@
 package com.cayxu.app.automation.facebook.nuoi
 
+import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.regex.Pattern
 
 object FbFriendHelper {
-    private const val BASE_URL = "https://mbasic.facebook.com"
-    private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    private const val GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
 
     /**
-     * Kết bạn dạo từ danh sách gợi ý "Những người bạn có thể biết" (Chuẩn swNhungNguoiBanCoTheBiet của Kahara)
+     * Gửi lời mời kết bạn / theo dõi tác giả bài viết bằng Access Token (Chuẩn Kahara Mod)
      */
-    fun sendFriendRequestFromSuggestions(
+    fun followOrAddFriend(
         client: OkHttpClient,
-        cookie: String,
-        targetActorId: String? = null
-    ): Boolean {
-        val url = "$BASE_URL/friends/center/suggestions/"
-        val reqBuilder = Request.Builder()
-            .url(url)
-            .header("User-Agent", USER_AGENT)
-            .header("Cookie", cookie)
-            .header("Referer", "$BASE_URL/home.php")
-
-        if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
-            reqBuilder.header("X-FB-Actor-ID", targetActorId)
-        }
-
-        val html = try {
-            client.newCall(reqBuilder.build()).execute().use { res ->
-                if (res.isSuccessful) res.body?.string() ?: "" else ""
-            }
-        } catch (_: Exception) { "" }
-
-        if (html.isBlank()) return false
-
-        // Bóc link "Thêm bạn bè"
-        val addFriendPattern = Pattern.compile("href=\"(/a/mobile/friends/profile_add_friend\\.php[^\"]+)\"")
-        val matcher = addFriendPattern.matcher(html)
-        if (matcher.find()) {
-            val actionPath = matcher.group(1).replace("&amp;", "&")
-            val fullUrl = if (actionPath.startsWith("http")) actionPath else BASE_URL + actionPath
-
-            val addReq = Request.Builder()
-                .url(fullUrl)
-                .header("User-Agent", USER_AGENT)
-                .header("Cookie", cookie)
-                .header("Referer", url)
-                .build()
-
-            return try {
-                client.newCall(addReq).execute().use { res ->
-                    res.isSuccessful || res.isRedirect
-                }
-            } catch (_: Exception) {
-                false
-            }
-        }
-
-        return false
-    }
-
-    /**
-     * Theo dõi (Follow) tác giả bài viết
-     */
-    fun followAuthor(
-        client: OkHttpClient,
-        cookie: String,
+        token: String,
+        cookie: String = "",
         authorId: String,
         targetActorId: String? = null
     ): Boolean {
         if (authorId.isBlank() || !authorId.matches(Regex("^\\d+$"))) return false
-        val followUrl = "$BASE_URL/subscriptions/add/?user_id=$authorId"
 
-        val reqBuilder = Request.Builder()
-            .url(followUrl)
-            .header("User-Agent", USER_AGENT)
-            .header("Cookie", cookie)
-            .header("Referer", "$BASE_URL/home.php")
+        if (token.isNotBlank()) {
+            // 1. Thử gửi kết bạn: /me/friends/{authorId}
+            val friendUrl = "$GRAPH_API_BASE/me/friends/$authorId"
+            val formBody = FormBody.Builder()
+                .add("access_token", token)
+                .build()
 
-        if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
-            reqBuilder.header("X-FB-Actor-ID", targetActorId)
-        }
+            val reqBuilder = Request.Builder()
+                .url(friendUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .post(formBody)
 
-        return try {
-            client.newCall(reqBuilder.build()).execute().use { res ->
-                res.isSuccessful || res.isRedirect
+            if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
+                reqBuilder.header("X-FB-Actor-ID", targetActorId)
             }
-        } catch (_: Exception) {
-            false
+
+            val friendSuccess = try {
+                client.newCall(reqBuilder.build()).execute().use { res ->
+                    res.isSuccessful || res.body?.string().orEmpty().contains("\"success\":true")
+                }
+            } catch (_: Exception) {
+                false
+            }
+
+            if (friendSuccess) return true
+
+            // 2. Thử theo dõi (Subscribe / Follow) tác giả: /{authorId}/subscribers
+            val followUrl = "$GRAPH_API_BASE/$authorId/subscribers"
+            val followReq = Request.Builder()
+                .url(followUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .post(FormBody.Builder().add("access_token", token).build())
+
+            if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
+                followReq.header("X-FB-Actor-ID", targetActorId)
+            }
+
+            val followSuccess = try {
+                client.newCall(followReq.build()).execute().use { res ->
+                    res.isSuccessful || res.body?.string().orEmpty().contains("\"success\":true")
+                }
+            } catch (_: Exception) {
+                false
+            }
+
+            return followSuccess
         }
+
+        return false
     }
 }

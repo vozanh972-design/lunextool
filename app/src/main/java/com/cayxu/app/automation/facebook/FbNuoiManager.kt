@@ -12,6 +12,11 @@ import java.util.concurrent.ConcurrentHashMap
 val FacebookAccount.cookie: String
     get() = note.ifBlank { password }
 
+val FacebookAccount.token: String
+    get() = bio.takeIf { it.isNotBlank() && (it.startsWith("EAA") || it.startsWith("EAAB")) }
+        ?: bio.takeIf { it.isNotBlank() }
+        ?: ""
+
 object FbNuoiManager {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeJobs = ConcurrentHashMap<String, Job>()
@@ -70,10 +75,31 @@ object FbNuoiManager {
         if (uid.isBlank() || isRunning(uid)) return
 
         val cookie = targetAccount.cookie
-        if (cookie.isBlank()) {
+        var token = if (!targetPageUid.isNullOrBlank()) {
+            targetAccount.pages.firstOrNull {
+                it.additionalProfileId == targetPageUid || it.displayUid == targetPageUid || it.pageId == targetPageUid
+            }?.pageToken?.takeIf { it.isNotBlank() }
+                ?: targetAccount.token.takeIf { it.isNotBlank() }
+                ?: ""
+        } else {
+            targetAccount.token.takeIf { it.isNotBlank() } ?: ""
+        }
+
+        // Nếu token chưa có mà có Cookie, tự động lấy token từ Cookie
+        if (token.isBlank() && cookie.contains("c_user=")) {
+            try {
+                val mgr = com.cayxu.app.facebook.FacebookAccountManager()
+                val acc = mgr.getTokenFromCookie(cookie, targetAccount.phone.ifBlank { null })
+                if (acc != null && acc.bio.isNotBlank()) {
+                    token = acc.bio
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (cookie.isBlank() && token.isBlank()) {
             scope.launch(Dispatchers.Main) {
-                statusMap[uid] = "Lỗi: Tài khoản chưa có Cookie"
-                lastErrorDetail[uid] = "Không tìm thấy Cookie của tài khoản [$uid]. Hãy thêm Cookie để nuôi nick."
+                statusMap[uid] = "Lỗi: Tài khoản chưa có Cookie/Token"
+                lastErrorDetail[uid] = "Không tìm thấy Cookie hoặc Token của tài khoản [$uid]. Hãy thêm Cookie/Token để nuôi nick."
                 val cur = errorCountMap[uid] ?: 0
                 errorCountMap[uid] = cur + 1
             }
@@ -92,6 +118,7 @@ object FbNuoiManager {
                 val client = com.cayxu.app.automation.facebook.nuoi.FbNuoiTaskRunner.buildClient(targetAccount.phone)
                 val runner = com.cayxu.app.automation.facebook.nuoi.FbNuoiTaskRunner(
                     cookie = cookie,
+                    token = token,
                     targetActorId = targetPageUid, // Truyền UID của Page nếu là Page Profile+, null nếu là Profile
                     config = currentNuoiConfig,
                     client = client

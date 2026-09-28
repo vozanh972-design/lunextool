@@ -3,18 +3,17 @@ package com.cayxu.app.automation.facebook.nuoi
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.regex.Pattern
 
 object FbCommentHelper {
-    private const val BASE_URL = "https://mbasic.facebook.com"
-    private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    private const val GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
 
     /**
-     * Gửi bình luận tùy chỉnh ngẫu nhiên vào bài viết
+     * Gửi bình luận dạo bằng Access Token theo chuẩn Graph API của Kahara Mod
      */
     fun sendComment(
         client: OkHttpClient,
-        cookie: String,
+        token: String,
+        cookie: String = "",
         post: FbPost,
         commentList: List<String>,
         targetActorId: String? = null
@@ -23,72 +22,40 @@ object FbCommentHelper {
         if (validComments.isEmpty()) return false
 
         val commentText = validComments.random()
-        val postUrl = "$BASE_URL/story.php?story_fbid=${post.postId}&id=${post.authorId.ifBlank { "0" }}"
 
-        // 1. Tải trang chi tiết bài viết để bóc form comment và token bảo mật
-        val pageReq = Request.Builder()
-            .url(postUrl)
-            .header("User-Agent", USER_AGENT)
-            .header("Cookie", cookie)
-            .header("Referer", "$BASE_URL/home.php")
-            .build()
+        if (token.isNotBlank()) {
+            val candidateIds = linkedSetOf(post.postId, post.ftEntIdentifier).filter { it.isNotBlank() }
 
-        val html = try {
-            client.newCall(pageReq).execute().use { res ->
-                if (res.isSuccessful) res.body?.string() ?: "" else ""
+            for (targetId in candidateIds) {
+                val url = "$GRAPH_API_BASE/$targetId/comments"
+                val formBody = FormBody.Builder()
+                    .add("message", commentText)
+                    .add("access_token", token)
+                    .build()
+
+                val reqBuilder = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .post(formBody)
+
+                if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
+                    reqBuilder.header("X-FB-Actor-ID", targetActorId)
+                }
+
+                val success = try {
+                    client.newCall(reqBuilder.build()).execute().use { res ->
+                        val code = res.code
+                        val body = res.body?.string().orEmpty()
+                        code in 200..299 || body.contains("\"id\":")
+                    }
+                } catch (_: Exception) {
+                    false
+                }
+
+                if (success) return true
             }
-        } catch (_: Exception) { "" }
-
-        if (html.isBlank()) return false
-
-        // 2. Bóc action URL của form bình luận
-        val formActionPattern = Pattern.compile("action=\"(/a/comment\\.php[^\"]+)\"")
-        val formMatcher = formActionPattern.matcher(html)
-        val actionPath = if (formMatcher.find()) formMatcher.group(1).replace("&amp;", "&") else null
-
-        if (actionPath.isNullOrBlank()) return false
-        val fullActionUrl = if (actionPath.startsWith("http")) actionPath else BASE_URL + actionPath
-
-        // 3. Bóc các trường ẩn: fb_dtsg, jazoest
-        val fbDtsg = extractHiddenInput(html, "fb_dtsg")
-        val jazoest = extractHiddenInput(html, "jazoest")
-
-        // 4. Đóng gói dữ liệu form gửi đi
-        val formBodyBuilder = FormBody.Builder()
-            .add("comment_text", commentText)
-
-        if (!fbDtsg.isNullOrBlank()) formBodyBuilder.add("fb_dtsg", fbDtsg)
-        if (!jazoest.isNullOrBlank()) formBodyBuilder.add("jazoest", jazoest)
-
-        val postReqBuilder = Request.Builder()
-            .url(fullActionUrl)
-            .header("User-Agent", USER_AGENT)
-            .header("Cookie", cookie)
-            .header("Referer", postUrl)
-            .post(formBodyBuilder.build())
-
-        if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
-            postReqBuilder.header("X-FB-Actor-ID", targetActorId)
         }
 
-        return try {
-            client.newCall(postReqBuilder.build()).execute().use { res ->
-                res.isSuccessful || res.isRedirect
-            }
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun extractHiddenInput(html: String, name: String): String? {
-        val pattern = Pattern.compile("name=\"$name\"\\s+value=\"([^\"]*)\"")
-        val matcher = pattern.matcher(html)
-        if (matcher.find()) return matcher.group(1)
-
-        val patternReverse = Pattern.compile("value=\"([^\"]*)\"\\s+name=\"$name\"")
-        val matcherReverse = patternReverse.matcher(html)
-        if (matcherReverse.find()) return matcherReverse.group(1)
-
-        return null
+        return false
     }
 }

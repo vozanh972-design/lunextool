@@ -11,6 +11,7 @@ import kotlin.random.Random
 
 class FbNuoiTaskRunner(
     private val cookie: String,
+    private val token: String = "",
     private val targetActorId: String? = null,
     private val config: FbNuoiConfig = FbNuoiConfig(),
     private val client: OkHttpClient = defaultClient()
@@ -56,20 +57,22 @@ class FbNuoiTaskRunner(
             totalErrors = 0
         ))
 
-        // 1. Quét bài viết Newsfeed với cơ chế cuộn trang đa tầng
+        // 1. Quét bài viết Newsfeed với cơ chế cuộn trang đa tầng bằng Graph API / GraphQL (Chuẩn Kahara Mod)
         val posts = FbFeedScraper.fetchFeedWithScroll(
             client = client,
             cookie = cookie,
+            token = token,
             targetActorId = targetActorId,
-            maxPages = config.maxFeedPages
+            maxPages = config.maxFeedPages,
+            targetCount = config.interactCount.coerceAtLeast(15)
         )
 
         if (posts.isEmpty()) {
             onProgress(FbNuoiProgress(
-                status = "Lỗi: Không tìm thấy bài viết trên Newsfeed",
-                totalErrors = 1,
+                status = "Không có bài viết mới để tương tác",
+                totalErrors = 0,
                 isFinished = true,
-                errorMessage = "Không lấy được bài viết trên Feed (Kiểm tra lại Cookie/Token)"
+                errorMessage = null
             ))
             return
         }
@@ -98,6 +101,7 @@ class FbNuoiTaskRunner(
 
                 val reactSuccess = FbReactionHelper.sendReaction(
                     client = client,
+                    token = token,
                     cookie = cookie,
                     post = post,
                     selectedReactionTypes = config.selectedReactions,
@@ -116,9 +120,8 @@ class FbNuoiTaskRunner(
                 delay(reactDelay)
             }
 
-            // B. Bình luận dạo (Nếu bài viết hợp lệ và chưa đủ số lượng)
+            // B. Bình luận dạo
             if (config.isCommentEnabled && config.commentList.isNotEmpty() && successComments < config.commentCount) {
-                // Cách mỗi 2-3 bài thì comment 1 lần cho tự nhiên
                 if (index % 2 == 0 || successComments == 0) {
                     onProgress(FbNuoiProgress(
                         status = "Đang gửi bình luận bài ${index + 1}...",
@@ -130,6 +133,7 @@ class FbNuoiTaskRunner(
 
                     val commentSuccess = FbCommentHelper.sendComment(
                         client = client,
+                        token = token,
                         cookie = cookie,
                         post = post,
                         commentList = config.commentList,
@@ -149,11 +153,11 @@ class FbNuoiTaskRunner(
                 }
             }
 
-            // C. Kết bạn dạo (Theo dõi tác giả bài viết hoặc gợi ý kết bạn)
+            // C. Kết bạn dạo (hoặc theo dõi tác giả bài viết)
             if (config.isFriendEnabled && successFriends < config.friendCount) {
                 if (index % 3 == 0) {
                     onProgress(FbNuoiProgress(
-                        status = "Đang gửi lời mời kết bạn dạo...",
+                        status = "Đang gửi lời mời kết bạn / theo dõi tác giả...",
                         successReactions = successReactions,
                         successComments = successComments,
                         successFriends = successFriends,
@@ -161,9 +165,9 @@ class FbNuoiTaskRunner(
                     ))
 
                     val friendSuccess = if (post.authorId.isNotBlank()) {
-                        FbFriendHelper.followAuthor(client, cookie, post.authorId, targetActorId)
+                        FbFriendHelper.followOrAddFriend(client, token, cookie, post.authorId, targetActorId)
                     } else {
-                        FbFriendHelper.sendFriendRequestFromSuggestions(client, cookie, targetActorId)
+                        false
                     }
 
                     if (friendSuccess) {
