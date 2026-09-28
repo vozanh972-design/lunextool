@@ -25,6 +25,9 @@ data class FbPost(
     val authorName: String = "",
     val authorId: String = "",
     val message: String = "",
+    val messageSnippet: String = "",
+    val commentCount: Int = 0,
+    val reactionCount: Int = 0,
     val reactionPickerUrl: String = "",
     val commentFormAction: String = "",
     val ftEntIdentifier: String = ""
@@ -45,6 +48,7 @@ data class FbNuoiConfig(
         "Bài viết tuyệt vời quá bạn ơi",
         "Tuyệt vời!"
     ),
+    val minCommentsToComment: Int = 5, // Chỉ comment khi bài viết có từ X bình luận trở lên
     val commentCount: Int = 3,
     val commentDelayMinSec: Int = 15,
     val commentDelayMaxSec: Int = 30,

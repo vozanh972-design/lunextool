@@ -1,5 +1,8 @@
 package com.cayxu.app.ui.screens.utilities
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -11,8 +14,10 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -1144,7 +1149,7 @@ fun FacebookNurtureScreen(navController: NavController) {
         )
     }
 
-    // Dialog xem chi tiết lỗi
+    // Dialog xem chi tiết lỗi kèm nút Sao chép lỗi
     if (selectedErrorDetailAccount != null) {
         val targetUid = selectedErrorDetailAccount!!
         val errorText = fbErrorDetailMap[targetUid] ?: fbStatusMap[targetUid] ?: "Không có thông tin lỗi chi tiết"
@@ -1158,15 +1163,54 @@ fun FacebookNurtureScreen(navController: NavController) {
                 }
             },
             text = {
-                Text(
-                    text = errorText,
-                    fontSize = 13.sp,
-                    color = TextPrimary
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 260.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFFF8FAFC))
+                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                    ) {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            Text(
+                                text = errorText,
+                                fontSize = 12.5.sp,
+                                lineHeight = 18.sp,
+                                color = TextPrimary
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Button(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = ClipData.newPlainText("Chi tiết lỗi Nuôi FB", errorText)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "Đã sao chép chi tiết lỗi vào bộ nhớ tạm!", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2)),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                    ) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Sao chép lỗi", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
             },
             confirmButton = {
                 TextButton(onClick = { selectedErrorDetailAccount = null }) {
-                    Text("Đóng", color = BrandBlue, fontWeight = FontWeight.Bold)
+                    Text("Đóng", color = TextSecondary, fontWeight = FontWeight.SemiBold)
                 }
             }
         )

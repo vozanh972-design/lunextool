@@ -66,6 +66,7 @@ object FbNuoiConfigStore {
 
                 isCommentEnabled = json.optBoolean("isCommentEnabled", false),
                 commentList = comments,
+                minCommentsToComment = json.optInt("minCommentsToComment", 5),
                 commentCount = json.optInt("commentCount", 3),
                 commentDelayMinSec = json.optInt("commentDelayMinSec", 15),
                 commentDelayMaxSec = json.optInt("commentDelayMaxSec", 30),
@@ -94,6 +95,7 @@ object FbNuoiConfigStore {
 
                 put("isCommentEnabled", config.isCommentEnabled)
                 put("commentList", JSONArray(config.commentList.filter { it.isNotBlank() }))
+                put("minCommentsToComment", config.minCommentsToComment)
                 put("commentCount", config.commentCount)
                 put("commentDelayMinSec", config.commentDelayMinSec)
                 put("commentDelayMaxSec", config.commentDelayMaxSec)

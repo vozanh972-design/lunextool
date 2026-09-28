@@ -50,7 +50,7 @@ class FbNuoiTaskRunner(
         var errorCount = 0
 
         onProgress(FbNuoiProgress(
-            status = "Đang quét Newsfeed (Trượt từ dưới lên)...",
+            status = "Đang lướt Newsfeed (Trượt từ dưới lên)...",
             successReactions = 0,
             successComments = 0,
             successFriends = 0,
@@ -78,21 +78,35 @@ class FbNuoiTaskRunner(
         }
 
         onProgress(FbNuoiProgress(
-            status = "Đã tìm thấy ${posts.size} bài viết. Bắt đầu tương tác...",
+            status = "Đang lướt Newsfeed... Đã tìm thấy ${posts.size} bài viết",
             successReactions = 0,
             successComments = 0,
             successFriends = 0,
             totalErrors = 0
         ))
+        delay(1200L)
 
         // 2. Vòng lặp tương tác từng bài viết
         for ((index, post) in posts.withIndex()) {
             if (!coroutineContext.isActive) break
 
+            val author = post.authorName.ifBlank { "Người dùng Facebook" }
+            val snippet = post.messageSnippet.ifBlank { "Bài viết" }
+            val postOverview = "Bài ${index + 1}: [$author] '$snippet' (💬 ${post.commentCount} cmt | 👍 ${post.reactionCount} like)"
+
+            onProgress(FbNuoiProgress(
+                status = postOverview,
+                successReactions = successReactions,
+                successComments = successComments,
+                successFriends = successFriends,
+                totalErrors = errorCount
+            ))
+            delay(1000L)
+
             // A. Thả cảm xúc dạo
             if (config.isInteractEnabled && successReactions < config.interactCount) {
                 onProgress(FbNuoiProgress(
-                    status = "Thả cảm xúc bài ${index + 1}/${posts.size}...",
+                    status = "👍 Thả cảm xúc bài ${index + 1}/${posts.size}: [$author]",
                     successReactions = successReactions,
                     successComments = successComments,
                     successFriends = successFriends,
@@ -112,6 +126,15 @@ class FbNuoiTaskRunner(
                     successReactions++
                 } else {
                     errorCount++
+                    val timeStr = java.text.SimpleDateFormat("HH:mm:ss dd/MM", java.util.Locale.getDefault()).format(java.util.Date())
+                    onProgress(FbNuoiProgress(
+                        status = "Lỗi thả cảm xúc bài [$author]",
+                        successReactions = successReactions,
+                        successComments = successComments,
+                        successFriends = successFriends,
+                        totalErrors = errorCount,
+                        errorMessage = "[$timeStr] Lỗi thả cảm xúc bài viết ${post.postId} của [$author]. Vui lòng kiểm tra Cookie/Token Facebook."
+                    ))
                 }
 
                 val minD = config.interactDelayMinSec.coerceAtLeast(1)
@@ -120,11 +143,20 @@ class FbNuoiTaskRunner(
                 delay(reactDelay)
             }
 
-            // B. Bình luận dạo
+            // B. Bình luận dạo (Kèm bộ lọc số bình luận tối thiểu)
             if (config.isCommentEnabled && config.commentList.isNotEmpty() && successComments < config.commentCount) {
-                if (index % 2 == 0 || successComments == 0) {
+                if (post.commentCount < config.minCommentsToComment) {
                     onProgress(FbNuoiProgress(
-                        status = "Đang gửi bình luận bài ${index + 1}...",
+                        status = "Bỏ qua comment bài của [$author]: Chỉ có ${post.commentCount}/${config.minCommentsToComment} cmt",
+                        successReactions = successReactions,
+                        successComments = successComments,
+                        successFriends = successFriends,
+                        totalErrors = errorCount
+                    ))
+                    delay(1200L)
+                } else {
+                    onProgress(FbNuoiProgress(
+                        status = "💬 Bình luận bài ${index + 1}: [$author] (đạt ${post.commentCount}/${config.minCommentsToComment} cmt)...",
                         successReactions = successReactions,
                         successComments = successComments,
                         successFriends = successFriends,
@@ -144,6 +176,15 @@ class FbNuoiTaskRunner(
                         successComments++
                     } else {
                         errorCount++
+                        val timeStr = java.text.SimpleDateFormat("HH:mm:ss dd/MM", java.util.Locale.getDefault()).format(java.util.Date())
+                        onProgress(FbNuoiProgress(
+                            status = "Lỗi gửi bình luận bài [$author]",
+                            successReactions = successReactions,
+                            successComments = successComments,
+                            successFriends = successFriends,
+                            totalErrors = errorCount,
+                            errorMessage = "[$timeStr] Lỗi gửi bình luận bài viết ${post.postId} của [$author]. Vui lòng kiểm tra Cookie/Token hoặc xem tài khoản có bị chặn bình luận không."
+                        ))
                     }
 
                     val minD = config.commentDelayMinSec.coerceAtLeast(3)

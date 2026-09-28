@@ -53,6 +53,7 @@ fun FbNuoiConfigScreen(navController: NavController) {
     // Nhóm 2: Comment dạo
     var isCommentEnabled by remember { mutableStateOf(savedConfig.isCommentEnabled) }
     var commentsText by remember { mutableStateOf(savedConfig.commentList.joinToString("\n")) }
+    var minCommentsToComment by remember { mutableStateOf(savedConfig.minCommentsToComment.toString()) }
     var commentCount by remember { mutableStateOf(savedConfig.commentCount.toString()) }
     var commentDelayMin by remember { mutableStateOf(savedConfig.commentDelayMinSec.toString()) }
     var commentDelayMax by remember { mutableStateOf(savedConfig.commentDelayMaxSec.toString()) }
@@ -252,6 +253,21 @@ fun FbNuoiConfigScreen(navController: NavController) {
 
                     Spacer(Modifier.height(14.dp))
                     NumberInputField(
+                        label = "Chỉ bình luận khi bài viết có tối thiểu:",
+                        value = minCommentsToComment,
+                        onValueChange = { minCommentsToComment = it },
+                        placeholder = "5",
+                        unit = "bình luận"
+                    )
+                    Text(
+                        text = "Gợi ý: Nhập 5 hoặc 10 bài viết có tương tác cao (bỏ qua bài ít tương tác/rác)",
+                        fontSize = 11.5.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(start = 2.dp, top = 2.dp)
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+                    NumberInputField(
                         label = "Số lượng bài viết comment",
                         value = commentCount,
                         onValueChange = { commentCount = it },
@@ -355,6 +371,7 @@ fun FbNuoiConfigScreen(navController: NavController) {
                                 "Tuyệt vời!"
                             )
                         },
+                        minCommentsToComment = minCommentsToComment.toIntOrNull()?.coerceAtLeast(0) ?: 5,
                         commentCount = commentCount.toIntOrNull()?.coerceAtLeast(1) ?: 3,
                         commentDelayMinSec = commentDelayMin.toIntOrNull()?.coerceAtLeast(1) ?: 15,
                         commentDelayMaxSec = commentDelayMax.toIntOrNull()?.coerceAtLeast(1) ?: 30,

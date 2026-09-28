@@ -57,6 +57,12 @@ object FbFeedScraper {
         return collectedPosts
     }
 
+    fun createSnippet(text: String, maxLength: Int = 28): String {
+        val clean = text.replace(Regex("\\s+"), " ").trim()
+        if (clean.isBlank()) return "Bài viết không có văn bản"
+        return if (clean.length <= maxLength) clean else clean.take(maxLength).trimEnd() + "..."
+    }
+
     /**
      * Lấy bài viết Newsfeed bằng Graph API (/me/feed hoặc /{targetActorId}/feed)
      * Hỗ trợ phân trang vô tận bằng con trỏ after (Trượt từ dưới lên)
@@ -76,7 +82,8 @@ object FbFeedScraper {
             "$GRAPH_API_BASE/me/feed"
         }
 
-        var nextUrl: String? = "$endpoint?fields=id,message,from{id,name},created_time&limit=15&access_token=$token"
+        val fieldsParam = "fields=id,message,from{id,name},created_time,comments.summary(true).limit(0),reactions.summary(true).limit(0)"
+        var nextUrl: String? = "$endpoint?$fieldsParam&limit=15&access_token=$token"
         var pagesLoaded = 0
 
         while (!nextUrl.isNullOrBlank() && pagesLoaded < maxPages && result.size < targetCount) {
@@ -107,6 +114,15 @@ object FbFeedScraper {
                         val authorId = fromObj?.optString("id") ?: ""
                         val authorName = fromObj?.optString("name") ?: ""
                         val message = item.optString("message", "")
+                        val commentCount = item.optJSONObject("comments")?.optJSONObject("summary")?.optInt("total_count")
+                            ?: item.optJSONObject("feedback")?.optInt("total_comment_count")
+                            ?: item.optJSONObject("feedback")?.optJSONObject("total_comment_count")?.optInt("count")
+                            ?: 0
+                        val reactionCount = item.optJSONObject("reactions")?.optJSONObject("summary")?.optInt("total_count")
+                            ?: item.optJSONObject("likes")?.optJSONObject("summary")?.optInt("total_count")
+                            ?: item.optJSONObject("feedback")?.optJSONObject("reaction_count")?.optInt("count")
+                            ?: item.optJSONObject("feedback")?.optInt("reaction_count")
+                            ?: 0
 
                         result.add(
                             FbPost(
@@ -114,6 +130,9 @@ object FbFeedScraper {
                                 authorName = authorName,
                                 authorId = authorId,
                                 message = message,
+                                messageSnippet = createSnippet(message),
+                                commentCount = commentCount,
+                                reactionCount = reactionCount,
                                 ftEntIdentifier = realPostId
                             )
                         )
@@ -129,7 +148,7 @@ object FbFeedScraper {
 
                 nextUrl = when {
                     !nextFromPaging.isNullOrBlank() -> nextFromPaging
-                    !afterCursor.isNullOrBlank() -> "$endpoint?fields=id,message,from{id,name},created_time&limit=15&access_token=$token&after=$afterCursor"
+                    !afterCursor.isNullOrBlank() -> "$endpoint?$fieldsParam&limit=15&access_token=$token&after=$afterCursor"
                     else -> null
                 }
             } catch (_: Exception) {
@@ -140,7 +159,7 @@ object FbFeedScraper {
         // Nếu /feed chưa có bài, thử tiếp /me/home (Newfeed bạn bè / trang theo dõi)
         if (result.isEmpty()) {
             try {
-                val homeUrl = "$GRAPH_API_BASE/me/home?fields=id,message,from{id,name},created_time&limit=15&access_token=$token"
+                val homeUrl = "$GRAPH_API_BASE/me/home?$fieldsParam&limit=15&access_token=$token"
                 val req = Request.Builder()
                     .url(homeUrl)
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
@@ -160,12 +179,26 @@ object FbFeedScraper {
                         val realPostId = if (fullId.contains("_")) fullId.substringAfter("_") else fullId
                         if (seenPostIds.add(realPostId)) {
                             val from = item.optJSONObject("from")
+                            val authorName = from?.optString("name") ?: ""
+                            val authorId = from?.optString("id") ?: ""
+                            val message = item.optString("message", "")
+                            val commentCount = item.optJSONObject("comments")?.optJSONObject("summary")?.optInt("total_count")
+                                ?: item.optJSONObject("feedback")?.optInt("total_comment_count")
+                                ?: 0
+                            val reactionCount = item.optJSONObject("reactions")?.optJSONObject("summary")?.optInt("total_count")
+                                ?: item.optJSONObject("likes")?.optJSONObject("summary")?.optInt("total_count")
+                                ?: item.optJSONObject("feedback")?.optJSONObject("reaction_count")?.optInt("count")
+                                ?: 0
+
                             result.add(
                                 FbPost(
                                     postId = fullId,
-                                    authorName = from?.optString("name") ?: "",
-                                    authorId = from?.optString("id") ?: "",
-                                    message = item.optString("message", ""),
+                                    authorName = authorName,
+                                    authorId = authorId,
+                                    message = message,
+                                    messageSnippet = createSnippet(message),
+                                    commentCount = commentCount,
+                                    reactionCount = reactionCount,
                                     ftEntIdentifier = realPostId
                                 )
                             )
@@ -191,7 +224,7 @@ object FbFeedScraper {
         val result = mutableListOf<FbPost>()
         try {
             val url = "https://graph.facebook.com/graphql"
-            val queryDoc = "query NewsFeedQuery { viewer { news_feed { edges { node { id post_id message { text } actors { id name } } } } } }"
+            val queryDoc = "query NewsFeedQuery { viewer { news_feed { edges { node { id post_id message { text } actors { id name } feedback { total_comment_count reaction_count { count } } } } } } }"
             val formBuilder = FormBody.Builder()
                 .add("q", queryDoc)
 
@@ -240,6 +273,15 @@ object FbFeedScraper {
                         val authorId = actor0?.optString("id") ?: ""
                         val authorName = actor0?.optString("name") ?: ""
                         val msg = node.optJSONObject("message")?.optString("text") ?: ""
+                        val fb = node.optJSONObject("feedback")
+                        val commentCount = fb?.optInt("total_comment_count")
+                            ?: fb?.optJSONObject("total_comment_count")?.optInt("count")
+                            ?: fb?.optJSONObject("comments")?.optInt("total_count")
+                            ?: 0
+                        val reactionCount = fb?.optJSONObject("reaction_count")?.optInt("count")
+                            ?: fb?.optInt("reaction_count")
+                            ?: fb?.optJSONObject("reactors")?.optInt("count")
+                            ?: 0
 
                         result.add(
                             FbPost(
@@ -247,6 +289,9 @@ object FbFeedScraper {
                                 authorName = authorName,
                                 authorId = authorId,
                                 message = msg,
+                                messageSnippet = createSnippet(msg),
+                                commentCount = commentCount,
+                                reactionCount = reactionCount,
                                 ftEntIdentifier = realPostId
                             )
                         )
@@ -270,7 +315,7 @@ object FbFeedScraper {
 
         for (pageName in publicPages) {
             try {
-                val url = "$GRAPH_API_BASE/$pageName/posts?fields=id,message,from{id,name}&limit=10&access_token=$token"
+                val url = "$GRAPH_API_BASE/$pageName/posts?fields=id,message,from{id,name},comments.summary(true).limit(0),reactions.summary(true).limit(0)&limit=10&access_token=$token"
                 val req = Request.Builder()
                     .url(url)
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
@@ -290,12 +335,25 @@ object FbFeedScraper {
                         val realId = if (id.contains("_")) id.substringAfter("_") else id
                         if (seenPostIds.add(realId)) {
                             val from = item.optJSONObject("from")
+                            val authorName = from?.optString("name") ?: ""
+                            val authorId = from?.optString("id") ?: ""
+                            val message = item.optString("message", "")
+                            val commentCount = item.optJSONObject("comments")?.optJSONObject("summary")?.optInt("total_count")
+                                ?: item.optJSONObject("feedback")?.optInt("total_comment_count")
+                                ?: 0
+                            val reactionCount = item.optJSONObject("reactions")?.optJSONObject("summary")?.optInt("total_count")
+                                ?: item.optJSONObject("likes")?.optJSONObject("summary")?.optInt("total_count")
+                                ?: 0
+
                             result.add(
                                 FbPost(
                                     postId = id,
-                                    authorName = from?.optString("name") ?: "",
-                                    authorId = from?.optString("id") ?: "",
-                                    message = item.optString("message", ""),
+                                    authorName = authorName,
+                                    authorId = authorId,
+                                    message = message,
+                                    messageSnippet = createSnippet(message),
+                                    commentCount = commentCount,
+                                    reactionCount = reactionCount,
                                     ftEntIdentifier = realId
                                 )
                             )
