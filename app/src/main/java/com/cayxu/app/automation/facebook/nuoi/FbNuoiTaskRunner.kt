@@ -52,24 +52,45 @@ class FbNuoiTaskRunner(
         var errorCount = 0
 
         onProgress(FbNuoiProgress(
-            status = "Đang lướt Newsfeed (Trượt từ dưới lên)...",
+            status = "Đang lướt Newsfeed GraphQL...",
             successReactions = 0,
             successComments = 0,
             successFriends = 0,
             totalErrors = 0
         ))
 
-        // 1. Quét bài viết Newsfeed với cơ chế cuộn trang đa tầng bằng Graph API / GraphQL (Chuẩn Kahara Mod)
-        val posts = FbFeedScraper.fetchFeedWithScroll(
-            client = client,
-            cookie = cookie,
-            token = token,
-            targetActorId = targetActorId,
-            myUid = myUid,
-            myName = myName,
-            maxPages = config.maxFeedPages,
-            targetCount = config.interactCount.coerceAtLeast(15)
-        )
+        // 1. Quét bài viết Newsfeed với 100% GraphQL API Token Engine (Chuẩn KaharaMod / Katana Native)
+        val posts = try {
+            FbFeedScraper.fetchFeedWithScroll(
+                client = client,
+                token = token,
+                targetActorId = targetActorId,
+                myUid = myUid,
+                myName = myName,
+                maxPages = config.maxFeedPages,
+                targetCount = config.interactCount.coerceAtLeast(15)
+            )
+        } catch (e: TokenExpiredException) {
+            val timeStr = java.text.SimpleDateFormat("HH:mm:ss dd/MM", java.util.Locale.getDefault()).format(java.util.Date())
+            onProgress(FbNuoiProgress(
+                status = "Lỗi: Access Token hết hạn hoặc không hợp lệ",
+                totalErrors = 1,
+                isFinished = true,
+                errorMessage = "[$timeStr] Access Token của tài khoản đã hết hạn hoặc không hợp lệ (Mã 190). Vui lòng cập nhật Token để tiếp tục nuôi nick."
+            ))
+            return
+        } catch (e: IllegalArgumentException) {
+            val timeStr = java.text.SimpleDateFormat("HH:mm:ss dd/MM", java.util.Locale.getDefault()).format(java.util.Date())
+            onProgress(FbNuoiProgress(
+                status = "Lỗi: Tài khoản chưa có Access Token",
+                totalErrors = 1,
+                isFinished = true,
+                errorMessage = "[$timeStr] ${e.message}"
+            ))
+            return
+        } catch (e: Exception) {
+            emptyList()
+        }
 
         if (posts.isEmpty()) {
             onProgress(FbNuoiProgress(
