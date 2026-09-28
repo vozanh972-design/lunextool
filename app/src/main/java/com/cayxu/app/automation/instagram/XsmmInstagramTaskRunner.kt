@@ -262,6 +262,7 @@ class XsmmInstagramTaskRunner(
 
             // Bước 4: Vòng lặp nhận job & làm việc
             while (coroutineContext.isActive) {
+                if (!coroutineContext.isActive) throw kotlinx.coroutines.CancellationException("User stopped")
                 if (completedCount >= targetJobs) {
                     notify("Đủ $targetJobs job -> Dừng", completedCount, errorCount)
                     break
@@ -285,46 +286,30 @@ class XsmmInstagramTaskRunner(
                     }
 
                     for (x in waitSec downTo 1) {
-                        if (!coroutineContext.isActive) break
+                        if (!coroutineContext.isActive) throw kotlinx.coroutines.CancellationException("User stopped")
                         val prefix = if (!errMsg.isNullOrBlank()) "XSMM: $errMsg" else if (!infoMsg.isNullOrBlank()) "XSMM: $infoMsg" else "Chờ job $jobType"
                         notify("• $prefix (${x}s)...", completedCount, errorCount)
                         delay(1000L)
+                        if (!coroutineContext.isActive) throw kotlinx.coroutines.CancellationException("User stopped")
                     }
                     continue
                 }
 
                 val pendingFollowTaskIds = mutableListOf<String>()
                 for (task in tasks) {
-                    if (!coroutineContext.isActive) break
+                    if (!coroutineContext.isActive) throw kotlinx.coroutines.CancellationException("User stopped")
                     val taskId = task.optString("id")
                     val targetId = task.optString("target_id")
                     val targetUrl = task.optString("target_url")
                     val idOrLink = task.optString("idorlink")
                     val commentText = task.optString("comment").ifBlank { "Great post!" }
                     val finalTarget = targetId.ifBlank { idOrLink }
-                    val success = when (jobType) {
+
+                    val actionResult = when (jobType) {
                         "instagram_follow" -> {
                             val userToFollow = targetUrl.trim().trimEnd('/').substringAfterLast("/").ifBlank { idOrLink }
                             notify("• Follow @$userToFollow ($finalTarget)", completedCount, errorCount)
-                            val res = runner.doFollow(finalTarget, userToFollow, targetUrl)
-                            if (!res.isSuccess) {
-                                val bodyPreview = if (res.rawBody.length > 500) res.rawBody.take(500) else res.rawBody
-                                val isDieOrCheckpoint = res.rawBody.contains("login_required", true) ||
-                                    res.rawBody.contains("checkpoint", true) ||
-                                    res.rawBody.contains("accounts/suspended", true) ||
-                                    res.rawBody.contains("1357031") ||
-                                    res.httpCode == 401 || res.httpCode == 403
-                                if (isDieOrCheckpoint) {
-                                    val dieMsg = "• Lỗi: Cookie DIE / Checkpoint"
-                                    notify(dieMsg, completedCount, errorCount + 1)
-                                    onErrorDetail?.invoke(cleanUsername, "Tài khoản bị DIE hoặc dính Checkpoint [HTTP ${res.httpCode}]:\n$bodyPreview")
-                                    InstagramAccountsStore.updateAccount(context, updated.copy(isLive = false))
-                                    InstagramAccountsStore.updateAccount(context, localAcc.copy(isLive = false))
-                                    return RunResult(completedCount, errorCount + 1, totalPoints, dieMsg)
-                                }
-                                onErrorDetail?.invoke(cleanUsername, "Instagram Follow lỗi [HTTP ${res.httpCode}]:\n$bodyPreview")
-                            }
-                            res.isSuccess
+                            runner.doFollow(finalTarget, userToFollow, targetUrl)
                         }
                         "instagram_like" -> {
                             notify("• Tym bài viết ($finalTarget)", completedCount, errorCount)
@@ -334,18 +319,57 @@ class XsmmInstagramTaskRunner(
                             notify("• Comment: \"${commentText.take(15)}...\"", completedCount, errorCount)
                             runner.doComment(targetUrl.ifBlank { idOrLink }, finalTarget, commentText)
                         }
-                        else -> false
+                        else -> IgActionResult(false, 400, "", "Loại job không hợp lệ")
                     }
-                    if (success) {
-                        completedCount++
+
+                    if (!actionResult.isSuccess) {
+                        errorCount++
+                        consecutiveErrors++
+                        val errReason = actionResult.errorMessage ?: "Lỗi tương tác Instagram"
+                        val isDieOrCheckpoint = actionResult.rawBody.contains("login_required", true) ||
+                                actionResult.rawBody.contains("checkpoint", true) ||
+                                actionResult.rawBody.contains("accounts/suspended", true) ||
+                                actionResult.rawBody.contains("1357031") ||
+                                actionResult.httpCode == 401 || actionResult.httpCode == 403
+
+                        if (isDieOrCheckpoint) {
+                            val dieMsg = "• Lỗi: Cookie DIE / Checkpoint"
+                            notify(dieMsg, completedCount, errorCount)
+                            onErrorDetail?.invoke(cleanUsername, "Tài khoản bị DIE hoặc dính Checkpoint [HTTP ${actionResult.httpCode}]:\n$errReason\n${actionResult.rawBody.take(300)}")
+                            InstagramAccountsStore.updateAccount(context, updated.copy(isLive = false))
+                            InstagramAccountsStore.updateAccount(context, localAcc.copy(isLive = false))
+                            return RunResult(completedCount, errorCount, totalPoints, dieMsg)
+                        }
+
+                        notify("• Lỗi: $errReason", completedCount, errorCount)
+                        onErrorDetail?.invoke(cleanUsername, "Instagram $jobType lỗi [Mã ${actionResult.httpCode}]:\n$errReason\n${actionResult.rawBody.take(300)}")
+
+                        if (consecutiveErrors >= maxErrors) {
+                            notify("Lỗi liên tiếp $consecutiveErrors lần -> Dừng nick", completedCount, errorCount)
+                            return RunResult(completedCount, errorCount, totalPoints, "Lỗi liên tiếp")
+                        }
+                        delay(4000L)
+                    } else {
+                        // Thao tác IG thành công -> Báo XSMM
                         consecutiveErrors = 0
                         if (jobType == "instagram_follow") {
                             pendingFollowTaskIds.add(taskId)
+                            completedCount++
+                            notify("• Follow thành công ($completedCount)", completedCount, errorCount)
                             if (pendingFollowTaskIds.size >= 10) {
                                 notify("• Gửi xác nhận 10 follow...", completedCount, errorCount)
                                 val comp = runner.completeTasks(jobType, pendingFollowTaskIds)
-                                val pts = comp?.optInt("points") ?: comp?.optJSONObject("data")?.optInt("points") ?: (pendingFollowTaskIds.size * 35)
-                                totalPoints += pts
+                                val points = comp?.optInt("points") ?: comp?.optJSONObject("data")?.optInt("points") ?: comp?.optInt("earned_points") ?: 0
+                                val isSuccess = points > 0 || comp?.optBoolean("success", false) == true || comp?.optString("status").equals("success", true)
+                                if (isSuccess) {
+                                    val pts = if (points > 0) points else (pendingFollowTaskIds.size * 35)
+                                    totalPoints += pts
+                                    notify("• +$pts xu (10 follow)", completedCount, errorCount)
+                                } else {
+                                    val xsmmErr = comp?.optString("error")?.takeIf { it.isNotBlank() } ?: comp?.optString("message")?.takeIf { it.isNotBlank() } ?: "XSMM từ chối cộng xu"
+                                    notify("• Lỗi XSMM: $xsmmErr", completedCount, errorCount)
+                                    onErrorDetail?.invoke(cleanUsername, "XSMM không cộng xu 10 follow:\n$xsmmErr\nPhản hồi: ${comp?.toString()?.take(200)}")
+                                }
                                 pendingFollowTaskIds.clear()
                                 val userBal = runner.fetchUserPoints()
                                 if (userBal > 0) {
@@ -358,8 +382,20 @@ class XsmmInstagramTaskRunner(
                         } else {
                             notify("• Xác nhận nhận xu...", completedCount, errorCount)
                             val comp = runner.completeTask(jobType, taskId)
-                            val pts = comp?.optInt("points") ?: comp?.optJSONObject("data")?.optInt("points") ?: 35
-                            totalPoints += pts
+                            val points = comp?.optInt("points") ?: comp?.optJSONObject("data")?.optInt("points") ?: comp?.optInt("earned_points") ?: 0
+                            val isSuccess = points > 0 || comp?.optBoolean("success", false) == true || comp?.optString("status").equals("success", true)
+                            if (isSuccess) {
+                                val pts = if (points > 0) points else 35
+                                completedCount++
+                                totalPoints += pts
+                                notify("• +$pts xu (Thành công)", completedCount, errorCount)
+                            } else {
+                                errorCount++
+                                consecutiveErrors++
+                                val xsmmErr = comp?.optString("error")?.takeIf { it.isNotBlank() } ?: comp?.optString("message")?.takeIf { it.isNotBlank() } ?: "XSMM từ chối cộng xu"
+                                notify("• Lỗi XSMM: $xsmmErr", completedCount, errorCount)
+                                onErrorDetail?.invoke(cleanUsername, "XSMM không cộng xu ($jobType):\n$xsmmErr\nPhản hồi: ${comp?.toString()?.take(200)}")
+                            }
                             val userBal = runner.fetchUserPoints()
                             if (userBal > 0) {
                                 XsmmAccountStore.updatePoints(context, userBal)
@@ -370,19 +406,11 @@ class XsmmInstagramTaskRunner(
                         }
 
                         for (sec in doDuration downTo 1) {
-                            if (!coroutineContext.isActive) break
+                            if (!coroutineContext.isActive) throw kotlinx.coroutines.CancellationException("User stopped")
                             notify("• Thành công | Chờ ${sec}s...", completedCount, errorCount)
                             delay(1000L)
+                            if (!coroutineContext.isActive) throw kotlinx.coroutines.CancellationException("User stopped")
                         }
-                    } else {
-                        errorCount++
-                        consecutiveErrors++
-                        notify("• Lỗi làm job $jobType ($finalTarget)", completedCount, errorCount)
-                        if (consecutiveErrors >= maxErrors) {
-                            notify("Lỗi liên tiếp $consecutiveErrors lần -> Dừng nick", completedCount, errorCount)
-                            return RunResult(completedCount, errorCount, totalPoints, "Lỗi liên tiếp")
-                        }
-                        delay(4000L)
                     }
                     if (completedCount >= targetJobs) break
                 }
@@ -390,8 +418,13 @@ class XsmmInstagramTaskRunner(
                 if (pendingFollowTaskIds.isNotEmpty()) {
                     notify("• Gửi xác nhận ${pendingFollowTaskIds.size} follow...", completedCount, errorCount)
                     val comp = runner.completeTasks("instagram_follow", pendingFollowTaskIds)
-                    val pts = comp?.optInt("points") ?: comp?.optJSONObject("data")?.optInt("points") ?: (pendingFollowTaskIds.size * 35)
-                    totalPoints += pts
+                    val points = comp?.optInt("points") ?: comp?.optJSONObject("data")?.optInt("points") ?: comp?.optInt("earned_points") ?: 0
+                    val isSuccess = points > 0 || comp?.optBoolean("success", false) == true || comp?.optString("status").equals("success", true)
+                    if (isSuccess) {
+                        val pts = if (points > 0) points else (pendingFollowTaskIds.size * 35)
+                        totalPoints += pts
+                        notify("• +$pts xu (${pendingFollowTaskIds.size} follow)", completedCount, errorCount)
+                    }
                     pendingFollowTaskIds.clear()
                     val userBal = runner.fetchUserPoints()
                     if (userBal > 0) {
@@ -514,11 +547,17 @@ class XsmmInstagramTaskRunner(
 
     fun completeTasks(type: String, taskIds: List<String>): JSONObject? {
         if (taskIds.isEmpty()) return null
-        val uidParam = account.userId.ifBlank { extractTokensFromCookie(account.cookie)["ds_user_id"] ?: "" }
+        val uidParam = account.userId.takeIf { it.isNotBlank() && it != "0" }
+            ?: extractTokensFromCookie(account.cookie)["ds_user_id"]
+            ?: account.username
         val body = JSONObject().apply {
             put("type", type)
             put("task_id", JSONArray().apply { taskIds.forEach { put(it) } })
             put("uid", uidParam)
+            put("cookie_check", account.cookie)
+            put("string_ig", account.cookie)
+            put("string", account.cookie)
+            put("cookie", account.cookie)
         }.toString().toRequestBody(JSON_TYPE)
         val req = Request.Builder()
             .url("${XSMM_API}tasks2/complete")
@@ -538,14 +577,102 @@ class XsmmInstagramTaskRunner(
             .get().build()
         val res = execute(req) ?: return 0L
         return try {
-            JSONObject(res).optJSONObject("user")?.optLong("points") ?: 0L
+            val root = JSONObject(res)
+            val user = root.optJSONObject("user") ?: root.optJSONObject("data")?.optJSONObject("user")
+            user?.optLong("points") ?: root.optLong("points", 0L)
         } catch (_: Exception) { 0L }
     }
 
     // ── 5. THỰC THI NHIỆM VỤ INSTAGRAM BẰNG IgTaToolClient (GRAPHQL CHUẨN PYTHON TA TOOL) ──
-    data class FollowResult(val isSuccess: Boolean, val httpCode: Int, val rawBody: String)
+    data class IgActionResult(
+        val isSuccess: Boolean,
+        val httpCode: Int,
+        val rawBody: String,
+        val errorMessage: String? = null
+    )
+    typealias FollowResult = IgActionResult
 
-    fun doFollow(targetNumericId: String, targetUsername: String, targetUrl: String = ""): FollowResult {
+    private fun parseIgResult(rawBody: String, defaultActionName: String): IgActionResult {
+        if (rawBody.isBlank()) {
+            return IgActionResult(false, 0, "", "Phản hồi rỗng từ Instagram")
+        }
+        try {
+            val root = JSONObject(rawBody)
+            // 1. Kiểm tra thành công
+            val data = root.optJSONObject("data")
+            val friendship = data?.optJSONObject("xdt_create_friendship")
+            val status = friendship?.optJSONObject("friendship_status")
+            if (status?.optBoolean("following") == true || status?.optBoolean("outgoing_request") == true) {
+                return IgActionResult(true, 200, rawBody, null)
+            }
+            val likeMedia = data?.optJSONObject("xdt_like_media")
+            if (likeMedia != null && (likeMedia.optString("status").equals("ok", true) || likeMedia.has("client_mutation_id"))) {
+                return IgActionResult(true, 200, rawBody, null)
+            }
+            val commentData = data?.optJSONObject("comment") ?: data?.optJSONObject("xdt_comment")
+            if (commentData != null || root.has("comment") || (root.has("id") && root.has("text"))) {
+                return IgActionResult(true, 200, rawBody, null)
+            }
+            if (root.optString("status").equals("ok", true)) {
+                return IgActionResult(true, 200, rawBody, null)
+            }
+
+            // 2. Kiểm tra mảng lỗi errors
+            val errorsArr = root.optJSONArray("errors")
+            if (errorsArr != null && errorsArr.length() > 0) {
+                val firstErr = errorsArr.getJSONObject(0)
+                val msg = firstErr.optString("message").takeIf { it.isNotBlank() }
+                if (msg != null && msg.contains("already", ignoreCase = true)) {
+                    return IgActionResult(true, 200, rawBody, null)
+                }
+                val summary = firstErr.optString("summary").takeIf { it.isNotBlank() }
+                val desc = firstErr.optString("description").takeIf { it.isNotBlank() }
+                val errorText = listOfNotNull(summary, desc, msg).distinct().joinToString(": ")
+                return IgActionResult(false, 400, rawBody, errorText.ifBlank { "Lỗi GraphQL Instagram" })
+            }
+
+            // 3. Kiểm tra các mã lỗi nghiệp vụ
+            val msg = root.optString("message").takeIf { it.isNotBlank() }
+            val statusStr = root.optString("status").takeIf { it.isNotBlank() }
+            val spam = root.optBoolean("spam", false)
+            val feedbackTitle = root.optString("feedback_title").takeIf { it.isNotBlank() }
+            val feedbackMessage = root.optString("feedback_message").takeIf { it.isNotBlank() }
+
+            if (msg != null || statusStr.equals("fail", ignoreCase = true) || spam) {
+                val friendlyMsg = when {
+                    msg.equals("feedback_required", ignoreCase = true) || spam -> {
+                        feedbackMessage ?: feedbackTitle ?: "Chặn tính năng (feedback_required / spam)"
+                    }
+                    msg.equals("checkpoint_required", ignoreCase = true) -> "Dính Checkpoint xác minh tài khoản"
+                    msg.equals("login_required", ignoreCase = true) -> "Hết phiên đăng nhập (Cookie DIE)"
+                    msg.equals("rate_limit_exceeded", ignoreCase = true) -> "Quá giới hạn thao tác Instagram (Rate limit)"
+                    !feedbackMessage.isNullOrBlank() -> feedbackMessage
+                    !feedbackTitle.isNullOrBlank() -> feedbackTitle
+                    !msg.isNullOrBlank() -> msg
+                    else -> "Thao tác thất bại ($defaultActionName)"
+                }
+                return IgActionResult(false, if (spam) 429 else 400, rawBody, friendlyMsg)
+            }
+        } catch (_: Exception) {}
+
+        // Fallback kiểm tra chuỗi
+        if (rawBody.contains("\"following\":true") || rawBody.contains("\"viewer_has_liked\":true") || rawBody.contains("\"status\":\"ok\"") || rawBody.contains("\"status\": \"ok\"")) {
+            return IgActionResult(true, 200, rawBody, null)
+        }
+        if (rawBody.contains("feedback_required", ignoreCase = true)) {
+            return IgActionResult(false, 429, rawBody, "Chặn tính năng (feedback_required)")
+        }
+        if (rawBody.contains("checkpoint", ignoreCase = true)) {
+            return IgActionResult(false, 403, rawBody, "Dính Checkpoint Instagram")
+        }
+        if (rawBody.contains("login_required", ignoreCase = true)) {
+            return IgActionResult(false, 401, rawBody, "Cookie DIE / Yêu cầu đăng nhập")
+        }
+
+        return IgActionResult(false, 400, rawBody, "Instagram từ chối ($defaultActionName)")
+    }
+
+    fun doFollow(targetNumericId: String, targetUsername: String, targetUrl: String = ""): IgActionResult {
         var uid = targetNumericId.trim()
         if (!uid.all { it.isDigit() } || uid.isBlank()) {
             val extracted = if (targetUrl.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(client, account.cookie, targetUrl) else null
@@ -554,9 +681,7 @@ class XsmmInstagramTaskRunner(
         val cleanTargetUser = targetUsername.trim().trim('/').substringAfterLast('/')
         val profileUrl = if (targetUrl.isNotBlank()) targetUrl else if (cleanTargetUser.isNotBlank()) "https://www.instagram.com/$cleanTargetUser/" else "https://www.instagram.com/"
         val resBody = IgTaToolClient.follow(client, account.cookie, uid, profileUrl)
-        val isSuccess = checkSuccess(resBody)
-        val code = if (resBody.contains("\"status\": \"error\"") || resBody.contains("\"status\":\"error\"")) 400 else 200
-        return FollowResult(isSuccess, code, resBody)
+        return parseIgResult(resBody, "Follow")
     }
 
     private fun resolveTargetUid(username: String): String? {
@@ -585,52 +710,59 @@ class XsmmInstagramTaskRunner(
         } catch (_: Exception) { null }
     }
 
-    private fun checkSuccess(res: String): Boolean {
-        if (res.isBlank()) return false
-        return try {
-            val root = JSONObject(res)
-            val data = root.optJSONObject("data")
-            val friendship = data?.optJSONObject("xdt_create_friendship")
-            val status = friendship?.optJSONObject("friendship_status")
-            if (status?.optBoolean("following") == true || status?.optBoolean("outgoing_request") == true) return true
-            if (root.optString("status").equals("ok", true)) return true
-            val errors = root.optJSONArray("errors")
-            if (errors != null && errors.length() > 0) {
-                val msg = errors.getJSONObject(0).optString("message").lowercase()
-                if (msg.contains("already")) return true
+    fun doLike(link: String, mediaId: String): IgActionResult {
+        try {
+            var mid = mediaId.trim()
+            if (!mid.all { it.isDigit() } || mid.isBlank()) {
+                val sc = extractShortcode(link) ?: extractShortcode(mediaId)
+                if (!sc.isNullOrBlank()) mid = shortcodeToMediaId(sc) ?: mid
             }
-            res.contains("\"following\":true") || res.contains("already") || res.contains("\"status\":\"ok\"") || res.contains("\"status\": \"ok\"")
-        } catch (_: Exception) {
-            res.contains("\"following\":true") || res.contains("already") || res.contains("\"status\":\"ok\"") || res.contains("\"status\": \"ok\"")
+            if (mid.isBlank() || !mid.all { it.isDigit() }) {
+                val targetLink = link.ifBlank { if (mediaId.startsWith("http")) mediaId else "https://www.instagram.com/p/$mediaId/" }
+                val extractedId = extractMediaIdFromPage(targetLink)
+                if (!extractedId.isNullOrBlank()) mid = extractedId
+            }
+            if (mid.isBlank()) return IgActionResult(false, 400, "", "Không tìm thấy Media ID để Like")
+            val res = IgTaToolClient.tym(client, account.cookie, mid, link)
+            return parseIgResult(res, "Tym")
+        } catch (e: Exception) {
+            return IgActionResult(false, 500, "", e.message ?: "Lỗi kết nối khi Tym")
         }
     }
 
-    fun doLike(link: String, mediaId: String): Boolean {
+    fun doComment(link: String, mediaId: String, text: String): IgActionResult {
         try {
             var mid = mediaId.trim()
             if (!mid.all { it.isDigit() } || mid.isBlank()) {
-                val sc = extractShortcode(link)
+                val sc = extractShortcode(link) ?: extractShortcode(mediaId)
                 if (!sc.isNullOrBlank()) mid = shortcodeToMediaId(sc) ?: mid
             }
-            if (mid.isBlank()) return true
-            val res = IgTaToolClient.tym(client, account.cookie, mid, link)
-            return checkSuccess(res) || res.contains("\"viewer_has_liked\":true") || res.contains("\"like_status\"") || !res.contains("\"error\"")
-        } catch (_: Exception) {}
-        return true
+            if (mid.isBlank() || !mid.all { it.isDigit() }) {
+                val targetLink = link.ifBlank { if (mediaId.startsWith("http")) mediaId else "https://www.instagram.com/p/$mediaId/" }
+                val extractedId = extractMediaIdFromPage(targetLink)
+                if (!extractedId.isNullOrBlank()) mid = extractedId
+            }
+            if (mid.isBlank()) return IgActionResult(false, 400, "", "Không tìm thấy Media ID để Comment")
+            val res = IgTaToolClient.cmt(client, account.cookie, mid, text, link)
+            return parseIgResult(res, "Comment")
+        } catch (e: Exception) {
+            return IgActionResult(false, 500, "", e.message ?: "Lỗi kết nối khi Comment")
+        }
     }
 
-    fun doComment(link: String, mediaId: String, text: String): Boolean {
-        try {
-            var mid = mediaId.trim()
-            if (!mid.all { it.isDigit() } || mid.isBlank()) {
-                val sc = extractShortcode(link)
-                if (!sc.isNullOrBlank()) mid = shortcodeToMediaId(sc) ?: mid
-            }
-            if (mid.isBlank()) return true
-            val res = IgTaToolClient.cmt(client, account.cookie, mid, text, link)
-            return checkSuccess(res) || res.contains("\"id\"") || res.contains("\"comment\"") || !res.contains("\"error\"")
-        } catch (_: Exception) {}
-        return true
+    private fun extractMediaIdFromPage(url: String): String? {
+        if (url.isBlank()) return null
+        val req = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("Cookie", account.cookie)
+            .get().build()
+        val html = execute(req) ?: return null
+        val m = Pattern.compile("\"media_id\":\"(\\d+)\"").matcher(html)
+        if (m.find()) return m.group(1)
+        val m2 = Pattern.compile("\"pk\":\"(\\d+)\"").matcher(html)
+        if (m2.find()) return m2.group(1)
+        return null
     }
 
     private fun execute(req: Request): String? {

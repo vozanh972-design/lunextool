@@ -59,8 +59,11 @@ object XsmmInstagramManager {
             if (startDelayMs > 0) {
                 val totalSec = (startDelayMs / 1000).toInt()
                 for (s in totalSec downTo 1) {
+                    if (!isActive || !runningAccounts.contains(clean)) break
                     scope.launch(Dispatchers.Main) {
-                        statusMap[clean] = "Chờ chạy (${s}s)..."
+                        if (runningAccounts.contains(clean)) {
+                            statusMap[clean] = "Chờ chạy (${s}s)..."
+                        }
                     }
                     delay(1000L)
                 }
@@ -70,15 +73,23 @@ object XsmmInstagramManager {
                     context = context.applicationContext,
                     accountUsername = clean,
                     onStatusUpdate = { status ->
-                        scope.launch(Dispatchers.Main) {
-                            statusMap[clean] = status
+                        if (runningAccounts.contains(clean)) {
+                            scope.launch(Dispatchers.Main) {
+                                if (runningAccounts.contains(clean)) {
+                                    statusMap[clean] = status
+                                }
+                            }
                         }
                     },
                     onProgressUpdate = { status, success, errors ->
-                        scope.launch(Dispatchers.Main) {
-                            statusMap[clean] = status
-                            successCountMap[clean] = success
-                            errorCountMap[clean] = errors
+                        if (runningAccounts.contains(clean)) {
+                            scope.launch(Dispatchers.Main) {
+                                if (runningAccounts.contains(clean)) {
+                                    statusMap[clean] = status
+                                    successCountMap[clean] = success
+                                    errorCountMap[clean] = errors
+                                }
+                            }
                         }
                     },
                     onErrorDetail = { user, detail ->
@@ -91,7 +102,7 @@ object XsmmInstagramManager {
                 )
             } catch (_: kotlinx.coroutines.CancellationException) {
                 scope.launch(Dispatchers.Main) {
-                    statusMap[clean] = "Đã dừng chạy"
+                    statusMap[clean] = "• Đã dừng chạy"
                 }
             } catch (e: Exception) {
                 scope.launch(Dispatchers.Main) {
@@ -156,35 +167,55 @@ object XsmmInstagramManager {
                             }
 
                             scope.launch(Dispatchers.Main) {
-                                statusMap[username] = "Đang chạy..."
+                                if (runningAccounts.contains(username)) {
+                                    statusMap[username] = "Đang chạy..."
+                                }
                             }
 
-                            XsmmInstagramTaskRunner.runSingleAccount(
-                                context = context.applicationContext,
-                                accountUsername = username,
-                                onStatusUpdate = { status ->
-                                    scope.launch(Dispatchers.Main) {
-                                        statusMap[username] = status
+                            val childJob = launch {
+                                XsmmInstagramTaskRunner.runSingleAccount(
+                                    context = context.applicationContext,
+                                    accountUsername = username,
+                                    onStatusUpdate = { status ->
+                                        if (runningAccounts.contains(username)) {
+                                            scope.launch(Dispatchers.Main) {
+                                                if (runningAccounts.contains(username)) {
+                                                    statusMap[username] = status
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onProgressUpdate = { status, success, errors ->
+                                        if (runningAccounts.contains(username)) {
+                                            scope.launch(Dispatchers.Main) {
+                                                if (runningAccounts.contains(username)) {
+                                                    statusMap[username] = status
+                                                    successCountMap[username] = success
+                                                    errorCountMap[username] = errors
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onErrorDetail = { user, detail ->
+                                        scope.launch(Dispatchers.Main) {
+                                            lastErrorDetail[username] = detail
+                                            val u = user.trim().lowercase()
+                                            if (u.isNotBlank()) lastErrorDetail[u] = detail
+                                        }
                                     }
-                                },
-                                onProgressUpdate = { status, success, errors ->
-                                    scope.launch(Dispatchers.Main) {
-                                        statusMap[username] = status
-                                        successCountMap[username] = success
-                                        errorCountMap[username] = errors
-                                    }
-                                },
-                                onErrorDetail = { user, detail ->
-                                    scope.launch(Dispatchers.Main) {
-                                        lastErrorDetail[username] = detail
-                                        val u = user.trim().lowercase()
-                                        if (u.isNotBlank()) lastErrorDetail[u] = detail
-                                    }
-                                }
-                            )
+                                )
+                            }
+                            runningJobs[username] = childJob
+                            try {
+                                childJob.join()
+                            } finally {
+                                runningJobs.remove(username)
+                            }
 
-                            scope.launch(Dispatchers.Main) {
-                                statusMap[username] = "Đã đổi nick"
+                            if (runningAccounts.contains(username)) {
+                                scope.launch(Dispatchers.Main) {
+                                    statusMap[username] = "Đã đổi nick"
+                                }
                             }
                         }
                         if (runningAccounts.isEmpty()) break
@@ -220,9 +251,13 @@ object XsmmInstagramManager {
             }
         }
 
+        runningAccounts.removeAll { it == clean || it.lowercase() == clean }
+
         scope.launch(Dispatchers.Main) {
-            runningAccounts.removeAll { it == clean || it.lowercase() == clean }
             statusMap[clean] = "• Đã dừng chạy"
+            statusMap.keys.filter { it == clean || it.lowercase() == clean || it.contains(clean) }.forEach { k ->
+                statusMap[k] = "• Đã dừng chạy"
+            }
             if (runningAccounts.isEmpty()) {
                 val rot = runningJobs.remove("__rotation_loop__")
                 rot?.cancel()
@@ -235,11 +270,18 @@ object XsmmInstagramManager {
             job.cancel()
         }
         runningJobs.clear()
+        val stoppedList = runningAccounts.toList()
+        runningAccounts.clear()
         scope.launch(Dispatchers.Main) {
-            for (user in runningAccounts) {
+            for (user in stoppedList) {
                 statusMap[user] = "• Đã dừng chạy"
             }
-            runningAccounts.clear()
+            statusMap.keys.forEach { k ->
+                val v = statusMap[k]
+                if (v != null && (v.startsWith("• Đang") || v.startsWith("• Thành công") || v.startsWith("Chờ") || v.startsWith("• Follow") || v.startsWith("• Tym") || v.startsWith("• Comment") || v.startsWith("• Xác nhận"))) {
+                    statusMap[k] = "• Đã dừng chạy"
+                }
+            }
         }
     }
 }

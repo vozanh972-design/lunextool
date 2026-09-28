@@ -138,7 +138,6 @@ fun XsmmAccountScreen(navController: NavController) {
             facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
         } else if (selectedPlatform == "instagram") {
             instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
-                .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
         } else {
             allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
         }
@@ -593,26 +592,31 @@ fun XsmmAccountScreen(navController: NavController) {
                     "instagram" -> {
                         scope.launch(Dispatchers.IO) {
                             targetUids.forEach { accKey ->
-                                val acc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, accKey)
-                                acc?.username?.let { 
-                                    com.cayxu.app.data.local.InstagramAccountsStore.removeAccount(context, it)
-                                    com.cayxu.app.data.local.LinkedAccountsStore.removeAccount(context, "Instagram", it)
+                                val target = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, accKey)
+                                val allKeys = setOfNotNull(
+                                    accKey,
+                                    accKey.trim().removePrefix("@"),
+                                    accKey.trim().removePrefix("@").lowercase(),
+                                    target?.username,
+                                    target?.username?.trim()?.removePrefix("@"),
+                                    target?.username?.trim()?.removePrefix("@")?.lowercase(),
+                                    target?.userId,
+                                    target?.userId?.trim(),
+                                    target?.fullName?.trim()?.removePrefix("@")
+                                )
+                                allKeys.forEach { k ->
+                                    com.cayxu.app.data.local.InstagramAccountsStore.removeAccount(context, k)
+                                    com.cayxu.app.data.local.LinkedAccountsStore.removeAccount(context, "Instagram", k)
+                                    com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(k)
                                 }
-                                acc?.userId?.let { 
-                                    com.cayxu.app.data.local.InstagramAccountsStore.removeAccount(context, it)
-                                    com.cayxu.app.data.local.LinkedAccountsStore.removeAccount(context, "Instagram", it)
-                                }
-                                com.cayxu.app.data.local.InstagramAccountsStore.removeAccount(context, accKey)
-                                com.cayxu.app.data.local.LinkedAccountsStore.removeAccount(context, "Instagram", accKey)
-                                com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(accKey)
                             }
-                            val updatedList = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+                            val refreshedList = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
                             withContext(Dispatchers.Main) {
-                                instagramAccounts = updatedList // Ép Compose recompose ngay lập tức
+                                instagramAccounts = refreshedList // Ép Compose recompose ngay lập tức
                                 selectedForRunUids = emptySet()
                                 showDeleteConfirmSheet = false
                                 avatarVersion = System.currentTimeMillis()
-                                android.widget.Toast.makeText(context, "Đã xóa thành công $count tài khoản", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, "Đã xóa vĩnh viễn tài khoản khỏi thiết bị", android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                         return@DeleteConfirmBottomSheet
@@ -641,7 +645,6 @@ fun XsmmAccountScreen(navController: NavController) {
             facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
         } else if (selectedPlatform == "instagram") {
             instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
-                .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
         } else {
             allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
         }
