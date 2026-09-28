@@ -26,11 +26,39 @@ data class InstagramAccount(
 object InstagramAccountsStore {
     private const val PREFS_NAME = "cayxu_instagram_accounts"
     private const val KEY_ACCOUNTS = "accounts"
+    private const val KEY_DELETED_ACCOUNTS = "deleted_account_keys"
     private const val ENTRY_SEPARATOR = "\u0001"
     private const val FIELD_SEPARATOR = "\u0002"
 
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    fun getDeletedKeys(context: Context): Set<String> {
+        val raw = prefs(context).getString(KEY_DELETED_ACCOUNTS, null) ?: return emptySet()
+        return raw.split(ENTRY_SEPARATOR)
+            .map { it.trim().lowercase() }
+            .filter { it.isNotBlank() }
+            .toSet()
+    }
+
+    fun clearFromDeleted(context: Context, key: String) {
+        val clean = key.trim().removePrefix("@").lowercase()
+        if (clean.isBlank()) return
+        val current = getDeletedKeys(context).toMutableSet()
+        if (current.remove(clean)) {
+            prefs(context).edit().putString(KEY_DELETED_ACCOUNTS, current.joinToString(ENTRY_SEPARATOR)).commit()
+        }
+    }
+
+    private fun addDeletedKeys(context: Context, keys: Collection<String>) {
+        val cleanKeys = keys
+            .flatMap { listOf(it.trim().lowercase(), it.trim().removePrefix("@").lowercase()) }
+            .filter { it.isNotBlank() }
+        if (cleanKeys.isEmpty()) return
+        val current = getDeletedKeys(context).toMutableSet()
+        current.addAll(cleanKeys)
+        prefs(context).edit().putString(KEY_DELETED_ACCOUNTS, current.joinToString(ENTRY_SEPARATOR)).commit()
+    }
 
     private fun unescape(str: String): String {
         if (!str.contains("\\u")) return str
@@ -46,6 +74,7 @@ object InstagramAccountsStore {
 
     fun getAccounts(context: Context): List<InstagramAccount> {
         val raw = prefs(context).getString(KEY_ACCOUNTS, null) ?: return emptyList()
+        val deletedSet = getDeletedKeys(context)
         return raw.split(ENTRY_SEPARATOR)
             .filter { it.isNotBlank() }
             .mapNotNull { entry ->
@@ -76,6 +105,17 @@ object InstagramAccountsStore {
                 }
             }
             .filter { it.username.isNotBlank() }
+            .filter { acc ->
+                val u = acc.username.trim().removePrefix("@").lowercase()
+                val uid = acc.userId.trim().lowercase()
+                val igUid = if (uid.isNotBlank()) "ig_$uid" else ""
+                val fn = acc.fullName.trim().removePrefix("@").lowercase()
+                !deletedSet.contains(u) &&
+                !deletedSet.contains(acc.username.lowercase()) &&
+                (uid.isBlank() || !deletedSet.contains(uid)) &&
+                (igUid.isBlank() || !deletedSet.contains(igUid)) &&
+                (fn.isBlank() || fn.contains(" ") || !deletedSet.contains(fn))
+            }
     }
 
     fun getAccount(context: Context, usernameOrId: String): InstagramAccount? {
@@ -109,6 +149,15 @@ object InstagramAccountsStore {
             .filter { it.username.isNotEmpty() }
         if (trimmedNew.isEmpty()) return
 
+        // Khi người dùng chủ động thêm lại, gỡ khỏi danh sách đen đã xóa
+        trimmedNew.forEach { entry ->
+            clearFromDeleted(context, entry.username)
+            if (entry.userId.isNotBlank()) {
+                clearFromDeleted(context, entry.userId)
+                clearFromDeleted(context, "ig_${entry.userId}")
+            }
+        }
+
         val current = getAccounts(context).toMutableList()
         trimmedNew.forEach { entry ->
             val idx = current.indexOfFirst { 
@@ -131,6 +180,9 @@ object InstagramAccountsStore {
 
     fun setXsmmLinked(context: Context, usernameOrId: String, linked: Boolean) {
         val clean = usernameOrId.trim().removePrefix("@").lowercase()
+        val deletedKeys = getDeletedKeys(context)
+        if (deletedKeys.contains(clean)) return // Đã xóa vĩnh viễn, cấm XSMM đồng bộ phục hồi
+
         val current = getAccounts(context).toMutableList()
         val idx = current.indexOfFirst {
             it.username.trim().removePrefix("@").lowercase() == clean ||
@@ -144,6 +196,11 @@ object InstagramAccountsStore {
     }
 
     fun updateAccount(context: Context, account: InstagramAccount) {
+        val clean = account.username.trim().removePrefix("@").lowercase()
+        val deletedKeys = getDeletedKeys(context)
+        if (deletedKeys.contains(clean) || (account.userId.isNotBlank() && deletedKeys.contains(account.userId.lowercase()))) {
+            return // Đã bị xóa, không ghi đè lại
+        }
         addAccount(context, account)
     }
 
@@ -158,18 +215,45 @@ object InstagramAccountsStore {
             .toSet()
         if (cleanSet.isEmpty()) return getAccounts(context)
 
+        // Lưu vào danh sách đen vĩnh viễn với .commit()
+        val allDeletedTokens = mutableSetOf<String>()
+        allDeletedTokens.addAll(cleanSet)
+        usernamesOrIds.forEach {
+            allDeletedTokens.add(it.trim().lowercase())
+            allDeletedTokens.add(it.trim().removePrefix("@").lowercase())
+        }
+
         val current = getAccounts(context).toMutableList()
-        current.removeAll { acc ->
+        val toRemove = current.filter { acc ->
             val u = acc.username.trim().removePrefix("@").lowercase()
             val uid = acc.userId.trim().lowercase()
             val igUid = if (uid.isNotBlank()) "ig_$uid" else ""
             val fn = acc.fullName.trim().removePrefix("@").lowercase()
 
             cleanSet.contains(u) ||
+            cleanSet.contains(acc.username.lowercase()) ||
             (uid.isNotBlank() && cleanSet.contains(uid)) ||
             (igUid.isNotBlank() && cleanSet.contains(igUid)) ||
             (fn.isNotBlank() && !fn.contains(" ") && cleanSet.contains(fn))
         }
+
+        toRemove.forEach { acc ->
+            if (acc.username.isNotBlank()) {
+                allDeletedTokens.add(acc.username.trim().lowercase())
+                allDeletedTokens.add(acc.username.trim().removePrefix("@").lowercase())
+            }
+            if (acc.userId.isNotBlank()) {
+                allDeletedTokens.add(acc.userId.trim().lowercase())
+                allDeletedTokens.add("ig_${acc.userId.trim().lowercase()}")
+            }
+            if (acc.fullName.isNotBlank() && !acc.fullName.contains(" ")) {
+                allDeletedTokens.add(acc.fullName.trim().lowercase())
+            }
+        }
+
+        addDeletedKeys(context, allDeletedTokens)
+
+        current.removeAll(toRemove.toSet())
         save(context, current)
         return current
     }

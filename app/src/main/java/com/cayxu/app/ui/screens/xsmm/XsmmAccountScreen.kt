@@ -622,7 +622,9 @@ fun XsmmAccountScreen(navController: NavController) {
                             }
                             val updatedAccounts = com.cayxu.app.data.local.InstagramAccountsStore.deleteAccounts(context, allKeysToRemove)
                             com.cayxu.app.data.local.LinkedAccountsStore.removeAccounts(context, "Instagram", allKeysToRemove)
+                            val cleanRemoveSet = allKeysToRemove.map { it.trim().removePrefix("@").lowercase() }.toSet()
                             val refreshedList = updatedAccounts.map { it.username }
+                                .filterNot { cleanRemoveSet.contains(it.trim().removePrefix("@").lowercase()) }
                             withContext(Dispatchers.Main) {
                                 instagramAccounts = refreshedList // Ép Compose recompose ngay lập tức
                                 selectedForRunUids = emptySet()
@@ -687,11 +689,14 @@ fun XsmmAccountScreen(navController: NavController) {
                     if (raw.isNotBlank()) raw else acc.accountId.takeIf { it.isNotBlank() }
                 }.toSet()
 
+                val deletedKeys = com.cayxu.app.data.local.InstagramAccountsStore.getDeletedKeys(context)
                 val localAccs = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context)
+                    .filterNot { deletedKeys.contains(it.username.trim().removePrefix("@").lowercase()) }
                 var hasChanges = false
                 localAccs.forEach { local ->
                     val cleanUname = local.username.trim().removePrefix("@").lowercase()
                     val cleanUid = local.userId.trim().lowercase()
+                    if (deletedKeys.contains(cleanUname) || (cleanUid.isNotBlank() && deletedKeys.contains(cleanUid))) return@forEach
                     val isMatched = xsmmIgHandles.contains(cleanUname) ||
                             (cleanUid.isNotBlank() && xsmmIgHandles.contains(cleanUid)) ||
                             allIgOnXsmm.any { it.linkAccount.contains(cleanUname, ignoreCase = true) }

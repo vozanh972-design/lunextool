@@ -638,26 +638,7 @@ class XsmmInstagramTaskRunner(
                 return IgActionResult(false, 400, rawBody, "$summary: $desc (Mã lỗi 1357004 - Meta từ chối phiên / Sai lệch token)")
             }
 
-            // 1. Kiểm tra thành công
-            val data = root.optJSONObject("data")
-            val friendship = data?.optJSONObject("xdt_create_friendship")
-            val status = friendship?.optJSONObject("friendship_status")
-            if (status?.optBoolean("following") == true || status?.optBoolean("outgoing_request") == true) {
-                return IgActionResult(true, 200, rawBody, null)
-            }
-            val likeMedia = data?.optJSONObject("xdt_like_media")
-            if (likeMedia != null && (likeMedia.optString("status").equals("ok", true) || likeMedia.has("client_mutation_id"))) {
-                return IgActionResult(true, 200, rawBody, null)
-            }
-            val commentData = data?.optJSONObject("comment") ?: data?.optJSONObject("xdt_comment")
-            if (commentData != null || root.has("comment") || (root.has("id") && root.has("text"))) {
-                return IgActionResult(true, 200, rawBody, null)
-            }
-            if (root.optString("status").equals("ok", true)) {
-                return IgActionResult(true, 200, rawBody, null)
-            }
-
-            // 2. Kiểm tra mảng lỗi errors
+            // 1. Kiểm tra mảng lỗi errors trước tiên
             val errorsArr = root.optJSONArray("errors")
             if (errorsArr != null && errorsArr.length() > 0) {
                 val firstErr = errorsArr.getJSONObject(0)
@@ -671,14 +652,14 @@ class XsmmInstagramTaskRunner(
                 return IgActionResult(false, 400, rawBody, errorText.ifBlank { "Lỗi GraphQL Instagram" })
             }
 
-            // 3. Kiểm tra các mã lỗi nghiệp vụ
+            // 2. Kiểm tra các mã lỗi nghiệp vụ
             val msg = root.optString("message").takeIf { it.isNotBlank() }
             val statusStr = root.optString("status").takeIf { it.isNotBlank() }
             val spam = root.optBoolean("spam", false)
             val feedbackTitle = root.optString("feedback_title").takeIf { it.isNotBlank() }
             val feedbackMessage = root.optString("feedback_message").takeIf { it.isNotBlank() }
 
-            if (msg != null || statusStr.equals("fail", ignoreCase = true) || spam) {
+            if (statusStr.equals("fail", ignoreCase = true) || spam || (!statusStr.equals("ok", ignoreCase = true) && !msg.isNullOrBlank() && !msg.equals("ok", ignoreCase = true))) {
                 val friendlyMsg = when {
                     msg.equals("feedback_required", ignoreCase = true) || spam -> {
                         feedbackMessage ?: feedbackTitle ?: "Chặn tính năng (feedback_required / spam)"
@@ -693,10 +674,30 @@ class XsmmInstagramTaskRunner(
                 }
                 return IgActionResult(false, if (spam) 429 else 400, rawBody, friendlyMsg)
             }
+
+            // 3. Kiểm tra thành công cụ thể
+            val data = root.optJSONObject("data")
+            val friendship = data?.optJSONObject("xdt_create_friendship")
+            val status = friendship?.optJSONObject("friendship_status")
+            if (status?.optBoolean("following") == true || status?.optBoolean("outgoing_request") == true) {
+                return IgActionResult(true, 200, rawBody, null)
+            }
+            val likeMedia = data?.optJSONObject("xdt_like_media")
+            if (likeMedia != null && (likeMedia.optString("status").equals("ok", true) || likeMedia.has("client_mutation_id"))) {
+                return IgActionResult(true, 200, rawBody, null)
+            }
+            val commentData = data?.optJSONObject("comment") ?: data?.optJSONObject("xdt_comment")
+            if (commentData != null || root.has("comment") || (root.has("id") && root.has("text"))) {
+                return IgActionResult(true, 200, rawBody, null)
+            }
+            if (root.optString("status").equals("ok", true) || root.optBoolean("viewer_has_liked", false)) {
+                return IgActionResult(true, 200, rawBody, null)
+            }
         } catch (_: Exception) {}
 
-        // Fallback kiểm tra chuỗi
-        if (cleanBody.contains("\"following\":true") || cleanBody.contains("\"viewer_has_liked\":true") || cleanBody.contains("\"status\":\"ok\"") || cleanBody.contains("\"status\": \"ok\"")) {
+        // Fallback kiểm tra chuỗi (Chỉ khi không dính lỗi fail)
+        val hasFail = cleanBody.contains("\"status\":\"fail\"") || cleanBody.contains("\"status\": \"fail\"")
+        if (!hasFail && (cleanBody.contains("\"following\":true") || cleanBody.contains("\"viewer_has_liked\":true") || cleanBody.contains("\"status\":\"ok\"") || cleanBody.contains("\"status\": \"ok\""))) {
             return IgActionResult(true, 200, rawBody, null)
         }
         if (cleanBody.contains("feedback_required", ignoreCase = true)) {
@@ -823,10 +824,17 @@ class XsmmInstagramTaskRunner(
             .header("Cookie", account.cookie)
             .get().build()
         val html = execute(req) ?: return null
-        val m = Pattern.compile("\"media_id\":\"(\\d+)\"").matcher(html)
-        if (m.find()) return m.group(1)
-        val m2 = Pattern.compile("\"pk\":\"(\\d+)\"").matcher(html)
-        if (m2.find()) return m2.group(1)
+        val patterns = listOf(
+            Pattern.compile("\"media_id\":\\s*\"(\\d+)\""),
+            Pattern.compile("\"post_id\":\\s*\"(\\d+)\""),
+            Pattern.compile("\"shortcode_media\":\\s*\\{[^}]*\"id\":\\s*\"(\\d+)\""),
+            Pattern.compile("/p/[^/]+/\\?id=(\\d+)"),
+            Pattern.compile("\"id\":\\s*\"(\\d+)_\\d+\"")
+        )
+        for (p in patterns) {
+            val m = p.matcher(html)
+            if (m.find()) return m.group(1)
+        }
         return null
     }
 

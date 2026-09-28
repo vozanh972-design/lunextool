@@ -290,74 +290,90 @@ object IgTaToolClient {
     ): String {
         if (mediaId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Media ID\"}"
         val cookie = try { URLDecoder.decode(rawCookie, "UTF-8") } catch (_: Exception) { rawCookie }
-        val tokens = extractPageTokens(client, cookie, "https://www.instagram.com/", cachedDtsg, cachedLsd)
-        if (tokens.dtsg.isBlank() || tokens.lsd.isBlank()) {
-            return "{\"status\": \"error\", \"message\": \"Không lấy được fb_dtsg/lsd của Instagram\"}"
-        }
         val csrftoken = getCsrfToken(cookie)
         val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(cookie)
         val avId = if (actorId.isNotBlank() && actorId != "0") {
             if (!actorId.startsWith("178414")) "178414$actorId" else actorId
         } else actorId
 
-        var trackingToken = ""
-        if (linkJob.isNotBlank()) {
-            try {
-                val reqPage = Request.Builder().url(linkJob).header("User-Agent", USER_AGENT).header("Cookie", cookie).get().build()
-                client.newCall(reqPage).execute().use { res ->
-                    val html = res.body?.string() ?: ""
-                    val m = Pattern.compile("\"tracking_token\":\"([^\"]+)\"").matcher(html)
-                    if (m.find()) trackingToken = m.group(1) ?: ""
-                }
-            } catch (_: Exception) {}
-        }
-        val inputObj = JSONObject().apply {
-            put("actor_id", actorId)
-            put("client_mutation_id", Random.nextInt(1000000, 9999999).toString())
-            put("container_module", "single_post")
-            put("media_id", mediaId)
-            if (trackingToken.isNotBlank()) put("tracking_token", trackingToken)
-        }
-        val variables = JSONObject().apply {
-            put("input", inputObj)
-        }
-        val formBody = FormBody.Builder()
-            .add("av", avId)
-            .add("__d", "www")
-            .add("__user", actorId)
-            .add("__a", "1")
-            .add("__req", "h")
-            .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
-            .add("dpr", "1")
-            .add("__ccg", "EXCELLENT")
-            .add("__rev", "1046913831")
-            .add("__comet_req", "7")
-            .add("fb_dtsg", tokens.dtsg)
-            .add("jazoest", tokens.jazoest)
-            .add("lsd", tokens.lsd)
-            .add("fb_api_caller_class", "RelayModern")
-            .add("fb_api_req_friendly_name", "usePolarisLikeMediaXIGLikeMutation")
-            .add("server_timestamps", "true")
-            .add("doc_id", "27182485238052618")
-            .add("variables", variables.toString())
-            .build()
+        // 1. Ưu tiên hàng đầu: REST API Web Like chuẩn của Instagram (/api/v1/web/likes/{mediaId}/like/)
+        try {
+            val restReq = Request.Builder()
+                .url("https://www.instagram.com/api/v1/web/likes/$mediaId/like/")
+                .header("User-Agent", USER_AGENT)
+                .header("X-CSRFToken", csrftoken)
+                .header("X-Instagram-AJAX", "1006309104")
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header("X-IG-App-ID", "936619743392459")
+                .header("X-ASBD-ID", "129477")
+                .header("Referer", if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
+                .header("Cookie", cookie)
+                .post(FormBody.Builder().build())
+                .build()
 
-        val reqHeaders = getIgHeaders(cookie, csrftoken, tokens.lsd, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
-            .newBuilder()
-            .add("x-fb-friendly-name", "usePolarisLikeMediaXIGLikeMutation")
-            .build()
+            val restRes = client.newCall(restReq).execute().use { res ->
+                res.body?.string()?.trim() ?: ""
+            }
+            if (restRes.isNotBlank() && (restRes.contains("\"status\":\"ok\"") || restRes.contains("\"status\": \"ok\"") || restRes.contains("\"viewer_has_liked\":true"))) {
+                return restRes
+            }
+        } catch (_: Exception) {}
 
-        val endpoints = listOf(
-            "https://www.instagram.com/graphql/query",
-            "https://www.instagram.com/api/graphql"
+        // 2. Fallback: GraphQL Like (Doc ID 9595477160535898 hoặc 27182485238052618)
+        val tokens = extractPageTokens(client, cookie, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/", cachedDtsg, cachedLsd)
+        if (tokens.dtsg.isBlank() || tokens.lsd.isBlank()) {
+            return "{\"status\": \"error\", \"message\": \"Không lấy được fb_dtsg/lsd của Instagram\"}"
+        }
+
+        val graphConfigs = listOf(
+            Pair("9595477160535898", JSONObject().apply {
+                put("media_id", mediaId)
+                put("container_module", "feed_timeline")
+            }),
+            Pair("27182485238052618", JSONObject().apply {
+                put("input", JSONObject().apply {
+                    put("actor_id", actorId)
+                    put("client_mutation_id", Random.nextInt(1000000, 9999999).toString())
+                    put("container_module", "single_post")
+                    put("media_id", mediaId)
+                })
+            })
         )
+
         var lastResult = ""
-        for (ep in endpoints) {
+        for ((docId, vars) in graphConfigs) {
+            val formBody = FormBody.Builder()
+                .add("av", avId)
+                .add("__d", "www")
+                .add("__user", actorId)
+                .add("__a", "1")
+                .add("__req", "h")
+                .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
+                .add("dpr", "1")
+                .add("__ccg", "EXCELLENT")
+                .add("__rev", "1046913831")
+                .add("__comet_req", "7")
+                .add("fb_dtsg", tokens.dtsg)
+                .add("jazoest", tokens.jazoest)
+                .add("lsd", tokens.lsd)
+                .add("fb_api_caller_class", "RelayModern")
+                .add("fb_api_req_friendly_name", "usePolarisLikeMediaXIGLikeMutation")
+                .add("server_timestamps", "true")
+                .add("doc_id", docId)
+                .add("variables", vars.toString())
+                .build()
+
+            val reqHeaders = getIgHeaders(cookie, csrftoken, tokens.lsd, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
+                .newBuilder()
+                .add("x-fb-friendly-name", "usePolarisLikeMediaXIGLikeMutation")
+                .build()
+
             val req = Request.Builder()
-                .url(ep)
+                .url("https://www.instagram.com/graphql/query")
                 .headers(reqHeaders)
                 .post(formBody)
                 .build()
+
             try {
                 val resBody = client.newCall(req).execute().use { res ->
                     res.body?.string()?.trim() ?: ""
@@ -366,14 +382,11 @@ object IgTaToolClient {
                 if (resBody.isNotBlank() && (resBody.contains("\"status\":\"ok\"") || resBody.contains("xdt_like_media") || resBody.contains("\"viewer_has_liked\":true"))) {
                     return resBody
                 }
-                if (!resBody.contains("1357004") && resBody.isNotBlank()) {
-                    return resBody
-                }
             } catch (e: Exception) {
                 lastResult = "{\"status\": \"error\", \"message\": \"${e.message}\"}"
             }
         }
-        return if (lastResult.isNotBlank()) lastResult else "{\"status\": \"error\", \"message\": \"Phản hồi rỗng từ Instagram\"}"
+        return if (lastResult.isNotBlank()) lastResult else "{\"status\": \"error\", \"message\": \"Phản hồi rỗng từ Instagram khi Tym\"}"
     }
 
     // ================= 4. HÀM COMMENT (cmt trong Python) =================

@@ -5,13 +5,42 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.regex.Pattern
 
 object FbFeedScraper {
     private const val GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
 
+    fun parseCount(raw: String): Int {
+        val clean = raw.trim().lowercase()
+        if (clean.isBlank()) return 0
+        return try {
+            when {
+                clean.endsWith("k") -> {
+                    val num = clean.removeSuffix("k").replace(",", ".").trim().toDoubleOrNull() ?: 0.0
+                    (num * 1000).toInt()
+                }
+                clean.endsWith("m") -> {
+                    val num = clean.removeSuffix("m").replace(",", ".").trim().toDoubleOrNull() ?: 0.0
+                    (num * 1000000).toInt()
+                }
+                clean.contains(".") && clean.indexOf(".") == clean.length - 4 -> {
+                    clean.replace(".", "").toIntOrNull() ?: 0
+                }
+                clean.contains(",") && clean.indexOf(",") == clean.length - 4 -> {
+                    clean.replace(",", "").toIntOrNull() ?: 0
+                }
+                clean.contains(",") -> {
+                    clean.replace(",", ".").toDoubleOrNull()?.toInt() ?: 0
+                }
+                else -> clean.filter { it.isDigit() }.toIntOrNull() ?: 0
+            }
+        } catch (_: Exception) {
+            0
+        }
+    }
+
     /**
-     * Thu thập danh sách bài viết trên Newsfeed bằng Token & Phân trang cuộn (Trượt từ dưới lên)
-     * Chuẩn GraphQLFeedUnitEdge & Graph API của Kahara Mod
+     * Thu thập danh sách bài viết trên Newsfeed bằng Mobile Web / Token & Phân trang cuộn (Trượt từ dưới lên)
      */
     fun fetchFeedWithScroll(
         client: OkHttpClient,
@@ -26,8 +55,23 @@ object FbFeedScraper {
         val collectedPosts = mutableListOf<FbPost>()
         val seenPostIds = mutableSetOf<String>()
 
-        // 1. Ưu tiên: Graph API Feed bằng Token (Tốc độ < 0.5s, cực kỳ ổn định)
-        if (token.isNotBlank()) {
+        // 1. Ưu tiên 1: Cào Newsfeed thật từ m.facebook.com bằng Cookie (Lấy trọn vẹn số cmt thật, avatar, tác giả)
+        if (cookie.isNotBlank()) {
+            val webPosts = fetchFeedViaMobileWeb(
+                client = client,
+                cookie = cookie,
+                myUid = myUid,
+                myName = myName,
+                targetActorId = targetActorId,
+                maxPages = maxPages,
+                targetCount = targetCount,
+                seenPostIds = seenPostIds
+            )
+            collectedPosts.addAll(webPosts)
+        }
+
+        // 2. Ưu tiên 2: Graph API Feed bằng Token nếu web không trả về bài
+        if (collectedPosts.isEmpty() && token.isNotBlank()) {
             val tokenPosts = fetchFeedViaGraphApi(
                 client = client,
                 token = token,
@@ -41,7 +85,7 @@ object FbFeedScraper {
             collectedPosts.addAll(tokenPosts)
         }
 
-        // 2. Fallback: GraphQL Native (Chuẩn GraphQLFeedUnitEdge của Kahara)
+        // 3. Fallback: GraphQL Native (Chuẩn GraphQLFeedUnitEdge của Kahara)
         if (collectedPosts.isEmpty()) {
             val graphQLPosts = fetchFeedViaGraphQL(
                 client = client,
@@ -55,9 +99,9 @@ object FbFeedScraper {
             collectedPosts.addAll(graphQLPosts)
         }
 
-        // 3. Fallback: Nếu vẫn chưa có bài (Page mới tạo hoặc nick chưa kết bạn), nạp bài từ trang công khai
+        // 4. Fallback: Nếu vẫn chưa có bài (Page mới tạo hoặc nick chưa có bạn), nạp ngẫu nhiên các fanpage công khai
         if (collectedPosts.isEmpty() && token.isNotBlank()) {
-            collectedPosts.addAll(fetchPublicPostsViaGraphApi(client, token, myUid, myName, seenPostIds))
+            collectedPosts.addAll(fetchPublicPostsViaGraphApi(client, token, cookie, myUid, myName, seenPostIds))
         }
 
         return collectedPosts
@@ -345,16 +389,175 @@ object FbFeedScraper {
     }
 
     /**
-     * Fallback các trang công cộng mở qua Graph API khi newfeed trống
+     * Cào trực tiếp Newsfeed thật từ m.facebook.com bằng Cookie tài khoản (Bóc trọn vẹn số cmt, like thật)
+     * Có hỗ trợ cuộn phân trang tiếp tục qua cursor / stories.php / xem thêm tin tức
+     */
+    private fun fetchFeedViaMobileWeb(
+        client: OkHttpClient,
+        cookie: String,
+        myUid: String,
+        myName: String,
+        targetActorId: String?,
+        maxPages: Int,
+        targetCount: Int,
+        seenPostIds: MutableSet<String>
+    ): List<FbPost> {
+        val result = mutableListOf<FbPost>()
+        if (cookie.isBlank()) return result
+
+        var currentUrl: String? = "https://m.facebook.com/"
+        var pagesLoaded = 0
+
+        val cmtRegex = Regex("""([0-9.,KkMm]+)\s*(?:bình luận|comments|bl|comment)""", RegexOption.IGNORE_CASE)
+        val likeRegex = Regex("""([0-9.,KkMm]+)\s*(?:lượt thích|likes|thích|reactions|người khác)""", RegexOption.IGNORE_CASE)
+
+        while (!currentUrl.isNullOrBlank() && pagesLoaded < maxPages && result.size < targetCount) {
+            pagesLoaded++
+            try {
+                val req = Request.Builder()
+                    .url(currentUrl)
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                    .header("Cookie", cookie)
+                    .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+                    .get()
+                    .build()
+
+                val html = client.newCall(req).execute().use { res ->
+                    if (res.isSuccessful) res.body?.string().orEmpty() else ""
+                }
+                if (html.isBlank()) break
+
+                // Bóc tách từng khối bài viết: <article ...>...</article> hoặc <div role="article" ...>...</div> hoặc khối có data-ft
+                val articleRegex = Regex("""<(?:article|div[^>]*role=["']article["'])[\s\S]*?<\/(?:article|div)""", RegexOption.IGNORE_CASE)
+                var matches = articleRegex.findAll(html).map { it.value }.toList()
+
+                if (matches.isEmpty()) {
+                    val dataFtBlocks = html.split("data-ft=").drop(1)
+                    matches = dataFtBlocks.map { "data-ft=" + it.take(4000) }
+                }
+
+                for (block in matches) {
+                    // 1. Trích xuất ID bài viết
+                    var postId = ""
+                    val mPostId = Pattern.compile("""(?:"top_level_post_id"|"mf_story_key"|"story_fbid"):\s*"?(\d+)"?""").matcher(block)
+                    if (mPostId.find()) {
+                        postId = mPostId.group(1) ?: ""
+                    }
+                    if (postId.isBlank()) {
+                        val mFtEnt = Pattern.compile("""ft_ent_identifier=(\d+)""").matcher(block)
+                        if (mFtEnt.find()) postId = mFtEnt.group(1) ?: ""
+                    }
+                    if (postId.isBlank()) {
+                        val mLink = Pattern.compile("""/(?:posts|story\.php|permalink\.php)\?[^\s"'<>]*?(?:story_fbid|fbid|id)=(\d+)""").matcher(block)
+                        if (mLink.find()) postId = mLink.group(1) ?: ""
+                    }
+                    if (postId.isBlank()) {
+                        val mLink2 = Pattern.compile("""/(?:posts|photos)/(\d+)""").matcher(block)
+                        if (mLink2.find()) postId = mLink2.group(1) ?: ""
+                    }
+
+                    if (postId.isBlank() || !seenPostIds.add(postId)) continue
+
+                    // 2. Trích xuất tác giả
+                    var authorId = ""
+                    var authorName = ""
+                    val mAuthorId = Pattern.compile("""(?:"content_owner_id_new"|"page_id"|"actor_id"):\s*"?(\d+)"?""").matcher(block)
+                    if (mAuthorId.find()) authorId = mAuthorId.group(1) ?: ""
+
+                    val mAuthorName = Pattern.compile("""<h3[^>]*>[\s\S]*?<a[^>]*>([^<]+)</a>""").matcher(block)
+                    if (mAuthorName.find()) {
+                        authorName = mAuthorName.group(1)?.trim() ?: ""
+                    }
+                    if (authorName.isBlank()) {
+                        val mStrong = Pattern.compile("""<strong[^>]*>([^<]+)</strong>""").matcher(block)
+                        if (mStrong.find()) authorName = mStrong.group(1)?.trim() ?: ""
+                    }
+
+                    // Chặn bài viết của chính mình
+                    val isSelfPost = (myUid.isNotBlank() && (authorId == myUid || postId.startsWith("${myUid}_"))) ||
+                        (myName.isNotBlank() && authorName.equals(myName, ignoreCase = true)) ||
+                        authorId == "me" ||
+                        (!targetActorId.isNullOrBlank() && authorId == targetActorId)
+
+                    if (isSelfPost) continue
+
+                    // 3. Trích xuất nội dung
+                    var message = ""
+                    val mMsg = Pattern.compile("""<p[^>]*>([\s\S]*?)</p>""").matcher(block)
+                    if (mMsg.find()) {
+                        message = mMsg.group(1)?.replace(Regex("<[^>]+>"), " ")?.trim() ?: ""
+                    }
+
+                    // 4. Trích xuất số bình luận bằng Regex
+                    var commentCount = 0
+                    val cmtMatch = cmtRegex.find(block)
+                    if (cmtMatch != null) {
+                        commentCount = parseCount(cmtMatch.groupValues[1])
+                    }
+
+                    // 5. Trích xuất số lượt thích / cảm xúc
+                    var reactionCount = 0
+                    val likeMatch = likeRegex.find(block)
+                    if (likeMatch != null) {
+                        reactionCount = parseCount(likeMatch.groupValues[1])
+                    }
+
+                    result.add(
+                        FbPost(
+                            postId = postId,
+                            authorName = authorName.ifBlank { "Người dùng Facebook" },
+                            authorId = authorId,
+                            message = message,
+                            messageSnippet = createSnippet(message),
+                            commentCount = commentCount,
+                            reactionCount = reactionCount,
+                            ftEntIdentifier = postId
+                        )
+                    )
+
+                    if (result.size >= targetCount) break
+                }
+
+                if (result.size >= targetCount) break
+
+                // Bóc link phân trang tiếp theo
+                var nextLink: String? = null
+                val mNext = Pattern.compile("""href="([^"]*(?:cursor=|stories\.php|\/home\.php\?)[^"]*)"""").matcher(html)
+                while (mNext.find()) {
+                    val linkCandidate = mNext.group(1)?.replace("&amp;", "&")
+                    if (linkCandidate != null && (linkCandidate.contains("cursor=") || linkCandidate.contains("page_id="))) {
+                        nextLink = linkCandidate
+                        break
+                    }
+                }
+
+                currentUrl = if (!nextLink.isNullOrBlank()) {
+                    if (nextLink.startsWith("http")) nextLink else "https://m.facebook.com$nextLink"
+                } else null
+
+            } catch (_: Exception) {
+                break
+            }
+        }
+        return result
+    }
+
+    /**
+     * Fallback các trang công cộng mở qua Graph API khi newfeed trống (Xáo trộn ngẫu nhiên nhiều trang)
      */
     private fun fetchPublicPostsViaGraphApi(
         client: OkHttpClient,
         token: String,
+        cookie: String,
         myUid: String,
         myName: String,
         seenPostIds: MutableSet<String>
     ): List<FbPost> {
-        val publicPages = listOf("thongtinchinhphu", "vtv24", "dantri.com.vn", "vnexpress.net", "kenh14.vn")
+        val publicPages = listOf(
+            "vtv24", "dantri.com.vn", "vnexpress.net", "kenh14.vn",
+            "tuoitre.vn", "thanhnien", "tinmoi.vn", "tiin.vn",
+            "beatvn.network", "honghotshowbiz", "thongtinchinhphu"
+        ).shuffled()
         val result = mutableListOf<FbPost>()
 
         for (pageName in publicPages) {
@@ -391,17 +594,34 @@ object FbFeedScraper {
 
                         if (seenPostIds.add(realId)) {
                             val message = item.optString("message", "")
-                            val commentCount = item.optJSONObject("comments")?.optJSONObject("summary")?.optInt("total_count")
+                            var commentCount = item.optJSONObject("comments")?.optJSONObject("summary")?.optInt("total_count")
                                 ?: item.optJSONObject("feedback")?.optInt("total_comment_count")
                                 ?: 0
                             val reactionCount = item.optJSONObject("reactions")?.optJSONObject("summary")?.optInt("total_count")
                                 ?: item.optJSONObject("likes")?.optJSONObject("summary")?.optInt("total_count")
                                 ?: 0
 
+                            // Nếu Graph API không trả số cmt do quyền hạn, cào nhanh từ mobile web bài viết nếu có cookie
+                            if (commentCount == 0 && cookie.isNotBlank() && realId.isNotBlank()) {
+                                try {
+                                    val postReq = Request.Builder()
+                                        .url("https://m.facebook.com/$realId")
+                                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36")
+                                        .header("Cookie", cookie)
+                                        .get()
+                                        .build()
+                                    val postHtml = client.newCall(postReq).execute().use { it.body?.string().orEmpty() }
+                                    val cmtM = Regex("""([0-9.,KkMm]+)\s*(?:bình luận|comments|bl|comment)""", RegexOption.IGNORE_CASE).find(postHtml)
+                                    if (cmtM != null) {
+                                        commentCount = parseCount(cmtM.groupValues[1])
+                                    }
+                                } catch (_: Exception) {}
+                            }
+
                             result.add(
                                 FbPost(
                                     postId = id,
-                                    authorName = authorName,
+                                    authorName = authorName.ifBlank { pageName },
                                     authorId = authorId,
                                     message = message,
                                     messageSnippet = createSnippet(message),
