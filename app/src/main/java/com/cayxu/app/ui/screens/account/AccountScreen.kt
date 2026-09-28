@@ -19,6 +19,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -135,6 +136,12 @@ fun AccountScreen(navController: NavController) {
     val coroutineScope = rememberCoroutineScope()
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var pendingUpdate by remember { mutableStateOf<AppUpdateData?>(null) }
+    var isDownloadingUpdate by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf(0f) }
+    var downloadStatusText by remember { mutableStateOf("") }
+    var downloadError by remember { mutableStateOf<String?>(null) }
+    var downloadedApkFile by remember { mutableStateOf<File?>(null) }
+    var downloadJob by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(avatarUriString) {
         val uriString = avatarUriString
@@ -216,8 +223,99 @@ fun AccountScreen(navController: NavController) {
     }
 
     pendingUpdate?.let { update ->
+        val startDownload: () -> Unit = {
+            val downloadUrl = update.apkUrl
+            if (downloadUrl.isBlank()) {
+                Toast.makeText(context, "Chưa có đường dẫn tải về bản cập nhật này", Toast.LENGTH_SHORT).show()
+            } else {
+                isDownloadingUpdate = true
+                downloadProgress = 0f
+                downloadStatusText = "Đang kết nối tới máy chủ..."
+                downloadError = null
+                downloadedApkFile = null
+                downloadJob?.cancel()
+                downloadJob = coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        val client = OkHttpClient.Builder()
+                            .connectTimeout(30, TimeUnit.SECONDS)
+                            .readTimeout(60, TimeUnit.SECONDS)
+                            .followRedirects(true)
+                            .build()
+                        val request = Request.Builder()
+                            .url(downloadUrl)
+                            .header("User-Agent", "Mozilla/5.0 LunexApp")
+                            .build()
+                        val response = client.newCall(request).execute()
+                        if (!response.isSuccessful) {
+                            throw Exception("Mã phản hồi HTTP ${response.code}")
+                        }
+                        val body = response.body ?: throw Exception("Nội dung tải về rỗng")
+                        val totalBytes = body.contentLength()
+
+                        val downloadDir = context.getExternalFilesDir("downloads") ?: File(context.filesDir, "downloads")
+                        if (!downloadDir.exists()) downloadDir.mkdirs()
+                        val destFile = File(downloadDir, "Lunex_${update.versionName}.apk")
+                        if (destFile.exists()) destFile.delete()
+
+                        body.byteStream().use { input ->
+                            destFile.outputStream().use { output ->
+                                val buffer = ByteArray(16 * 1024)
+                                var bytesRead: Int
+                                var downloadedBytes = 0L
+                                var lastUiUpdate = 0L
+
+                                while (input.read(buffer).also { bytesRead = it } != -1) {
+                                    output.write(buffer, 0, bytesRead)
+                                    downloadedBytes += bytesRead
+
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastUiUpdate > 100 || (totalBytes > 0 && downloadedBytes == totalBytes)) {
+                                        lastUiUpdate = now
+                                        val progress = if (totalBytes > 0) downloadedBytes.toFloat() / totalBytes else 0f
+                                        val downloadedMb = downloadedBytes.toDouble() / (1024 * 1024)
+                                        val totalMb = totalBytes.toDouble() / (1024 * 1024)
+                                        val percent = (progress * 100).toInt().coerceIn(0, 100)
+                                        val status = if (totalBytes > 0) {
+                                            "Đang tải bản cập nhật: $percent% (${"%.1f".format(java.util.Locale.US, downloadedMb)} MB / ${"%.1f".format(java.util.Locale.US, totalMb)} MB)"
+                                        } else {
+                                            "Đang tải bản cập nhật: ${"%.1f".format(java.util.Locale.US, downloadedMb)} MB..."
+                                        }
+                                        withContext(Dispatchers.Main) {
+                                            downloadProgress = progress
+                                            downloadStatusText = status
+                                        }
+                                    }
+                                }
+                                output.flush()
+                            }
+                        }
+
+                        withContext(Dispatchers.Main) {
+                            downloadProgress = 1f
+                            downloadStatusText = "Tải thành công 100%! Đang mở trình cài đặt..."
+                            downloadedApkFile = destFile
+                            installApk(context, destFile)
+                        }
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) return@launch
+                        withContext(Dispatchers.Main) {
+                            isDownloadingUpdate = false
+                            downloadError = "Lỗi tải bản cập nhật: ${e.message ?: "Mất kết nối mạng"}"
+                        }
+                    }
+                }
+            }
+        }
+
         ModalBottomSheet(
-            onDismissRequest = { pendingUpdate = null },
+            onDismissRequest = {
+                if (!isDownloadingUpdate) {
+                    pendingUpdate = null
+                    downloadError = null
+                    downloadProgress = 0f
+                    downloadStatusText = ""
+                }
+            },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = Color.White,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
@@ -237,7 +335,7 @@ fun AccountScreen(navController: NavController) {
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.SystemUpdate,
+                        imageVector = if (isDownloadingUpdate && downloadProgress < 1f) Icons.Filled.Download else Icons.Filled.SystemUpdate,
                         contentDescription = null,
                         tint = Cobalt600,
                         modifier = Modifier.size(30.dp)
@@ -256,12 +354,19 @@ fun AccountScreen(navController: NavController) {
                 Spacer(Modifier.height(6.dp))
 
                 Text(
-                    text = "Đã có phiên bản mới sẵn sàng để cài đặt.",
+                    text = if (isDownloadingUpdate) "Đang tải xuống tệp cài đặt APK..." else "Đã có phiên bản mới sẵn sàng để cài đặt.",
                     fontSize = 13.5.sp,
                     color = TextSecondary
                 )
 
-                val displayChangelog = update.changelog.ifBlank { "- Cập nhật phiên bản mới" }
+                val rawChangelog = update.changelog.ifBlank {
+                    BuildConfig.UPDATE_CHANGELOG.takeIf { it.isNotBlank() } ?: "Cập nhật và tối ưu hóa hệ thống"
+                }
+                val changelogLines = rawChangelog
+                    .lines()
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+
                 Spacer(Modifier.height(16.dp))
                 Card(
                     shape = RoundedCornerShape(14.dp),
@@ -277,54 +382,146 @@ fun AccountScreen(navController: NavController) {
                             color = TextPrimary
                         )
                         Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = displayChangelog,
-                            fontSize = 12.5.sp,
-                            color = TextSecondary,
-                            lineHeight = 18.sp
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            changelogLines.forEach { line ->
+                                val cleanLine = line.removePrefix("-").removePrefix("•").removePrefix("*").trim()
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Text("• ", color = Cobalt600, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = cleanLine,
+                                        fontSize = 12.5.sp,
+                                        color = TextSecondary,
+                                        lineHeight = 18.sp
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
-                Spacer(Modifier.height(24.dp))
+                if (isDownloadingUpdate) {
+                    Spacer(Modifier.height(20.dp))
+                    if (downloadProgress > 0f) {
+                        LinearProgressIndicator(
+                            progress = { downloadProgress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = Cobalt600,
+                            trackColor = Color(0xFFE2E8F0)
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = Cobalt600,
+                            trackColor = Color(0xFFE2E8F0)
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = downloadStatusText,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextPrimary
+                    )
 
-                Button(
-                    onClick = {
-                        val downloadUrl = update.apkUrl
-                        val verName = update.versionName
-                        pendingUpdate = null
-                        if (downloadUrl.isNotBlank()) {
-                            checkInstallPermissionAndDownload(context, downloadUrl, verName)
-                        } else {
-                            Toast.makeText(context, "Chưa có đường dẫn tải về bản cập nhật này", Toast.LENGTH_SHORT).show()
+                    if (downloadProgress >= 1f && downloadedApkFile != null) {
+                        Spacer(Modifier.height(16.dp))
+                        Button(
+                            onClick = {
+                                installApk(context, downloadedApkFile!!)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Cobalt600)
+                        ) {
+                            Icon(Icons.Filled.InstallMobile, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Mở trình cài đặt APK",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
                         }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Cobalt600)
-                ) {
+                    }
+                } else if (downloadError != null) {
+                    Spacer(Modifier.height(14.dp))
                     Text(
-                        text = "Cập nhật ngay",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
+                        text = downloadError ?: "Đã xảy ra lỗi khi tải",
+                        fontSize = 12.5.sp,
+                        color = DangerRed,
+                        lineHeight = 16.sp
                     )
-                }
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                downloadError = null
+                                pendingUpdate = null
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Đóng", color = TextSecondary)
+                        }
+                        Button(
+                            onClick = startDownload,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Cobalt600)
+                        ) {
+                            Text("Thử lại", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    Spacer(Modifier.height(24.dp))
 
-                Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = startDownload,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Cobalt600)
+                    ) {
+                        Text(
+                            text = "Cập nhật ngay",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
 
-                TextButton(
-                    onClick = { pendingUpdate = null },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Để sau",
-                        color = TextSecondary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Spacer(Modifier.height(10.dp))
+
+                    TextButton(
+                        onClick = { pendingUpdate = null },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Để sau",
+                            color = TextSecondary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
         }
@@ -647,12 +844,74 @@ fun AccountScreen(navController: NavController) {
                                         throw Exception("Mã HTTP ${response.code}")
                                     }
                                     val body = response.body?.string().orEmpty()
-                                    val json = JSONObject(body)
-                                    val vCode = if (json.has("version_code")) json.getInt("version_code") else json.optInt("versionCode", 0)
-                                    val vName = if (json.has("version_name")) json.getString("version_name") else json.optString("versionName", json.optString("version", ""))
-                                    val changelog = if (json.has("changelog")) json.getString("changelog") else json.optString("change_log", json.optString("description", "- Cập nhật phiên bản mới"))
-                                    val apkUrl = if (json.has("apk_url")) json.getString("apk_url") else json.optString("apkUrl", json.optString("download_url", json.optString("url", "")))
-                                    AppUpdateData(vCode, vName, changelog, apkUrl)
+                                    val rootJson = JSONObject(body)
+                                    val dataObj = rootJson.optJSONObject("data") ?: rootJson
+
+                                    val vCode = when {
+                                        dataObj.has("version_code") -> dataObj.optInt("version_code")
+                                        dataObj.has("versionCode") -> dataObj.optInt("versionCode")
+                                        rootJson.has("version_code") -> rootJson.optInt("version_code")
+                                        rootJson.has("versionCode") -> rootJson.optInt("versionCode")
+                                        else -> 0
+                                    }
+
+                                    val vName = when {
+                                        dataObj.has("version_name") -> dataObj.optString("version_name")
+                                        dataObj.has("versionName") -> dataObj.optString("versionName")
+                                        dataObj.has("version") -> dataObj.optString("version")
+                                        rootJson.has("version_name") -> rootJson.optString("version_name")
+                                        rootJson.has("versionName") -> rootJson.optString("versionName")
+                                        rootJson.has("version") -> rootJson.optString("version")
+                                        else -> ""
+                                    }
+
+                                    val possibleChangelogKeys = listOf(
+                                        "changelog", "change_log", "description", "notes", "note",
+                                        "content", "update_content", "details", "message"
+                                    )
+                                    var extractedChangelog = ""
+                                    for (key in possibleChangelogKeys) {
+                                        val valInObj = dataObj.optString(key, "")
+                                        if (valInObj.isNotBlank()) {
+                                            extractedChangelog = valInObj
+                                            break
+                                        }
+                                        val valInRoot = rootJson.optString(key, "")
+                                        if (valInRoot.isNotBlank()) {
+                                            extractedChangelog = valInRoot
+                                            break
+                                        }
+                                    }
+
+                                    val normalizedChangelog = extractedChangelog.trim()
+                                    val finalChangelog = if (
+                                        normalizedChangelog.isBlank() ||
+                                        normalizedChangelog.equals("- Cập nhật phiên bản mới", ignoreCase = true) ||
+                                        normalizedChangelog.equals("Cập nhật phiên bản mới", ignoreCase = true)
+                                    ) {
+                                        BuildConfig.UPDATE_CHANGELOG.takeIf { it.isNotBlank() } ?: "Cập nhật và tối ưu hóa hệ thống"
+                                    } else {
+                                        normalizedChangelog
+                                    }
+
+                                    val possibleUrlKeys = listOf(
+                                        "apk_url", "apkUrl", "download_url", "downloadUrl", "url", "link"
+                                    )
+                                    var extractedUrl = ""
+                                    for (key in possibleUrlKeys) {
+                                        val valInObj = dataObj.optString(key, "")
+                                        if (valInObj.isNotBlank()) {
+                                            extractedUrl = valInObj
+                                            break
+                                        }
+                                        val valInRoot = rootJson.optString(key, "")
+                                        if (valInRoot.isNotBlank()) {
+                                            extractedUrl = valInRoot
+                                            break
+                                        }
+                                    }
+
+                                    AppUpdateData(vCode, vName, finalChangelog, extractedUrl)
                                 }
                                 if (result.versionCode > BuildConfig.VERSION_CODE) {
                                     pendingUpdate = result
