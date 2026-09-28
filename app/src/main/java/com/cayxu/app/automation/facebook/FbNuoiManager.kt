@@ -9,6 +9,9 @@ import com.cayxu.app.data.local.FbNuoiConfigStore
 import kotlinx.coroutines.*
 import java.util.concurrent.ConcurrentHashMap
 
+val FacebookAccount.cookie: String
+    get() = note.ifBlank { password }
+
 object FbNuoiManager {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeJobs = ConcurrentHashMap<String, Job>()
@@ -23,43 +26,87 @@ object FbNuoiManager {
     fun isAnyRunning(): Boolean = runningAccounts.isNotEmpty()
 
     @Synchronized
-    fun start(context: Context, account: FacebookAccount) {
-        val uid = account.uid
+    fun start(context: Context, account: FacebookAccount, targetPageUid: String? = null) {
+        val execUid = targetPageUid?.takeIf { it.isNotBlank() } ?: account.uid
+        startInternal(context, targetAccount = account, targetPageUid = targetPageUid, executionUid = execUid)
+    }
+
+    @Synchronized
+    fun start(context: Context, targetUid: String) {
+        val clean = targetUid.trim()
+        if (clean.isBlank() || isRunning(clean)) return
+
+        val allAccounts = FacebookAccountsStore.getAccounts(context)
+        // 1. Kiểm tra xem có phải Profile cá nhân không
+        val mainAcc = allAccounts.firstOrNull { it.uid == clean }
+        if (mainAcc != null) {
+            startInternal(context, targetAccount = mainAcc, targetPageUid = null, executionUid = clean)
+            return
+        }
+
+        // 2. Kiểm tra xem có phải Page Profile+ không
+        for (parent in allAccounts) {
+            val p = parent.pages.firstOrNull {
+                it.additionalProfileId == clean || it.displayUid == clean || it.pageId == clean
+            }
+            if (p != null) {
+                val pageUid = p.additionalProfileId.takeIf { it.isNotBlank() && it.startsWith("615") }
+                    ?: p.displayUid.takeIf { it.isNotBlank() && it.startsWith("615") }
+                    ?: p.additionalProfileId.takeIf { it.isNotBlank() }
+                    ?: p.pageId
+                startInternal(context, targetAccount = parent, targetPageUid = pageUid, executionUid = clean)
+                return
+            }
+        }
+    }
+
+    private fun startInternal(
+        context: Context,
+        targetAccount: FacebookAccount,
+        targetPageUid: String?,
+        executionUid: String
+    ) {
+        val uid = executionUid
         if (uid.isBlank() || isRunning(uid)) return
 
+        val cookie = targetAccount.cookie
+        if (cookie.isBlank()) {
+            scope.launch(Dispatchers.Main) {
+                statusMap[uid] = "Lỗi: Tài khoản chưa có Cookie"
+                lastErrorDetail[uid] = "Không tìm thấy Cookie của tài khoản [$uid]. Hãy thêm Cookie để nuôi nick."
+                val cur = errorCountMap[uid] ?: 0
+                errorCountMap[uid] = cur + 1
+            }
+            return
+        }
+
         runningAccounts.add(uid)
-        statusMap[uid] = "Đang chuẩn bị chạy nuôi nick..."
+        statusMap[uid] = "Đang khởi động nuôi nick..."
         successCountMap[uid] = 0
         errorCountMap[uid] = 0
         lastErrorDetail.remove(uid)
 
         val job = scope.launch {
             try {
-                val config = FbNuoiConfigStore.getConfig(context)
-                val runner = FbNuoiTaskRunner(
-                    context = context,
-                    account = account,
-                    config = config,
-                    onStatus = { msg ->
-                        scope.launch(Dispatchers.Main) {
-                            statusMap[uid] = msg
-                        }
-                    },
-                    onSuccess = {
-                        scope.launch(Dispatchers.Main) {
-                            val cur = successCountMap[uid] ?: 0
-                            successCountMap[uid] = cur + 1
-                        }
-                    },
-                    onError = { err ->
-                        scope.launch(Dispatchers.Main) {
-                            val cur = errorCountMap[uid] ?: 0
-                            errorCountMap[uid] = cur + 1
-                            lastErrorDetail[uid] = err
+                val currentNuoiConfig = FbNuoiConfigStore.getConfig(context)
+                val client = com.cayxu.app.automation.facebook.nuoi.FbNuoiTaskRunner.buildClient(targetAccount.phone)
+                val runner = com.cayxu.app.automation.facebook.nuoi.FbNuoiTaskRunner(
+                    cookie = cookie,
+                    targetActorId = targetPageUid, // Truyền UID của Page nếu là Page Profile+, null nếu là Profile
+                    config = currentNuoiConfig,
+                    client = client
+                )
+
+                runner.run { progress ->
+                    scope.launch(Dispatchers.Main) {
+                        statusMap[uid] = progress.status
+                        successCountMap[uid] = progress.successReactions + progress.successComments + progress.successFriends
+                        errorCountMap[uid] = progress.totalErrors
+                        if (progress.errorMessage != null) {
+                            lastErrorDetail[uid] = progress.errorMessage
                         }
                     }
-                )
-                runner.run()
+                }
             } catch (e: CancellationException) {
                 scope.launch(Dispatchers.Main) {
                     statusMap[uid] = "Đã dừng nuôi nick"
@@ -81,35 +128,6 @@ object FbNuoiManager {
         }
 
         activeJobs[uid] = job
-    }
-
-    @Synchronized
-    fun start(context: Context, targetUid: String) {
-        val clean = targetUid.trim()
-        if (clean.isBlank() || isRunning(clean)) return
-
-        val allAccounts = FacebookAccountsStore.getAccounts(context)
-        val mainAcc = allAccounts.firstOrNull { it.uid == clean }
-        if (mainAcc != null) {
-            start(context, mainAcc)
-            return
-        }
-
-        for (parent in allAccounts) {
-            val p = parent.pages.firstOrNull {
-                it.additionalProfileId == clean || it.displayUid == clean || it.pageId == clean
-            }
-            if (p != null) {
-                val effectiveToken = p.pageToken.ifBlank { parent.bio }
-                val pageAccount = parent.copy(
-                    uid = clean,
-                    name = p.pageName.ifBlank { parent.name },
-                    bio = effectiveToken
-                )
-                start(context, pageAccount)
-                return
-            }
-        }
     }
 
     @Synchronized

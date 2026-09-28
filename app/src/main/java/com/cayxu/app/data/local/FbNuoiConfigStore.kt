@@ -2,37 +2,9 @@ package com.cayxu.app.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.annotation.Keep
+import com.cayxu.app.automation.facebook.nuoi.FbNuoiConfig
 import org.json.JSONArray
 import org.json.JSONObject
-
-@Keep
-data class FbNuoiConfig(
-    // 1. Tương tác dạo
-    val isInteractEnabled: Boolean = true,
-    val selectedReactions: Set<String> = setOf("LIKE", "LOVE"),
-    val interactCount: Int = 10,
-    val interactDelayMinSec: Int = 3,
-    val interactDelayMaxSec: Int = 8,
-
-    // 2. Comment dạo
-    val isCommentEnabled: Boolean = false,
-    val commentList: List<String> = listOf(
-        "Chào bạn, chúc ngày mới tốt lành!",
-        "Tương tác lại với mình nhé ❤️",
-        "Bài viết tuyệt vời quá bạn ơi",
-        "Tuyệt vời!"
-    ),
-    val commentCount: Int = 3,
-    val commentDelayMinSec: Int = 15,
-    val commentDelayMaxSec: Int = 30,
-
-    // 3. Follow dạo
-    val isFollowEnabled: Boolean = false,
-    val followCount: Int = 5,
-    val followDelayMinSec: Int = 15,
-    val followDelayMaxSec: Int = 30
-)
 
 object FbNuoiConfigStore {
     private const val PREFS_NAME = "cayxu_fb_nuoi_config"
@@ -54,7 +26,7 @@ object FbNuoiConfigStore {
                     reactions.add(reactArr.getString(i))
                 }
             } else {
-                reactions.addAll(listOf("LIKE", "LOVE"))
+                reactions.addAll(listOf("1", "2"))
             }
 
             val cmtArr = json.optJSONArray("commentList")
@@ -76,9 +48,18 @@ object FbNuoiConfigStore {
                 )
             }
 
+            val isFriend = if (json.has("isFriendEnabled")) json.optBoolean("isFriendEnabled", false)
+                           else json.optBoolean("isFollowEnabled", false)
+            val friendCnt = if (json.has("friendCount")) json.optInt("friendCount", 5)
+                            else json.optInt("followCount", 5)
+            val friendMin = if (json.has("friendDelayMinSec")) json.optInt("friendDelayMinSec", 15)
+                            else json.optInt("followDelayMinSec", 15)
+            val friendMax = if (json.has("friendDelayMaxSec")) json.optInt("friendDelayMaxSec", 30)
+                            else json.optInt("followDelayMaxSec", 30)
+
             FbNuoiConfig(
                 isInteractEnabled = json.optBoolean("isInteractEnabled", true),
-                selectedReactions = if (reactions.isNotEmpty()) reactions else setOf("LIKE", "LOVE"),
+                selectedReactions = if (reactions.isNotEmpty()) reactions else setOf("1", "2"),
                 interactCount = json.optInt("interactCount", 10),
                 interactDelayMinSec = json.optInt("interactDelayMinSec", 3),
                 interactDelayMaxSec = json.optInt("interactDelayMaxSec", 8),
@@ -89,10 +70,12 @@ object FbNuoiConfigStore {
                 commentDelayMinSec = json.optInt("commentDelayMinSec", 15),
                 commentDelayMaxSec = json.optInt("commentDelayMaxSec", 30),
 
-                isFollowEnabled = json.optBoolean("isFollowEnabled", false),
-                followCount = json.optInt("followCount", 5),
-                followDelayMinSec = json.optInt("followDelayMinSec", 15),
-                followDelayMaxSec = json.optInt("followDelayMaxSec", 30)
+                isFriendEnabled = isFriend,
+                friendCount = friendCnt,
+                friendDelayMinSec = friendMin,
+                friendDelayMaxSec = friendMax,
+
+                maxFeedPages = json.optInt("maxFeedPages", 4)
             )
         } catch (_: Exception) {
             FbNuoiConfig()
@@ -115,10 +98,12 @@ object FbNuoiConfigStore {
                 put("commentDelayMinSec", config.commentDelayMinSec)
                 put("commentDelayMaxSec", config.commentDelayMaxSec)
 
-                put("isFollowEnabled", config.isFollowEnabled)
-                put("followCount", config.followCount)
-                put("followDelayMinSec", config.followDelayMinSec)
-                put("followDelayMaxSec", config.followDelayMaxSec)
+                put("isFriendEnabled", config.isFriendEnabled)
+                put("friendCount", config.friendCount)
+                put("friendDelayMinSec", config.friendDelayMinSec)
+                put("friendDelayMaxSec", config.friendDelayMaxSec)
+
+                put("maxFeedPages", config.maxFeedPages)
             }
             prefs(context).edit().putString(KEY_CONFIG, json.toString()).apply()
         } catch (_: Exception) {}

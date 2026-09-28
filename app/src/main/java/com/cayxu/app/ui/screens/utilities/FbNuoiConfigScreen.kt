@@ -29,7 +29,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.cayxu.app.data.local.FbNuoiConfig
+import com.cayxu.app.automation.facebook.nuoi.FbNuoiConfig
 import com.cayxu.app.data.local.FbNuoiConfigStore
 import com.cayxu.app.ui.theme.*
 
@@ -58,10 +58,10 @@ fun FbNuoiConfigScreen(navController: NavController) {
     var commentDelayMax by remember { mutableStateOf(savedConfig.commentDelayMaxSec.toString()) }
 
     // Nhóm 3: Follow dạo
-    var isFollowEnabled by remember { mutableStateOf(savedConfig.isFollowEnabled) }
-    var followCount by remember { mutableStateOf(savedConfig.followCount.toString()) }
-    var followDelayMin by remember { mutableStateOf(savedConfig.followDelayMinSec.toString()) }
-    var followDelayMax by remember { mutableStateOf(savedConfig.followDelayMaxSec.toString()) }
+    var isFollowEnabled by remember { mutableStateOf(savedConfig.isFriendEnabled) }
+    var followCount by remember { mutableStateOf(savedConfig.friendCount.toString()) }
+    var followDelayMin by remember { mutableStateOf(savedConfig.friendDelayMinSec.toString()) }
+    var followDelayMax by remember { mutableStateOf(savedConfig.friendDelayMaxSec.toString()) }
 
     val reactionOptions = listOf(
         "LIKE" to ("Like" to "👍"),
@@ -359,10 +359,11 @@ fun FbNuoiConfigScreen(navController: NavController) {
                         commentDelayMinSec = commentDelayMin.toIntOrNull()?.coerceAtLeast(1) ?: 15,
                         commentDelayMaxSec = commentDelayMax.toIntOrNull()?.coerceAtLeast(1) ?: 30,
 
-                        isFollowEnabled = isFollowEnabled,
-                        followCount = followCount.toIntOrNull()?.coerceAtLeast(1) ?: 5,
-                        followDelayMinSec = followDelayMin.toIntOrNull()?.coerceAtLeast(1) ?: 15,
-                        followDelayMaxSec = followDelayMax.toIntOrNull()?.coerceAtLeast(1) ?: 30
+                        isFriendEnabled = isFollowEnabled,
+                        friendCount = followCount.toIntOrNull()?.coerceAtLeast(1) ?: 5,
+                        friendDelayMinSec = followDelayMin.toIntOrNull()?.coerceAtLeast(1) ?: 15,
+                        friendDelayMaxSec = followDelayMax.toIntOrNull()?.coerceAtLeast(1) ?: 30,
+                        maxFeedPages = 4
                     )
 
                     FbNuoiConfigStore.saveConfig(context, newConfig)
