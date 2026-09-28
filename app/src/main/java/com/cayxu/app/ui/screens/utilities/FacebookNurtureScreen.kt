@@ -1149,70 +1149,132 @@ fun FacebookNurtureScreen(navController: NavController) {
         )
     }
 
-    // Dialog xem chi tiết lỗi kèm nút Sao chép lỗi
+    // ModalBottomSheet xem chi tiết lỗi kèm nút Sao chép lỗi
     if (selectedErrorDetailAccount != null) {
         val targetUid = selectedErrorDetailAccount!!
         val errorText = fbErrorDetailMap[targetUid] ?: fbStatusMap[targetUid] ?: "Không có thông tin lỗi chi tiết"
-        AlertDialog(
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+        ModalBottomSheet(
             onDismissRequest = { selectedErrorDetailAccount = null },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Warning, contentDescription = null, tint = DangerRed, modifier = Modifier.size(20.dp))
+            sheetState = sheetState,
+            containerColor = Color.White,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            dragHandle = {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 12.dp, bottom = 8.dp)
+                        .width(44.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color(0xFFCBD5E1))
+                )
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
+                    .navigationBarsPadding(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Tiêu đề: Icon cảnh báo đỏ (!) + Text "Chi tiết lỗi"
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = DangerRed,
+                        modifier = Modifier.size(24.dp)
+                    )
                     Spacer(Modifier.width(8.dp))
-                    Text("Chi tiết lỗi [$targetUid]", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextPrimary)
+                    Text(
+                        text = "Chi tiết lỗi",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = TextPrimary
+                    )
                 }
-            },
-            text = {
-                Column(
+
+                Spacer(Modifier.height(4.dp))
+
+                // Dưới tiêu đề: UID tài khoản trong ngoặc vuông [61594068577384]
+                Text(
+                    text = "[$targetUid]",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = TextPrimary
+                )
+
+                Spacer(Modifier.height(14.dp))
+
+                // Khung hiển thị nội dung lỗi: Màu xám bo góc, có timestamp, in rõ nguyên văn
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .wrapContentHeight()
+                        .heightIn(max = 280.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFF8FAFC))
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(12.dp))
+                        .padding(14.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 260.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFF8FAFC))
-                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
-                            .padding(10.dp)
-                    ) {
-                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                            Text(
-                                text = errorText,
-                                fontSize = 12.5.sp,
-                                lineHeight = 18.sp,
-                                color = TextPrimary
-                            )
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        Text(
+                            text = errorText,
+                            fontSize = 13.sp,
+                            lineHeight = 19.sp,
+                            color = TextPrimary
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Nút "Sao chép lỗi" màu xanh (Copy toàn bộ text lỗi vào Clipboard hệ thống)
+                Button(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("Chi tiết lỗi Nuôi FB", errorText)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "Đã sao chép chi tiết lỗi vào bộ nhớ tạm!", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.ContentCopy,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = Color.White
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Sao chép lỗi", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                // Nút "Đóng" ở đáy để vuốt trượt đóng sheet xuống
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            sheetState.hide()
+                            selectedErrorDetailAccount = null
                         }
-                    }
-
-                    Spacer(Modifier.height(14.dp))
-
-                    Button(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText("Chi tiết lỗi Nuôi FB", errorText)
-                            clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Đã sao chép chi tiết lỗi vào bộ nhớ tạm!", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2)),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                    ) {
-                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Sao chép lỗi", fontWeight = FontWeight.Bold, color = Color.White)
-                    }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp)
+                ) {
+                    Text("Đóng", color = TextSecondary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { selectedErrorDetailAccount = null }) {
-                    Text("Đóng", color = TextSecondary, fontWeight = FontWeight.SemiBold)
-                }
+
+                Spacer(Modifier.height(6.dp))
             }
-        )
+        }
     }
 }

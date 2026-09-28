@@ -59,6 +59,19 @@ class FbNuoiTaskRunner(
             totalErrors = 0
         ))
 
+        // 0. Xác thực Token trước khi chạy bằng Graph API /me (Katana UA)
+        val (isTokenValid, validationResult) = FbFeedScraper.validateToken(client, token)
+        if (!isTokenValid) {
+            val timeStr = java.text.SimpleDateFormat("HH:mm:ss dd/MM", java.util.Locale.getDefault()).format(java.util.Date())
+            onProgress(FbNuoiProgress(
+                status = "Lỗi: Access Token không hợp lệ",
+                totalErrors = 1,
+                isFinished = true,
+                errorMessage = "[$timeStr] Meta từ chối Access Token:\n$validationResult"
+            ))
+            return
+        }
+
         // 1. Quét bài viết Newsfeed với 100% GraphQL API Token Engine (Chuẩn KaharaMod / Katana Native)
         val posts = try {
             FbFeedScraper.fetchFeedWithScroll(
@@ -73,16 +86,16 @@ class FbNuoiTaskRunner(
         } catch (e: TokenExpiredException) {
             val timeStr = java.text.SimpleDateFormat("HH:mm:ss dd/MM", java.util.Locale.getDefault()).format(java.util.Date())
             onProgress(FbNuoiProgress(
-                status = "Lỗi: Access Token hết hạn hoặc không hợp lệ",
+                status = "Lỗi: Access Token hết hạn",
                 totalErrors = 1,
                 isFinished = true,
-                errorMessage = "[$timeStr] Access Token của tài khoản đã hết hạn hoặc không hợp lệ (Mã 190). Vui lòng cập nhật Token để tiếp tục nuôi nick."
+                errorMessage = "[$timeStr] Phản hồi lỗi từ Meta:\n${e.rawJsonError}"
             ))
             return
         } catch (e: IllegalArgumentException) {
             val timeStr = java.text.SimpleDateFormat("HH:mm:ss dd/MM", java.util.Locale.getDefault()).format(java.util.Date())
             onProgress(FbNuoiProgress(
-                status = "Lỗi: Tài khoản chưa có Access Token",
+                status = "Lỗi: Thiếu Access Token",
                 totalErrors = 1,
                 isFinished = true,
                 errorMessage = "[$timeStr] ${e.message}"
@@ -138,10 +151,9 @@ class FbNuoiTaskRunner(
                     totalErrors = errorCount
                 ))
 
-                val reactSuccess = FbReactionHelper.sendReaction(
+                val reactSuccess = FbFeedScraper.sendReaction(
                     client = client,
                     token = token,
-                    cookie = cookie,
                     post = post,
                     selectedReactionTypes = config.selectedReactions,
                     targetActorId = targetActorId
@@ -158,7 +170,7 @@ class FbNuoiTaskRunner(
                         successComments = successComments,
                         successFriends = successFriends,
                         totalErrors = errorCount,
-                        errorMessage = "[$timeStr] Lỗi thả cảm xúc bài viết ${post.postId} của [$author]. Vui lòng kiểm tra Cookie/Token Facebook."
+                        errorMessage = "[$timeStr] Lỗi thả cảm xúc bài viết ${post.postId} của [$author]. Vui lòng kiểm tra Token Facebook."
                     ))
                 }
 
@@ -188,10 +200,9 @@ class FbNuoiTaskRunner(
                         totalErrors = errorCount
                     ))
 
-                    val commentSuccess = FbCommentHelper.sendComment(
+                    val commentSuccess = FbFeedScraper.sendComment(
                         client = client,
                         token = token,
-                        cookie = cookie,
                         post = post,
                         commentList = config.commentList,
                         targetActorId = targetActorId
@@ -208,7 +219,7 @@ class FbNuoiTaskRunner(
                             successComments = successComments,
                             successFriends = successFriends,
                             totalErrors = errorCount,
-                            errorMessage = "[$timeStr] Lỗi gửi bình luận bài viết ${post.postId} của [$author]. Vui lòng kiểm tra Cookie/Token hoặc xem tài khoản có bị chặn bình luận không."
+                            errorMessage = "[$timeStr] Lỗi gửi bình luận bài viết ${post.postId} của [$author]. Vui lòng kiểm tra Token Facebook."
                         ))
                     }
 
@@ -231,7 +242,7 @@ class FbNuoiTaskRunner(
                     ))
 
                     val friendSuccess = if (post.authorId.isNotBlank()) {
-                        FbFriendHelper.followOrAddFriend(client, token, cookie, post.authorId, targetActorId)
+                        FbFeedScraper.followOrAddFriend(client, token, post.authorId, targetActorId)
                     } else {
                         false
                     }

@@ -6,11 +6,48 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 
-class TokenExpiredException(message: String) : Exception(message)
+class TokenExpiredException(val rawJsonError: String) : Exception(rawJsonError)
 
 object FbFeedScraper {
     private const val GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
-    private const val KATANA_UA = "[FBAN/FB4A;FBAV/548.0.0.38.106;FBBV/587429112;FBDM/{density=2.6,width=1080,height=2400};FBLC/vi_VN;FBCR/Viettel;FBMF/Xiaomi;FBBD/Redmi;FBPN/com.facebook.katana;FBDV/Redmi Note 12;FBSV/13;FBOP/1;FBCA/arm64-v8a:;]"
+    const val KATANA_UA = "[FBAN/FB4A;FBAV/548.0.0.38.106;FBBV/587429112;FBDM/{density=2.6,width=1080,height=2400};FBLC/vi_VN;FBCR/Viettel;FBMF/Xiaomi;FBBD/Redmi;FBPN/com.facebook.katana;FBDV/Redmi Note 12;FBSV/13;FBOP/1;FBCA/arm64-v8a:;]"
+
+    /**
+     * Xác thực Token nhanh trước khi chạy tác vụ.
+     * Trả về (true, rawResponse) nếu Live, hoặc (false, rawJsonError) nếu Token bị từ chối.
+     */
+    fun validateToken(client: OkHttpClient, token: String): Pair<Boolean, String> {
+        if (token.isBlank()) {
+            return false to "Tài khoản chưa có Access Token (Vui lòng kiểm tra lại Token)"
+        }
+        val url = "$GRAPH_API_BASE/me?fields=id,name&access_token=$token"
+        val req = Request.Builder()
+            .url(url)
+            .header("Authorization", "OAuth $token")
+            .header("User-Agent", KATANA_UA)
+            .header("X-FB-Connection-Type", "WIFI")
+            .get()
+            .build()
+
+        return try {
+            client.newCall(req).execute().use { res ->
+                val body = res.body?.string().orEmpty()
+                if (res.isSuccessful && !body.contains("\"error\"")) {
+                    true to body
+                } else {
+                    val rawError = try {
+                        val root = JSONObject(body)
+                        root.optJSONObject("error")?.toString(2) ?: body
+                    } catch (_: Exception) {
+                        body.ifBlank { "HTTP ${res.code}: Không nhận được phản hồi từ Meta" }
+                    }
+                    false to rawError
+                }
+            }
+        } catch (e: Exception) {
+            false to (e.message ?: "Lỗi kết nối mạng khi xác thực Token")
+        }
+    }
 
     fun parseCount(raw: String): Int {
         val clean = raw.trim().lowercase()
@@ -114,7 +151,7 @@ object FbFeedScraper {
         var currentCursor: String? = null
         var pagesLoaded = 0
 
-        val docIds = listOf("4463426747065985", "7112046835581177", "5579753175402517")
+        val docIds = listOf("7112046835581177", "4463426747065985", "5579753175402517")
         var currentDocIndex = 0
 
         while (pagesLoaded < maxPages && result.size < targetCount) {
@@ -186,7 +223,7 @@ object FbFeedScraper {
     }
 
     /**
-     * Cào Newfeed qua Graph API (/me/home hoặc /{actorId}/feed) bằng Token
+     * Cào Newfeed qua Graph API (/me/feed hoặc /{actorId}/feed) bằng Token 100% (Không dùng /me/home đã deprecated)
      */
     private fun fetchFeedViaGraphApi(
         client: OkHttpClient,
@@ -199,17 +236,16 @@ object FbFeedScraper {
         seenPostIds: MutableSet<String>
     ): List<FbPost> {
         val result = mutableListOf<FbPost>()
-        val fields = "fields=id,from{id,name},message,story,created_time,reactions.summary(true).limit(0),comments.summary(true).limit(0)"
+        val fields = "fields=id,from{id,name},message,story,created_time,reactions.summary(true),comments.summary(true)"
 
         val endpoints = mutableListOf<String>()
         if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
             endpoints.add("$GRAPH_API_BASE/$targetActorId/feed")
         }
-        endpoints.add("$GRAPH_API_BASE/me/home")
         endpoints.add("$GRAPH_API_BASE/me/feed")
 
         for (baseEndpoint in endpoints) {
-            var nextUrl: String? = "$baseEndpoint?$fields&limit=15&access_token=$token"
+            var nextUrl: String? = "$baseEndpoint?$fields&limit=10&access_token=$token"
             var pagesLoaded = 0
 
             while (!nextUrl.isNullOrBlank() && pagesLoaded < maxPages && result.size < targetCount) {
@@ -219,6 +255,7 @@ object FbFeedScraper {
                         .url(nextUrl)
                         .header("Authorization", "OAuth $token")
                         .header("User-Agent", KATANA_UA)
+                        .header("X-FB-Connection-Type", "WIFI")
                         .get()
                         .build()
 
@@ -428,14 +465,164 @@ object FbFeedScraper {
             val error = root.optJSONObject("error")
             if (error != null) {
                 val code = error.optInt("code")
-                val type = error.optString("type")
+                val subcode = error.optInt("error_subcode")
                 val message = error.optString("message")
-                if (code == 190 || type == "OAuthException" || message.contains("Session has expired") || message.contains("access token")) {
-                    throw TokenExpiredException("Token hết hạn hoặc không hợp lệ (Code 190): $message")
+                val isTokenError = code == 190 || subcode in listOf(458, 459, 460, 463, 467, 490) ||
+                        (message.contains("Session has expired", ignoreCase = true) ||
+                         message.contains("Error validating access token", ignoreCase = true) ||
+                         message.contains("The access token could not be decrypted", ignoreCase = true))
+
+                if (isTokenError) {
+                    val rawJson = error.toString(2)
+                    throw TokenExpiredException(rawJson)
                 }
             }
         } catch (e: Exception) {
             if (e is TokenExpiredException) throw e
+        }
+    }
+
+    /**
+     * Thả cảm xúc 100% bằng Access Token & Katana User-Agent
+     */
+    fun sendReaction(
+        client: OkHttpClient,
+        token: String,
+        post: FbPost,
+        selectedReactionTypes: Set<String>,
+        targetActorId: String? = null
+    ): Boolean {
+        val rawTarget = selectedReactionTypes.randomOrNull() ?: "LIKE"
+        val reactionType = when (rawTarget.uppercase()) {
+            "1", "LIKE" -> "LIKE"
+            "2", "LOVE" -> "LOVE"
+            "16", "CARE" -> "CARE"
+            "4", "HAHA" -> "HAHA"
+            "3", "WOW" -> "WOW"
+            "7", "SAD" -> "SAD"
+            "8", "ANGRY" -> "ANGRY"
+            else -> "LIKE"
+        }
+        val candidateIds = linkedSetOf(post.postId, post.ftEntIdentifier).filter { it.isNotBlank() }
+        for (targetId in candidateIds) {
+            val url = "$GRAPH_API_BASE/$targetId/reactions"
+            val formBody = FormBody.Builder()
+                .add("type", reactionType)
+                .add("access_token", token)
+                .build()
+
+            val reqBuilder = Request.Builder()
+                .url(url)
+                .header("Authorization", "OAuth $token")
+                .header("User-Agent", KATANA_UA)
+                .header("X-FB-Connection-Type", "WIFI")
+                .post(formBody)
+
+            if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
+                reqBuilder.header("X-FB-Actor-ID", targetActorId)
+            }
+
+            try {
+                val ok = client.newCall(reqBuilder.build()).execute().use { res ->
+                    val body = res.body?.string().orEmpty()
+                    res.isSuccessful || body.contains("\"success\":true") || body.contains("\"success\": true")
+                }
+                if (ok) return true
+            } catch (_: Exception) {}
+        }
+        return false
+    }
+
+    /**
+     * Gửi bình luận 100% bằng Access Token & Katana User-Agent
+     */
+    fun sendComment(
+        client: OkHttpClient,
+        token: String,
+        post: FbPost,
+        commentList: List<String>,
+        targetActorId: String? = null
+    ): Boolean {
+        val validComments = commentList.map { it.trim() }.filter { it.isNotBlank() }
+        if (validComments.isEmpty()) return false
+        val commentText = validComments.random()
+
+        val candidateIds = linkedSetOf(post.postId, post.ftEntIdentifier).filter { it.isNotBlank() }
+        for (targetId in candidateIds) {
+            val url = "$GRAPH_API_BASE/$targetId/comments"
+            val formBody = FormBody.Builder()
+                .add("message", commentText)
+                .add("access_token", token)
+                .build()
+
+            val reqBuilder = Request.Builder()
+                .url(url)
+                .header("Authorization", "OAuth $token")
+                .header("User-Agent", KATANA_UA)
+                .header("X-FB-Connection-Type", "WIFI")
+                .post(formBody)
+
+            if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
+                reqBuilder.header("X-FB-Actor-ID", targetActorId)
+            }
+
+            try {
+                val ok = client.newCall(reqBuilder.build()).execute().use { res ->
+                    res.isSuccessful || res.body?.string().orEmpty().contains("\"id\":")
+                }
+                if (ok) return true
+            } catch (_: Exception) {}
+        }
+        return false
+    }
+
+    /**
+     * Kết bạn hoặc Follow 100% bằng Access Token & Katana User-Agent
+     */
+    fun followOrAddFriend(
+        client: OkHttpClient,
+        token: String,
+        authorId: String,
+        targetActorId: String? = null
+    ): Boolean {
+        if (authorId.isBlank() || !authorId.matches(Regex("^\\d+$"))) return false
+        val friendUrl = "$GRAPH_API_BASE/me/friends/$authorId"
+        val reqBuilder = Request.Builder()
+            .url(friendUrl)
+            .header("Authorization", "OAuth $token")
+            .header("User-Agent", KATANA_UA)
+            .header("X-FB-Connection-Type", "WIFI")
+            .post(FormBody.Builder().add("access_token", token).build())
+
+        if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
+            reqBuilder.header("X-FB-Actor-ID", targetActorId)
+        }
+
+        try {
+            val ok = client.newCall(reqBuilder.build()).execute().use { res ->
+                res.isSuccessful || res.body?.string().orEmpty().contains("\"success\":true")
+            }
+            if (ok) return true
+        } catch (_: Exception) {}
+
+        val followUrl = "$GRAPH_API_BASE/$authorId/subscribers"
+        val followReq = Request.Builder()
+            .url(followUrl)
+            .header("Authorization", "OAuth $token")
+            .header("User-Agent", KATANA_UA)
+            .header("X-FB-Connection-Type", "WIFI")
+            .post(FormBody.Builder().add("access_token", token).build())
+
+        if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
+            followReq.header("X-FB-Actor-ID", targetActorId)
+        }
+
+        return try {
+            client.newCall(followReq.build()).execute().use { res ->
+                res.isSuccessful || res.body?.string().orEmpty().contains("\"success\":true")
+            }
+        } catch (_: Exception) {
+            false
         }
     }
 }
