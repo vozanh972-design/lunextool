@@ -49,7 +49,7 @@ object Routes {
     const val NURTURE_SETUP = "nurture_setup"
     const val REG_AND_TRANSFER_PAGE = "reg_and_transfer_page"
     const val FB_WEB_LOGIN = "fb_web_login"
-    const val FB_TEST_LOGIN = "fb_test_login"
+    const val FB_NURTURE = "fb_nurture"
 
     /** Màn nhiệm vụ đơn giản (Facebook + TikTok) dùng chung cho 2 dịch vụ: Trao đổi Sub,
      *  Tương tác chéo - nhận theo tên dịch vụ để hiển thị đúng tiêu đề/màu sắc. */
@@ -303,8 +303,8 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
                 )
             }
 
-            composable(Routes.FB_TEST_LOGIN) {
-                com.cayxu.app.ui.screens.utilities.FacebookTestLoginScreen(
+            composable(Routes.FB_NURTURE) {
+                com.cayxu.app.ui.screens.utilities.FacebookNurtureScreen(
                     navController = navController
                 )
             }

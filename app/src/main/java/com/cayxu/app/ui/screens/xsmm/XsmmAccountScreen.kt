@@ -592,8 +592,22 @@ fun XsmmAccountScreen(navController: NavController) {
                 when (selectedPlatform) {
                     "instagram" -> {
                         targetUids.forEach { uid ->
-                            com.cayxu.app.data.local.InstagramAccountsStore.removeAccount(context, uid)
-                            com.cayxu.app.data.local.LinkedAccountsStore.removeAccount(context, "Instagram", uid)
+                            val targetAcc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, uid)
+                            val realUsername = targetAcc?.username?.takeIf { u -> 
+                                u.isNotBlank() && !u.equals("Người dùng Instagram", ignoreCase = true) 
+                            } ?: targetAcc?.userId ?: uid
+                            val allKeys = setOfNotNull(
+                                uid,
+                                realUsername,
+                                targetAcc?.username,
+                                targetAcc?.userId,
+                                targetAcc?.fullName?.trim()?.removePrefix("@")
+                            )
+                            allKeys.forEach { k ->
+                                com.cayxu.app.data.local.InstagramAccountsStore.removeAccount(context, k)
+                                com.cayxu.app.data.local.LinkedAccountsStore.removeAccount(context, "Instagram", k)
+                                com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(k)
+                            }
                         }
                         instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
                             .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
@@ -3338,6 +3352,18 @@ private fun DeleteConfirmBottomSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     accountList.forEach { acc ->
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        val realUsername = if (platformName.equals("Instagram", ignoreCase = true)) {
+                            val targetAcc = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, acc)
+                            val raw = targetAcc?.username?.takeIf { u -> 
+                                u.isNotBlank() && !u.equals("Người dùng Instagram", ignoreCase = true) 
+                            } ?: targetAcc?.fullName?.takeIf { u ->
+                                u.isNotBlank() && !u.equals("Người dùng Instagram", ignoreCase = true) && !u.contains(" ")
+                            } ?: targetAcc?.userId?.takeIf { it.isNotBlank() } ?: acc
+                            com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(raw).trim().removePrefix("@")
+                        } else {
+                            acc
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
@@ -3347,7 +3373,7 @@ private fun DeleteConfirmBottomSheet(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                acc,
+                                text = realUsername,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = TextPrimary

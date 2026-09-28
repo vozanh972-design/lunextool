@@ -108,29 +108,16 @@ fun UtilitiesScreen(navController: NavController) {
                 }
             )
 
-            // Tool Card 3: Đăng nhập Facebook
+            // Tool Card 3: Nuôi tài khoản Facebook
             HtmlToolCard(
-                title = "Đăng nhập Facebook",
-                subtitle = "Đăng nhập tài khoản Facebook trực tiếp",
+                title = "Nuôi tài khoản Facebook",
+                subtitle = "Tự động tương tác, lướt feed và chăm sóc tài khoản Facebook",
                 icon = Icons.Outlined.Person,
                 iconGradient = listOf(Color(0xFFE0E7FF), Color(0xFFC7D2FE)),
                 iconTint = Cobalt600,
                 isFeatured = false,
                 onClick = {
-                    navController.navigate(Routes.FB_WEB_LOGIN) { launchSingleTop = true }
-                }
-            )
-
-            // Tool Card 4: test
-            HtmlToolCard(
-                title = "test",
-                subtitle = "Đăng nhập Facebook lấy Token (API Direct)",
-                icon = Icons.Outlined.Person,
-                iconGradient = listOf(Color(0xFFFEF3C7), Color(0xFFFDE68A)),
-                iconTint = Color(0xFFD97706),
-                isFeatured = false,
-                onClick = {
-                    navController.navigate(Routes.FB_TEST_LOGIN) { launchSingleTop = true }
+                    navController.navigate(Routes.FB_NURTURE) { launchSingleTop = true }
                 }
             )
 
