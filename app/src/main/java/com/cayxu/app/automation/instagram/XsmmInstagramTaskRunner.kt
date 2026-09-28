@@ -32,6 +32,15 @@ data class IgXsmmAccount(
     var lastErrorMessage: String? = null
 )
 
+data class IgActionResult(
+    val isSuccess: Boolean,
+    val httpCode: Int,
+    val rawBody: String,
+    val errorMessage: String? = null
+)
+
+typealias FollowResult = IgActionResult
+
 class XsmmInstagramTaskRunner(
     private val xsmmToken: String,
     val account: IgXsmmAccount
@@ -584,14 +593,6 @@ class XsmmInstagramTaskRunner(
     }
 
     // ── 5. THỰC THI NHIỆM VỤ INSTAGRAM BẰNG IgTaToolClient (GRAPHQL CHUẨN PYTHON TA TOOL) ──
-    data class IgActionResult(
-        val isSuccess: Boolean,
-        val httpCode: Int,
-        val rawBody: String,
-        val errorMessage: String? = null
-    )
-    typealias FollowResult = IgActionResult
-
     private fun parseIgResult(rawBody: String, defaultActionName: String): IgActionResult {
         if (rawBody.isBlank()) {
             return IgActionResult(false, 0, "", "Phản hồi rỗng từ Instagram")
