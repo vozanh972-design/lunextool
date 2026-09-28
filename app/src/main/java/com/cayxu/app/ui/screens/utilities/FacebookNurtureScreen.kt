@@ -95,7 +95,7 @@ fun FacebookNurtureScreen(navController: NavController) {
                         }
                         return@launch
                     }
-                    val acc = FacebookAccountsStore.getAccount(context, uid)
+                    val acc = FacebookAccountsStore.getAccounts(context).firstOrNull { it.uid == uid }
                     if (acc == null) {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(context, "Không tìm thấy tài khoản Facebook $uid", Toast.LENGTH_SHORT).show()
@@ -103,36 +103,62 @@ fun FacebookNurtureScreen(navController: NavController) {
                         }
                         return@launch
                     }
-                    val proxyParts = acc.phone.ifBlank { null }?.split(":")
+                    val token = acc.bio.ifBlank { "" }
+                    if (token.isBlank()) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Tài khoản cần có Access Token để đổi Avatar", Toast.LENGTH_SHORT).show()
+                            isUploadingAvatar = false
+                        }
+                        return@launch
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Đang đổi ảnh đại diện Facebook...", Toast.LENGTH_SHORT).show()
+                    }
+                    val proxy = acc.phone.ifBlank { null }
+                    val proxyParts = proxy?.split(":")
                     val proxyHost = proxyParts?.getOrNull(0)
                     val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+
                     val mediaEngine = com.cayxu.app.facebook.FacebookMediaEngine(
-                        accessToken = acc.bio.trim(),
+                        accessToken = token,
                         proxyHost = proxyHost,
                         proxyPort = proxyPort
                     )
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Đang tải ảnh lên Facebook...", Toast.LENGTH_SHORT).show()
-                    }
-                    val result = mediaEngine.updateAvatar(bytes)
-                    withContext(Dispatchers.Main) {
-                        isUploadingAvatar = false
-                        if (result.success) {
-                            val newUrl = result.avatarUrl.ifBlank { "https://graph.facebook.com/v21.0/$uid/picture?type=large" }
-                            liveFbAvatars = liveFbAvatars + (uid to newUrl)
-                            val updated = acc.copy(avatar = newUrl)
-                            FacebookAccountsStore.addAccount(context, updated)
-                            facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                    val result = mediaEngine.updateUserAvatar(
+                        imageBytes = bytes,
+                        tokenParam = token
+                    )
+
+                    if (result.isSuccess) {
+                        var directUrl: String? = null
+                        if (!result.mediaId.isNullOrBlank()) {
+                            directUrl = mediaEngine.getPhotoDirectUrl(result.mediaId, tokenParam = token)
+                        }
+                        if (directUrl.isNullOrBlank()) {
+                            val updatedMedia = mediaEngine.getUserMedia(tokenParam = token)
+                            directUrl = updatedMedia?.avatarUrl?.takeIf { !it.contains("84628273_176159830277856") }
+                        }
+                        val finalAvatar = directUrl ?: "https://graph.facebook.com/v21.0/me/picture?type=large&access_token=$token&t=${System.currentTimeMillis()}"
+                        val updatedAcc = acc.copy(avatar = finalAvatar)
+                        FacebookAccountsStore.updateAccount(context, updatedAcc)
+                        withContext(Dispatchers.Main) {
+                            liveFbAvatars = liveFbAvatars + (acc.uid to finalAvatar)
                             avatarVersion = System.currentTimeMillis()
+                            facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
                             Toast.makeText(context, "Đổi avatar Facebook thành công!", Toast.LENGTH_SHORT).show()
-                        } else {
+                            isUploadingAvatar = false
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
                             Toast.makeText(context, "Lỗi đổi avatar: ${result.message}", Toast.LENGTH_LONG).show()
+                            isUploadingAvatar = false
                         }
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Lỗi đổi avatar: ${e.message}", Toast.LENGTH_LONG).show()
                         isUploadingAvatar = false
-                        Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
