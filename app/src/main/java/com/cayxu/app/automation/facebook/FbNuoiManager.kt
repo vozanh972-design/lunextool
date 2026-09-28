@@ -41,18 +41,18 @@ object FbNuoiManager {
                     account = account,
                     config = config,
                     onStatus = { msg ->
-                        withContext(Dispatchers.Main) {
+                        scope.launch(Dispatchers.Main) {
                             statusMap[uid] = msg
                         }
                     },
                     onSuccess = {
-                        withContext(Dispatchers.Main) {
+                        scope.launch(Dispatchers.Main) {
                             val cur = successCountMap[uid] ?: 0
                             successCountMap[uid] = cur + 1
                         }
                     },
                     onError = { err ->
-                        withContext(Dispatchers.Main) {
+                        scope.launch(Dispatchers.Main) {
                             val cur = errorCountMap[uid] ?: 0
                             errorCountMap[uid] = cur + 1
                             lastErrorDetail[uid] = err
@@ -61,11 +61,11 @@ object FbNuoiManager {
                 )
                 runner.run()
             } catch (e: CancellationException) {
-                withContext(Dispatchers.Main) {
+                scope.launch(Dispatchers.Main) {
                     statusMap[uid] = "Đã dừng nuôi nick"
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
+                scope.launch(Dispatchers.Main) {
                     val msg = e.message ?: "Lỗi không xác định"
                     statusMap[uid] = "Lỗi: $msg"
                     lastErrorDetail[uid] = msg
@@ -73,7 +73,7 @@ object FbNuoiManager {
                     errorCountMap[uid] = cur + 1
                 }
             } finally {
-                withContext(Dispatchers.Main) {
+                scope.launch(Dispatchers.Main) {
                     runningAccounts.remove(uid)
                     activeJobs.remove(uid)
                 }
