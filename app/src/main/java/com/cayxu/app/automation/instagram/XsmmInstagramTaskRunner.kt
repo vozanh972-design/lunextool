@@ -448,7 +448,7 @@ class XsmmInstagramTaskRunner(
         }
     }
 
-    // ── 1. ĐỒNG BỘ TOKEN THEO IgTaToolClient (Bỏ hoàn toàn quét regex HTML) ────
+    // ── 1. ĐỒNG BỘ TOKEN THEO IgTaToolClient (Bóc tách fb_dtsg, lsd, jazoest chuẩn Meta) ────
     fun syncSessionTokens(): Pair<Boolean, Map<String, String>> {
         val info = IgTaToolClient.checkCookieIg(client, account.cookie)
         if (!info.isLive) {
@@ -465,11 +465,37 @@ class XsmmInstagramTaskRunner(
         tokenMap["username"] = realUsername
         tokenMap["userId"] = realUserId
 
+        // Trích xuất fb_dtsg và lsd bắt buộc cho GraphQL queries
+        val pageTokens = IgTaToolClient.extractPageTokens(
+            client = client,
+            cookie = account.cookie,
+            targetUrl = "https://www.instagram.com/",
+            cachedDtsg = account.fbDtsg,
+            cachedLsd = account.lsd
+        )
+        if (pageTokens.dtsg.isNotBlank()) {
+            account.fbDtsg = pageTokens.dtsg
+            tokenMap["fb_dtsg"] = pageTokens.dtsg
+        } else if (!account.fbDtsg.isNullOrBlank()) {
+            tokenMap["fb_dtsg"] = account.fbDtsg!!
+        }
+
+        if (pageTokens.lsd.isNotBlank()) {
+            account.lsd = pageTokens.lsd
+            tokenMap["lsd"] = pageTokens.lsd
+        } else if (!account.lsd.isNullOrBlank()) {
+            tokenMap["lsd"] = account.lsd!!
+        }
+
         try {
             val cookieTokens = extractTokensFromCookie(account.cookie)
             val csrftoken = cookieTokens["csrftoken"] ?: ""
             if (csrftoken.isNotBlank()) tokenMap["csrftoken"] = csrftoken
         } catch (_: Exception) {}
+
+        if (tokenMap["fb_dtsg"].isNullOrBlank() || tokenMap["lsd"].isNullOrBlank()) {
+            account.lastErrorMessage = "Không lấy được fb_dtsg/lsd của Instagram"
+        }
 
         return Pair(true, tokenMap)
     }
@@ -597,8 +623,21 @@ class XsmmInstagramTaskRunner(
         if (rawBody.isBlank()) {
             return IgActionResult(false, 0, "", "Phản hồi rỗng từ Instagram")
         }
+        var cleanBody = rawBody.trim()
+        if (cleanBody.startsWith("for (;;);")) {
+            cleanBody = cleanBody.removePrefix("for (;;);").trim()
+        }
         try {
-            val root = JSONObject(rawBody)
+            val root = JSONObject(cleanBody)
+
+            // 0. Bóc tách lỗi 1357004 của Meta (Trình duyệt từ chối / Token không hợp lệ)
+            val errCode = root.optInt("error", 0)
+            if (errCode == 1357004) {
+                val summary = root.optString("errorSummary", "Rất tiếc, đã xảy ra lỗi")
+                val desc = root.optString("errorDescription", "Vui lòng thử lại với một trình duyệt khác.")
+                return IgActionResult(false, 400, rawBody, "$summary: $desc (Mã lỗi 1357004 - Meta từ chối phiên / Sai lệch token)")
+            }
+
             // 1. Kiểm tra thành công
             val data = root.optJSONObject("data")
             val friendship = data?.optJSONObject("xdt_create_friendship")
@@ -657,16 +696,16 @@ class XsmmInstagramTaskRunner(
         } catch (_: Exception) {}
 
         // Fallback kiểm tra chuỗi
-        if (rawBody.contains("\"following\":true") || rawBody.contains("\"viewer_has_liked\":true") || rawBody.contains("\"status\":\"ok\"") || rawBody.contains("\"status\": \"ok\"")) {
+        if (cleanBody.contains("\"following\":true") || cleanBody.contains("\"viewer_has_liked\":true") || cleanBody.contains("\"status\":\"ok\"") || cleanBody.contains("\"status\": \"ok\"")) {
             return IgActionResult(true, 200, rawBody, null)
         }
-        if (rawBody.contains("feedback_required", ignoreCase = true)) {
+        if (cleanBody.contains("feedback_required", ignoreCase = true)) {
             return IgActionResult(false, 429, rawBody, "Chặn tính năng (feedback_required)")
         }
-        if (rawBody.contains("checkpoint", ignoreCase = true)) {
+        if (cleanBody.contains("checkpoint", ignoreCase = true)) {
             return IgActionResult(false, 403, rawBody, "Dính Checkpoint Instagram")
         }
-        if (rawBody.contains("login_required", ignoreCase = true)) {
+        if (cleanBody.contains("login_required", ignoreCase = true)) {
             return IgActionResult(false, 401, rawBody, "Cookie DIE / Yêu cầu đăng nhập")
         }
 
@@ -681,7 +720,15 @@ class XsmmInstagramTaskRunner(
         }
         val cleanTargetUser = targetUsername.trim().trim('/').substringAfterLast('/')
         val profileUrl = if (targetUrl.isNotBlank()) targetUrl else if (cleanTargetUser.isNotBlank()) "https://www.instagram.com/$cleanTargetUser/" else "https://www.instagram.com/"
-        val resBody = IgTaToolClient.follow(client, account.cookie, uid, profileUrl)
+        val resBody = IgTaToolClient.follow(
+            client = client,
+            rawCookie = account.cookie,
+            targetId = uid,
+            profileUrl = profileUrl,
+            cachedDtsg = account.fbDtsg,
+            cachedLsd = account.lsd,
+            userId = account.userId
+        )
         return parseIgResult(resBody, "Follow")
     }
 
@@ -724,7 +771,15 @@ class XsmmInstagramTaskRunner(
                 if (!extractedId.isNullOrBlank()) mid = extractedId
             }
             if (mid.isBlank()) return IgActionResult(false, 400, "", "Không tìm thấy Media ID để Like")
-            val res = IgTaToolClient.tym(client, account.cookie, mid, link)
+            val res = IgTaToolClient.tym(
+                client = client,
+                rawCookie = account.cookie,
+                mediaId = mid,
+                linkJob = link,
+                cachedDtsg = account.fbDtsg,
+                cachedLsd = account.lsd,
+                userId = account.userId
+            )
             return parseIgResult(res, "Tym")
         } catch (e: Exception) {
             return IgActionResult(false, 500, "", e.message ?: "Lỗi kết nối khi Tym")
@@ -744,7 +799,16 @@ class XsmmInstagramTaskRunner(
                 if (!extractedId.isNullOrBlank()) mid = extractedId
             }
             if (mid.isBlank()) return IgActionResult(false, 400, "", "Không tìm thấy Media ID để Comment")
-            val res = IgTaToolClient.cmt(client, account.cookie, mid, text, link)
+            val res = IgTaToolClient.cmt(
+                client = client,
+                rawCookie = account.cookie,
+                mediaId = mid,
+                text = text,
+                linkJob = link,
+                cachedDtsg = account.fbDtsg,
+                cachedLsd = account.lsd,
+                userId = account.userId
+            )
             return parseIgResult(res, "Comment")
         } catch (e: Exception) {
             return IgActionResult(false, 500, "", e.message ?: "Lỗi kết nối khi Comment")

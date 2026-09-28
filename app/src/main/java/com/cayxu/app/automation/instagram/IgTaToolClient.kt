@@ -62,8 +62,8 @@ object IgTaToolClient {
         return builder.build()
     }
 
-    private fun getIgHeaders(cookie: String, csrftoken: String, referer: String = "https://www.instagram.com/"): Headers {
-        return Headers.Builder()
+    fun getIgHeaders(cookie: String, csrftoken: String, lsd: String = "", referer: String = "https://www.instagram.com/"): Headers {
+        val builder = Headers.Builder()
             .add("accept", "*/*")
             .add("accept-language", "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5")
             .add("content-type", "application/x-www-form-urlencoded")
@@ -83,7 +83,10 @@ object IgTaToolClient {
             .add("x-ig-app-id", "936619743392459")
             .add("x-ig-www-claim", "0")
             .add("x-requested-with", "XMLHttpRequest")
-            .build()
+        if (lsd.isNotBlank()) {
+            builder.add("x-fb-lsd", lsd)
+        }
+        return builder.build()
     }
 
     data class IgCookieInfo(
@@ -125,30 +128,72 @@ object IgTaToolClient {
     // ================= TRÍCH XUẤT TOKENS (fb_dtsg, lsd, jazoest) =================
     data class IgPageTokens(val dtsg: String, val lsd: String, val jazoest: String)
 
-    private fun extractPageTokens(client: OkHttpClient, cookie: String, targetUrl: String, defaultLsd: String, defaultJazoest: String): IgPageTokens {
-        var fbDtsg = ""
-        var lsd = defaultLsd
-        var jazoest = defaultJazoest
+    fun extractPageTokens(
+        client: OkHttpClient,
+        cookie: String,
+        targetUrl: String = "https://www.instagram.com/",
+        cachedDtsg: String? = null,
+        cachedLsd: String? = null
+    ): IgPageTokens {
+        var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
+        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: ""
+        var jazoest = "26328"
+
         val req = Request.Builder()
             .url(if (targetUrl.isNotBlank()) targetUrl else "https://www.instagram.com/")
             .header("User-Agent", USER_AGENT)
+            .header("Sec-Ch-Ua", SEC_CH_UA)
+            .header("Sec-Ch-Ua-Mobile", "?0")
+            .header("Sec-Ch-Ua-Platform", "\"Windows\"")
             .header("Cookie", cookie)
             .get()
             .build()
         try {
             client.newCall(req).execute().use { res ->
                 val html = res.body?.string() ?: ""
-                val lsdMatch = Pattern.compile("\"LSD\",\\[\\],\\{\"token\":\"([^\"]+)\"\\}").matcher(html)
-                if (lsdMatch.find()) lsd = lsdMatch.group(1) ?: lsd
-                var dtsgMatch = Pattern.compile("\"dtsg\":\\{\"token\":\"([^\"]+)\"").matcher(html)
-                if (!dtsgMatch.find()) {
-                    dtsgMatch = Pattern.compile("name=\"fb_dtsg\" value=\"([^\"]+)\"").matcher(html)
+
+                // 1. Trích xuất lsd
+                val lsdPatterns = listOf(
+                    Pattern.compile("""\["LSD",\s*\[\],\s*\{"token":"([^"]+)""""),
+                    Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)""""),
+                    Pattern.compile("""name="lsd"\s+value="([^"]+)""""),
+                    Pattern.compile(""""lsd":\s*\{"token":"([^"]+)"""")
+                )
+                for (p in lsdPatterns) {
+                    val m = p.matcher(html)
+                    if (m.find()) {
+                        val token = m.group(1)
+                        if (!token.isNullOrBlank()) {
+                            lsd = token
+                            break
+                        }
+                    }
                 }
-                if (dtsgMatch.find()) fbDtsg = dtsgMatch.group(1) ?: ""
-                val jazoestMatch = Pattern.compile("name=\"jazoest\" value=\"(\\d+)\"").matcher(html)
+
+                // 2. Trích xuất fb_dtsg
+                val dtsgPatterns = listOf(
+                    Pattern.compile("""\["DTSGInitialData",\s*\[\],\s*\{"token":"([^"]+)""""),
+                    Pattern.compile(""""DTSGInitData":\s*\{"token":"([^"]+)""""),
+                    Pattern.compile(""""dtsg":\s*\{"token":"([^"]+)""""),
+                    Pattern.compile("""name="fb_dtsg"\s+value="([^"]+)""""),
+                    Pattern.compile(""""token":"(AQ[^"]+)"""")
+                )
+                for (p in dtsgPatterns) {
+                    val m = p.matcher(html)
+                    if (m.find()) {
+                        val token = m.group(1)
+                        if (!token.isNullOrBlank()) {
+                            fbDtsg = token
+                            break
+                        }
+                    }
+                }
+
+                val jazoestMatch = Pattern.compile("""name="jazoest"\s+value="(\d+)"""").matcher(html)
                 if (jazoestMatch.find()) jazoest = jazoestMatch.group(1) ?: jazoest
             }
         } catch (_: Exception) {}
+
         return IgPageTokens(fbDtsg, lsd, jazoest)
     }
 
@@ -162,59 +207,99 @@ object IgTaToolClient {
         return if (m.find()) m.group(1) ?: "0" else "0"
     }
 
-    // ================= 2. HÀM FOLLOW (follow trong Python) =================
-    fun follow(client: OkHttpClient, rawCookie: String, targetId: String, profileUrl: String = ""): String {
+    // ================= 2. HÀM FOLLOW (GraphQL Query Chuẩn Meta Web) =================
+    fun follow(
+        client: OkHttpClient,
+        rawCookie: String,
+        targetId: String,
+        profileUrl: String = "",
+        cachedDtsg: String? = null,
+        cachedLsd: String? = null,
+        userId: String? = null
+    ): String {
         if (targetId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Target ID\"}"
         val cookie = try { URLDecoder.decode(rawCookie, "UTF-8") } catch (_: Exception) { rawCookie }
-        val tokens = extractPageTokens(client, cookie, profileUrl, "Jfq8VQNmkkkJufHSbEE9bf", "26328")
+        val tokens = extractPageTokens(client, cookie, "https://www.instagram.com/", cachedDtsg, cachedLsd)
+        if (tokens.dtsg.isBlank() || tokens.lsd.isBlank()) {
+            return "{\"status\": \"error\", \"message\": \"Không lấy được fb_dtsg/lsd của Instagram\"}"
+        }
         val csrftoken = getCsrfToken(cookie)
-        val actorId = getActorId(cookie)
-        val variables = JSONObject().apply {
-            put("target_user_id", targetId)
-            put("container_module", "profile")
-            put("nav_chain", "PolarisFeedRoot:feedPage:5:topnav-link,PolarisProfileRoot:profilePage:6:unexpected")
-        }
-        val formBody = FormBody.Builder()
-            .add("av", actorId)
-            .add("__d", "www")
-            .add("__user", "0")
-            .add("__a", "1")
-            .add("__req", "s")
-            .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
-            .add("dpr", "1")
-            .add("__ccg", "EXCELLENT")
-            .add("__rev", "1046917461")
-            .add("__comet_req", "7")
-            .add("fb_dtsg", tokens.dtsg)
-            .add("jazoest", tokens.jazoest)
-            .add("lsd", tokens.lsd)
-            .add("fb_api_caller_class", "RelayModern")
-            .add("fb_api_req_friendly_name", "usePolarisFollowMutation")
-            .add("server_timestamps", "true")
-            .add("doc_id", "26508036048874888")
-            .add("variables", variables.toString())
-            .build()
-        val req = Request.Builder()
-            .url("https://www.instagram.com/api/graphql")
-            .headers(getIgHeaders(cookie, csrftoken, if (profileUrl.isNotBlank()) profileUrl else "https://www.instagram.com/"))
-            .post(formBody)
-            .build()
-        return try {
-            client.newCall(req).execute().use { res ->
-                res.body?.string()?.trim() ?: "{\"status\": \"error\"}"
+        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(cookie)
+        val avId = if (actorId.isNotBlank() && actorId != "0") {
+            if (!actorId.startsWith("178414")) "178414$actorId" else actorId
+        } else actorId
+
+        val docIds = listOf("9740159112729312", "9663809173698092", "26508036048874888")
+        var lastResult = ""
+
+        for (docId in docIds) {
+            val variables = JSONObject().apply {
+                put("target_user_id", targetId)
             }
-        } catch (e: Exception) {
-            "{\"status\": \"error\", \"message\": \"${e.message}\"}"
+            val formBody = FormBody.Builder()
+                .add("av", avId)
+                .add("__user", actorId)
+                .add("fb_dtsg", tokens.dtsg)
+                .add("jazoest", tokens.jazoest)
+                .add("lsd", tokens.lsd)
+                .add("doc_id", docId)
+                .add("variables", variables.toString())
+                .build()
+
+            val reqHeaders = getIgHeaders(cookie, csrftoken, tokens.lsd, if (profileUrl.isNotBlank()) profileUrl else "https://www.instagram.com/")
+                .newBuilder()
+                .add("x-fb-friendly-name", "usePolarisFollowMutation")
+                .build()
+
+            val targetEndpoint = if (docId == "26508036048874888") "https://www.instagram.com/api/graphql" else "https://www.instagram.com/graphql/query"
+
+            val req = Request.Builder()
+                .url(targetEndpoint)
+                .headers(reqHeaders)
+                .post(formBody)
+                .build()
+
+            try {
+                val resBody = client.newCall(req).execute().use { res ->
+                    res.body?.string()?.trim() ?: ""
+                }
+                lastResult = resBody
+                if (resBody.isNotBlank() && (resBody.contains("\"following\":true") || resBody.contains("xdt_create_friendship") || resBody.contains("\"status\":\"ok\""))) {
+                    return resBody
+                }
+                // Nếu bị lỗi 1357004 hoặc rỗng, thử tiếp docId tiếp theo
+                if (!resBody.contains("1357004") && resBody.isNotBlank()) {
+                    return resBody
+                }
+            } catch (e: Exception) {
+                lastResult = "{\"status\": \"error\", \"message\": \"${e.message}\"}"
+            }
         }
+        return if (lastResult.isNotBlank()) lastResult else "{\"status\": \"error\", \"message\": \"Phản hồi rỗng từ Instagram\"}"
     }
 
     // ================= 3. HÀM TYM / LIKE (tym trong Python) =================
-    fun tym(client: OkHttpClient, rawCookie: String, mediaId: String, linkJob: String = ""): String {
+    fun tym(
+        client: OkHttpClient,
+        rawCookie: String,
+        mediaId: String,
+        linkJob: String = "",
+        cachedDtsg: String? = null,
+        cachedLsd: String? = null,
+        userId: String? = null
+    ): String {
         if (mediaId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Media ID\"}"
         val cookie = try { URLDecoder.decode(rawCookie, "UTF-8") } catch (_: Exception) { rawCookie }
-        val tokens = extractPageTokens(client, cookie, "https://www.instagram.com/", "GyeZl-huflHZ0K5L3-pzBi", "26492")
+        val tokens = extractPageTokens(client, cookie, "https://www.instagram.com/", cachedDtsg, cachedLsd)
+        if (tokens.dtsg.isBlank() || tokens.lsd.isBlank()) {
+            return "{\"status\": \"error\", \"message\": \"Không lấy được fb_dtsg/lsd của Instagram\"}"
+        }
         val csrftoken = getCsrfToken(cookie)
-        val actorId = getActorId(cookie)
+        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(cookie)
+        val avId = if (actorId.isNotBlank() && actorId != "0") {
+            if (!actorId.startsWith("178414")) "178414$actorId" else actorId
+        } else actorId
+
         var trackingToken = ""
         if (linkJob.isNotBlank()) {
             try {
@@ -237,9 +322,9 @@ object IgTaToolClient {
             put("input", inputObj)
         }
         val formBody = FormBody.Builder()
-            .add("av", actorId)
+            .add("av", avId)
             .add("__d", "www")
-            .add("__user", "0")
+            .add("__user", actorId)
             .add("__a", "1")
             .add("__req", "h")
             .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
@@ -256,27 +341,64 @@ object IgTaToolClient {
             .add("doc_id", "27182485238052618")
             .add("variables", variables.toString())
             .build()
-        val req = Request.Builder()
-            .url("https://www.instagram.com/api/graphql")
-            .headers(getIgHeaders(cookie, csrftoken, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/"))
-            .post(formBody)
+
+        val reqHeaders = getIgHeaders(cookie, csrftoken, tokens.lsd, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
+            .newBuilder()
+            .add("x-fb-friendly-name", "usePolarisLikeMediaXIGLikeMutation")
             .build()
-        return try {
-            client.newCall(req).execute().use { res ->
-                res.body?.string()?.trim() ?: "{\"status\": \"error\"}"
+
+        val endpoints = listOf(
+            "https://www.instagram.com/graphql/query",
+            "https://www.instagram.com/api/graphql"
+        )
+        var lastResult = ""
+        for (ep in endpoints) {
+            val req = Request.Builder()
+                .url(ep)
+                .headers(reqHeaders)
+                .post(formBody)
+                .build()
+            try {
+                val resBody = client.newCall(req).execute().use { res ->
+                    res.body?.string()?.trim() ?: ""
+                }
+                lastResult = resBody
+                if (resBody.isNotBlank() && (resBody.contains("\"status\":\"ok\"") || resBody.contains("xdt_like_media") || resBody.contains("\"viewer_has_liked\":true"))) {
+                    return resBody
+                }
+                if (!resBody.contains("1357004") && resBody.isNotBlank()) {
+                    return resBody
+                }
+            } catch (e: Exception) {
+                lastResult = "{\"status\": \"error\", \"message\": \"${e.message}\"}"
             }
-        } catch (e: Exception) {
-            "{\"status\": \"error\", \"message\": \"${e.message}\"}"
         }
+        return if (lastResult.isNotBlank()) lastResult else "{\"status\": \"error\", \"message\": \"Phản hồi rỗng từ Instagram\"}"
     }
 
     // ================= 4. HÀM COMMENT (cmt trong Python) =================
-    fun cmt(client: OkHttpClient, rawCookie: String, mediaId: String, text: String, linkJob: String = ""): String {
+    fun cmt(
+        client: OkHttpClient,
+        rawCookie: String,
+        mediaId: String,
+        text: String,
+        linkJob: String = "",
+        cachedDtsg: String? = null,
+        cachedLsd: String? = null,
+        userId: String? = null
+    ): String {
         if (mediaId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Media ID\"}"
         val cookie = try { URLDecoder.decode(rawCookie, "UTF-8") } catch (_: Exception) { rawCookie }
-        val tokens = extractPageTokens(client, cookie, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/", "9zei3OjvTBQ-9YG6E0OMzm", "26312")
+        val tokens = extractPageTokens(client, cookie, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/", cachedDtsg, cachedLsd)
+        if (tokens.dtsg.isBlank() || tokens.lsd.isBlank()) {
+            return "{\"status\": \"error\", \"message\": \"Không lấy được fb_dtsg/lsd của Instagram\"}"
+        }
         val csrftoken = getCsrfToken(cookie)
-        val actorId = getActorId(cookie)
+        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(cookie)
+        val avId = if (actorId.isNotBlank() && actorId != "0") {
+            if (!actorId.startsWith("178414")) "178414$actorId" else actorId
+        } else actorId
+
         val variables = JSONObject().apply {
             val connArray = org.json.JSONArray().apply {
                 put("client:root:__PolarisPostComments__xdt_api__v1__media__media_id__comments__connection_connection(data:{},media_id:\"$mediaId\",sort_order:\"popular\")")
@@ -288,9 +410,9 @@ object IgTaToolClient {
             })
         }
         val formBody = FormBody.Builder()
-            .add("av", actorId)
+            .add("av", avId)
             .add("__d", "www")
-            .add("__user", "0")
+            .add("__user", actorId)
             .add("__a", "1")
             .add("__req", "10")
             .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
@@ -307,18 +429,39 @@ object IgTaToolClient {
             .add("doc_id", "27261905640092552")
             .add("variables", variables.toString())
             .build()
-        val req = Request.Builder()
-            .url("https://www.instagram.com/api/graphql")
-            .headers(getIgHeaders(cookie, csrftoken, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/"))
-            .post(formBody)
+
+        val reqHeaders = getIgHeaders(cookie, csrftoken, tokens.lsd, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
+            .newBuilder()
+            .add("x-fb-friendly-name", "PolarisPostCommentInputRevampedMutation")
             .build()
-        return try {
-            client.newCall(req).execute().use { res ->
-                res.body?.string()?.trim() ?: "{\"status\": \"error\"}"
+
+        val endpoints = listOf(
+            "https://www.instagram.com/graphql/query",
+            "https://www.instagram.com/api/graphql"
+        )
+        var lastResult = ""
+        for (ep in endpoints) {
+            val req = Request.Builder()
+                .url(ep)
+                .headers(reqHeaders)
+                .post(formBody)
+                .build()
+            try {
+                val resBody = client.newCall(req).execute().use { res ->
+                    res.body?.string()?.trim() ?: ""
+                }
+                lastResult = resBody
+                if (resBody.isNotBlank() && (resBody.contains("\"status\":\"ok\"") || resBody.contains("xdt_comment") || resBody.contains("\"id\":"))) {
+                    return resBody
+                }
+                if (!resBody.contains("1357004") && resBody.isNotBlank()) {
+                    return resBody
+                }
+            } catch (e: Exception) {
+                lastResult = "{\"status\": \"error\", \"message\": \"${e.message}\"}"
             }
-        } catch (e: Exception) {
-            "{\"status\": \"error\", \"message\": \"${e.message}\"}"
         }
+        return if (lastResult.isNotBlank()) lastResult else "{\"status\": \"error\", \"message\": \"Phản hồi rỗng từ Instagram\"}"
     }
 
     // ================= 5. TRÍCH XUẤT TARGET ID (CHO FOLLOW) =================

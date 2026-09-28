@@ -13,6 +13,8 @@ class FbNuoiTaskRunner(
     private val cookie: String,
     private val token: String = "",
     private val targetActorId: String? = null,
+    private val myUid: String = "",
+    private val myName: String = "",
     private val config: FbNuoiConfig = FbNuoiConfig(),
     private val client: OkHttpClient = defaultClient()
 ) {
@@ -63,6 +65,8 @@ class FbNuoiTaskRunner(
             cookie = cookie,
             token = token,
             targetActorId = targetActorId,
+            myUid = myUid,
+            myName = myName,
             maxPages = config.maxFeedPages,
             targetCount = config.interactCount.coerceAtLeast(15)
         )
@@ -92,7 +96,7 @@ class FbNuoiTaskRunner(
 
             val author = post.authorName.ifBlank { "Người dùng Facebook" }
             val snippet = post.messageSnippet.ifBlank { "Bài viết" }
-            val postOverview = "Bài ${index + 1}: [$author] '$snippet' (💬 ${post.commentCount} cmt | 👍 ${post.reactionCount} like)"
+            val postOverview = "Bài ${index + 1}: Tìm thấy bài viết của [$author]: '$snippet' (💬 ${post.commentCount} cmt | 👍 ${post.reactionCount} like)"
 
             onProgress(FbNuoiProgress(
                 status = postOverview,

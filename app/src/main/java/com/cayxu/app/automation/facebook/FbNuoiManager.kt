@@ -120,6 +120,8 @@ object FbNuoiManager {
                     cookie = cookie,
                     token = token,
                     targetActorId = targetPageUid, // Truyền UID của Page nếu là Page Profile+, null nếu là Profile
+                    myUid = targetPageUid ?: targetAccount.uid,
+                    myName = targetAccount.name,
                     config = currentNuoiConfig,
                     client = client
                 )

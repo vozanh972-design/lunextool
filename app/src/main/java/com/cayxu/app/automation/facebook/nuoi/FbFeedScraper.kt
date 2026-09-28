@@ -18,6 +18,8 @@ object FbFeedScraper {
         cookie: String,
         token: String,
         targetActorId: String? = null,
+        myUid: String = "",
+        myName: String = "",
         maxPages: Int = 4,
         targetCount: Int = 15
     ): List<FbPost> {
@@ -30,6 +32,8 @@ object FbFeedScraper {
                 client = client,
                 token = token,
                 targetActorId = targetActorId,
+                myUid = myUid,
+                myName = myName,
                 maxPages = maxPages,
                 targetCount = targetCount,
                 seenPostIds = seenPostIds
@@ -44,6 +48,8 @@ object FbFeedScraper {
                 cookie = cookie,
                 token = token,
                 targetActorId = targetActorId,
+                myUid = myUid,
+                myName = myName,
                 seenPostIds = seenPostIds
             )
             collectedPosts.addAll(graphQLPosts)
@@ -51,7 +57,7 @@ object FbFeedScraper {
 
         // 3. Fallback: Nếu vẫn chưa có bài (Page mới tạo hoặc nick chưa kết bạn), nạp bài từ trang công khai
         if (collectedPosts.isEmpty() && token.isNotBlank()) {
-            collectedPosts.addAll(fetchPublicPostsViaGraphApi(client, token, seenPostIds))
+            collectedPosts.addAll(fetchPublicPostsViaGraphApi(client, token, myUid, myName, seenPostIds))
         }
 
         return collectedPosts
@@ -71,6 +77,8 @@ object FbFeedScraper {
         client: OkHttpClient,
         token: String,
         targetActorId: String?,
+        myUid: String,
+        myName: String,
         maxPages: Int,
         targetCount: Int,
         seenPostIds: MutableSet<String>
@@ -109,10 +117,21 @@ object FbFeedScraper {
                     if (fullId.isBlank()) continue
 
                     val realPostId = if (fullId.contains("_")) fullId.substringAfter("_") else fullId
+                    val fromObj = item.optJSONObject("from")
+                    val authorId = fromObj?.optString("id") ?: ""
+                    val authorName = fromObj?.optString("name") ?: ""
+
+                    // ⚠️ CHẶN BÀI VIẾT CÁ NHÂN / TƯỜNG CỦA CHÍNH MÌNH
+                    val isSelfPost = (myUid.isNotBlank() && (authorId == myUid || fullId.startsWith("${myUid}_") || realPostId.startsWith("${myUid}_"))) ||
+                        (myName.isNotBlank() && authorName.equals(myName, ignoreCase = true)) ||
+                        authorId == "me" ||
+                        (!targetActorId.isNullOrBlank() && (authorId == targetActorId || fullId.startsWith("${targetActorId}_")))
+
+                    if (isSelfPost) {
+                        continue
+                    }
+
                     if (seenPostIds.add(realPostId)) {
-                        val fromObj = item.optJSONObject("from")
-                        val authorId = fromObj?.optString("id") ?: ""
-                        val authorName = fromObj?.optString("name") ?: ""
                         val message = item.optString("message", "")
                         val commentCount = item.optJSONObject("comments")?.optJSONObject("summary")?.optInt("total_count")
                             ?: item.optJSONObject("feedback")?.optInt("total_comment_count")
@@ -177,10 +196,20 @@ object FbFeedScraper {
                         val fullId = item.optString("id")
                         if (fullId.isBlank()) continue
                         val realPostId = if (fullId.contains("_")) fullId.substringAfter("_") else fullId
+                        val from = item.optJSONObject("from")
+                        val authorName = from?.optString("name") ?: ""
+                        val authorId = from?.optString("id") ?: ""
+
+                        val isSelfPost = (myUid.isNotBlank() && (authorId == myUid || fullId.startsWith("${myUid}_") || realPostId.startsWith("${myUid}_"))) ||
+                            (myName.isNotBlank() && authorName.equals(myName, ignoreCase = true)) ||
+                            authorId == "me" ||
+                            (!targetActorId.isNullOrBlank() && (authorId == targetActorId || fullId.startsWith("${targetActorId}_")))
+
+                        if (isSelfPost) {
+                            continue
+                        }
+
                         if (seenPostIds.add(realPostId)) {
-                            val from = item.optJSONObject("from")
-                            val authorName = from?.optString("name") ?: ""
-                            val authorId = from?.optString("id") ?: ""
                             val message = item.optString("message", "")
                             val commentCount = item.optJSONObject("comments")?.optJSONObject("summary")?.optInt("total_count")
                                 ?: item.optJSONObject("feedback")?.optInt("total_comment_count")
@@ -219,6 +248,8 @@ object FbFeedScraper {
         cookie: String,
         token: String,
         targetActorId: String?,
+        myUid: String,
+        myName: String,
         seenPostIds: MutableSet<String>
     ): List<FbPost> {
         val result = mutableListOf<FbPost>()
@@ -267,11 +298,22 @@ object FbFeedScraper {
                     if (postId.isBlank()) continue
 
                     val realPostId = if (postId.contains("_")) postId.substringAfter("_") else postId
+                    val actors = node.optJSONArray("actors")
+                    val actor0 = actors?.optJSONObject(0)
+                    val authorId = actor0?.optString("id") ?: ""
+                    val authorName = actor0?.optString("name") ?: ""
+
+                    // ⚠️ CHẶN BÀI VIẾT CỦA CHÍNH MÌNH
+                    val isSelfPost = (myUid.isNotBlank() && (authorId == myUid || postId.startsWith("${myUid}_") || realPostId.startsWith("${myUid}_"))) ||
+                        (myName.isNotBlank() && authorName.equals(myName, ignoreCase = true)) ||
+                        authorId == "me" ||
+                        (!targetActorId.isNullOrBlank() && (authorId == targetActorId || postId.startsWith("${targetActorId}_")))
+
+                    if (isSelfPost) {
+                        continue
+                    }
+
                     if (seenPostIds.add(realPostId)) {
-                        val actors = node.optJSONArray("actors")
-                        val actor0 = actors?.optJSONObject(0)
-                        val authorId = actor0?.optString("id") ?: ""
-                        val authorName = actor0?.optString("name") ?: ""
                         val msg = node.optJSONObject("message")?.optString("text") ?: ""
                         val fb = node.optJSONObject("feedback")
                         val commentCount = fb?.optInt("total_comment_count")
@@ -308,9 +350,11 @@ object FbFeedScraper {
     private fun fetchPublicPostsViaGraphApi(
         client: OkHttpClient,
         token: String,
+        myUid: String,
+        myName: String,
         seenPostIds: MutableSet<String>
     ): List<FbPost> {
-        val publicPages = listOf("thongtinchinhphu", "vtv24")
+        val publicPages = listOf("thongtinchinhphu", "vtv24", "dantri.com.vn", "vnexpress.net", "kenh14.vn")
         val result = mutableListOf<FbPost>()
 
         for (pageName in publicPages) {
@@ -333,10 +377,19 @@ object FbFeedScraper {
                         val id = item.optString("id")
                         if (id.isBlank()) continue
                         val realId = if (id.contains("_")) id.substringAfter("_") else id
+                        val from = item.optJSONObject("from")
+                        val authorName = from?.optString("name") ?: ""
+                        val authorId = from?.optString("id") ?: ""
+
+                        val isSelfPost = (myUid.isNotBlank() && (authorId == myUid || id.startsWith("${myUid}_") || realId.startsWith("${myUid}_"))) ||
+                            (myName.isNotBlank() && authorName.equals(myName, ignoreCase = true)) ||
+                            authorId == "me"
+
+                        if (isSelfPost) {
+                            continue
+                        }
+
                         if (seenPostIds.add(realId)) {
-                            val from = item.optJSONObject("from")
-                            val authorName = from?.optString("name") ?: ""
-                            val authorId = from?.optString("id") ?: ""
                             val message = item.optString("message", "")
                             val commentCount = item.optJSONObject("comments")?.optJSONObject("summary")?.optInt("total_count")
                                 ?: item.optJSONObject("feedback")?.optInt("total_comment_count")

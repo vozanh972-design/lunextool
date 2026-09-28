@@ -31,10 +31,16 @@ object LinkedAccountsStore {
     }
 
     fun removeAccount(context: Context, platform: String, uid: String) {
+        removeAccounts(context, platform, listOf(uid))
+    }
+
+    fun removeAccounts(context: Context, platform: String, uids: Collection<String>) {
+        val cleanSet = uids.map { it.trim().removePrefix("@").lowercase() }.filter { it.isNotBlank() }.toSet()
+        if (cleanSet.isEmpty()) return
         val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val current = getAccounts(context, platform).toMutableList()
-        current.remove(uid)
-        prefs.edit().putString(key(platform), current.joinToString(SEPARATOR)).apply()
+        current.removeAll { it.trim().removePrefix("@").lowercase() in cleanSet }
+        prefs.edit().putString(key(platform), current.joinToString(SEPARATOR)).commit()
     }
 
     private fun key(platform: String) = "accounts_$platform"

@@ -124,7 +124,6 @@ fun XsmmAccountScreen(navController: NavController) {
     var instagramAccounts by remember {
         mutableStateOf(
             com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
-                .ifEmpty { com.cayxu.app.data.local.LinkedAccountsStore.getAccounts(context, "Instagram") }
         )
     }
     var avatarVersion by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -591,26 +590,39 @@ fun XsmmAccountScreen(navController: NavController) {
                 when (selectedPlatform) {
                     "instagram" -> {
                         scope.launch(Dispatchers.IO) {
+                            val allKeysToRemove = mutableSetOf<String>()
                             targetUids.forEach { accKey ->
-                                val target = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, accKey)
-                                val allKeys = setOfNotNull(
-                                    accKey,
-                                    accKey.trim().removePrefix("@"),
-                                    accKey.trim().removePrefix("@").lowercase(),
-                                    target?.username,
-                                    target?.username?.trim()?.removePrefix("@"),
-                                    target?.username?.trim()?.removePrefix("@")?.lowercase(),
-                                    target?.userId,
-                                    target?.userId?.trim(),
-                                    target?.fullName?.trim()?.removePrefix("@")
+                                allKeysToRemove.addAll(
+                                    listOfNotNull(
+                                        accKey,
+                                        accKey.trim().removePrefix("@"),
+                                        accKey.trim().removePrefix("@").lowercase()
+                                    )
                                 )
-                                allKeys.forEach { k ->
-                                    com.cayxu.app.data.local.InstagramAccountsStore.removeAccount(context, k)
-                                    com.cayxu.app.data.local.LinkedAccountsStore.removeAccount(context, "Instagram", k)
-                                    com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(k)
+                                val target = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, accKey)
+                                if (target != null) {
+                                    if (target.username.isNotBlank()) {
+                                        allKeysToRemove.add(target.username)
+                                        allKeysToRemove.add(target.username.trim().removePrefix("@"))
+                                        allKeysToRemove.add(target.username.trim().removePrefix("@").lowercase())
+                                    }
+                                    if (target.userId.isNotBlank()) {
+                                        allKeysToRemove.add(target.userId)
+                                        allKeysToRemove.add("IG_" + target.userId)
+                                        allKeysToRemove.add("ig_" + target.userId.lowercase())
+                                    }
+                                    if (target.fullName.isNotBlank()) {
+                                        allKeysToRemove.add(target.fullName)
+                                        allKeysToRemove.add(target.fullName.trim().removePrefix("@"))
+                                    }
                                 }
                             }
-                            val refreshedList = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+                            allKeysToRemove.forEach { k ->
+                                com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(k)
+                            }
+                            val updatedAccounts = com.cayxu.app.data.local.InstagramAccountsStore.deleteAccounts(context, allKeysToRemove)
+                            com.cayxu.app.data.local.LinkedAccountsStore.removeAccounts(context, "Instagram", allKeysToRemove)
+                            val refreshedList = updatedAccounts.map { it.username }
                             withContext(Dispatchers.Main) {
                                 instagramAccounts = refreshedList // Ép Compose recompose ngay lập tức
                                 selectedForRunUids = emptySet()

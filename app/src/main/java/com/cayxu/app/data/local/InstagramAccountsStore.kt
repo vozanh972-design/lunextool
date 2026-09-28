@@ -147,22 +147,39 @@ object InstagramAccountsStore {
         addAccount(context, account)
     }
 
-    fun removeAccount(context: Context, usernameOrId: String) {
-        val clean = usernameOrId.trim().removePrefix("@").lowercase()
+    fun deleteAccount(context: Context, usernameOrId: String): List<InstagramAccount> {
+        return deleteAccounts(context, listOf(usernameOrId))
+    }
+
+    fun deleteAccounts(context: Context, usernamesOrIds: Collection<String>): List<InstagramAccount> {
+        val cleanSet = usernamesOrIds
+            .map { it.trim().removePrefix("@").lowercase() }
+            .filter { it.isNotBlank() }
+            .toSet()
+        if (cleanSet.isEmpty()) return getAccounts(context)
+
         val current = getAccounts(context).toMutableList()
-        current.removeAll { 
-            it.username.trim().removePrefix("@").lowercase() == clean ||
-            (it.userId.isNotBlank() && ("IG_" + it.userId).lowercase() == clean) ||
-            it.userId.lowercase() == clean
+        current.removeAll { acc ->
+            val u = acc.username.trim().removePrefix("@").lowercase()
+            val uid = acc.userId.trim().lowercase()
+            val igUid = if (uid.isNotBlank()) "ig_$uid" else ""
+            val fn = acc.fullName.trim().removePrefix("@").lowercase()
+
+            cleanSet.contains(u) ||
+            (uid.isNotBlank() && cleanSet.contains(uid)) ||
+            (igUid.isNotBlank() && cleanSet.contains(igUid)) ||
+            (fn.isNotBlank() && !fn.contains(" ") && cleanSet.contains(fn))
         }
         save(context, current)
+        return current
+    }
+
+    fun removeAccount(context: Context, usernameOrId: String) {
+        deleteAccount(context, usernameOrId)
     }
 
     fun removeAccounts(context: Context, usernames: List<String>) {
-        val cleanSet = usernames.map { it.trim().removePrefix("@").lowercase() }.toSet()
-        val current = getAccounts(context).toMutableList()
-        current.removeAll { it.username.trim().removePrefix("@").lowercase() in cleanSet }
-        save(context, current)
+        deleteAccounts(context, usernames)
     }
 
     private fun save(context: Context, accounts: List<InstagramAccount>) {
@@ -187,6 +204,6 @@ object InstagramAccountsStore {
                 if (acc.isXsmmLinked) "true" else "false"
             ).joinToString(FIELD_SEPARATOR)
         }
-        prefs(context).edit().putString(KEY_ACCOUNTS, raw).apply()
+        prefs(context).edit().putString(KEY_ACCOUNTS, raw).commit()
     }
 }
