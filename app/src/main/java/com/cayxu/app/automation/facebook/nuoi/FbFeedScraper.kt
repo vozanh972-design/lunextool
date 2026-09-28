@@ -1,16 +1,26 @@
 package com.cayxu.app.automation.facebook.nuoi
 
+import android.util.Log
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.UUID
 
 class TokenExpiredException(val rawJsonError: String) : Exception(rawJsonError)
 
 object FbFeedScraper {
-    private const val GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
-    const val KATANA_UA = "[FBAN/FB4A;FBAV/548.0.0.38.106;FBBV/587429112;FBDM/{density=2.6,width=1080,height=2400};FBLC/vi_VN;FBCR/Viettel;FBMF/Xiaomi;FBBD/Redmi;FBPN/com.facebook.katana;FBDV/Redmi Note 12;FBSV/13;FBOP/1;FBCA/arm64-v8a:;]"
+    private const val TAG = "FbFeedScraper"
+    private const val GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
+    const val KATANA_UA = "[FBAN/FB4A;FBAV/548.1.0.51.64;FBBV/474618929;FBDM/{density=3.0,width=1080,height=2340};FBLC/vi_VN;FBRV/0;FBCR/Viettel;FBMF/samsung;FBBD/samsung;FBPN/com.facebook.katana;FBDV/SM-S928B;FBSV/14;FBOP/1;FBCA/arm64-v8a;]"
+
+    var lastDiagnosticLog: String = ""
+
+    private fun logDiagnostic(msg: String, diag: StringBuilder? = null) {
+        Log.d(TAG, msg)
+        diag?.appendLine(msg)
+    }
 
     /**
      * Xác thực Token nhanh trước khi chạy tác vụ.
@@ -85,7 +95,7 @@ object FbFeedScraper {
     }
 
     /**
-     * Thu thập danh sách bài viết trên Newsfeed 100% bằng Access Token (Native GraphQL Katana / Graph API)
+     * Thu thập danh sách bài viết trên Newsfeed 100% bằng Access Token (Chuẩn KaharaMod: Pages đã Like & Groups đã tham gia)
      */
     fun fetchFeedWithScroll(
         client: OkHttpClient,
@@ -96,6 +106,7 @@ object FbFeedScraper {
         maxPages: Int = 4,
         targetCount: Int = 15
     ): List<FbPost> {
+        val diag = StringBuilder()
         val collectedPosts = mutableListOf<FbPost>()
         val seenPostIds = mutableSetOf<String>()
 
@@ -103,39 +114,235 @@ object FbFeedScraper {
             throw IllegalArgumentException("Tài khoản chưa có Access Token (Vui lòng kiểm tra lại Token)")
         }
 
-        // 1. Ưu tiên 1: Native Katana GraphQL API (POST /graphql với DocID chuẩn Facebook Katana)
-        val nativePosts = fetchFeedViaNativeGraphQL(
-            client = client,
-            token = token,
-            targetActorId = targetActorId,
-            myUid = myUid,
-            myName = myName,
-            maxPages = maxPages,
-            targetCount = targetCount,
-            seenPostIds = seenPostIds
-        )
-        collectedPosts.addAll(nativePosts)
+        logDiagnostic("=== BẮT ĐẦU CÀO BÀI VIẾT BẰNG TOKEN (CHUẨN KAHARAMOD) ===", diag)
+        logDiagnostic("UID: $myUid | TargetCount: $targetCount", diag)
 
-        // 2. Ưu tiên 2 (Dự phòng): Graph API Feed chuẩn (/me/home hoặc /me/feed)
-        if (collectedPosts.isEmpty()) {
-            val graphApiPosts = fetchFeedViaGraphApi(
-                client = client,
-                token = token,
-                targetActorId = targetActorId,
-                myUid = myUid,
-                myName = myName,
-                maxPages = maxPages,
-                targetCount = targetCount,
-                seenPostIds = seenPostIds
-            )
-            collectedPosts.addAll(graphApiPosts)
+        // 1. NGUỒN 1: Lấy bài viết từ các Page đã Like / Follow (/me/likes)
+        val pagePosts = fetchPostsFromLikedPages(client, token, myUid, myName, targetCount, seenPostIds, diag)
+        collectedPosts.addAll(pagePosts)
+        logDiagnostic("-> Tổng bài lấy được từ Pages đã Like: ${pagePosts.size}", diag)
+
+        // 2. NGUỒN 2: Lấy bài viết từ các Group đã tham gia (/me/groups)
+        if (collectedPosts.size < targetCount) {
+            val remaining = targetCount - collectedPosts.size
+            val groupPosts = fetchPostsFromJoinedGroups(client, token, myUid, myName, remaining, seenPostIds, diag)
+            collectedPosts.addAll(groupPosts)
+            logDiagnostic("-> Tổng bài lấy được từ Groups đã tham gia: ${groupPosts.size}", diag)
         }
 
+        // 3. NGUỒN 3 (Dự phòng): Native Katana GraphQL (doc_id: 7112046835581177 / 4463426747065985)
+        if (collectedPosts.isEmpty()) {
+            logDiagnostic("-> Pages & Groups không có bài, thử Native Katana GraphQL...", diag)
+            val nativePosts = fetchFeedViaNativeGraphQL(client, token, targetActorId, myUid, myName, maxPages, targetCount, seenPostIds, diag)
+            collectedPosts.addAll(nativePosts)
+            logDiagnostic("-> Tổng bài từ Native GraphQL Katana: ${nativePosts.size}", diag)
+        }
+
+        // 4. NGUỒN 4 (Dự phòng mở): Lấy bài viết từ cộng đồng mở nếu nick mới chưa like/join gì
+        if (collectedPosts.isEmpty()) {
+            logDiagnostic("-> Nick chưa có Pages/Groups, quét bài từ cộng đồng mở...", diag)
+            val fallbackPosts = fetchPostsFromPublicPages(client, token, myUid, myName, targetCount, seenPostIds, diag)
+            collectedPosts.addAll(fallbackPosts)
+            logDiagnostic("-> Tổng bài từ cộng đồng mở: ${fallbackPosts.size}", diag)
+        }
+
+        lastDiagnosticLog = diag.toString()
+        logDiagnostic("=== HOÀN TẤT THU THẬP: ${collectedPosts.size} bài viết ===", diag)
         return collectedPosts
     }
 
     /**
-     * Cào Newfeed qua Native Katana Android GraphQL (DocID HomeFeedQuery / FeedUnitsPaginatingQuery)
+     * Nguồn 1: Lấy bài viết từ các Page mà tài khoản đã bấm Like / Follow
+     * Endpoint: GET /v21.0/me/likes?fields=id,name&limit=15
+     */
+    private fun fetchPostsFromLikedPages(
+        client: OkHttpClient,
+        token: String,
+        myUid: String,
+        myName: String,
+        targetCount: Int,
+        seenPostIds: MutableSet<String>,
+        diag: StringBuilder
+    ): List<FbPost> {
+        val result = mutableListOf<FbPost>()
+        val likesUrl = "$GRAPH_API_BASE/me/likes?fields=id,name&limit=15&access_token=$token"
+        logDiagnostic("[GET Page Likes] URL: $likesUrl", diag)
+
+        val req = Request.Builder()
+            .url(likesUrl)
+            .header("Authorization", "OAuth $token")
+            .header("User-Agent", KATANA_UA)
+            .header("X-FB-Connection-Type", "WIFI")
+            .get()
+            .build()
+
+        val responseBody = try {
+            client.newCall(req).execute().use { res ->
+                val code = res.code
+                val body = res.body?.string().orEmpty()
+                logDiagnostic("[Page Likes Response] HTTP $code | Length: ${body.length}", diag)
+                if (code !in 200..299) {
+                    logDiagnostic("[Page Likes Error] $body", diag)
+                }
+                body
+            }
+        } catch (e: Exception) {
+            logDiagnostic("[Page Likes Exception] ${e.message}", diag)
+            ""
+        }
+
+        if (responseBody.isBlank()) return result
+        checkTokenError(responseBody)
+
+        val root = try { JSONObject(responseBody) } catch (_: Exception) { return result }
+        val dataArray = root.optJSONArray("data") ?: JSONArray()
+        logDiagnostic("-> Đã tìm thấy ${dataArray.length()} Page đã Like", diag)
+
+        for (i in 0 until dataArray.length()) {
+            if (result.size >= targetCount) break
+            val pageObj = dataArray.optJSONObject(i) ?: continue
+            val pageId = pageObj.optString("id")
+            val pageName = pageObj.optString("name")
+            if (pageId.isBlank()) continue
+
+            // Lấy 2-3 bài viết mới nhất của Page
+            val postsUrl = "$GRAPH_API_BASE/$pageId/posts?fields=id,from,message,story,created_time,reactions.summary(true),comments.summary(true)&limit=3&access_token=$token"
+            logDiagnostic("  [GET Page Posts] Page: [$pageName] ($pageId)", diag)
+
+            val pReq = Request.Builder()
+                .url(postsUrl)
+                .header("Authorization", "OAuth $token")
+                .header("User-Agent", KATANA_UA)
+                .header("X-FB-Connection-Type", "WIFI")
+                .get()
+                .build()
+
+            try {
+                client.newCall(pReq).execute().use { pRes ->
+                    val pCode = pRes.code
+                    val pBody = pRes.body?.string().orEmpty()
+                    if (pCode in 200..299 && pBody.isNotBlank()) {
+                        val pRoot = JSONObject(pBody)
+                        val pData = pRoot.optJSONArray("data") ?: JSONArray()
+                        logDiagnostic("  -> Page [$pageName] có ${pData.length()} bài viết", diag)
+
+                        for (j in 0 until pData.length()) {
+                            val item = pData.optJSONObject(j) ?: continue
+                            val parsedPost = extractPostFromJson(item, pageName, pageId, myUid, myName, seenPostIds)
+                            if (parsedPost != null) {
+                                result.add(parsedPost)
+                                if (result.size >= targetCount) break
+                            }
+                        }
+                    } else {
+                        logDiagnostic("  -> Page [$pageName] HTTP $pCode: ${pBody.take(120)}", diag)
+                    }
+                }
+            } catch (e: Exception) {
+                logDiagnostic("  -> Lỗi lấy bài Page [$pageName]: ${e.message}", diag)
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Nguồn 2: Lấy bài viết từ các Nhóm / Group đã tham gia
+     * Endpoint: GET /v21.0/me/groups?fields=id,name&limit=15
+     */
+    private fun fetchPostsFromJoinedGroups(
+        client: OkHttpClient,
+        token: String,
+        myUid: String,
+        myName: String,
+        targetCount: Int,
+        seenPostIds: MutableSet<String>,
+        diag: StringBuilder
+    ): List<FbPost> {
+        val result = mutableListOf<FbPost>()
+        val groupsUrl = "$GRAPH_API_BASE/me/groups?fields=id,name&limit=15&access_token=$token"
+        logDiagnostic("[GET Groups] URL: $groupsUrl", diag)
+
+        val req = Request.Builder()
+            .url(groupsUrl)
+            .header("Authorization", "OAuth $token")
+            .header("User-Agent", KATANA_UA)
+            .header("X-FB-Connection-Type", "WIFI")
+            .get()
+            .build()
+
+        val responseBody = try {
+            client.newCall(req).execute().use { res ->
+                val code = res.code
+                val body = res.body?.string().orEmpty()
+                logDiagnostic("[Groups Response] HTTP $code | Length: ${body.length}", diag)
+                if (code !in 200..299) {
+                    logDiagnostic("[Groups Error] $body", diag)
+                }
+                body
+            }
+        } catch (e: Exception) {
+            logDiagnostic("[Groups Exception] ${e.message}", diag)
+            ""
+        }
+
+        if (responseBody.isBlank()) return result
+        checkTokenError(responseBody)
+
+        val root = try { JSONObject(responseBody) } catch (_: Exception) { return result }
+        val dataArray = root.optJSONArray("data") ?: JSONArray()
+        logDiagnostic("-> Đã tìm thấy ${dataArray.length()} Group đã tham gia", diag)
+
+        for (i in 0 until dataArray.length()) {
+            if (result.size >= targetCount) break
+            val grpObj = dataArray.optJSONObject(i) ?: continue
+            val groupId = grpObj.optString("id")
+            val groupName = grpObj.optString("name")
+            if (groupId.isBlank()) continue
+
+            // Lấy 2-3 bài viết thảo luận trong Group
+            val feedUrl = "$GRAPH_API_BASE/$groupId/feed?fields=id,from,message,story,created_time,reactions.summary(true),comments.summary(true)&limit=3&access_token=$token"
+            logDiagnostic("  [GET Group Feed] Group: [$groupName] ($groupId)", diag)
+
+            val gReq = Request.Builder()
+                .url(feedUrl)
+                .header("Authorization", "OAuth $token")
+                .header("User-Agent", KATANA_UA)
+                .header("X-FB-Connection-Type", "WIFI")
+                .get()
+                .build()
+
+            try {
+                client.newCall(gReq).execute().use { gRes ->
+                    val gCode = gRes.code
+                    val gBody = gRes.body?.string().orEmpty()
+                    if (gCode in 200..299 && gBody.isNotBlank()) {
+                        val gRoot = JSONObject(gBody)
+                        val gData = gRoot.optJSONArray("data") ?: JSONArray()
+                        logDiagnostic("  -> Group [$groupName] có ${gData.length()} bài viết", diag)
+
+                        for (j in 0 until gData.length()) {
+                            val item = gData.optJSONObject(j) ?: continue
+                            val parsedPost = extractPostFromJson(item, groupName, groupId, myUid, myName, seenPostIds)
+                            if (parsedPost != null) {
+                                result.add(parsedPost)
+                                if (result.size >= targetCount) break
+                            }
+                        }
+                    } else {
+                        logDiagnostic("  -> Group [$groupName] HTTP $gCode: ${gBody.take(120)}", diag)
+                    }
+                }
+            } catch (e: Exception) {
+                logDiagnostic("  -> Lỗi lấy bài Group [$groupName]: ${e.message}", diag)
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Nguồn 3: Cào Newfeed qua Native Katana Android GraphQL (DocID HomeFeedQuery / FeedUnitsPaginatingQuery)
      */
     private fun fetchFeedViaNativeGraphQL(
         client: OkHttpClient,
@@ -145,7 +352,8 @@ object FbFeedScraper {
         myName: String,
         maxPages: Int,
         targetCount: Int,
-        seenPostIds: MutableSet<String>
+        seenPostIds: MutableSet<String>,
+        diag: StringBuilder
     ): List<FbPost> {
         val result = mutableListOf<FbPost>()
         var currentCursor: String? = null
@@ -175,6 +383,8 @@ object FbFeedScraper {
                     formBuilder.add("actor_id", targetActorId)
                 }
 
+                logDiagnostic("  [POST Native GraphQL] doc_id: $docId | vars: $vars", diag)
+
                 val req = Request.Builder()
                     .url("https://graph.facebook.com/graphql")
                     .header("Authorization", "OAuth $token")
@@ -185,7 +395,13 @@ object FbFeedScraper {
                     .build()
 
                 val responseBody = client.newCall(req).execute().use { res ->
-                    res.body?.string().orEmpty()
+                    val code = res.code
+                    val body = res.body?.string().orEmpty()
+                    logDiagnostic("  -> GraphQL Response HTTP $code | Length: ${body.length}", diag)
+                    if (code !in 200..299) {
+                        logDiagnostic("  -> GraphQL Error: ${body.take(150)}", diag)
+                    }
+                    body
                 }
 
                 if (responseBody.isBlank()) break
@@ -215,6 +431,7 @@ object FbFeedScraper {
                 }
             } catch (e: Exception) {
                 if (e is TokenExpiredException) throw e
+                logDiagnostic("  -> GraphQL Exception: ${e.message}", diag)
                 break
             }
         }
@@ -223,117 +440,101 @@ object FbFeedScraper {
     }
 
     /**
-     * Cào Newfeed qua Graph API (/me/feed hoặc /{actorId}/feed) bằng Token 100% (Không dùng /me/home đã deprecated)
+     * Nguồn 4: Lấy bài viết từ các trang cộng đồng công khai nếu nick mới tinh chưa follow page nào
      */
-    private fun fetchFeedViaGraphApi(
+    private fun fetchPostsFromPublicPages(
         client: OkHttpClient,
         token: String,
-        targetActorId: String?,
         myUid: String,
         myName: String,
-        maxPages: Int,
         targetCount: Int,
-        seenPostIds: MutableSet<String>
+        seenPostIds: MutableSet<String>,
+        diag: StringBuilder
     ): List<FbPost> {
         val result = mutableListOf<FbPost>()
-        val fields = "fields=id,from{id,name},message,story,created_time,reactions.summary(true),comments.summary(true)"
+        val publicPages = listOf("thongtinchinhphu", "baothanhnien", "kenh14.vn")
 
-        val endpoints = mutableListOf<String>()
-        if (!targetActorId.isNullOrBlank() && targetActorId.matches(Regex("^\\d+$"))) {
-            endpoints.add("$GRAPH_API_BASE/$targetActorId/feed")
-        }
-        endpoints.add("$GRAPH_API_BASE/me/feed")
+        for (page in publicPages) {
+            if (result.size >= targetCount) break
+            val url = "$GRAPH_API_BASE/$page/posts?fields=id,from,message,story,created_time,reactions.summary(true),comments.summary(true)&limit=3&access_token=$token"
+            logDiagnostic("  [Public Page] Quét $page", diag)
 
-        for (baseEndpoint in endpoints) {
-            var nextUrl: String? = "$baseEndpoint?$fields&limit=10&access_token=$token"
-            var pagesLoaded = 0
+            val req = Request.Builder()
+                .url(url)
+                .header("Authorization", "OAuth $token")
+                .header("User-Agent", KATANA_UA)
+                .header("X-FB-Connection-Type", "WIFI")
+                .get()
+                .build()
 
-            while (!nextUrl.isNullOrBlank() && pagesLoaded < maxPages && result.size < targetCount) {
-                pagesLoaded++
-                try {
-                    val req = Request.Builder()
-                        .url(nextUrl)
-                        .header("Authorization", "OAuth $token")
-                        .header("User-Agent", KATANA_UA)
-                        .header("X-FB-Connection-Type", "WIFI")
-                        .get()
-                        .build()
-
-                    val responseBody = client.newCall(req).execute().use { res ->
-                        res.body?.string().orEmpty()
+            try {
+                client.newCall(req).execute().use { res ->
+                    val code = res.code
+                    val body = res.body?.string().orEmpty()
+                    if (code in 200..299 && body.isNotBlank()) {
+                        val root = JSONObject(body)
+                        val data = root.optJSONArray("data") ?: JSONArray()
+                        for (i in 0 until data.length()) {
+                            val item = data.optJSONObject(i) ?: continue
+                            val parsedPost = extractPostFromJson(item, page, "", myUid, myName, seenPostIds)
+                            if (parsedPost != null) {
+                                result.add(parsedPost)
+                                if (result.size >= targetCount) break
+                            }
+                        }
                     }
-
-                    if (responseBody.isBlank()) break
-
-                    checkTokenError(responseBody)
-
-                    val rootJson = JSONObject(responseBody)
-                    val dataArray = rootJson.optJSONArray("data") ?: JSONArray()
-
-                    for (i in 0 until dataArray.length()) {
-                        val item = dataArray.optJSONObject(i) ?: continue
-                        val rawPostId = item.optString("id")
-                        if (rawPostId.isBlank()) continue
-
-                        val realPostId = if (rawPostId.contains("_")) rawPostId.substringAfter("_") else rawPostId
-                        if (!seenPostIds.add(realPostId)) continue
-
-                        val from = item.optJSONObject("from")
-                        val authorName = from?.optString("name") ?: "Người dùng Facebook"
-                        val authorId = from?.optString("id") ?: ""
-
-                        // Chặn bài của chính mình
-                        val isSelfPost = (myUid.isNotBlank() && (authorId == myUid || rawPostId.startsWith("${myUid}_") || realPostId.startsWith("${myUid}_"))) ||
-                            (myName.isNotBlank() && authorName.equals(myName, ignoreCase = true)) ||
-                            authorId == "me" ||
-                            (!targetActorId.isNullOrBlank() && (authorId == targetActorId || rawPostId.startsWith("${targetActorId}_")))
-
-                        if (isSelfPost) continue
-
-                        val message = item.optString("message").ifBlank { item.optString("story", "") }
-
-                        val reactionCount = item.optJSONObject("reactions")?.optJSONObject("summary")?.optInt("total_count")
-                            ?: item.optJSONObject("likes")?.optJSONObject("summary")?.optInt("total_count")
-                            ?: 0
-
-                        val commentCount = item.optJSONObject("comments")?.optJSONObject("summary")?.optInt("total_count")
-                            ?: 0
-
-                        result.add(
-                            FbPost(
-                                postId = rawPostId,
-                                authorName = authorName,
-                                authorId = authorId,
-                                message = message,
-                                messageSnippet = createSnippet(message),
-                                commentCount = commentCount,
-                                reactionCount = reactionCount,
-                                ftEntIdentifier = realPostId
-                            )
-                        )
-
-                        if (result.size >= targetCount) break
-                    }
-
-                    val paging = rootJson.optJSONObject("paging")
-                    val afterCursor = paging?.optJSONObject("cursors")?.optString("after")
-                    val nextFromPaging = paging?.optString("next")
-
-                    nextUrl = when {
-                        !nextFromPaging.isNullOrBlank() -> nextFromPaging
-                        !afterCursor.isNullOrBlank() -> "$baseEndpoint?$fields&limit=15&access_token=$token&after=$afterCursor"
-                        else -> null
-                    }
-                } catch (e: Exception) {
-                    if (e is TokenExpiredException) throw e
-                    break
                 }
-            }
-
-            if (result.isNotEmpty()) break
+            } catch (_: Exception) {}
         }
 
         return result
+    }
+
+    private fun extractPostFromJson(
+        item: JSONObject,
+        fallbackAuthorName: String,
+        fallbackAuthorId: String,
+        myUid: String,
+        myName: String,
+        seenPostIds: MutableSet<String>
+    ): FbPost? {
+        val rawPostId = item.optString("id")
+        if (rawPostId.isBlank()) return null
+
+        val realPostId = if (rawPostId.contains("_")) rawPostId.substringAfter("_") else rawPostId
+        if (!seenPostIds.add(realPostId)) return null
+
+        val from = item.optJSONObject("from")
+        val authorName = from?.optString("name")?.ifBlank { fallbackAuthorName } ?: fallbackAuthorName
+        val authorId = from?.optString("id")?.ifBlank { fallbackAuthorId } ?: fallbackAuthorId
+
+        // Chặn bài của chính nick đang nuôi
+        val isSelfPost = (myUid.isNotBlank() && (authorId == myUid || rawPostId.startsWith("${myUid}_") || realPostId == myUid)) ||
+                (myName.isNotBlank() && authorName.equals(myName, ignoreCase = true)) ||
+                authorId == "me"
+
+        if (isSelfPost) return null
+
+        val message = item.optString("message").ifBlank { item.optString("story", "") }
+        val reactionCount = item.optJSONObject("reactions")?.optJSONObject("summary")?.optInt("total_count")
+            ?: item.optJSONObject("likes")?.optJSONObject("summary")?.optInt("total_count")
+            ?: 0
+
+        val commentCount = item.optJSONObject("comments")?.optJSONObject("summary")?.optInt("total_count")
+            ?: 0
+
+        val feedbackId = item.optJSONObject("feedback")?.optString("id")?.ifBlank { realPostId } ?: realPostId
+
+        return FbPost(
+            postId = realPostId,
+            authorName = authorName.ifBlank { "Trang Facebook" },
+            authorId = authorId,
+            message = message,
+            messageSnippet = createSnippet(message),
+            commentCount = commentCount,
+            reactionCount = reactionCount,
+            ftEntIdentifier = feedbackId
+        )
     }
 
     private data class ParsedFeedResult(
@@ -341,9 +542,6 @@ object FbFeedScraper {
         val endCursor: String?
     )
 
-    /**
-     * Bóc tách JSON thuần từ Native GraphQL Response
-     */
     private fun parseGraphQLResponse(
         rawBody: String,
         myUid: String,
@@ -355,104 +553,72 @@ object FbFeedScraper {
         val posts = mutableListOf<FbPost>()
         var endCursor: String? = null
 
-        val jsonChunks = rawBody.lines()
-            .map { it.trim() }
-            .filter { it.startsWith("{") && it.endsWith("}") }
+        val root = try { JSONObject(rawBody) } catch (_: Exception) { return ParsedFeedResult(emptyList(), null) }
+        val data = root.optJSONObject("data") ?: return ParsedFeedResult(emptyList(), null)
 
-        val rootObjects = if (jsonChunks.isNotEmpty()) {
-            jsonChunks.mapNotNull {
-                try { JSONObject(it) } catch (_: Exception) { null }
-            }
-        } else {
-            try { listOf(JSONObject(rawBody)) } catch (_: Exception) { emptyList() }
-        }
+        val viewer = data.optJSONObject("viewer")
+        val feed = viewer?.optJSONObject("news_feed")
+            ?: viewer?.optJSONObject("home_feed")
+            ?: data.optJSONObject("viewer_feed")
+            ?: data.optJSONObject("feed")
 
-        for (root in rootObjects) {
-            val data = root.optJSONObject("data") ?: root
-            val viewer = data.optJSONObject("viewer") ?: data
+        if (feed != null) {
+            val pageInfo = feed.optJSONObject("page_info")
+            endCursor = pageInfo?.optString("end_cursor")
 
-            val newsFeedObj = viewer.optJSONObject("news_feed")
-                ?: viewer.optJSONObject("home_feed")
-                ?: data.optJSONObject("news_feed")
-                ?: data.optJSONObject("home_feed")
-
-            val edges = newsFeedObj?.optJSONArray("edges")
-                ?: data.optJSONArray("edges")
-                ?: JSONArray()
-
-            val pageInfo = newsFeedObj?.optJSONObject("page_info") ?: data.optJSONObject("page_info")
-            val cursorCandidate = pageInfo?.optString("end_cursor")
-            if (!cursorCandidate.isNullOrBlank()) {
-                endCursor = cursorCandidate
-            }
-
+            val edges = feed.optJSONArray("edges") ?: JSONArray()
             for (i in 0 until edges.length()) {
                 val edge = edges.optJSONObject(i) ?: continue
                 val node = edge.optJSONObject("node") ?: continue
-
-                // 1. Post ID
-                val rawPostId = node.optString("id").ifBlank { node.optString("post_id") }
+                val rawPostId = node.optString("id")
                 if (rawPostId.isBlank()) continue
 
                 val realPostId = if (rawPostId.contains("_")) rawPostId.substringAfter("_") else rawPostId
                 if (!seenPostIds.add(realPostId)) continue
 
-                // 2. Tác giả
-                val from = node.optJSONObject("from")
                 val actors = node.optJSONArray("actors")
-                    ?: node.optJSONObject("comet_sections")?.optJSONObject("header")?.optJSONObject("story")?.optJSONArray("actors")
-                val actor0 = actors?.optJSONObject(0)
-                val authorId = from?.optString("id") ?: actor0?.optString("id") ?: ""
-                val authorName = from?.optString("name") ?: actor0?.optString("name") ?: "Người dùng Facebook"
+                val firstActor = actors?.optJSONObject(0)
+                val authorName = firstActor?.optString("name") ?: "Người dùng Facebook"
+                val authorId = firstActor?.optString("id") ?: ""
 
-                // Chặn bài của chính mình
-                val isSelfPost = (myUid.isNotBlank() && (authorId == myUid || rawPostId.startsWith("${myUid}_") || realPostId.startsWith("${myUid}_"))) ||
-                    (myName.isNotBlank() && authorName.equals(myName, ignoreCase = true)) ||
-                    authorId == "me" ||
-                    (!targetActorId.isNullOrBlank() && (authorId == targetActorId || rawPostId.startsWith("${targetActorId}_")))
+                val isSelf = (myUid.isNotBlank() && (authorId == myUid || rawPostId.startsWith("${myUid}_") || realPostId.startsWith("${myUid}_"))) ||
+                        (myName.isNotBlank() && authorName.equals(myName, ignoreCase = true)) ||
+                        authorId == "me" ||
+                        (!targetActorId.isNullOrBlank() && (authorId == targetActorId || rawPostId.startsWith("${targetActorId}_")))
 
-                if (isSelfPost) continue
+                if (isSelf) continue
 
-                // 3. Nội dung (Caption)
-                val messageText = node.optString("message")
-                    .ifBlank { node.optString("story") }
-                    .ifBlank { node.optJSONObject("message")?.optString("text").orEmpty() }
-                    .ifBlank { node.optJSONObject("comet_sections")?.optJSONObject("content")?.optJSONObject("story")?.optJSONObject("message")?.optString("text").orEmpty() }
+                val msgObj = node.optJSONObject("message")
+                val messageText = msgObj?.optString("text")
+                    ?: node.optString("story", "")
 
-                // 4. Lượt Reaction / Like
                 val feedback = node.optJSONObject("feedback")
-                    ?: node.optJSONObject("comet_sections")?.optJSONObject("content")?.optJSONObject("story")?.optJSONObject("feedback")
-                val reactionCount = node.optJSONObject("reactions")?.optJSONObject("summary")?.optInt("total_count")
-                    ?: feedback?.optJSONObject("reactors")?.optInt("count")
+                val reactionCount = feedback?.optJSONObject("reactors")?.optInt("count")
                     ?: feedback?.optJSONObject("reaction_count")?.optInt("count")
-                    ?: feedback?.optInt("reaction_count")
-                    ?: node.optJSONObject("likes")?.optJSONObject("summary")?.optInt("total_count")
                     ?: 0
 
-                // 5. Lượt Bình luận (Comments) - Số nguyên chuẩn xác 100%
-                val commentCount = node.optJSONObject("comments")?.optJSONObject("summary")?.optInt("total_count")
+                val commentCount = feedback?.optJSONObject("total_comment_count")?.optInt("count")
                     ?: feedback?.optInt("total_comment_count")
-                    ?: feedback?.optJSONObject("comments_count")?.optJSONObject("summary")?.optInt("total_count")
-                    ?: feedback?.optJSONObject("total_comment_count")?.optInt("count")
+                    ?: feedback?.optJSONObject("comment_count")?.optInt("count")
                     ?: 0
+
+                val feedbackId = feedback?.optString("id")?.ifBlank { realPostId } ?: realPostId
 
                 posts.add(
                     FbPost(
-                        postId = rawPostId,
-                        authorName = authorName,
+                        postId = realPostId,
+                        authorName = authorName.ifBlank { "Người dùng Facebook" },
                         authorId = authorId,
                         message = messageText,
                         messageSnippet = createSnippet(messageText),
                         commentCount = commentCount,
                         reactionCount = reactionCount,
-                        ftEntIdentifier = realPostId
+                        ftEntIdentifier = feedbackId
                     )
                 )
 
                 if (posts.size >= targetCount) break
             }
-
-            if (posts.size >= targetCount) break
         }
 
         return ParsedFeedResult(posts, endCursor)
@@ -483,26 +649,69 @@ object FbFeedScraper {
     }
 
     /**
-     * Thả cảm xúc 100% bằng Access Token & Katana User-Agent
+     * Thả Reaction / Like chuẩn Katana Mutation (UFIFeedbackReactMutation doc_id: 5411782298894101)
      */
     fun sendReaction(
         client: OkHttpClient,
         token: String,
         post: FbPost,
         selectedReactionTypes: Set<String>,
-        targetActorId: String? = null
+        targetActorId: String? = null,
+        myUid: String = ""
     ): Boolean {
         val rawTarget = selectedReactionTypes.randomOrNull() ?: "LIKE"
-        val reactionType = when (rawTarget.uppercase()) {
-            "1", "LIKE" -> "LIKE"
-            "2", "LOVE" -> "LOVE"
-            "16", "CARE" -> "CARE"
-            "4", "HAHA" -> "HAHA"
-            "3", "WOW" -> "WOW"
-            "7", "SAD" -> "SAD"
-            "8", "ANGRY" -> "ANGRY"
-            else -> "LIKE"
+        val (reactionType, reactionNum) = when (rawTarget.uppercase()) {
+            "1", "LIKE" -> "LIKE" to 1
+            "2", "LOVE" -> "LOVE" to 2
+            "16", "CARE" -> "CARE" to 16
+            "4", "HAHA" -> "HAHA" to 4
+            "3", "WOW" -> "WOW" to 3
+            "7", "SAD" -> "SAD" to 7
+            "8", "ANGRY" -> "ANGRY" to 8
+            else -> "LIKE" to 1
         }
+
+        val actor = if (!targetActorId.isNullOrBlank()) targetActorId else myUid
+        val feedbackId = post.ftEntIdentifier.ifBlank { post.postId }
+
+        // 1. Thử Mutation chuẩn Katana: UFIFeedbackReactMutation
+        if (feedbackId.isNotBlank() && actor.isNotBlank()) {
+            try {
+                val inputObj = JSONObject().apply {
+                    put("client_mutation_id", UUID.randomUUID().toString())
+                    put("actor_id", actor)
+                    put("feedback_id", feedbackId)
+                    put("feedback_reaction", reactionNum)
+                }
+                val vars = JSONObject().apply {
+                    put("input", inputObj)
+                }
+
+                val formBody = FormBody.Builder()
+                    .add("doc_id", "5411782298894101")
+                    .add("variables", vars.toString())
+                    .add("access_token", token)
+                    .add("method", "post")
+                    .build()
+
+                val req = Request.Builder()
+                    .url("https://graph.facebook.com/graphql")
+                    .header("Authorization", "OAuth $token")
+                    .header("User-Agent", KATANA_UA)
+                    .header("X-FB-Connection-Type", "WIFI")
+                    .header("X-FB-Friendly-Name", "UFIFeedbackReactMutation")
+                    .post(formBody)
+                    .build()
+
+                val success = client.newCall(req).execute().use { res ->
+                    val body = res.body?.string().orEmpty()
+                    res.isSuccessful && !body.contains("\"errors\"")
+                }
+                if (success) return true
+            } catch (_: Exception) {}
+        }
+
+        // 2. Fallback Graph API: POST /v21.0/{postId}/reactions
         val candidateIds = linkedSetOf(post.postId, post.ftEntIdentifier).filter { it.isNotBlank() }
         for (targetId in candidateIds) {
             val url = "$GRAPH_API_BASE/$targetId/reactions"
@@ -534,19 +743,61 @@ object FbFeedScraper {
     }
 
     /**
-     * Gửi bình luận 100% bằng Access Token & Katana User-Agent
+     * Viết Comment chuẩn Katana Mutation (CommentCreateMutation doc_id: 6739921102758190)
      */
     fun sendComment(
         client: OkHttpClient,
         token: String,
         post: FbPost,
         commentList: List<String>,
-        targetActorId: String? = null
+        targetActorId: String? = null,
+        myUid: String = ""
     ): Boolean {
         val validComments = commentList.map { it.trim() }.filter { it.isNotBlank() }
         if (validComments.isEmpty()) return false
         val commentText = validComments.random()
 
+        val actor = if (!targetActorId.isNullOrBlank()) targetActorId else myUid
+        val feedbackId = post.ftEntIdentifier.ifBlank { post.postId }
+
+        // 1. Thử Mutation chuẩn Katana: CommentCreateMutation
+        if (feedbackId.isNotBlank() && actor.isNotBlank()) {
+            try {
+                val inputObj = JSONObject().apply {
+                    put("client_mutation_id", UUID.randomUUID().toString())
+                    put("actor_id", actor)
+                    put("feedback_id", feedbackId)
+                    put("message", JSONObject().put("text", commentText))
+                }
+                val vars = JSONObject().apply {
+                    put("input", inputObj)
+                }
+
+                val formBody = FormBody.Builder()
+                    .add("doc_id", "6739921102758190")
+                    .add("variables", vars.toString())
+                    .add("access_token", token)
+                    .add("method", "post")
+                    .build()
+
+                val req = Request.Builder()
+                    .url("https://graph.facebook.com/graphql")
+                    .header("Authorization", "OAuth $token")
+                    .header("User-Agent", KATANA_UA)
+                    .header("X-FB-Connection-Type", "WIFI")
+                    .header("X-FB-Friendly-Name", "CommentCreateMutation")
+                    .post(formBody)
+                    .build()
+
+                val success = client.newCall(req).execute().use { res ->
+                    val body = res.body?.string().orEmpty()
+                    res.isSuccessful && !body.contains("\"errors\"")
+                }
+                if (success) return true
+            } catch (_: Exception) {}
+        }
+
+        // 2. Fallback Graph API: POST /v21.0/{postId}/comments
         val candidateIds = linkedSetOf(post.postId, post.ftEntIdentifier).filter { it.isNotBlank() }
         for (targetId in candidateIds) {
             val url = "$GRAPH_API_BASE/$targetId/comments"

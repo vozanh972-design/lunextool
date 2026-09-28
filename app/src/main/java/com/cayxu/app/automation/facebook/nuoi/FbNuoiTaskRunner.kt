@@ -106,11 +106,13 @@ class FbNuoiTaskRunner(
         }
 
         if (posts.isEmpty()) {
+            val timeStr = java.text.SimpleDateFormat("HH:mm:ss dd/MM", java.util.Locale.getDefault()).format(java.util.Date())
+            val diag = FbFeedScraper.lastDiagnosticLog.ifBlank { "Không tìm thấy bài viết từ Page/Nhóm nào của tài khoản." }
             onProgress(FbNuoiProgress(
                 status = "Không có bài viết mới để tương tác",
                 totalErrors = 0,
                 isFinished = true,
-                errorMessage = null
+                errorMessage = "[$timeStr] Không có bài viết mới để tương tác.\n\nNhật ký truy vết:\n$diag"
             ))
             return
         }
@@ -141,7 +143,7 @@ class FbNuoiTaskRunner(
             ))
             delay(1000L)
 
-            // A. Thả cảm xúc dạo
+            // A. Thả cảm xúc dạo (Mutation Katana / Graph API v21.0)
             if (config.isInteractEnabled && successReactions < config.interactCount) {
                 onProgress(FbNuoiProgress(
                     status = "👍 Thả cảm xúc bài ${index + 1}/${posts.size}: [$author]",
@@ -156,7 +158,8 @@ class FbNuoiTaskRunner(
                     token = token,
                     post = post,
                     selectedReactionTypes = config.selectedReactions,
-                    targetActorId = targetActorId
+                    targetActorId = targetActorId,
+                    myUid = myUid
                 )
 
                 if (reactSuccess) {
@@ -180,7 +183,7 @@ class FbNuoiTaskRunner(
                 delay(reactDelay)
             }
 
-            // B. Bình luận dạo (Kèm bộ lọc số bình luận tối thiểu)
+            // B. Bình luận dạo (Kèm bộ lọc số bình luận tối thiểu - Mutation Katana / Graph API v21.0)
             if (config.isCommentEnabled && config.commentList.isNotEmpty() && successComments < config.commentCount) {
                 if (post.commentCount < config.minCommentsToComment) {
                     onProgress(FbNuoiProgress(
@@ -205,7 +208,8 @@ class FbNuoiTaskRunner(
                         token = token,
                         post = post,
                         commentList = config.commentList,
-                        targetActorId = targetActorId
+                        targetActorId = targetActorId,
+                        myUid = myUid
                     )
 
                     if (commentSuccess) {
