@@ -43,26 +43,26 @@ object GolikeSession {
         userToken: String,
         userUsername: String,
         userBalance: Long,
-        tTokenStr: String = "",
-        deviceIdStr: String = "",
-        gAuthStr: String = ""
+        tToken: String = "",
+        deviceId: String = "",
+        gAuth: String = ""
     ) {
         GolikeAccountsStore.saveLogin(
             context = context,
             token = userToken,
             username = userUsername,
             balance = userBalance,
-            tToken = tTokenStr,
-            deviceId = deviceIdStr,
-            gAuth = gAuthStr
+            tToken = tToken,
+            deviceId = deviceId,
+            gAuth = gAuth
         )
         isLoggedIn.value = true
         username.value = userUsername
         balance.value = userBalance
         token.value = userToken
-        tToken.value = tTokenStr
-        deviceId.value = deviceIdStr
-        gAuth.value = gAuthStr
+        this.tToken.value = tToken
+        this.deviceId.value = deviceId
+        this.gAuth.value = gAuth
     }
 
     fun updateBalance(context: Context, newBalance: Long) {

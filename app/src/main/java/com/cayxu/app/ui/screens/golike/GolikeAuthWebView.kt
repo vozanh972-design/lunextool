@@ -12,7 +12,7 @@ object GolikeAuthWebView {
 
     const val LOGIN_URL = "https://app.golike.net"
 
-    const val INJECT_JS = """
+    val INJECT_JS = """
         (function() {
           if (window.hasInjectedAuthDetector) { 
             if (window.goMaxCaptureSessionStore) window.goMaxCaptureSessionStore(); 
@@ -46,7 +46,7 @@ object GolikeAuthWebView {
               let username = localStorage.getItem('username') || '';
 
               let appRoot = document.querySelector('#app');
-              let state = appRoot && appRoot.__vue__ && appRoot.__vue__.$store ? appRoot.__vue__.$store.state : null;
+              let state = appRoot && appRoot.__vue__ && appRoot.__vue__['\u0024store'] ? appRoot.__vue__['\u0024store'].state : null;
               if (state) {
                 signingKey = String(state.signing_key || '');
                 userId = String(state.user_id || '');
