@@ -1,7 +1,13 @@
 package com.cayxu.app.ui.screens.golike
 
 import android.annotation.SuppressLint
+import android.net.http.SslError
+import android.util.Log
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
+import android.webkit.SslErrorHandler
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 
@@ -45,6 +51,7 @@ object GolikeAuthWebView {
               let deviceId = localStorage.getItem('device_id') || localStorage.getItem('deviceId') || '';
               let username = localStorage.getItem('username') || '';
 
+              // Trích xuất từ Vue store
               let appRoot = document.querySelector('#app');
               let state = appRoot && appRoot.__vue__ && appRoot.__vue__['\u0024store'] ? appRoot.__vue__['\u0024store'].state : null;
               if (state) {
@@ -54,6 +61,7 @@ object GolikeAuthWebView {
                 if (!username) username = String(state.username || state.user_name || '');
               }
 
+              // Quét localStorage tìm signing_key và user_id
               for (let i = 0; i < localStorage.length; i++) {
                 let storageKey = localStorage.key(i);
                 let raw = localStorage.getItem(storageKey);
@@ -62,11 +70,32 @@ object GolikeAuthWebView {
                 if (!userId && storageKey === 'user_id') userId = raw;
               }
 
+              // Quét localStorage tìm auth token lưu sẵn
+              let storedToken = localStorage.getItem('token') || localStorage.getItem('authorization') || '';
+              if (!storedToken) {
+                try {
+                  let authObj = JSON.parse(localStorage.getItem('auth') || '{}');
+                  if (authObj && authObj.token) storedToken = authObj.token;
+                  else if (authObj && authObj.access_token) storedToken = authObj.access_token;
+                } catch(e) {}
+              }
+              if (!storedToken) {
+                try {
+                  let userObj = JSON.parse(localStorage.getItem('user') || '{}');
+                  if (userObj && userObj.token) storedToken = userObj.token;
+                } catch(e) {}
+              }
+
               if (window.GoMaxApp && window.GoMaxApp.sendGatewayHeaders && (deviceId || username)) {
                 GoMaxApp.sendGatewayHeaders('', deviceId || '', username || '');
               }
               if (window.GoMaxApp && window.GoMaxApp.sendSessionStore) {
                 GoMaxApp.sendSessionStore(signingKey || '', userId || '', webData || 'null');
+              }
+              if (storedToken && storedToken !== 'null' && storedToken !== 'undefined' && storedToken !== 'Bearer null') {
+                if (window.GoMaxApp && window.GoMaxApp.sendAuthData) {
+                  GoMaxApp.sendAuthData(storedToken, '');
+                }
               }
             } catch(e) {}
           }
@@ -111,6 +140,10 @@ object GolikeAuthWebView {
             }
             return origSetRequestHeader.apply(this, arguments);
           };
+
+          // Thực hiện quét ngay và lặp lại định kỳ
+          captureSessionStore();
+          setInterval(captureSessionStore, 1200);
         })();
     """
 
@@ -127,8 +160,9 @@ object GolikeAuthWebView {
 
         @JavascriptInterface
         fun sendAuthData(auth: String, t: String) {
-            if (auth.isNotBlank() && auth != "null" && auth != "Bearer null") {
-                savedAuth = auth
+            val normalized = if (auth.startsWith("Bearer ", ignoreCase = true)) auth else "Bearer $auth"
+            if (normalized.isNotBlank() && normalized != "Bearer null" && normalized != "Bearer undefined") {
+                savedAuth = normalized
                 if (t.isNotBlank()) savedT = t
                 checkAndNotify()
             }
@@ -149,27 +183,85 @@ object GolikeAuthWebView {
 
         private fun checkAndNotify() {
             val auth = savedAuth
-            if (!auth.isNullOrBlank() && auth != "null" && auth != "Bearer null") {
+            if (!auth.isNullOrBlank() && auth != "Bearer null" && auth != "Bearer undefined") {
                 callback.onAuthCaptured(auth, savedT, savedDeviceId, savedUsername, savedGAuth)
             }
         }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    fun setupWebView(webView: WebView, callback: AuthCallback) {
+    fun setupWebView(
+        webView: WebView,
+        callback: AuthCallback,
+        onProgressChanged: ((Int) -> Unit)? = null,
+        onErrorOccurred: ((String) -> Unit)? = null
+    ) {
+        // Cho phép nhận Cookie và 3rd-party cookie (Cần thiết cho Cloudflare Turnstile & SPA)
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        cookieManager.setAcceptThirdPartyCookies(webView, true)
+
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
+            loadsImagesAutomatically = true
+            useWideViewPort = true
+            loadWithOverviewMode = true
+            javaScriptCanOpenWindowsAutomatically = true
+            mediaPlaybackRequiresUserGesture = false
+            allowFileAccess = false
+            allowContentAccess = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            cacheMode = WebSettings.LOAD_DEFAULT
             userAgentString = GolikeApiClient.USER_AGENT
         }
+
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                super.onProgressChanged(view, newProgress)
+                onProgressChanged?.invoke(newProgress)
+            }
+
+            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                Log.d("GolikeConsole", "[${consoleMessage?.messageLevel()}] ${consoleMessage?.message()} -- line ${consoleMessage?.lineNumber()} of ${consoleMessage?.sourceId()}")
+                return super.onConsoleMessage(consoleMessage)
+            }
+        }
+
         webView.addJavascriptInterface(JsBridge(callback), "GoMaxApp")
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageCommitVisible(view: WebView?, url: String?) {
+                super.onPageCommitVisible(view, url)
+                view?.evaluateJavascript(INJECT_JS, null)
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 view?.evaluateJavascript(INJECT_JS, null)
             }
+
+            override fun onReceivedError(
+                view: WebView?,
+                errorCode: Int,
+                description: String?,
+                failingUrl: String?
+            ) {
+                super.onReceivedError(view, errorCode, description, failingUrl)
+                Log.e("GolikeWebView", "Lỗi tải trang: $description ($errorCode) tại $failingUrl")
+                onErrorOccurred?.invoke("$description ($errorCode)")
+            }
+
+            override fun onReceivedSslError(
+                view: WebView?,
+                handler: SslErrorHandler?,
+                error: SslError?
+            ) {
+                Log.w("GolikeWebView", "SSL Error: ${error?.primaryError}, proceeding...")
+                handler?.proceed()
+            }
         }
+
         webView.loadUrl(LOGIN_URL)
     }
 }

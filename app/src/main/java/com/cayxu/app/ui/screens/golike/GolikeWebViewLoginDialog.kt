@@ -1,13 +1,16 @@
 package com.cayxu.app.ui.screens.golike
 
+import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +30,7 @@ import com.cayxu.app.ui.theme.TextSecondary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 private val GolikeBrandOrange = Color(0xFFF59E0B)
 
@@ -38,7 +42,9 @@ fun GolikeWebViewLoginDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
-    var isCaptured by remember { mutableStateOf(false) }
+    val isCaptured = remember { AtomicBoolean(false) }
+    var loadingProgress by remember { mutableIntStateOf(0) }
+    var loadError by remember { mutableStateOf<String?>(null) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -85,7 +91,10 @@ fun GolikeWebViewLoginDialog(
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
-                            onClick = { webViewInstance?.reload() },
+                            onClick = {
+                                loadError = null
+                                webViewInstance?.reload()
+                            },
                             modifier = Modifier.size(34.dp)
                         ) {
                             Icon(Icons.Filled.Refresh, contentDescription = "Tải lại", tint = TextSecondary, modifier = Modifier.size(20.dp))
@@ -99,68 +108,119 @@ fun GolikeWebViewLoginDialog(
                     }
                 }
 
-                Divider(color = Color(0xFFEEF1F5), thickness = 1.dp)
+                // Progress Bar khi đang tải trang
+                if (loadingProgress in 1..99) {
+                    LinearProgressIndicator(
+                        progress = { loadingProgress / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        color = GolikeBrandOrange,
+                        trackColor = GolikeBrandOrange.copy(alpha = 0.2f)
+                    )
+                } else {
+                    Divider(color = Color(0xFFEEF1F5), thickness = 1.dp)
+                }
 
-                // AndroidView WebView
+                // Thanh thông báo nếu có lỗi mạng / lỗi nạp trang
+                loadError?.let { err ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFFEF2F2))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .clickable {
+                                loadError = null
+                                webViewInstance?.reload()
+                            },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.Warning, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "Lỗi tải trang: $err. Nhấn để thử lại.",
+                            fontSize = 12.sp,
+                            color = Color(0xFFB91C1C),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // AndroidView WebView chiếm trọn diện tích còn lại
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     AndroidView(
                         factory = { ctx ->
                             WebView(ctx).apply {
+                                layoutParams = ViewGroup.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
                                 webViewInstance = this
-                                GolikeAuthWebView.setupWebView(this, object : GolikeAuthWebView.AuthCallback {
-                                    override fun onAuthCaptured(
-                                        authToken: String,
-                                        tToken: String?,
-                                        deviceId: String?,
-                                        username: String?,
-                                        gAuth: String?
-                                    ) {
-                                        if (isCaptured) return
-                                        isCaptured = true
+                                GolikeAuthWebView.setupWebView(
+                                    webView = this,
+                                    callback = object : GolikeAuthWebView.AuthCallback {
+                                        override fun onAuthCaptured(
+                                            authToken: String,
+                                            tToken: String?,
+                                            deviceId: String?,
+                                            username: String?,
+                                            gAuth: String?
+                                        ) {
+                                            if (!isCaptured.compareAndSet(false, true)) return
 
-                                        scope.launch(Dispatchers.IO) {
-                                            val client = GolikeApiClient(
-                                                authToken = authToken,
-                                                tToken = tToken,
-                                                deviceId = deviceId,
-                                                username = username,
-                                                gAuth = gAuth
-                                            )
-                                            val meObj = client.getMe()
-                                            val dataObj = meObj?.optJSONObject("data")
-                                            val resolvedUsername = dataObj?.optString("username")?.takeIf { it.isNotBlank() }
-                                                ?: username?.takeIf { it.isNotBlank() }
-                                                ?: "Golike User"
-                                            val resolvedCoin = dataObj?.optLong("coin") ?: 0L
+                                            scope.launch(Dispatchers.IO) {
+                                                val client = GolikeApiClient(
+                                                    authToken = authToken,
+                                                    tToken = tToken,
+                                                    deviceId = deviceId,
+                                                    username = username,
+                                                    gAuth = gAuth
+                                                )
+                                                val meObj = client.getMe()
+                                                val dataObj = meObj?.optJSONObject("data")
+                                                val resolvedUsername = dataObj?.optString("username")?.takeIf { it.isNotBlank() }
+                                                    ?: username?.takeIf { it.isNotBlank() }
+                                                    ?: "Golike User"
+                                                val resolvedCoin = dataObj?.optLong("coin") ?: 0L
 
-                                            // Lưu session đầy đủ vào SharedPreferences
-                                            GolikeAccountsStore.saveLogin(
-                                                context = context,
-                                                token = authToken,
-                                                username = resolvedUsername,
-                                                balance = resolvedCoin,
-                                                tToken = tToken.orEmpty(),
-                                                deviceId = deviceId.orEmpty(),
-                                                gAuth = gAuth.orEmpty()
-                                            )
-
-                                            withContext(Dispatchers.Main) {
-                                                GolikeSession.login(
+                                                // Lưu session đầy đủ vào SharedPreferences
+                                                GolikeAccountsStore.saveLogin(
                                                     context = context,
-                                                    userToken = authToken,
-                                                    userUsername = resolvedUsername,
-                                                    userBalance = resolvedCoin,
+                                                    token = authToken,
+                                                    username = resolvedUsername,
+                                                    balance = resolvedCoin,
                                                     tToken = tToken.orEmpty(),
                                                     deviceId = deviceId.orEmpty(),
                                                     gAuth = gAuth.orEmpty()
                                                 )
-                                                Toast.makeText(context, "Đăng nhập Golike thành công: $resolvedUsername", Toast.LENGTH_SHORT).show()
-                                                onLoginSuccess(resolvedUsername)
-                                                onDismiss()
+
+                                                withContext(Dispatchers.Main) {
+                                                    GolikeSession.login(
+                                                        context = context,
+                                                        userToken = authToken,
+                                                        userUsername = resolvedUsername,
+                                                        userBalance = resolvedCoin,
+                                                        tToken = tToken.orEmpty(),
+                                                        deviceId = deviceId.orEmpty(),
+                                                        gAuth = gAuth.orEmpty()
+                                                    )
+                                                    Toast.makeText(context, "Đăng nhập Golike thành công: $resolvedUsername", Toast.LENGTH_SHORT).show()
+                                                    onLoginSuccess(resolvedUsername)
+                                                    onDismiss()
+                                                }
                                             }
                                         }
+                                    },
+                                    onProgressChanged = { progress ->
+                                        loadingProgress = progress
+                                        if (progress >= 100) {
+                                            loadError = null
+                                        }
+                                    },
+                                    onErrorOccurred = { err ->
+                                        loadError = err
                                     }
-                                })
+                                )
                             }
                         },
                         modifier = Modifier.fillMaxSize()
