@@ -64,6 +64,24 @@ class GolikeApiClient(
     fun getInstagramAccounts(): JSONObject? = execute(newRequestBuilder("$BASE_URL/instagram-account?limit=200").get().build())
     fun getFacebookAccounts(): JSONObject? = execute(newRequestBuilder("$BASE_URL/facebook-account").get().build())
 
+    // 2b. Khai báo và xác minh nick TikTok vào Golike (Chuẩn GoMax)
+    fun declareTikTokAccount(username: String): JSONObject? {
+        val cleanUsername = username.trim().removePrefix("@")
+        val body = JSONObject().apply {
+            put("unique_username", cleanUsername)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        return execute(newRequestBuilder("$BASE_URL/tiktok-account").post(body).build())
+    }
+
+    fun verifyTikTokAccountId(accountId: String, username: String): JSONObject? {
+        val cleanUsername = username.trim().removePrefix("@")
+        val body = JSONObject().apply {
+            put("account_id", accountId)
+            put("unique_username", cleanUsername)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        return execute(newRequestBuilder("$BASE_URL/tiktok-account/verify-account-id").post(body).build())
+    }
+
     // 3. Lấy nhiệm vụ (Get Job)
     fun getTikTokJob(accountId: String): JSONObject? =
         execute(newRequestBuilder("$BASE_URL/advertising/publishers/tiktok/jobs?account_id=$accountId").get().build())

@@ -25,6 +25,9 @@ import androidx.compose.ui.unit.sp
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val GolikeBrandOrange = Color(0xFFF59E0B)
 
@@ -36,8 +39,11 @@ fun GolikeAddAccountBottomSheet(
     onAccountAdded: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var usernameOrUid by remember { mutableStateOf("") }
     var proxyInput by remember { mutableStateOf("") }
+    var isVerifying by remember { mutableStateOf(false) }
+    var verifyStatusText by remember { mutableStateOf("") }
 
     val platformTitle = when (platform.lowercase()) {
         "facebook" -> "Facebook"
@@ -144,45 +150,150 @@ fun GolikeAddAccountBottomSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(Modifier.height(24.dp))
-
-            // Nút Thêm tài khoản
-            Button(
-                onClick = {
-                    val rawInput = usernameOrUid.trim()
-                    if (rawInput.isBlank()) {
-                        Toast.makeText(context, "Vui lòng nhập tên tài khoản hoặc UID", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    val cleanId = rawInput.removePrefix("@").trim()
-                    val newAccount = GolikeAccount(
-                        id = cleanId,
-                        platform = platform.lowercase(),
-                        username = rawInput,
-                        isLive = true,
-                        isGolikeLinked = true,
-                        proxy = proxyInput.trim(),
-                        lastStatus = "Đã thêm vào Golike • Sẵn sàng"
-                    )
-                    GolikeAccountsStore.addOrUpdateAccount(context, newAccount)
-                    Toast.makeText(context, "Đã thêm tài khoản $cleanId vào Golike!", Toast.LENGTH_SHORT).show()
-                    onAccountAdded()
-                    onDismiss()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = GolikeBrandOrange),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
+            if (verifyStatusText.isNotBlank()) {
                 Text(
-                    text = "Lưu tài khoản vào danh sách",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    text = verifyStatusText,
+                    fontSize = 12.5.sp,
+                    color = GolikeBrandOrange,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            if (platform.lowercase() == "tiktok") {
+                // Nút Cấu hình & Xác minh ngay qua Golike
+                Button(
+                    onClick = {
+                        val rawInput = usernameOrUid.trim()
+                        if (rawInput.isBlank()) {
+                            Toast.makeText(context, "Vui lòng nhập tên @username TikTok", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        if (!GolikeAccountsStore.isLoggedIn(context)) {
+                            Toast.makeText(context, "Vui lòng đăng nhập Golike trước để xác minh", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        isVerifying = true
+                        scope.launch(Dispatchers.IO) {
+                            val client = GolikeAccountsStore.getApiClient(context)
+                            val res = GolikeTikTokTaskRunner.verifyAndLinkTikTokAccount(
+                                context = context,
+                                client = client,
+                                username = rawInput,
+                                onProgress = { step ->
+                                    verifyStatusText = step
+                                }
+                            )
+                            withContext(Dispatchers.Main) {
+                                isVerifying = false
+                                if (res.isSuccess) {
+                                    Toast.makeText(context, "Đã liên kết @$rawInput thành công!", Toast.LENGTH_SHORT).show()
+                                    onAccountAdded()
+                                    onDismiss()
+                                } else {
+                                    val err = res.exceptionOrNull()?.message ?: "Xác minh thất bại"
+                                    Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    enabled = !isVerifying,
+                    colors = ButtonDefaults.buttonColors(containerColor = GolikeBrandOrange),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    if (isVerifying) {
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Đang xác minh liên kết...", fontSize = 14.sp, color = Color.White)
+                    } else {
+                        Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Xác minh & Liên kết Golike",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Nút lưu trước, xác minh sau
+                OutlinedButton(
+                    onClick = {
+                        val rawInput = usernameOrUid.trim()
+                        if (rawInput.isBlank()) {
+                            Toast.makeText(context, "Vui lòng nhập tên tài khoản", Toast.LENGTH_SHORT).show()
+                            return@OutlinedButton
+                        }
+                        val cleanId = rawInput.removePrefix("@").trim()
+                        val newAccount = GolikeAccount(
+                            id = cleanId,
+                            platform = "tiktok",
+                            username = rawInput,
+                            isLive = true,
+                            isGolikeLinked = false,
+                            proxy = proxyInput.trim(),
+                            lastStatus = "Chưa liên kết Golike"
+                        )
+                        GolikeAccountsStore.addOrUpdateAccount(context, newAccount)
+                        Toast.makeText(context, "Đã lưu nick @$cleanId (Chưa liên kết)", Toast.LENGTH_SHORT).show()
+                        onAccountAdded()
+                        onDismiss()
+                    },
+                    enabled = !isVerifying,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                ) {
+                    Text("Lưu vào danh sách (Xác minh sau)", color = TextPrimary, fontSize = 13.5.sp)
+                }
+            } else {
+                // Nút Thêm tài khoản Facebook / Instagram
+                Button(
+                    onClick = {
+                        val rawInput = usernameOrUid.trim()
+                        if (rawInput.isBlank()) {
+                            Toast.makeText(context, "Vui lòng nhập tên tài khoản hoặc UID", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        val cleanId = rawInput.removePrefix("@").trim()
+                        val newAccount = GolikeAccount(
+                            id = cleanId,
+                            platform = platform.lowercase(),
+                            username = rawInput,
+                            isLive = true,
+                            isGolikeLinked = true,
+                            proxy = proxyInput.trim(),
+                            lastStatus = "Đã thêm vào Golike • Sẵn sàng"
+                        )
+                        GolikeAccountsStore.addOrUpdateAccount(context, newAccount)
+                        Toast.makeText(context, "Đã thêm tài khoản $cleanId vào Golike!", Toast.LENGTH_SHORT).show()
+                        onAccountAdded()
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GolikeBrandOrange),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Lưu tài khoản vào danh sách",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
             }
 
             Spacer(Modifier.height(16.dp))
