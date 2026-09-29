@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.*
@@ -67,6 +68,12 @@ private val platformOptions = listOf(
         subtitle = "Nhiệm vụ tăng tương tác Facebook, TikTok",
         icon = Icons.Filled.Check,
         accentColor = Color(0xFF16A34A)
+    ),
+    PlatformOption(
+        name = "Golike",
+        subtitle = "Nhiệm vụ tương tác kiếm tiền mạng xã hội đa kênh",
+        icon = Icons.Filled.Star,
+        accentColor = Color(0xFFF59E0B)
     )
 )
 
@@ -126,6 +133,11 @@ fun TasksScreen(navController: NavController) {
                                     com.cayxu.app.ui.navigation.Routes.XSMM_LOGIN
                                 }
                                 navController.navigate(route) { launchSingleTop = true }
+                            } else if (option.name == "Golike") {
+                                com.cayxu.app.ui.screens.golike.GolikeSession.restore(context)
+                                navController.navigate(com.cayxu.app.ui.navigation.Routes.GOLIKE_ACCOUNT) {
+                                    launchSingleTop = true
+                                }
                             } else {
                                 navController.navigate(
                                     com.cayxu.app.ui.navigation.Routes.simpleTaskPlatform(option.name)
