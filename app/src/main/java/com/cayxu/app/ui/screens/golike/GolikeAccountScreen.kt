@@ -1,5 +1,6 @@
 package com.cayxu.app.ui.screens.golike
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,6 +16,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -71,6 +73,46 @@ object GolikeRunningManager {
 }
 
 /**
+ * Đồng bộ danh sách tài khoản đã liên kết từ API Golike về máy
+ */
+suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient, platform: String) {
+    try {
+        val res = when (platform.lowercase()) {
+            "facebook" -> client.getFacebookAccounts()
+            "instagram" -> client.getInstagramAccounts()
+            else -> client.getTikTokAccounts()
+        }
+        val dataArray = res?.optJSONArray("data") ?: return
+        for (i in 0 until dataArray.length()) {
+            val item = dataArray.optJSONObject(i) ?: continue
+            val accountId = item.optString("id")
+            val uname = item.optString("nickname").ifBlank {
+                item.optString("unique_username").ifBlank {
+                    item.optString("username").ifBlank {
+                        item.optString("name", accountId)
+                    }
+                }
+            }
+            val fbId = item.optString("fb_id")
+            val cleanId = (if (fbId.isNotBlank()) fbId else if (uname.isNotBlank()) uname else accountId).removePrefix("@").trim()
+            if (cleanId.isNotBlank()) {
+                val acc = GolikeAccount(
+                    id = cleanId,
+                    platform = platform.lowercase(),
+                    username = uname,
+                    avatar = item.optString("avatar"),
+                    isLive = true,
+                    isGolikeLinked = true,
+                    golikeAccountId = accountId,
+                    lastStatus = "Đã liên kết Golike • Sẵn sàng"
+                )
+                GolikeAccountsStore.addOrUpdateAccount(context, acc)
+            }
+        }
+    } catch (_: Exception) {}
+}
+
+/**
  * Màn hình quản lý tài khoản & làm nhiệm vụ Golike (Nhân bản 100% giao diện từ XSMM).
  */
 @Composable
@@ -85,14 +127,14 @@ fun GolikeAccountScreen(navController: NavController) {
 
     val username by GolikeSession.username
     val balance by GolikeSession.balance
-    val isLoggedIn by GolikeSession.isLoggedIn
+    val isLoggedIn = !GolikeSession.token.value.isNullOrBlank()
 
     var isRefreshing by remember { mutableStateOf(false) }
     var selectedPlatform by remember { mutableStateOf("tiktok") }
     var selectedForRunIds by remember(selectedPlatform) { mutableStateOf<Set<String>>(emptySet()) }
 
     var showConfigSheet by remember { mutableStateOf(false) }
-    var showLoginSheet by remember { mutableStateOf(false) }
+    var showWebViewLoginDialog by remember { mutableStateOf(false) }
     var showAddAccountSheet by remember { mutableStateOf(false) }
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
     var selectedErrorAccount by remember { mutableStateOf<GolikeAccount?>(null) }
@@ -147,11 +189,21 @@ fun GolikeAccountScreen(navController: NavController) {
         )
     }
 
-    // Modal BottomSheet Đăng nhập / Đổi tài khoản
-    if (showLoginSheet) {
-        GolikeLoginBottomSheet(
-            onDismiss = { showLoginSheet = false },
-            onLoginSuccess = { reloadAccounts() }
+    // Dialog WebView Đăng nhập Golike (Vượt Cloudflare Turnstile)
+    if (showWebViewLoginDialog) {
+        GolikeWebViewLoginDialog(
+            onDismiss = { showWebViewLoginDialog = false },
+            onLoginSuccess = { uname ->
+                reloadAccounts()
+                // Tự động kéo danh sách tài khoản MXH từ Golike về
+                scope.launch(Dispatchers.IO) {
+                    val client = GolikeAccountsStore.getApiClient(context)
+                    syncLinkedAccountsFromApi(context, client, selectedPlatform)
+                    withContext(Dispatchers.Main) {
+                        reloadAccounts()
+                    }
+                }
+            }
         )
     }
 
@@ -204,6 +256,115 @@ fun GolikeAccountScreen(navController: NavController) {
         )
     }
 
+    // Hàm thực thi luồng chạy nhiệm vụ theo nick qua GolikeApiClient
+    fun startAccountTask(acc: GolikeAccount) {
+        if (!isLoggedIn) {
+            Toast.makeText(context, "Vui lòng đăng nhập tài khoản Golike trước khi chạy!", Toast.LENGTH_SHORT).show()
+            showWebViewLoginDialog = true
+            return
+        }
+        GolikeRunningManager.runningAccounts[acc.id] = true
+        GolikeRunningManager.statusMap[acc.id] = "Đang kết nối API Gateway Golike..."
+
+        scope.launch(Dispatchers.IO) {
+            val client = GolikeAccountsStore.getApiClient(context)
+            val cfg = GolikeRunConfigStore.get(context, selectedPlatform)
+            val golikeAccId = acc.golikeAccountId.ifBlank { acc.id }
+            var consecutiveFails = 0
+
+            while (GolikeRunningManager.isRunning(acc.id) && isActive) {
+                try {
+                    GolikeRunningManager.statusMap[acc.id] = "Đang lấy nhiệm vụ mới..."
+
+                    // 1. Lấy nhiệm vụ (Get Job)
+                    val jobRes = when (selectedPlatform.lowercase()) {
+                        "facebook" -> client.getFacebookJob(acc.id)
+                        "instagram" -> client.getInstagramJob(golikeAccId)
+                        else -> client.getTikTokJob(golikeAccId)
+                    }
+
+                    if (jobRes == null || !jobRes.optBoolean("success", false)) {
+                        consecutiveFails++
+                        val errMsg = jobRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Chưa có nhiệm vụ phù hợp lúc này"
+                        GolikeRunningManager.statusMap[acc.id] = "Chưa có job: $errMsg (Chờ ${cfg.delayMinSeconds}s...)"
+                        GolikeRunningManager.lastErrorDetailMap[acc.id] = errMsg
+                        GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = null, errorDetail = errMsg)
+
+                        if (cfg.autoSwitchOnFail && consecutiveFails >= cfg.failJobCountToSwitchAccount) {
+                            GolikeRunningManager.statusMap[acc.id] = "Tạm dừng: Gặp lỗi liên tiếp $consecutiveFails lần"
+                            GolikeRunningManager.runningAccounts[acc.id] = false
+                            break
+                        }
+
+                        delay(cfg.delayMinSeconds * 1000L)
+                        continue
+                    }
+
+                    consecutiveFails = 0
+                    val jobData = jobRes.optJSONObject("data")
+                    if (jobData == null) {
+                        delay(cfg.delayMinSeconds * 1000L)
+                        continue
+                    }
+
+                    val adsId = jobData.optLong("ads_id", jobData.optLong("id", 0L))
+                    val jobType = jobData.optString("type", "tương tác")
+                    val countdown = jobRes.optInt("countdown", cfg.delayMinSeconds).coerceAtLeast(3)
+
+                    // 2. Chờ thời gian đếm ngược an toàn
+                    for (sec in countdown downTo 1) {
+                        if (!GolikeRunningManager.isRunning(acc.id)) break
+                        GolikeRunningManager.statusMap[acc.id] = "Làm job $jobType | Chờ nhận xu sau ${sec}s..."
+                        delay(1000L)
+                    }
+                    if (!GolikeRunningManager.isRunning(acc.id)) break
+
+                    // 3. Báo hoàn thành (Complete Job)
+                    GolikeRunningManager.statusMap[acc.id] = "Đang gửi báo cáo hoàn thành..."
+                    val compRes = when (selectedPlatform.lowercase()) {
+                        "facebook" -> client.completeFacebookJob(adsId, acc.id)
+                        "instagram" -> client.completeInstagramJob(adsId, golikeAccId)
+                        else -> client.completeTikTokJob(adsId, golikeAccId)
+                    }
+
+                    if (compRes != null && compRes.optBoolean("success", false)) {
+                        val price = compRes.optJSONObject("data")?.optInt("prices", 35) ?: 35
+                        val curSucc = (GolikeRunningManager.successCountMap[acc.id] ?: acc.successCount) + 1
+                        GolikeRunningManager.successCountMap[acc.id] = curSucc
+                        GolikeRunningManager.statusMap[acc.id] = "Hoàn thành +$price đ | Nghỉ ${cfg.delayMinSeconds}s"
+
+                        // Cập nhật số dư realtime
+                        val newBal = GolikeSession.balance.value + price
+                        GolikeAccountsStore.updateBalance(context, newBal)
+                        withContext(Dispatchers.Main) {
+                            GolikeSession.balance.value = newBal
+                        }
+
+                        GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = true)
+                    } else {
+                        val failMsg = compRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Lỗi hoàn thành nhiệm vụ"
+                        val curErr = (GolikeRunningManager.errorCountMap[acc.id] ?: acc.errorCount) + 1
+                        GolikeRunningManager.errorCountMap[acc.id] = curErr
+                        GolikeRunningManager.lastErrorDetailMap[acc.id] = failMsg
+                        GolikeRunningManager.statusMap[acc.id] = "Lỗi: $failMsg"
+
+                        // Gọi bỏ qua job (Skip Job)
+                        client.skipJob(adsId, jobData.optString("object_id"), golikeAccId, jobType)
+                        GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = false, errorDetail = failMsg)
+                    }
+
+                    // Nghỉ giữa các job theo cấu hình
+                    val randomDelay = (cfg.delayMinSeconds..cfg.delayMaxSeconds).random()
+                    delay(randomDelay * 1000L)
+
+                } catch (e: Exception) {
+                    GolikeRunningManager.statusMap[acc.id] = "Lỗi kết nối: ${e.message}"
+                    delay(5000L)
+                }
+            }
+        }
+    }
+
     // Layout chính
     Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
         // 1. TOP HEADER
@@ -227,13 +388,18 @@ fun GolikeAccountScreen(navController: NavController) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            // 2. THẺ THÔNG TIN TÀI KHOẢN GOLIKE
+            // 2. THẺ THÔNG TIN TÀI KHOẢN GOLIKE (Chuẩn UX)
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = CardWhite),
                 border = androidx.compose.foundation.BorderStroke(1.dp, TextSecondary.copy(alpha = 0.15f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (!isLoggedIn) Modifier.clickable { showWebViewLoginDialog = true }
+                        else Modifier
+                    )
             ) {
                 Row(
                     modifier = Modifier
@@ -241,12 +407,15 @@ fun GolikeAccountScreen(navController: NavController) {
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val initial = (username.trim().firstOrNull()?.uppercaseChar() ?: 'G').toString()
+                    val initial = if (isLoggedIn && username.isNotBlank()) {
+                        username.trim().first().uppercaseChar().toString()
+                    } else "G"
+
                     Box(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(GolikeBrandOrange),
+                            .background(if (isLoggedIn) GolikeBrandOrange else Color(0xFF94A3B8)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -259,7 +428,7 @@ fun GolikeAccountScreen(navController: NavController) {
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (username.isNotBlank()) username else "Chưa đăng nhập Golike",
+                            text = if (isLoggedIn && username.isNotBlank()) username else "Chưa đăng nhập Golike",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary,
@@ -267,47 +436,96 @@ fun GolikeAccountScreen(navController: NavController) {
                             overflow = TextOverflow.Ellipsis
                         )
                         Spacer(Modifier.height(2.dp))
-                        val formattedBalance = try {
-                            NumberFormat.getInstance(Locale("vi", "VN")).format(balance)
-                        } catch (_: Exception) {
-                            balance.toString()
-                        }
-                        Text(
-                            text = "$formattedBalance đ",
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = GolikeBrandOrange
-                        )
-                    }
-
-                    // Nút Làm mới số dư (xoay)
-                    IconButton(
-                        onClick = {
-                            isRefreshing = true
-                            scope.launch {
-                                delay(600L)
-                                GolikeSession.restore(context)
-                                reloadAccounts()
-                                isRefreshing = false
-                                Toast.makeText(context, "Đã làm mới số dư Golike", Toast.LENGTH_SHORT).show()
+                        if (isLoggedIn) {
+                            val formattedBalance = try {
+                                NumberFormat.getInstance(Locale("vi", "VN")).format(balance)
+                            } catch (_: Exception) {
+                                balance.toString()
                             }
-                        },
-                        enabled = !isRefreshing,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        if (isRefreshing) {
-                            CircularProgressIndicator(color = GolikeBrandOrange, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                            Text(
+                                text = "$formattedBalance đ",
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = GolikeBrandOrange
+                            )
                         } else {
-                            Icon(Icons.Filled.Refresh, contentDescription = "Làm mới", tint = GolikeBrandOrange, modifier = Modifier.size(20.dp))
+                            Text(
+                                text = "Nhấn đăng nhập để bắt đầu",
+                                fontSize = 12.5.sp,
+                                color = TextSecondary
+                            )
                         }
                     }
 
-                    // Nút Đăng xuất / Đổi tài khoản Golike
-                    IconButton(
-                        onClick = { showLoginSheet = true },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Filled.ExitToApp, contentDescription = "Đổi tài khoản", tint = DangerRed, modifier = Modifier.size(20.dp))
+                    if (!isLoggedIn) {
+                        // CHƯA ĐĂNG NHẬP: ẨN HOÀN TOÀN reload/logout -> HIỂN THỊ nút "Đăng nhập"
+                        Button(
+                            onClick = { showWebViewLoginDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = GolikeBrandOrange),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Icon(Icons.Filled.Login, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Đăng nhập", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        // ĐÃ ĐĂNG NHẬP: HIỂN THỊ nút Làm mới số dư & Nút Đăng xuất màu đỏ
+                        IconButton(
+                            onClick = {
+                                isRefreshing = true
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val client = GolikeAccountsStore.getApiClient(context)
+                                        val me = client.getMe()
+                                        val data = me?.optJSONObject("data")
+                                        val newCoin = data?.optLong("coin") ?: balance
+                                        val newUname = data?.optString("username")?.takeIf { it.isNotBlank() } ?: username
+
+                                        GolikeAccountsStore.updateBalance(context, newCoin)
+                                        withContext(Dispatchers.Main) {
+                                            GolikeSession.updateBalance(context, newCoin)
+                                            GolikeSession.username.value = newUname
+                                        }
+
+                                        // Đồng bộ danh sách tài khoản liên kết từ Golike API
+                                        syncLinkedAccountsFromApi(context, client, selectedPlatform)
+
+                                        withContext(Dispatchers.Main) {
+                                            reloadAccounts()
+                                            Toast.makeText(context, "Đã cập nhật số dư: $newCoin đ", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } catch (e: Exception) {
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(context, "Lỗi kết nối Golike: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } finally {
+                                        withContext(Dispatchers.Main) {
+                                            isRefreshing = false
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !isRefreshing,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            if (isRefreshing) {
+                                CircularProgressIndicator(color = GolikeBrandOrange, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                            } else {
+                                Icon(Icons.Filled.Refresh, contentDescription = "Làm mới", tint = GolikeBrandOrange, modifier = Modifier.size(20.dp))
+                            }
+                        }
+
+                        IconButton(
+                            onClick = {
+                                GolikeSession.logout(context)
+                                Toast.makeText(context, "Đã đăng xuất tài khoản Golike", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Filled.ExitToApp, contentDescription = "Đăng xuất", tint = DangerRed, modifier = Modifier.size(20.dp))
+                        }
                     }
                 }
             }
@@ -408,10 +626,27 @@ fun GolikeAccountScreen(navController: NavController) {
                         Text("Chưa có tài khoản nào được thêm.", color = TextSecondary, fontSize = 13.5.sp)
                         Spacer(Modifier.height(8.dp))
                         OutlinedButton(
-                            onClick = { showAddAccountSheet = true },
+                            onClick = {
+                                if (isLoggedIn) {
+                                    scope.launch(Dispatchers.IO) {
+                                        val client = GolikeAccountsStore.getApiClient(context)
+                                        syncLinkedAccountsFromApi(context, client, selectedPlatform)
+                                        withContext(Dispatchers.Main) {
+                                            reloadAccounts()
+                                            Toast.makeText(context, "Đã đồng bộ tài khoản từ Golike", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                } else {
+                                    showAddAccountSheet = true
+                                }
+                            },
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Text("+ Thêm tài khoản ngay", color = GolikeBrandOrange, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (isLoggedIn) "⟳ Đồng bộ nick từ Golike" else "+ Thêm tài khoản ngay",
+                                color = GolikeBrandOrange,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
                 }
@@ -527,19 +762,7 @@ fun GolikeAccountScreen(navController: NavController) {
                                                 GolikeRunningManager.stop(acc.id)
                                                 Toast.makeText(context, "Đã dừng tài khoản ${acc.username}", Toast.LENGTH_SHORT).show()
                                             } else {
-                                                GolikeRunningManager.runningAccounts[acc.id] = true
-                                                GolikeRunningManager.statusMap[acc.id] = "Đang nhận nhiệm vụ Golike..."
-                                                scope.launch(Dispatchers.IO) {
-                                                    val cfg = GolikeRunConfigStore.get(context, selectedPlatform)
-                                                    while (GolikeRunningManager.isRunning(acc.id) && isActive) {
-                                                        delay(cfg.delayMinSeconds * 1000L)
-                                                        if (!GolikeRunningManager.isRunning(acc.id)) break
-                                                        val curSucc = (GolikeRunningManager.successCountMap[acc.id] ?: acc.successCount) + 1
-                                                        GolikeRunningManager.successCountMap[acc.id] = curSucc
-                                                        GolikeRunningManager.statusMap[acc.id] = "Hoàn thành nhiệm vụ | Chờ ${cfg.delayMinSeconds}s..."
-                                                        GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id] ?: "", isSuccess = true)
-                                                    }
-                                                }
+                                                startAccountTask(acc)
                                                 Toast.makeText(context, "Bắt đầu chạy Golike cho ${acc.username}", Toast.LENGTH_SHORT).show()
                                             }
                                         },
@@ -765,19 +988,7 @@ fun GolikeAccountScreen(navController: NavController) {
                                     return@IconButton
                                 }
                                 targets.forEach { acc ->
-                                    GolikeRunningManager.runningAccounts[acc.id] = true
-                                    GolikeRunningManager.statusMap[acc.id] = "Đang nhận nhiệm vụ Golike..."
-                                    scope.launch(Dispatchers.IO) {
-                                        val cfg = GolikeRunConfigStore.get(context, selectedPlatform)
-                                        while (GolikeRunningManager.isRunning(acc.id) && isActive) {
-                                            delay(cfg.delayMinSeconds * 1000L)
-                                            if (!GolikeRunningManager.isRunning(acc.id)) break
-                                            val curSucc = (GolikeRunningManager.successCountMap[acc.id] ?: acc.successCount) + 1
-                                            GolikeRunningManager.successCountMap[acc.id] = curSucc
-                                            GolikeRunningManager.statusMap[acc.id] = "Hoàn thành nhiệm vụ | Chờ ${cfg.delayMinSeconds}s..."
-                                            GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id] ?: "", isSuccess = true)
-                                        }
-                                    }
+                                    startAccountTask(acc)
                                 }
                                 Toast.makeText(context, "Bắt đầu chạy ${targets.size} tài khoản Golike", Toast.LENGTH_SHORT).show()
                             }

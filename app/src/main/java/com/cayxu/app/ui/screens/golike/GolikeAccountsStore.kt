@@ -32,6 +32,9 @@ object GolikeAccountsStore {
     private const val KEY_TOKEN = "golike_token"
     private const val KEY_USERNAME = "golike_username"
     private const val KEY_BALANCE = "golike_balance"
+    private const val KEY_T_TOKEN = "golike_t_token"
+    private const val KEY_DEVICE_ID = "golike_device_id"
+    private const val KEY_G_AUTH = "golike_g_auth"
     private const val KEY_PREFIX_ACCOUNTS = "golike_accounts_"
 
     private val gson = Gson()
@@ -53,12 +56,32 @@ object GolikeAccountsStore {
     fun getBalance(context: Context): Long =
         prefs(context).getLong(KEY_BALANCE, 0L)
 
-    fun saveLogin(context: Context, token: String, username: String, balance: Long) {
-        prefs(context).edit()
+    fun getTToken(context: Context): String =
+        prefs(context).getString(KEY_T_TOKEN, "").orEmpty()
+
+    fun getDeviceId(context: Context): String =
+        prefs(context).getString(KEY_DEVICE_ID, "").orEmpty()
+
+    fun getGAuth(context: Context): String =
+        prefs(context).getString(KEY_G_AUTH, "").orEmpty()
+
+    fun saveLogin(
+        context: Context,
+        token: String,
+        username: String,
+        balance: Long,
+        tToken: String = "",
+        deviceId: String = "",
+        gAuth: String = ""
+    ) {
+        val editor = prefs(context).edit()
             .putString(KEY_TOKEN, token.trim())
             .putString(KEY_USERNAME, username.trim())
             .putLong(KEY_BALANCE, balance)
-            .commit()
+        if (tToken.isNotBlank()) editor.putString(KEY_T_TOKEN, tToken.trim())
+        if (deviceId.isNotBlank()) editor.putString(KEY_DEVICE_ID, deviceId.trim())
+        if (gAuth.isNotBlank()) editor.putString(KEY_G_AUTH, gAuth.trim())
+        editor.commit()
     }
 
     fun updateBalance(context: Context, balance: Long) {
@@ -72,7 +95,20 @@ object GolikeAccountsStore {
             .remove(KEY_TOKEN)
             .remove(KEY_USERNAME)
             .remove(KEY_BALANCE)
+            .remove(KEY_T_TOKEN)
+            .remove(KEY_DEVICE_ID)
+            .remove(KEY_G_AUTH)
             .commit()
+    }
+
+    fun getApiClient(context: Context): GolikeApiClient {
+        return GolikeApiClient(
+            authToken = getToken(context),
+            tToken = getTToken(context),
+            deviceId = getDeviceId(context),
+            username = getUsername(context),
+            gAuth = getGAuth(context)
+        )
     }
 
     // ===== QUẢN LÝ DANH SÁCH TÀI KHOẢN THEO NỀN TẢNG =====
