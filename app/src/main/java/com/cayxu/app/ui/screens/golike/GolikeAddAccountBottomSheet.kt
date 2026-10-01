@@ -25,9 +25,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.automation.tiktok.TikTokCaptureBridge
 import com.cayxu.app.automation.tiktok.TikTokCaptureOverlayService
@@ -66,6 +69,25 @@ fun GolikeAddAccountBottomSheet(
                 else -> TikTokAppVariant.STANDARD
             }
         )
+    }
+
+    var overlayGranted by remember {
+        mutableStateOf(TikTokAppLauncher.isOverlayPermissionGranted(context))
+    }
+    var accessibilityGranted by remember {
+        mutableStateOf(TikTokAppLauncher.isAccessibilityServiceEnabled(context))
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                overlayGranted = TikTokAppLauncher.isOverlayPermissionGranted(context)
+                accessibilityGranted = TikTokAppLauncher.isAccessibilityServiceEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(Unit) {
@@ -132,14 +154,14 @@ fun GolikeAddAccountBottomSheet(
             return
         }
 
-        if (!TikTokAppLauncher.isOverlayPermissionGranted(context)) {
-            Toast.makeText(context, "Cần cấp quyền hiển thị trên ứng dụng khác để mở lớp nổi", Toast.LENGTH_LONG).show()
+        if (!overlayGranted) {
+            Toast.makeText(context, "Vui lòng cấp quyền Hiển thị trên ứng dụng khác trước khi kiểm tra", Toast.LENGTH_LONG).show()
             TikTokAppLauncher.openOverlayPermissionSettings(context)
             return
         }
 
-        if (!TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
-            Toast.makeText(context, "Cần bật quyền Trợ năng (Accessibility) cho CayXu để tự động quét", Toast.LENGTH_LONG).show()
+        if (!accessibilityGranted) {
+            Toast.makeText(context, "Vui lòng bật quyền Trợ năng (Accessibility) trước khi kiểm tra", Toast.LENGTH_LONG).show()
             TikTokAppLauncher.openAccessibilitySettings(context)
             return
         }
@@ -183,114 +205,106 @@ fun GolikeAddAccountBottomSheet(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(GolikeBrandOrange.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.PersonAdd,
-                            contentDescription = null,
-                            tint = GolikeBrandOrange,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "Thêm tài khoản $platformTitle",
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "Quản lý & làm nhiệm vụ cho Golike",
-                            fontSize = 12.sp,
-                            color = TextSecondary
-                        )
-                    }
-                }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Filled.Close, contentDescription = "Đóng", tint = TextSecondary)
-                }
-            }
-
-            Spacer(Modifier.height(18.dp))
-
-            // ──────────── QUÉT TỰ ĐỘNG TIKTOK (chỉ hiện khi platform == tiktok) ────────────
             if (platform.lowercase() == "tiktok") {
-                // Chọn phiên bản TikTok
+                // 1. Header Tiêu Đề theo chuẩn Ảnh 2
                 Text(
-                    text = "Phiên bản TikTok trên thiết bị",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    text = "Kiểm tra tài khoản TikTok",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Màn hình nổi & Trợ năng cần được cấp quyền để tự động mở TikTok và kiểm tra trạng thái nick.",
+                    fontSize = 13.sp,
+                    color = TextSecondary,
+                    lineHeight = 18.sp
+                )
+
+                Spacer(Modifier.height(18.dp))
+
+                // 2. Hai Thẻ Kiểm Tra Quyền Hệ Thống (Permission Cards)
+                // Thẻ 1: Quyền Hiển thị trên ứng dụng khác (Overlay)
+                GolikePermissionCard(
+                    title = "Hiển thị trên ứng dụng khác",
+                    desc = "Để hiện màn nổi (overlay) kiểm tra và điều khiển trên TikTok",
+                    granted = overlayGranted,
+                    onClick = { TikTokAppLauncher.openOverlayPermissionSettings(context) }
+                )
+
+                Spacer(Modifier.height(10.dp))
+
+                // Thẻ 2: Dịch vụ Trợ năng (Accessibility)
+                GolikePermissionCard(
+                    title = "Dịch vụ Trợ năng (Accessibility)",
+                    desc = "Để tự động bấm tab \"Tôi\" và kiểm tra @username TikTok",
+                    granted = accessibilityGranted,
+                    onClick = { TikTokAppLauncher.openAccessibilitySettings(context) }
+                )
+
+                Spacer(Modifier.height(20.dp))
+
+                // 3. Khu Vực Chọn Phiên Bản TikTok
+                Text(
+                    text = "Chọn ứng dụng cần kiểm tra:",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Spacer(Modifier.height(10.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(
-                        Triple(TikTokAppVariant.STANDARD, "TikTok", Icons.Filled.MusicNote),
-                        Triple(TikTokAppVariant.LITE, "Lite", Icons.Filled.Bolt),
-                        Triple(TikTokAppVariant.STUDIO, "Studio", Icons.Filled.AutoAwesome)
-                    ).forEach { (variant, label, icon) ->
+                        Pair(TikTokAppVariant.STANDARD, "TikTok"),
+                        Pair(TikTokAppVariant.LITE, "TikTok Lite"),
+                        Pair(TikTokAppVariant.STUDIO, "TikTok Studio")
+                    ).forEach { (variant, label) ->
                         val isSelected = selectedVariant == variant
                         val isInstalled = TikTokAppLauncher.isInstalled(context, variant)
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(12.dp))
                                 .background(
-                                    if (isSelected) Color(0xFF0F172A).copy(alpha = 0.08f)
-                                    else Color(0xFFF1F5F9)
+                                    if (isSelected) Color(0xFF1A1D20)
+                                    else Color(0xFFF8F9FA)
                                 )
                                 .clickable { selectedVariant = variant }
-                                .padding(vertical = 10.dp, horizontal = 6.dp),
+                                .padding(vertical = 12.dp, horizontal = 4.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = if (isSelected) Color(0xFF0F172A) else TextSecondary,
-                                    modifier = Modifier.size(18.dp)
+                                Text(
+                                    text = label,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) Color.White else TextPrimary
                                 )
                                 Spacer(Modifier.height(3.dp))
                                 Text(
-                                    text = label,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) Color(0xFF0F172A) else TextPrimary
-                                )
-                                Text(
                                     text = if (isInstalled) "Đã cài" else "Chưa cài",
-                                    fontSize = 10.sp,
-                                    color = if (isInstalled) Color(0xFF22C55E) else TextSecondary
+                                    fontSize = 10.5.sp,
+                                    color = if (isSelected) Color(0xFF94A3B8) else TextSecondary
                                 )
                             }
                         }
                     }
                 }
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(20.dp))
 
-                // Nút Quét tài khoản từ app TikTok
+                // 4. Nút Hành Động Chính (Main Action Button)
                 Button(
                     onClick = { startScanTikTok() },
                     enabled = !isScanningTikTok,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F172A)),
-                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF111827),
+                        disabledContainerColor = Color(0xFF374151)
+                    ),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp)
@@ -303,9 +317,9 @@ fun GolikeAddAccountBottomSheet(
                         )
                         Spacer(Modifier.width(10.dp))
                         Text(
-                            text = "Đang chờ quét từ TikTok...",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            text = "Đang kiểm tra tài khoản...",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
                     } else {
@@ -317,7 +331,7 @@ fun GolikeAddAccountBottomSheet(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "Quét tài khoản từ app TikTok",
+                            text = "Kiểm tra tài khoản",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -325,15 +339,8 @@ fun GolikeAddAccountBottomSheet(
                     }
                 }
 
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "→ Tool sẽ tự mở TikTok, bấm tab \"Hồ sơ\" và đọc @username giúp bạn",
-                    fontSize = 11.5.sp,
-                    color = TextSecondary,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                )
+                Spacer(Modifier.height(18.dp))
 
-                Spacer(Modifier.height(16.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -354,7 +361,49 @@ fun GolikeAddAccountBottomSheet(
                         color = Color(0xFFE2E8F0)
                     )
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(14.dp))
+            } else {
+                // Header cho Facebook / Instagram
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(GolikeBrandOrange.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PersonAdd,
+                                contentDescription = null,
+                                tint = GolikeBrandOrange,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Thêm tài khoản $platformTitle",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Quản lý & làm nhiệm vụ cho Golike",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.Close, contentDescription = "Đóng", tint = TextSecondary)
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
             }
 
             // Tên tài khoản / UID
@@ -548,6 +597,70 @@ fun GolikeAddAccountBottomSheet(
             }
 
             Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun GolikePermissionCard(
+    title: String,
+    desc: String,
+    granted: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFFF8F9FA))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = desc,
+                fontSize = 12.sp,
+                color = TextSecondary,
+                lineHeight = 16.sp
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        if (granted) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0xFFE6F4EA))
+                    .padding(horizontal = 14.dp, vertical = 7.dp)
+            ) {
+                Text(
+                    text = "Đã cấp",
+                    color = Color(0xFF137333),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        } else {
+            Button(
+                onClick = onClick,
+                shape = RoundedCornerShape(20.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                modifier = Modifier.height(34.dp)
+            ) {
+                Text(
+                    text = "Cấp quyền",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
