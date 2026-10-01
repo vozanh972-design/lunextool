@@ -3,5 +3,5 @@
   "version_name": "1.0.5",
   "download_url": "https://github.com/theanh39/lunexapk/raw/main/app-release.apk",
   "changelog": "fix lỗi đăng nhập tuongtaccheo",
-  "force_update": false
+  "force_update": true
 }

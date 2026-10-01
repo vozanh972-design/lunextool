@@ -91,7 +91,7 @@ jobs:
           fi
           V_LOG=${V_LOG:-"fix lỗi đăng nhập tuongtaccheo"}
           echo "Detected versionCode: $V_CODE, versionName: $V_NAME, changelog: $V_LOG"
-          printf '{\n  "version_code": %s,\n  "version_name": "%s",\n  "download_url": "https://github.com/theanh39/lunexapk/raw/main/app-release.apk",\n  "changelog": "%s",\n  "force_update": false\n}\n' "${V_CODE:-1}" "${V_NAME:-1.0.0}" "$V_LOG" > version.json
+          printf '{\n  "version_code": %s,\n  "version_name": "%s",\n  "download_url": "https://github.com/theanh39/lunexapk/raw/main/app-release.apk",\n  "changelog": "%s",\n  "force_update": true\n}\n' "${V_CODE:-1}" "${V_NAME:-1.0.0}" "$V_LOG" > version.json
           cat version.json
 
       - name: Upload version info

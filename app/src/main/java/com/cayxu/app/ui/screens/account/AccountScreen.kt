@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
+import android.app.Activity
 import com.cayxu.app.BuildConfig
 import com.cayxu.app.R
 import com.cayxu.app.data.local.FacebookAccountsStore
@@ -62,6 +63,8 @@ import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.theme.*
+import com.cayxu.app.util.AppUpdateData
+import com.cayxu.app.util.AppUpdateManager
 import com.cayxu.app.util.DeviceUtils
 
 private data class SocialAccountItem(
@@ -309,7 +312,7 @@ fun AccountScreen(navController: NavController) {
 
         ModalBottomSheet(
             onDismissRequest = {
-                if (!isDownloadingUpdate) {
+                if (!isDownloadingUpdate && (!update.forceUpdate && update.versionCode <= BuildConfig.VERSION_CODE)) {
                     pendingUpdate = null
                     downloadError = null
                     downloadProgress = 0f
@@ -509,18 +512,32 @@ fun AccountScreen(navController: NavController) {
                         )
                     }
 
-                    Spacer(Modifier.height(10.dp))
-
-                    TextButton(
-                        onClick = { pendingUpdate = null },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "Để sau",
-                            color = TextSecondary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                    if (!update.forceUpdate && update.versionCode <= BuildConfig.VERSION_CODE) {
+                        Spacer(Modifier.height(10.dp))
+                        TextButton(
+                            onClick = { pendingUpdate = null },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Để sau",
+                                color = TextSecondary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    } else {
+                        Spacer(Modifier.height(10.dp))
+                        TextButton(
+                            onClick = { (context as? Activity)?.finishAffinity() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Thoát ứng dụng",
+                                color = TextSecondary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
                 }
             }
@@ -830,86 +847,8 @@ fun AccountScreen(navController: NavController) {
                         Toast.makeText(context, "Đang kiểm tra bản cập nhật...", Toast.LENGTH_SHORT).show()
                         coroutineScope.launch {
                             try {
-                                val result = withContext(Dispatchers.IO) {
-                                    val client = OkHttpClient.Builder()
-                                        .connectTimeout(10, TimeUnit.SECONDS)
-                                        .readTimeout(10, TimeUnit.SECONDS)
-                                        .build()
-                                    val request = Request.Builder()
-                                        .url(getUpdateApiEndpoint())
-                                        .header("Cache-Control", "no-cache")
-                                        .build()
-                                    val response = client.newCall(request).execute()
-                                    if (!response.isSuccessful) {
-                                        throw Exception("Mã HTTP ${response.code}")
-                                    }
-                                    val body = response.body?.string().orEmpty()
-                                    val rootJson = JSONObject(body)
-                                    val dataObj = rootJson.optJSONObject("data") ?: rootJson
-
-                                    val vCode = when {
-                                        dataObj.has("version_code") -> dataObj.optInt("version_code")
-                                        dataObj.has("versionCode") -> dataObj.optInt("versionCode")
-                                        rootJson.has("version_code") -> rootJson.optInt("version_code")
-                                        rootJson.has("versionCode") -> rootJson.optInt("versionCode")
-                                        else -> 0
-                                    }
-
-                                    val vName = when {
-                                        dataObj.has("version_name") -> dataObj.optString("version_name")
-                                        dataObj.has("versionName") -> dataObj.optString("versionName")
-                                        dataObj.has("version") -> dataObj.optString("version")
-                                        rootJson.has("version_name") -> rootJson.optString("version_name")
-                                        rootJson.has("versionName") -> rootJson.optString("versionName")
-                                        rootJson.has("version") -> rootJson.optString("version")
-                                        else -> ""
-                                    }
-
-                                    val possibleChangelogKeys = listOf(
-                                        "changelog", "change_log", "description", "notes", "note",
-                                        "content", "update_content", "details", "message"
-                                    )
-                                    var extractedChangelog = ""
-                                    for (key in possibleChangelogKeys) {
-                                        val valInObj = dataObj.optString(key, "")
-                                        if (valInObj.isNotBlank()) {
-                                            extractedChangelog = valInObj
-                                            break
-                                        }
-                                        val valInRoot = rootJson.optString(key, "")
-                                        if (valInRoot.isNotBlank()) {
-                                            extractedChangelog = valInRoot
-                                            break
-                                        }
-                                    }
-
-                                    val normalizedChangelog = extractedChangelog.trim()
-                                    val finalChangelog = if (normalizedChangelog.isNotBlank()) {
-                                        normalizedChangelog
-                                    } else {
-                                        BuildConfig.UPDATE_CHANGELOG.takeIf { it.isNotBlank() } ?: "Cập nhật và tối ưu hóa hệ thống"
-                                    }
-
-                                    val possibleUrlKeys = listOf(
-                                        "apk_url", "apkUrl", "download_url", "downloadUrl", "url", "link"
-                                    )
-                                    var extractedUrl = ""
-                                    for (key in possibleUrlKeys) {
-                                        val valInObj = dataObj.optString(key, "")
-                                        if (valInObj.isNotBlank()) {
-                                            extractedUrl = valInObj
-                                            break
-                                        }
-                                        val valInRoot = rootJson.optString(key, "")
-                                        if (valInRoot.isNotBlank()) {
-                                            extractedUrl = valInRoot
-                                            break
-                                        }
-                                    }
-
-                                    AppUpdateData(vCode, vName, finalChangelog, extractedUrl)
-                                }
-                                if (result.versionCode > BuildConfig.VERSION_CODE) {
+                                val result = AppUpdateManager.checkUpdate(context)
+                                if (result != null) {
                                     pendingUpdate = result
                                 } else {
                                     Toast.makeText(context, "Bạn đang sử dụng phiên bản mới nhất (v${BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
@@ -935,31 +874,6 @@ fun AccountScreen(navController: NavController) {
 
         Spacer(Modifier.height(90.dp))
     }
-}
-
-private data class AppUpdateData(
-    val versionCode: Int,
-    val versionName: String,
-    val changelog: String,
-    val apkUrl: String
-)
-
-private val OBF_UPDATE_URL = byteArrayOf(
-    0x33.toByte(), 0x2F.toByte(), 0x2F.toByte(), 0x2B.toByte(), 0x28.toByte(), 0x61.toByte(), 0x74.toByte(), 0x74.toByte(),
-    0x29.toByte(), 0x3A.toByte(), 0x2C.toByte(), 0x75.toByte(), 0x3C.toByte(), 0x32.toByte(), 0x2F.toByte(), 0x33.toByte(),
-    0x2E.toByte(), 0x39.toByte(), 0x2E.toByte(), 0x28.toByte(), 0x3E.toByte(), 0x29.toByte(), 0x38.toByte(), 0x34.toByte(),
-    0x35.toByte(), 0x2F.toByte(), 0x3E.toByte(), 0x35.toByte(), 0x2F.toByte(), 0x75.toByte(), 0x38.toByte(), 0x34.toByte(),
-    0x36.toByte(), 0x74.toByte(), 0x2F.toByte(), 0x33.toByte(), 0x3E.toByte(), 0x3A.toByte(), 0x35.toByte(), 0x33.toByte(),
-    0x68.toByte(), 0x62.toByte(), 0x74.toByte(), 0x37.toByte(), 0x2E.toByte(), 0x35.toByte(), 0x3E.toByte(), 0x23.toByte(),
-    0x3A.toByte(), 0x2B.toByte(), 0x30.toByte(), 0x74.toByte(), 0x36.toByte(), 0x3A.toByte(), 0x32.toByte(), 0x35.toByte(),
-    0x74.toByte(), 0x2D.toByte(), 0x3E.toByte(), 0x29.toByte(), 0x28.toByte(), 0x32.toByte(), 0x34.toByte(), 0x35.toByte(),
-    0x75.toByte(), 0x31.toByte(), 0x28.toByte(), 0x34.toByte(), 0x35.toByte()
-)
-
-private fun getUpdateApiEndpoint(): String {
-    val key = 0x5B.toByte()
-    val decoded = ByteArray(OBF_UPDATE_URL.size) { i -> (OBF_UPDATE_URL[i].toInt() xor key.toInt()).toByte() }
-    return String(decoded, Charsets.UTF_8)
 }
 
 // ── Tải APK ngầm dùng DownloadManager ──────────────────────────────

@@ -24,8 +24,10 @@ import androidx.navigation.compose.rememberNavController
 import com.cayxu.app.data.local.AppLockState
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.ui.components.CayXuBottomBar
+import com.cayxu.app.ui.components.ForceUpdateDialog
 import com.cayxu.app.ui.screens.account.AccountScreen
 import com.cayxu.app.ui.screens.blocked.BlockedScreen
+import com.cayxu.app.util.AppUpdateManager
 import com.cayxu.app.ui.screens.friends.FriendsScreen
 import com.cayxu.app.ui.screens.home.HomeScreen
 import com.cayxu.app.ui.screens.login.LoginScreen
@@ -150,6 +152,15 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             }
             AppLockState.consumeKeyRevoked()
         }
+    }
+
+    // Tự động kiểm tra bản cập nhật mới ngay khi mở app.
+    // Nếu máy chủ đã phát hành bản mới (versionCode > versionCode hiện tại),
+    // ứng dụng bản cũ sẽ bị vô hiệu hóa hoàn toàn bằng ForceUpdateDialog.
+    val updateRequired by AppUpdateManager.updateRequired.collectAsState()
+    LaunchedEffect(Unit) {
+        AppUpdateManager.initLocalCheck(context)
+        AppUpdateManager.checkUpdate(context)
     }
 
     // Scaffold + thanh điều hướng dưới nằm CỐ ĐỊNH ở đây, bên NGOÀI NavHost.
@@ -320,5 +331,10 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
                 )
             }
         }
+    }
+
+    // Hiển thị hộp thoại cập nhật bắt buộc nếu phát hiện bản cũ đã bị vô hiệu hóa
+    updateRequired?.let { update ->
+        ForceUpdateDialog(update = update)
     }
 }

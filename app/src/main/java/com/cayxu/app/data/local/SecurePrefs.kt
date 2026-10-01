@@ -119,6 +119,12 @@ class SecurePrefs(context: Context) {
 
     fun getPoints(): Int = getActivatedKeysCount() * 10
 
+    fun saveLatestKnownVersionCode(code: Int) {
+        prefs.edit().putInt(KEY_LATEST_VERSION_CODE, code).apply()
+    }
+
+    fun getLatestKnownVersionCode(): Int = prefs.getInt(KEY_LATEST_VERSION_CODE, 0)
+
     companion object {
         private const val KEY_LOGIN_KEY = "login_key"
         private const val KEY_FINGERPRINT = "login_key_fingerprint"
@@ -130,5 +136,6 @@ class SecurePrefs(context: Context) {
         private const val KEY_PACKAGE_NAME = "package_name"
         private const val KEY_EXPIRES_AT = "expires_at"
         private const val KEY_ACTIVATED_KEYS = "activated_keys"
+        private const val KEY_LATEST_VERSION_CODE = "latest_known_version_code"
     }
 }

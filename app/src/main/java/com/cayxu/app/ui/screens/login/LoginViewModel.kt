@@ -42,6 +42,13 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Mỗi lần mở app: nếu đã có key đã lưu -> tự gọi verify_key.php */
     private fun checkSavedKey() {
+        if (com.cayxu.app.util.AppUpdateManager.isUpdateRequired()) {
+            _uiState.value = _uiState.value.copy(
+                autoVerifyStatus = AutoVerifyStatus.ERROR,
+                errorMessage = "Phiên bản ứng dụng đã cũ và bị vô hiệu hóa! Vui lòng cập nhật."
+            )
+            return
+        }
         val savedKey = securePrefs.getKey()
         if (savedKey.isNullOrBlank()) {
             _uiState.value = _uiState.value.copy(autoVerifyStatus = AutoVerifyStatus.IDLE, isCheckingSavedKey = false)
@@ -96,6 +103,14 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+
+            if (com.cayxu.app.util.AppUpdateManager.isUpdateRequired()) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    errorMessage = "Phiên bản ứng dụng đã cũ và bị vô hiệu hóa! Vui lòng cập nhật."
+                )
+                return@launch
+            }
             
             // Kiểm tra bảo mật tầng Native C++: Chống Root, Máy ảo, Debugger/Frida
             if (com.cayxu.app.util.IntegrityGuard.isTampered(getApplication())) {
