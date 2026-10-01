@@ -118,21 +118,63 @@ class TuongTacCheoApiClient(
     fun loginWithToken(token: String): TuongTacCheoAccount {
         this.tokenTTC = token
         val body = FormBody.Builder().add("access_token", token).build()
-        val req = Request.Builder().url("$BASE_URL/logintoken.php").headers(buildHeaders()).post(body).build()
+        // Gửi request login với headers sạch để tránh xung đột cookie session cũ
+        val headersWithoutStaleCookie = buildHeaders().newBuilder().removeAll("Cookie").build()
+        val req = Request.Builder().url("$BASE_URL/logintoken.php").headers(headersWithoutStaleCookie).post(body).build()
         httpClient.newCall(req).execute().use { res ->
-            val resStr = res.body?.string() ?: ""
+            val resStr = res.body?.string()?.trim().orEmpty()
             val cookies = res.headers("Set-Cookie")
             val sb = StringBuilder()
             for (c in cookies) sb.append(c.split(";")[0]).append("; ")
             if (sb.isNotEmpty()) sessionCookie = sb.toString().trim()
 
-            val json = if (resStr.trim().startsWith("{")) JSONObject(resStr) else JSONObject()
-            if (json.optString("status") != "success" && !resStr.contains("user")) {
-                throw IllegalStateException(json.optString("mess", "Không thể login TTC"))
+            if (resStr.isBlank()) {
+                throw IllegalStateException("Máy chủ TTC không phản hồi dữ liệu")
             }
-            val user = json.optString("user", "Unknown")
-            val sodu = json.optString("sodu", "0").replace(",", "").replace(".", "").toLongOrNull() ?: 0L
-            return TuongTacCheoAccount(user, token, sessionCookie, sodu)
+
+            val json = if (resStr.startsWith("{")) JSONObject(resStr) else JSONObject()
+            val dataObj = json.optJSONObject("data")
+
+            // Kiểm tra lỗi từ server TTC
+            val status = json.optString("status")
+            if (status == "fail" || status == "error") {
+                val errMsg = json.optString("mess").ifBlank { "Sai Access Token hoặc tài khoản không hợp lệ" }
+                throw IllegalStateException(errMsg)
+            }
+
+            // 1. Trích xuất Username linh hoạt đa tầng (Hỗ trợ cả Root và lồng trong Data)
+            val user = json.optString("user")
+                .ifBlank { dataObj?.optString("user") ?: "" }
+                .ifBlank { json.optString("username") }
+                .ifBlank { dataObj?.optString("username") ?: "" }
+                .ifBlank { json.optString("name") }
+                .ifBlank { dataObj?.optString("name") ?: "" }
+                .trim()
+
+            if (user.isBlank()) {
+                val errMsg = json.optString("mess").ifBlank {
+                    if (resStr.startsWith("<")) "Lỗi kết nối máy chủ TTC (Cloudflare / Thao tác quá nhanh)"
+                    else "Không tìm thấy thông tin tài khoản TTC từ Access Token"
+                }
+                throw IllegalStateException(errMsg)
+            }
+
+            // 2. Trích xuất Số dư linh hoạt đa tầng
+            val rawSodu = json.optString("sodu")
+                .ifBlank { dataObj?.optString("sodu") ?: "" }
+                .ifBlank { json.optString("xu") }
+                .ifBlank { dataObj?.optString("xu") ?: "" }
+                .ifBlank { if (json.has("sodu")) json.optLong("sodu").toString() else "" }
+                .ifBlank { if (dataObj?.has("sodu") == true) dataObj.optLong("sodu").toString() else "" }
+
+            val sodu = rawSodu.replace(",", "").replace(".", "").trim().toLongOrNull() ?: 0L
+
+            return TuongTacCheoAccount(
+                username = user,
+                token = token,
+                cookie = sessionCookie,
+                sodu = sodu
+            )
         }
     }
 

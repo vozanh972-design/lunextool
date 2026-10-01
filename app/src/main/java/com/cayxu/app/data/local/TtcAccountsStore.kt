@@ -13,7 +13,8 @@ data class TtcAccount(
     val cookie: String = "",
     val proxy: String = "",
     val coins: Long = 0L,
-    val isLive: Boolean = true
+    val isLive: Boolean = true,
+    val lastError: String = ""
 )
 
 object TtcAccountsStore {
@@ -37,7 +38,8 @@ object TtcAccountsStore {
                         cookie = obj.optString("cookie", ""),
                         proxy = obj.optString("proxy", ""),
                         coins = obj.optLong("coins", 0L),
-                        isLive = obj.optBoolean("isLive", true)
+                        isLive = obj.optBoolean("isLive", true),
+                        lastError = obj.optString("lastError", "")
                     )
                 )
             }
@@ -55,22 +57,39 @@ object TtcAccountsStore {
                 put("proxy", acc.proxy)
                 put("coins", acc.coins)
                 put("isLive", acc.isLive)
+                put("lastError", acc.lastError)
             }
             arr.put(obj)
         }
-        prefs(context).edit().putString(KEY_ACCOUNTS, arr.toString()).apply()
+        // Dùng commit() để ghi ngay lập tức vào đĩa, tránh bị hồi sinh acc cũ khi chuyển tab
+        prefs(context).edit().putString(KEY_ACCOUNTS, arr.toString()).commit()
     }
 
     fun addAccount(context: Context, account: TtcAccount) {
         val current = getAccounts(context).toMutableList()
-        current.removeAll { it.username.equals(account.username, ignoreCase = true) }
+        val accToken = account.token.trim()
+        val accUser = account.username.trim()
+        // Định danh duy nhất theo Token chuẩn 100%, tránh ghi đè nhầm tài khoản
+        current.removeAll {
+            if (accToken.isNotBlank() && it.token.isNotBlank()) {
+                it.token.trim().equals(accToken, ignoreCase = true)
+            } else if (accUser.isNotBlank() && !accUser.equals("Unknown", ignoreCase = true)) {
+                it.username.trim().equals(accUser, ignoreCase = true)
+            } else {
+                false
+            }
+        }
         current.add(0, account)
         saveAccounts(context, current)
     }
 
-    fun removeAccount(context: Context, username: String) {
+    fun removeAccount(context: Context, tokenOrUsername: String) {
         val current = getAccounts(context).toMutableList()
-        current.removeAll { it.username.equals(username, ignoreCase = true) }
+        val target = tokenOrUsername.trim()
+        current.removeAll {
+            it.token.trim().equals(target, ignoreCase = true) ||
+            it.username.trim().equals(target, ignoreCase = true)
+        }
         saveAccounts(context, current)
     }
 }

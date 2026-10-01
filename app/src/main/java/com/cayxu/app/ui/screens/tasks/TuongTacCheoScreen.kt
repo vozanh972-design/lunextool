@@ -921,7 +921,7 @@ fun TuongTacCheoScreen(navController: NavController) {
                 var successCount = 0
                 var failCount = 0
                 withContext(Dispatchers.IO) {
-                    lines.forEach { line ->
+                    lines.forEachIndexed { index, line ->
                         val trimmed = line.trim()
                         if (trimmed.isNotBlank()) {
                             val token: String
@@ -940,6 +940,8 @@ fun TuongTacCheoScreen(navController: NavController) {
                             }
 
                             if (token.isNotBlank()) {
+                                // Thêm delay 1.2s từ token thứ 2 trở đi để tránh bị tuongtaccheo.com rate limit IP
+                                if (index > 0) kotlinx.coroutines.delay(1200L)
                                 try {
                                     val client = TuongTacCheoApiClient(
                                         proxyStr = proxy.ifBlank { null }
@@ -953,13 +955,14 @@ fun TuongTacCheoScreen(navController: NavController) {
                                             cookie = loggedAcc.cookie.orEmpty(),
                                             proxy = proxy,
                                             coins = loggedAcc.sodu,
-                                            isLive = true
+                                            isLive = true,
+                                            lastError = ""
                                         )
                                     )
                                     successCount++
                                 } catch (e: Exception) {
                                     failCount++
-                                    val fallbackUser = if (token.length > 12) "TTC_${token.take(8)}" else token
+                                    val fallbackUser = if (token.length > 6) "TTC_${token.take(6)}" else token
                                     TtcAccountsStore.addAccount(
                                         context,
                                         TtcAccount(
@@ -968,7 +971,8 @@ fun TuongTacCheoScreen(navController: NavController) {
                                             cookie = "",
                                             proxy = proxy,
                                             coins = 0L,
-                                            isLive = false
+                                            isLive = false,
+                                            lastError = e.message ?: "Lỗi đăng nhập"
                                         )
                                     )
                                 }
@@ -1120,15 +1124,16 @@ fun TuongTacCheoScreen(navController: NavController) {
                 scope.launch(Dispatchers.IO) {
                     val accs = TtcAccountsStore.getAccounts(context)
                     var updated = false
-                    accs.forEach { acc ->
+                    accs.forEachIndexed { index, acc ->
                         if (acc.token.isNotBlank()) {
+                            if (index > 0) kotlinx.coroutines.delay(1000L)
                             try {
                                 val client = TuongTacCheoApiClient(proxyStr = acc.proxy.ifBlank { null })
                                 val res = client.loginWithToken(acc.token)
-                                if (res.sodu != acc.coins || res.username != acc.username) {
+                                if (res.username.isNotBlank() && (res.sodu != acc.coins || res.username != acc.username || !acc.isLive)) {
                                     TtcAccountsStore.addAccount(
                                         context,
-                                        acc.copy(username = res.username, coins = res.sodu, isLive = true)
+                                        acc.copy(username = res.username, coins = res.sodu, isLive = true, lastError = "")
                                     )
                                     updated = true
                                 }
@@ -1648,7 +1653,7 @@ private fun TtcAccountsTabContent(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(accounts, key = { it.username }) { acc ->
+                items(accounts, key = { it.token.ifBlank { it.username } }) { acc ->
                     val isSelected = acc.username in selectedUsernames
                     val isAccRunning = acc.username in runningAccounts
                     val statusText = accountStatusMap[acc.username]
@@ -1688,7 +1693,7 @@ private fun TtcAccountsTabContent(
                                 Spacer(Modifier.height(2.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = if (acc.coins > 0) "${acc.coins} xu" else "Sẵn sàng",
+                                        text = if (acc.coins > 0) "${acc.coins} xu" else if (!acc.isLive) acc.lastError.ifBlank { "Lỗi đăng nhập" } else "Sẵn sàng",
                                         fontSize = 12.sp,
                                         color = if (acc.isLive) Color(0xFF16A34A) else DangerRed,
                                         fontWeight = FontWeight.Medium
