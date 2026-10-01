@@ -884,14 +884,10 @@ fun AccountScreen(navController: NavController) {
                                     }
 
                                     val normalizedChangelog = extractedChangelog.trim()
-                                    val finalChangelog = if (
-                                        normalizedChangelog.isBlank() ||
-                                        normalizedChangelog.equals("- Cập nhật phiên bản mới", ignoreCase = true) ||
-                                        normalizedChangelog.equals("Cập nhật phiên bản mới", ignoreCase = true)
-                                    ) {
-                                        BuildConfig.UPDATE_CHANGELOG.takeIf { it.isNotBlank() } ?: "Cập nhật và tối ưu hóa hệ thống"
-                                    } else {
+                                    val finalChangelog = if (normalizedChangelog.isNotBlank()) {
                                         normalizedChangelog
+                                    } else {
+                                        BuildConfig.UPDATE_CHANGELOG.takeIf { it.isNotBlank() } ?: "Cập nhật và tối ưu hóa hệ thống"
                                     }
 
                                     val possibleUrlKeys = listOf(

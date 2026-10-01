@@ -85,8 +85,13 @@ jobs:
           fi
           V_CODE=$(grep -E 'versionCode\s*=' "$GRADLE_FILE" | grep -oE '[0-9]+' | head -n 1)
           V_NAME=$(sed -n -E 's/.*versionName\s*=\s*"([^"]+)".*/\1/p' "$GRADLE_FILE" | head -n 1)
-          echo "Detected versionCode: $V_CODE, versionName: $V_NAME"
-          printf '{\n  "version_code": %s,\n  "version_name": "%s",\n  "download_url": "https://github.com/theanh39/lunexapk/raw/main/app-release.apk",\n  "changelog": "- Cập nhật phiên bản mới",\n  "force_update": false\n}\n' "${V_CODE:-1}" "${V_NAME:-1.0.0}" > version.json
+          V_LOG=$(sed -n -E 's/.*UPDATE_CHANGELOG\s*,\s*"\\?"([^"\\]+).*/\1/p' "$GRADLE_FILE" | head -n 1)
+          if [ -z "$V_LOG" ] && [ -f "version.json" ]; then
+            V_LOG=$(grep -oE '"changelog":\s*"[^"]+"' version.json | sed -E 's/"changelog":\s*"([^"]+)"/\1/')
+          fi
+          V_LOG=${V_LOG:-"fix lỗi đăng nhập tuongtaccheo"}
+          echo "Detected versionCode: $V_CODE, versionName: $V_NAME, changelog: $V_LOG"
+          printf '{\n  "version_code": %s,\n  "version_name": "%s",\n  "download_url": "https://github.com/theanh39/lunexapk/raw/main/app-release.apk",\n  "changelog": "%s",\n  "force_update": false\n}\n' "${V_CODE:-1}" "${V_NAME:-1.0.0}" "$V_LOG" > version.json
           cat version.json
 
       - name: Upload version info

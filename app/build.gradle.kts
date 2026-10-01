@@ -456,7 +456,9 @@ tasks.register("generateVersionInfo") {
             """{
   "version_code": 6,
   "version_name": "1.0.5",
-  "changelog": "fix lỗi đăng nhập tuongtaccheo"
+  "download_url": "https://github.com/theanh39/lunexapk/raw/main/app-release.apk",
+  "changelog": "fix lỗi đăng nhập tuongtaccheo",
+  "force_update": false
 }
 """
         )
