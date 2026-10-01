@@ -324,9 +324,9 @@ android {
         // Android 7.0 (Nougat) trở lên
         minSdk = 24
         // targetSdk sẽ được nâng lên khi Android 16 SDK chính thức phát hành
-        versionCode = 5
-        versionName = "1.0.4"
-        buildConfigField("String", "UPDATE_CHANGELOG", "\"update xsmm instagram\"")
+        versionCode = 6
+        versionName = "1.0.5"
+        buildConfigField("String", "UPDATE_CHANGELOG", "\"fix lỗi đăng nhập tuongtaccheo\"")
 
         externalNativeBuild {
             cmake {
@@ -454,9 +454,9 @@ tasks.register("generateVersionInfo") {
         val versionFile = rootProject.file("version.json")
         versionFile.writeText(
             """{
-  "version_code": 5,
-  "version_name": "1.0.4",
-  "changelog": "update xsmm instagram"
+  "version_code": 6,
+  "version_name": "1.0.5",
+  "changelog": "fix lỗi đăng nhập tuongtaccheo"
 }
 """
         )
