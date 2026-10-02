@@ -102,7 +102,9 @@ suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient,
                         val item = dataArray.optJSONObject(i) ?: continue
                         val uname = item.optString("unique_username").ifBlank {
                             item.optString("username").ifBlank {
-                                item.optString("nickname")
+                                item.optString("nickname").ifBlank {
+                                    item.optString("tiktok_account")
+                                }
                             }
                         }.trim().removePrefix("@").lowercase()
                         if (uname.isNotBlank()) {
@@ -121,7 +123,7 @@ suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient,
                 val serverItem = serverMap[cleanHandle]
 
                 if (serverItem != null) {
-                    val accountId = serverItem.optString("id")
+                    val accountId = serverItem.optString("id").ifBlank { serverItem.optString("account_id") }
                     val serverAvatar = serverItem.optString("avatar")
                     val acc = GolikeAccount(
                         id = cleanHandle,

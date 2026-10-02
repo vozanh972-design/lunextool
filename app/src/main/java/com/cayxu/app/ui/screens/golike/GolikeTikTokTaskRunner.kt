@@ -28,11 +28,49 @@ object GolikeTikTokTaskRunner {
         username: String,
         onProgress: (String) -> Unit
     ): Result<GolikeAccount> = withContext(Dispatchers.IO) {
-        val cleanUsername = username.trim().removePrefix("@")
+        val cleanUsername = username.trim().removePrefix("@").lowercase()
         if (cleanUsername.isBlank()) {
             return@withContext Result.failure(Exception("Tên người dùng TikTok không hợp lệ"))
         }
 
+        onProgress("Kiểm tra nick @$cleanUsername trên Golike...")
+
+        // BƯỚC 1: Kiểm tra xem tài khoản đã được liên kết sẵn trên Golike chưa
+        try {
+            val listRes = client.getTikTokAccounts()
+            val listData = listRes?.optJSONArray("data")
+            if (listData != null) {
+                for (i in 0 until listData.length()) {
+                    val item = listData.optJSONObject(i) ?: continue
+                    val sUname = item.optString("unique_username").ifBlank {
+                        item.optString("username").ifBlank {
+                            item.optString("nickname")
+                        }
+                    }.trim().removePrefix("@").lowercase()
+
+                    if (sUname == cleanUsername) {
+                        val accId = item.optString("id").ifBlank { item.optString("account_id") }
+                        android.util.Log.d("GolikeApi", "Tài khoản @$cleanUsername đã có sẵn trên Golike với ID: $accId")
+                        val verifiedAcc = GolikeAccount(
+                            id = cleanUsername,
+                            platform = "tiktok",
+                            username = username,
+                            avatar = item.optString("avatar"),
+                            isLive = true,
+                            isGolikeLinked = true,
+                            golikeAccountId = accId,
+                            lastStatus = "Đã liên kết Golike • Sẵn sàng"
+                        )
+                        GolikeAccountsStore.addOrUpdateAccount(context, verifiedAcc)
+                        return@withContext Result.success(verifiedAcc)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("GolikeApi", "Lỗi kiểm tra danh sách TikTok hiện tại: ${e.message}")
+        }
+
+        // BƯỚC 2: Khai báo nick lên hệ thống Golike
         onProgress("Khai báo @$cleanUsername lên hệ thống Golike...")
         val declareRes = client.declareTikTokAccount(cleanUsername)
         if (declareRes == null) {
@@ -44,18 +82,40 @@ object GolikeTikTokTaskRunner {
         val dataObj = declareRes.optJSONObject("data")
         val message = declareRes.optString("message")
 
-        // Trường hợp tài khoản đã được xác minh thành công từ trước
-        if (status == 200 && (dataObj?.optBoolean("is_verified", false) == true || message.contains("đã tồn tại", ignoreCase = true))) {
-            val accId = dataObj?.optString("id")?.takeIf { it.isNotBlank() }
-                ?: dataObj?.optString("account_id").orEmpty()
+        // Trường hợp tài khoản đã tồn tại hoặc đã liên kết từ trước
+        if (message.contains("đã tồn tại", ignoreCase = true) ||
+            message.contains("đã liên kết", ignoreCase = true) ||
+            message.contains("thành công", ignoreCase = true) ||
+            (status == 200 && dataObj?.optBoolean("is_verified", false) == true)
+        ) {
+            // Tải lại danh sách từ Golike để lấy accountId
+            var foundAccId = dataObj?.optString("id")?.takeIf { it.isNotBlank() } ?: dataObj?.optString("account_id").orEmpty()
+            if (foundAccId.isBlank()) {
+                val listRes = client.getTikTokAccounts()
+                val listData = listRes?.optJSONArray("data")
+                if (listData != null) {
+                    for (i in 0 until listData.length()) {
+                        val item = listData.optJSONObject(i) ?: continue
+                        val sUname = item.optString("unique_username").ifBlank {
+                            item.optString("username").ifBlank { item.optString("nickname") }
+                        }.trim().removePrefix("@").lowercase()
+                        if (sUname == cleanUsername) {
+                            foundAccId = item.optString("id").ifBlank { item.optString("account_id") }
+                            break
+                        }
+                    }
+                }
+            }
+            if (foundAccId.isBlank()) foundAccId = cleanUsername
+
             val verifiedAcc = GolikeAccount(
                 id = cleanUsername,
                 platform = "tiktok",
-                username = cleanUsername,
+                username = username,
                 avatar = dataObj?.optString("avatar").orEmpty(),
                 isLive = true,
                 isGolikeLinked = true,
-                golikeAccountId = accId,
+                golikeAccountId = foundAccId,
                 lastStatus = "Đã liên kết Golike • Sẵn sàng"
             )
             GolikeAccountsStore.addOrUpdateAccount(context, verifiedAcc)
@@ -70,17 +130,20 @@ object GolikeTikTokTaskRunner {
         if (targetUser.isBlank()) {
             targetUser = dataObj?.optString("unique_username").orEmpty()
         }
+        if (targetUser.isBlank()) {
+            targetUser = dataObj?.optString("username").orEmpty()
+        }
 
         val accountId = dataObj?.optString("id")?.takeIf { it.isNotBlank() }
             ?: dataObj?.optString("account_id")?.takeIf { it.isNotBlank() }
             ?: declareRes.optString("account_id").orEmpty()
 
-        if (accountId.isBlank() && targetUser.isBlank()) {
+        if (accountId.isBlank() && targetUser.isBlank() && status != 200 && !success) {
             val err = message.ifBlank { "Không lấy được thông tin xác minh tài khoản từ Golike" }
             return@withContext Result.failure(Exception(err))
         }
 
-        // Thực hiện hành vi Follow nick target_user của Golike
+        // BƯỚC 3: Mở profile TikTok follow target_user của Golike nếu có
         if (targetUser.isNotBlank()) {
             onProgress("Mở TikTok follow nick cấu hình @$targetUser...")
             val targetUrl = "https://www.tiktok.com/@${targetUser.removePrefix("@")}"
@@ -101,25 +164,25 @@ object GolikeTikTokTaskRunner {
                 delay(5000L)
             }
         } else {
-            delay(2000L)
+            delay(1500L)
         }
 
-        // Gửi xác nhận liên kết (Verify Account ID)
+        // BƯỚC 4: Gửi xác nhận liên kết (Verify Account ID)
         onProgress("Đang gửi xác minh liên kết lên Golike...")
-        val verifyRes = client.verifyTikTokAccountId(accountId, cleanUsername)
+        val verifyRes = client.verifyTikTokAccountId(accountId.ifBlank { cleanUsername }, cleanUsername)
         val vStatus = verifyRes?.optInt("status", 0) ?: 0
         val vSuccess = verifyRes?.optBoolean("success", false) ?: false
         val vMessage = verifyRes?.optString("message").orEmpty()
 
-        if (vStatus == 200 || vSuccess || vMessage.contains("thành công", ignoreCase = true)) {
+        if (vStatus == 200 || vSuccess || vMessage.contains("thành công", ignoreCase = true) || vMessage.contains("đã tồn tại", ignoreCase = true)) {
             val finalAcc = GolikeAccount(
                 id = cleanUsername,
                 platform = "tiktok",
-                username = cleanUsername,
+                username = username,
                 avatar = dataObj?.optString("avatar").orEmpty(),
                 isLive = true,
                 isGolikeLinked = true,
-                golikeAccountId = accountId,
+                golikeAccountId = accountId.ifBlank { cleanUsername },
                 lastStatus = "Đã liên kết Golike • Sẵn sàng"
             )
             GolikeAccountsStore.addOrUpdateAccount(context, finalAcc)

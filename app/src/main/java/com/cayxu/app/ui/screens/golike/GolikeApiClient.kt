@@ -69,6 +69,7 @@ class GolikeApiClient(
         val cleanUsername = username.trim().removePrefix("@")
         val body = JSONObject().apply {
             put("unique_username", cleanUsername)
+            put("username", cleanUsername)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         return execute(newRequestBuilder("$BASE_URL/tiktok-account").post(body).build())
     }
@@ -78,6 +79,7 @@ class GolikeApiClient(
         val body = JSONObject().apply {
             put("account_id", accountId)
             put("unique_username", cleanUsername)
+            put("username", cleanUsername)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         return execute(newRequestBuilder("$BASE_URL/tiktok-account/verify-account-id").post(body).build())
     }
@@ -131,13 +133,23 @@ class GolikeApiClient(
     }
 
     private fun execute(request: Request): JSONObject? {
+        val url = request.url.toString()
+        val method = request.method
         return try {
             httpClient.newCall(request).execute().use { res ->
-                val bodyStr = res.body?.string() ?: return null
-                JSONObject(bodyStr)
+                val code = res.code
+                val bodyStr = res.body?.string().orEmpty()
+                android.util.Log.d("GolikeApi", "[$method] $url -> HTTP $code | Response: $bodyStr")
+                if (bodyStr.isBlank()) return null
+                try {
+                    JSONObject(bodyStr)
+                } catch (e: Exception) {
+                    android.util.Log.w("GolikeApi", "Response is not a valid JSONObject: $bodyStr")
+                    null
+                }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("GolikeApi", "Network error calling $url: ${e.message}", e)
             null
         }
     }
