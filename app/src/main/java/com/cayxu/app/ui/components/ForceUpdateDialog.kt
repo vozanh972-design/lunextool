@@ -29,9 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.cayxu.app.BuildConfig
-import com.cayxu.app.ui.theme.Cobalt600
 import com.cayxu.app.ui.theme.DangerRed
-import com.cayxu.app.ui.theme.Navy900
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
 import com.cayxu.app.util.AppUpdateData
@@ -44,6 +42,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.util.concurrent.TimeUnit
+
+private val Navy900 = Color(0xFF0A1730)
+private val Cobalt600 = Color(0xFF1D4ED8)
 
 @Composable
 fun ForceUpdateDialog(update: AppUpdateData) {
