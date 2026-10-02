@@ -91,27 +91,33 @@ fun AccountScreen(navController: NavController) {
                 try {
                     val repository = com.cayxu.app.data.repository.AuthRepository()
                     val result = repository.verifyKey(key, deviceId)
-                    if (result is com.cayxu.app.data.repository.AuthResult.Success) {
-                        result.data.effectiveUsername?.let {
-                            securePrefs.saveBuyerUsername(it)
-                            buyerUsername = it
-                        }
-                        result.data.packageName?.let {
-                            securePrefs.savePackageName(it)
-                            packageName = it.uppercase()
-                        }
-                        result.data.expiresAt?.let {
-                            securePrefs.saveExpiresAt(it)
-                            rawExpiresAt = it
-                        }
-                    } else if (result is com.cayxu.app.data.repository.AuthResult.ApiError) {
-                        // Server giả mạo hoặc key không hợp lệ
-                        securePrefs.clearKey()
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
-                            navController.navigate(Routes.LOGIN) {
-                                popUpTo(0) { inclusive = true }
+                    when (result) {
+                        is com.cayxu.app.data.repository.AuthResult.Success -> {
+                            result.data.effectiveUsername?.let {
+                                securePrefs.saveBuyerUsername(it)
+                                buyerUsername = it
                             }
+                            result.data.packageName?.let {
+                                securePrefs.savePackageName(it)
+                                packageName = it.uppercase()
+                            }
+                            result.data.expiresAt?.let {
+                                securePrefs.saveExpiresAt(it)
+                                rawExpiresAt = it
+                            }
+                        }
+                        is com.cayxu.app.data.repository.AuthResult.ApiError -> {
+                            // Server giả mạo hoặc key không hợp lệ
+                            securePrefs.clearKey()
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                                navController.navigate(Routes.LOGIN) {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                            }
+                        }
+                        is com.cayxu.app.data.repository.AuthResult.NetworkError -> {
+                            // Lỗi mạng tạm thời
                         }
                     }
                 } catch (_: Exception) {}
