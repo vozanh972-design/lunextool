@@ -1596,6 +1596,7 @@ fun GolikeAccountScreen(navController: NavController) {
         }
     }
 }
+}
 
 @Composable
 private fun VariantTabChip(
