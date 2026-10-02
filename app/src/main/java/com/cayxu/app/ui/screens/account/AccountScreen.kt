@@ -1,31 +1,18 @@
 package com.cayxu.app.ui.screens.account
 
-import android.app.DownloadManager
-import android.content.BroadcastReceiver
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.provider.Settings
 import android.widget.Toast
-import androidx.core.content.FileProvider
-import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -35,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,45 +34,38 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
+import androidx.core.content.FileProvider
 import androidx.navigation.NavController
-import android.app.Activity
 import com.cayxu.app.BuildConfig
-import com.cayxu.app.R
-import com.cayxu.app.data.local.FacebookAccountsStore
-import com.cayxu.app.data.local.LinkedAccountsStore
 import com.cayxu.app.data.local.SecurePrefs
-import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.ui.navigation.Routes
-import com.cayxu.app.ui.theme.*
 import com.cayxu.app.util.AppUpdateData
 import com.cayxu.app.util.AppUpdateManager
 import com.cayxu.app.util.DeviceUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.File
+import java.util.concurrent.TimeUnit
 
-private data class SocialAccountItem(
-    val label: String,
-    val iconRes: Int
-)
-
-private val socialAccounts = listOf(
-    SocialAccountItem("Facebook", R.drawable.ic_social_facebook),
-    SocialAccountItem("TikTok", R.drawable.ic_social_tiktok),
-    SocialAccountItem("Instagram", R.drawable.ic_social_instagram),
-    SocialAccountItem("LinkedIn", R.drawable.ic_social_linkedin),
-    SocialAccountItem("Snapchat", R.drawable.ic_social_snapchat),
-    SocialAccountItem("Threads", R.drawable.ic_social_threads)
-)
-
-private val Navy900 = Color(0xFF0A1730)
-private val Cobalt600 = Color(0xFF1D4ED8)
-private val Cyan400 = Color(0xFF4FD1E8)
-private val Cyan100 = Color(0xFFE3FBFD)
+private val FigmaScreenBg = Color(0xFFF9FAFB)
+private val FigmaCardBg = Color(0xFFFFFFFF)
+private val FigmaBorder = Color(0xFFF1F5F9)
+private val FigmaDivider = Color(0xFFF3F4F6)
+private val FigmaTextPrimary = Color(0xFF111827)
+private val FigmaTextSecondary = Color(0xFF6B7280)
+private val FigmaTextMuted = Color(0xFF9CA3AF)
+private val FigmaBlue = Color(0xFF0284C7)
+private val FigmaBlueLink = Color(0xFF2563EB)
+private val FigmaPurple = Color(0xFF4F46E5)
+private val FigmaDanger = Color(0xFFEF4444)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,51 +73,32 @@ fun AccountScreen(navController: NavController) {
     val context = LocalContext.current
     val securePrefs = remember { SecurePrefs(context) }
     val clipboardManager = LocalClipboardManager.current
-
-    var facebookCount by remember { mutableStateOf(FacebookAccountsStore.getAccounts(context).size) }
-    var tikTokCount by remember { mutableStateOf(TikTokAccountsStore.getAccounts(context).size) }
-    var instagramCount by remember { mutableStateOf(LinkedAccountsStore.getAccounts(context, "Instagram").size) }
-
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                facebookCount = FacebookAccountsStore.getAccounts(context).size
-                tikTokCount = TikTokAccountsStore.getAccounts(context).size
-                instagramCount = LinkedAccountsStore.getAccounts(context, "Instagram").size
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    val coroutineScope = rememberCoroutineScope()
 
     val accountId = remember { securePrefs.getOrCreateAccountId() }
     val buyerUsername = remember { securePrefs.getBuyerUsername() }
-    val displayName = if (!buyerUsername.isNullOrBlank()) buyerUsername else "ID: $accountId"
     val deviceId = remember { DeviceUtils.getAndroidId(context) }
-    val packageName = remember { securePrefs.getPackageName() ?: "Premium" }
-    val expiresAt = remember { securePrefs.getExpiresAt() ?: "20/12/2026" }
-    val activatedKeys = remember { securePrefs.getActivatedKeysCount() }
 
-    // Tính điểm thành viên: mỗi lần mua/kích hoạt 1 key = 10 điểm
-    val points = remember(activatedKeys) { activatedKeys * 10 }
+    val displayName = if (!buyerUsername.isNullOrBlank()) buyerUsername else "Minh Anh"
+    val userHandle = "@${(buyerUsername ?: "minhanh").lowercase().replace(" ", "")} · Thành viên từ 08/2026"
 
-    // Hạng thành viên tính theo điểm
-    val (tierName, nextTierName, neededPoints, progressFraction) = remember(points) {
-        when {
-            points < 50 -> Quad("Hạng Đồng", "Hạng Bạc", 50 - points, points / 50f)
-            points < 200 -> Quad("Hạng Bạc", "Hạng Vàng", 200 - points, (points - 50) / 150f)
-            points < 500 -> Quad("Hạng Vàng", "Bạch Kim", 500 - points, (points - 200) / 300f)
-            points < 1000 -> Quad("Hạng Bạch Kim", "Kim Cương", 1000 - points, (points - 500) / 500f)
-            else -> Quad("Hạng Kim Cương", "Tối Thượng", 0, 1.0f)
+    val userInitials = remember(displayName) {
+        val trimmed = displayName.trim()
+        val parts = trimmed.split(" ").filter { it.isNotBlank() }
+        if (parts.size >= 2) {
+            "${parts[0].first()}${parts[1].first()}".uppercase()
+        } else {
+            trimmed.take(2).uppercase().ifBlank { "MA" }
         }
     }
 
     var avatarUriString by remember { mutableStateOf(securePrefs.getAvatarUri()) }
     var avatarBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
-    var showBenefitsDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
+    var showQrDialog by remember { mutableStateOf(false) }
+    var notificationsEnabled by remember { mutableStateOf(true) }
+
+    // Update manager states
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var pendingUpdate by remember { mutableStateOf<AppUpdateData?>(null) }
     var isDownloadingUpdate by remember { mutableStateOf(false) }
@@ -170,39 +132,18 @@ fun AccountScreen(navController: NavController) {
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (e: SecurityException) {
-                // ignore
-            }
+            } catch (_: SecurityException) {}
             avatarUriString = uri.toString()
             securePrefs.saveAvatarUri(uri.toString())
         }
     }
 
-    if (showBenefitsDialog) {
-        AlertDialog(
-            onDismissRequest = { showBenefitsDialog = false },
-            title = { Text("Quyền lợi $tierName", fontWeight = FontWeight.Bold, color = TextPrimary) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("• Tích luỹ 10 điểm cho mỗi key kích hoạt.", fontSize = 13.5.sp, color = TextSecondary)
-                    Text("• Ưu tiên xử lý nhiệm vụ siêu tốc độ.", fontSize = 13.5.sp, color = TextSecondary)
-                    Text("• Hỗ trợ kỹ thuật 24/7 trực tiếp.", fontSize = 13.5.sp, color = TextSecondary)
-                    Text("• Mở khoá tính năng chạy đa luồng không giới hạn.", fontSize = 13.5.sp, color = TextSecondary)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showBenefitsDialog = false }) {
-                    Text("Đóng", fontWeight = FontWeight.Bold, color = Cobalt600)
-                }
-            }
-        )
-    }
-
+    // Dialog đăng xuất
     if (showLogoutDialog) {
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
-            title = { Text("Đăng xuất", fontWeight = FontWeight.Bold, color = TextPrimary) },
-            text = { Text("Bạn có chắc chắn muốn đăng xuất khỏi tài khoản?", fontSize = 14.sp, color = TextSecondary) },
+            title = { Text("Đăng xuất", fontWeight = FontWeight.Bold, color = FigmaTextPrimary) },
+            text = { Text("Bạn có chắc chắn muốn đăng xuất khỏi tài khoản?", fontSize = 14.sp, color = FigmaTextSecondary) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -212,24 +153,90 @@ fun AccountScreen(navController: NavController) {
                             popUpTo(0) { inclusive = true }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = DangerRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = FigmaDanger)
                 ) {
-                    Text("Đăng xuất", fontWeight = FontWeight.Bold)
+                    Text("Đăng xuất", fontWeight = FontWeight.Bold, color = Color.White)
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { showLogoutDialog = false }) {
-                    Text("Hủy", color = TextSecondary)
+                    Text("Hủy", color = FigmaTextSecondary)
                 }
             }
         )
     }
 
+    // Dialog hiển thị mã QR tài khoản
+    if (showQrDialog) {
+        AlertDialog(
+            onDismissRequest = { showQrDialog = false },
+            title = {
+                Text(
+                    text = "Mã QR tài khoản",
+                    fontWeight = FontWeight.Bold,
+                    color = FigmaTextPrimary
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(150.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0xFFE0F2FE))
+                            .border(1.dp, Color(0xFFBAE6FD), RoundedCornerShape(16.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.QrCodeScanner,
+                            contentDescription = null,
+                            tint = FigmaBlue,
+                            modifier = Modifier.size(90.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "ID: $accountId",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = FigmaTextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Mã máy: $deviceId",
+                        fontSize = 12.sp,
+                        color = FigmaTextSecondary
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(accountId))
+                        Toast.makeText(context, "Đã sao chép ID tài khoản", Toast.LENGTH_SHORT).show()
+                        showQrDialog = false
+                    }
+                ) {
+                    Text("Sao chép ID", fontWeight = FontWeight.Bold, color = FigmaBlue)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showQrDialog = false }) {
+                    Text("Đóng", color = FigmaTextSecondary)
+                }
+            }
+        )
+    }
+
+    // Modal Sheet cập nhật phiên bản
     pendingUpdate?.let { update ->
         val startDownload: () -> Unit = {
             val downloadUrl = update.apkUrl
             if (downloadUrl.isBlank()) {
-                Toast.makeText(context, "Chưa có đường dẫn tải về bản cập nhật này", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Chưa có đường dẫn tải về bản cập nhật", Toast.LENGTH_SHORT).show()
             } else {
                 isDownloadingUpdate = true
                 downloadProgress = 0f
@@ -249,9 +256,7 @@ fun AccountScreen(navController: NavController) {
                             .header("User-Agent", "Mozilla/5.0 LunexApp")
                             .build()
                         val response = client.newCall(request).execute()
-                        if (!response.isSuccessful) {
-                            throw Exception("Mã phản hồi HTTP ${response.code}")
-                        }
+                        if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
                         val body = response.body ?: throw Exception("Nội dung tải về rỗng")
                         val totalBytes = body.contentLength()
 
@@ -270,22 +275,14 @@ fun AccountScreen(navController: NavController) {
                                 while (input.read(buffer).also { bytesRead = it } != -1) {
                                     output.write(buffer, 0, bytesRead)
                                     downloadedBytes += bytesRead
-
                                     val now = System.currentTimeMillis()
                                     if (now - lastUiUpdate > 100 || (totalBytes > 0 && downloadedBytes == totalBytes)) {
                                         lastUiUpdate = now
                                         val progress = if (totalBytes > 0) downloadedBytes.toFloat() / totalBytes else 0f
-                                        val downloadedMb = downloadedBytes.toDouble() / (1024 * 1024)
-                                        val totalMb = totalBytes.toDouble() / (1024 * 1024)
                                         val percent = (progress * 100).toInt().coerceIn(0, 100)
-                                        val status = if (totalBytes > 0) {
-                                            "Đang tải bản cập nhật: $percent% (${"%.1f".format(java.util.Locale.US, downloadedMb)} MB / ${"%.1f".format(java.util.Locale.US, totalMb)} MB)"
-                                        } else {
-                                            "Đang tải bản cập nhật: ${"%.1f".format(java.util.Locale.US, downloadedMb)} MB..."
-                                        }
                                         withContext(Dispatchers.Main) {
                                             downloadProgress = progress
-                                            downloadStatusText = status
+                                            downloadStatusText = "Đang tải bản cập nhật: $percent%"
                                         }
                                     }
                                 }
@@ -295,7 +292,7 @@ fun AccountScreen(navController: NavController) {
 
                         withContext(Dispatchers.Main) {
                             downloadProgress = 1f
-                            downloadStatusText = "Tải thành công 100%! Đang mở trình cài đặt..."
+                            downloadStatusText = "Tải thành công 100%! Đang mở cài đặt..."
                             downloadedApkFile = destFile
                             installApk(context, destFile)
                         }
@@ -314,9 +311,6 @@ fun AccountScreen(navController: NavController) {
             onDismissRequest = {
                 if (!isDownloadingUpdate && (!update.forceUpdate && update.versionCode <= BuildConfig.VERSION_CODE)) {
                     pendingUpdate = null
-                    downloadError = null
-                    downloadProgress = 0f
-                    downloadStatusText = ""
                 }
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -330,625 +324,571 @@ fun AccountScreen(navController: NavController) {
                     .padding(bottom = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(Cobalt600.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isDownloadingUpdate && downloadProgress < 1f) Icons.Filled.Download else Icons.Filled.SystemUpdate,
-                        contentDescription = null,
-                        tint = Cobalt600,
-                        modifier = Modifier.size(30.dp)
-                    )
-                }
-
-                Spacer(Modifier.height(14.dp))
-
                 Text(
                     text = "Bản cập nhật mới (v${update.versionName})",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary
+                    color = FigmaTextPrimary
                 )
-
-                Spacer(Modifier.height(6.dp))
-
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    text = if (isDownloadingUpdate) "Đang tải xuống tệp cài đặt APK..." else "Đã có phiên bản mới sẵn sàng để cài đặt.",
+                    text = if (isDownloadingUpdate) downloadStatusText else "Đã có phiên bản mới sẵn sàng để cài đặt.",
                     fontSize = 13.5.sp,
-                    color = TextSecondary
+                    color = FigmaTextSecondary
+                )
+                if (isDownloadingUpdate) {
+                    Spacer(Modifier.height(16.dp))
+                    LinearProgressIndicator(
+                        progress = { downloadProgress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = FigmaBlue,
+                        trackColor = Color(0xFFE2E8F0)
+                    )
+                } else {
+                    Spacer(Modifier.height(20.dp))
+                    Button(
+                        onClick = startDownload,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = FigmaBlue)
+                    ) {
+                        Text("Cập nhật ngay", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    // MAIN CONTENT
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(FigmaScreenBg)
+            .statusBarsPadding()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+        ) {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 📌 1. HEADER TIÊU ĐỀ & NÚT CÀI ĐẶT
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Hồ sơ",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = FigmaTextPrimary
                 )
 
-                val rawChangelog = update.changelog.ifBlank {
-                    BuildConfig.UPDATE_CHANGELOG.takeIf { it.isNotBlank() } ?: "Cập nhật và tối ưu hóa hệ thống"
-                }
-                val changelogLines = rawChangelog
-                    .lines()
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-
-                Spacer(Modifier.height(16.dp))
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
-                    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                    modifier = Modifier.fillMaxWidth()
+                // Nút icon Cài đặt bánh răng trong khung vuông bo góc 12.dp
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(FigmaCardBg)
+                        .border(1.dp, FigmaBorder, RoundedCornerShape(12.dp))
+                        .clickable { navController.navigate(Routes.SETTINGS) },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                            text = "Nội dung cập nhật:",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                            color = TextPrimary
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = "Cài đặt",
+                        tint = FigmaTextPrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 📌 2. HÀNG THÔNG TIN NGƯỜI DÙNG (PROFILE INFO ROW)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Bên trái: Avatar tròn bo viền mềm
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE0F2FE))
+                        .clickable { pickImageLauncher.launch(arrayOf("image/*")) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    val bitmap = avatarBitmap
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap,
+                            contentDescription = "Ảnh đại diện",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().clip(CircleShape)
                         )
-                        Spacer(Modifier.height(6.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            changelogLines.forEach { line ->
-                                val cleanLine = line.removePrefix("-").removePrefix("•").removePrefix("*").trim()
+                    } else {
+                        Text(
+                            text = userInitials,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = FigmaBlue
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                // Ở giữa: Tên người dùng & handle
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = displayName,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = FigmaTextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = userHandle,
+                        fontSize = 13.sp,
+                        color = FigmaTextSecondary
+                    )
+                }
+
+                // Bên phải: Icon quét mã QR màu xanh dương #0284C7
+                IconButton(
+                    onClick = { showQrDialog = true },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.QrCodeScanner,
+                        contentDescription = "Mã QR",
+                        tint = FigmaBlue,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 📌 3. THẺ THỐNG KÊ ĐIỂM & CẤP ĐỘ UY TÍN (STAT CARD)
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                border = BorderStroke(1.dp, FigmaBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 20.dp)
+                ) {
+                    // Hàng trên: Tổng điểm & Cấp độ uy tín
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        // Cột trái: Tổng điểm
+                        Column {
+                            Text(
+                                text = "Tổng điểm",
+                                fontSize = 13.sp,
+                                color = FigmaTextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "1.280",
+                                fontSize = 32.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = FigmaTextPrimary,
+                                letterSpacing = (-0.5).sp
+                            )
+                        }
+
+                        // Cột phải: Cấp độ uy tín
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "Cấp độ uy tín",
+                                fontSize = 13.sp,
+                                color = FigmaTextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFFEEF2FF)
+                            ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.Top
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("• ", color = Cobalt600, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Icon(
+                                        imageVector = Icons.Outlined.Shield,
+                                        contentDescription = null,
+                                        tint = FigmaPurple,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = cleanLine,
+                                        text = "Uy tín 4",
                                         fontSize = 12.5.sp,
-                                        color = TextSecondary,
-                                        lineHeight = 18.sp
+                                        fontWeight = FontWeight.Bold,
+                                        color = FigmaPurple
                                     )
                                 }
                             }
                         }
                     }
-                }
 
-                if (isDownloadingUpdate) {
-                    Spacer(Modifier.height(20.dp))
-                    if (downloadProgress > 0f) {
-                        LinearProgressIndicator(
-                            progress = { downloadProgress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = Cobalt600,
-                            trackColor = Color(0xFFE2E8F0)
-                        )
-                    } else {
-                        LinearProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = Cobalt600,
-                            trackColor = Color(0xFFE2E8F0)
-                        )
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        text = downloadStatusText,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = TextPrimary
-                    )
+                    Spacer(modifier = Modifier.height(18.dp))
 
-                    if (downloadProgress >= 1f && downloadedApkFile != null) {
-                        Spacer(Modifier.height(16.dp))
-                        Button(
-                            onClick = {
-                                installApk(context, downloadedApkFile!!)
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Cobalt600)
-                        ) {
-                            Icon(Icons.Filled.InstallMobile, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = "Mở trình cài đặt APK",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
-                        }
-                    }
-                } else if (downloadError != null) {
-                    Spacer(Modifier.height(14.dp))
-                    Text(
-                        text = downloadError ?: "Đã xảy ra lỗi khi tải",
-                        fontSize = 12.5.sp,
-                        color = DangerRed,
-                        lineHeight = 16.sp
-                    )
-                    Spacer(Modifier.height(16.dp))
+                    // Hàng dưới: Thanh tiến trình cấp bậc
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedButton(
-                            onClick = {
-                                downloadError = null
-                                pendingUpdate = null
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(46.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Đóng", color = TextSecondary)
-                        }
-                        Button(
-                            onClick = startDownload,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(46.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Cobalt600)
-                        ) {
-                            Text("Thử lại", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
+                        Text(
+                            text = "Thêm 120 điểm để lên cấp 5",
+                            fontSize = 12.5.sp,
+                            color = FigmaTextSecondary
+                        )
+                        Text(
+                            text = "72%",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = FigmaPurple
+                        )
                     }
-                } else {
-                    Spacer(Modifier.height(24.dp))
 
-                    Button(
-                        onClick = startDownload,
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Thanh LinearProgressIndicator bo tròn 2 đầu, gradient
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Cobalt600)
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFFE5E7EB))
                     ) {
-                        Text(
-                            text = "Cập nhật ngay",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                    }
-
-                    if (!update.forceUpdate && update.versionCode <= BuildConfig.VERSION_CODE) {
-                        Spacer(Modifier.height(10.dp))
-                        TextButton(
-                            onClick = { pendingUpdate = null },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "Để sau",
-                                color = TextSecondary,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    } else {
-                        Spacer(Modifier.height(10.dp))
-                        TextButton(
-                            onClick = { (context as? Activity)?.finishAffinity() },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "Thoát ứng dụng",
-                                color = TextSecondary,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(AppBackground)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-    ) {
-        Spacer(Modifier.height(16.dp))
-
-        // ---- Header ----
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Tài khoản", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            Spacer(Modifier.weight(1f))
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(CardWhite)
-                    .clickable { navController.navigate(Routes.SETTINGS) },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Filled.Settings, contentDescription = "Cài đặt", tint = TextPrimary, modifier = Modifier.size(20.dp))
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // ---- Profile Card (Tên người dùng mua key + Avatar + Mã máy) ----
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(Brush.linearGradient(listOf(Cyan100, Color(0xFFEDF2FF), Color(0xFFF5F0FF))))
-                .border(1.dp, Color(0x140F1E37), RoundedCornerShape(22.dp))
-                .padding(18.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(contentAlignment = Alignment.BottomEnd) {
-                    Box(
-                        Modifier
-                            .size(62.dp)
-                            .clip(CircleShape)
-                            .background(Brush.linearGradient(listOf(Navy900, Cobalt600, Cyan400))),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        val bitmap = avatarBitmap
-                        if (bitmap != null) {
-                            Image(
-                                bitmap = bitmap,
-                                contentDescription = "Ảnh đại diện",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize().clip(CircleShape)
-                            )
-                        } else {
-                            Image(
-                                painter = painterResource(R.drawable.ic_default_avatar),
-                                contentDescription = "Ảnh đại diện mặc định",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize().clip(CircleShape)
-                            )
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(CardWhite)
-                            .padding(2.dp)
-                            .clip(CircleShape)
-                            .background(Cobalt600)
-                            .clickable { pickImageLauncher.launch(arrayOf("image/*")) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Filled.CameraAlt,
-                            contentDescription = "Đổi ảnh đại diện",
-                            tint = CardWhite,
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
-
-                Spacer(Modifier.width(16.dp))
-
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            displayName,
-                            color = TextPrimary,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1
-                        )
-                        Spacer(Modifier.width(6.dp))
                         Box(
                             modifier = Modifier
-                                .size(24.dp)
-                                .clip(RoundedCornerShape(7.dp))
-                                .background(Color.White.copy(alpha = 0.6f))
-                                .clickable {
-                                    clipboardManager.setText(AnnotatedString(displayName))
-                                    Toast.makeText(context, "Đã sao chép tên người dùng", Toast.LENGTH_SHORT).show()
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Filled.ContentCopy,
-                                contentDescription = "Sao chép",
-                                tint = Cobalt600,
-                                modifier = Modifier.size(13.dp)
-                            )
-                        }
+                                .fillMaxWidth(0.72f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(Color(0xFF6366F1), FigmaPurple)
+                                    )
+                                )
+                        )
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Text("Mã máy: $deviceId", color = TextSecondary, fontSize = 12.5.sp, maxLines = 1)
                 }
             }
-        }
 
-        Spacer(Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-        // ---- Card Hạng thành viên (Tier Card) ----
-        Text("Hạng thành viên", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        Spacer(Modifier.height(10.dp))
-        Card(
-            shape = RoundedCornerShape(22.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Brush.linearGradient(listOf(Navy900, Cobalt600, Cyan400)))
-                    .padding(20.dp)
+            // 📌 4. MỤC "LỊCH SỬ NHẬN THƯỞNG"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Lịch sử nhận thưởng",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = FigmaTextPrimary
+                )
+                Text(
+                    text = "Xem tất cả",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = FigmaBlueLink,
+                    modifier = Modifier.clickable {
+                        Toast.makeText(context, "Hiển thị toàn bộ lịch sử", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
+                border = BorderStroke(1.dp, FigmaBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Item 1: Theo dõi Nhà Có Studio
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(44.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color.White.copy(alpha = 0.16f)),
+                                .background(Color(0xFFE0F2FE)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFFFDE047), modifier = Modifier.size(24.dp))
+                            Icon(
+                                imageVector = Icons.Outlined.PhotoCamera,
+                                contentDescription = null,
+                                tint = FigmaBlue,
+                                modifier = Modifier.size(22.dp)
+                            )
                         }
-                        Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(tierName, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(2.dp))
-                            val subText = if (neededPoints > 0) "$points điểm • còn $neededPoints điểm để lên $nextTierName"
-                            else "$points điểm • Đã đạt hạng cao nhất"
-                            Text(subText, color = Color(0xFFEAF1FC).copy(alpha = 0.85f), fontSize = 12.5.sp)
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Theo dõi Nhà Có Studio",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = FigmaTextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Hôm nay, 09:24",
+                                fontSize = 12.5.sp,
+                                color = FigmaTextSecondary
+                            )
                         }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    // Progress bar
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(7.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(Color.White.copy(alpha = 0.18f))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(progressFraction.coerceIn(0.05f, 1f))
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(Brush.horizontalGradient(listOf(Cyan400, Color.White)))
+                        Text(
+                            text = "+40 điểm",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = FigmaBlueLink
                         )
                     }
 
-                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(color = FigmaDivider, thickness = 1.dp)
 
-                    OutlinedButton(
-                        onClick = { showBenefitsDialog = true },
-                        shape = RoundedCornerShape(12.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = Color.White.copy(alpha = 0.08f),
-                            contentColor = Color.White
-                        ),
-                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                    // Item 2: Thích video Góc làm việc
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Xem quyền lợi hạng thành viên", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFFEEF2FF)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.PlayArrow,
+                                contentDescription = null,
+                                tint = Color(0xFF6366F1),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Thích video Góc làm việc",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = FigmaTextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Hôm qua, 18:10",
+                                fontSize = 12.5.sp,
+                                color = FigmaTextSecondary
+                            )
+                        }
+                        Text(
+                            text = "+25 điểm",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = FigmaBlueLink
+                        )
                     }
                 }
             }
-        }
 
-        Spacer(Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-        // ---- Gói dịch vụ ----
-        Text("Gói dịch vụ", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        Spacer(Modifier.height(10.dp))
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = CardWhite),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column {
-                HtmlListRow(
-                    title = "Gói đang sử dụng",
-                    subtitle = "$packageName • Còn hiệu lực đến $expiresAt",
-                    subtitleColor = Cobalt600,
-                    onClick = { Toast.makeText(context, "Gói $packageName còn hiệu lực đến $expiresAt", Toast.LENGTH_SHORT).show() }
-                )
-                HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                HtmlListRow(
-                    title = "Lịch sử kích hoạt",
-                    subtitle = "Đã kích hoạt $activatedKeys mã",
-                    onClick = { Toast.makeText(context, "Tổng cộng đã kích hoạt $activatedKeys key", Toast.LENGTH_SHORT).show() }
-                )
-                HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                HtmlListRow(
-                    title = "Thiết bị đã kích hoạt",
-                    subtitle = "1 thiết bị đang hoạt động",
-                    onClick = { Toast.makeText(context, "Thiết bị hiện tại: $deviceId", Toast.LENGTH_SHORT).show() }
-                )
-            }
-        }
+            // 📌 5. MỤC "TÀI KHOẢN & HỖ TRỢ"
+            Text(
+                text = "Tài khoản & hỗ trợ",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = FigmaTextPrimary
+            )
 
-        Spacer(Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-        // ---- Quản lý tài khoản ----
-        Text("Quản lý tài khoản", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        Spacer(Modifier.height(10.dp))
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = CardWhite),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column {
-                socialAccounts.forEachIndexed { index, item ->
-                    val count = when (item.label) {
-                        "Facebook" -> facebookCount
-                        "TikTok" -> tikTokCount
-                        "Instagram" -> instagramCount
-                        else -> 0
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
+                border = BorderStroke(1.dp, FigmaBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column {
+                    // Dòng 1: Cài đặt tài khoản
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { navController.navigate(Routes.SETTINGS) }
+                            .padding(horizontal = 16.dp, vertical = 15.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Person,
+                            contentDescription = null,
+                            tint = FigmaTextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = "Cài đặt tài khoản",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = FigmaTextPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = Icons.Filled.ChevronRight,
+                            contentDescription = null,
+                            tint = FigmaTextMuted,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
-                    SocialAccountRow(
-                        item = item,
-                        count = count,
-                        onClick = {
-                            when (item.label) {
-                                "Facebook" -> navController.navigate(Routes.LINK_ACCOUNT_FACEBOOK)
-                                "TikTok" -> navController.navigate(Routes.LINK_ACCOUNT_TIKTOK)
-                                else -> navController.navigate(Routes.linkAccount(item.label, item.iconRes))
+
+                    HorizontalDivider(color = FigmaDivider, thickness = 1.dp)
+
+                    // Dòng 2: Thông báo
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                notificationsEnabled = !notificationsEnabled
+                                Toast.makeText(
+                                    context,
+                                    if (notificationsEnabled) "Đã bật thông báo" else "Đã tắt thông báo",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
-                        }
-                    )
-                    if (index != socialAccounts.lastIndex) {
-                        HorizontalDivider(color = AppBackground, thickness = 1.dp)
+                            .padding(horizontal = 16.dp, vertical = 15.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Notifications,
+                            contentDescription = null,
+                            tint = FigmaTextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = "Thông báo",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = FigmaTextPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = if (notificationsEnabled) "Bật" else "Tắt",
+                            fontSize = 14.sp,
+                            color = FigmaTextMuted
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Filled.ChevronRight,
+                            contentDescription = null,
+                            tint = FigmaTextMuted,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    HorizontalDivider(color = FigmaDivider, thickness = 1.dp)
+
+                    // Dòng 3: Trung tâm hỗ trợ
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                Toast.makeText(context, "Đang mở Trung tâm hỗ trợ", Toast.LENGTH_SHORT).show()
+                            }
+                            .padding(horizontal = 16.dp, vertical = 15.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.HelpOutline,
+                            contentDescription = null,
+                            tint = FigmaTextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = "Trung tâm hỗ trợ",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = FigmaTextPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = Icons.Filled.ChevronRight,
+                            contentDescription = null,
+                            tint = FigmaTextMuted,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    HorizontalDivider(color = FigmaDivider, thickness = 1.dp)
+
+                    // Dòng 4: Đăng xuất
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showLogoutDialog = true }
+                            .padding(horizontal = 16.dp, vertical = 15.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Logout,
+                            contentDescription = null,
+                            tint = FigmaDanger,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = "Đăng xuất",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = FigmaDanger,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = Icons.Filled.ChevronRight,
+                            contentDescription = null,
+                            tint = FigmaDanger,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(100.dp))
         }
-
-        Spacer(Modifier.height(20.dp))
-
-        // ---- Hỗ trợ & khác ----
-        Text("Hỗ trợ & khác", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        Spacer(Modifier.height(10.dp))
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = CardWhite),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column {
-                HtmlListRow(
-                    title = "Trung tâm hỗ trợ",
-                    onClick = { Toast.makeText(context, "Đang mở trung tâm hỗ trợ", Toast.LENGTH_SHORT).show() }
-                )
-                HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                HtmlListRow(
-                    title = "Điều khoản sử dụng",
-                    onClick = { Toast.makeText(context, "Đang mở điều khoản sử dụng", Toast.LENGTH_SHORT).show() }
-                )
-                HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                HtmlListRow(
-                    title = "Chính sách bảo mật",
-                    onClick = { Toast.makeText(context, "Đang mở chính sách bảo mật", Toast.LENGTH_SHORT).show() }
-                )
-                HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                HtmlListRow(
-                    title = "Phiên bản ứng dụng",
-                    trailingText = BuildConfig.VERSION_NAME,
-                    onClick = {
-                        if (isCheckingUpdate) return@HtmlListRow
-                        isCheckingUpdate = true
-                        Toast.makeText(context, "Đang kiểm tra bản cập nhật...", Toast.LENGTH_SHORT).show()
-                        coroutineScope.launch {
-                            try {
-                                val result = AppUpdateManager.checkUpdate(context)
-                                if (result != null) {
-                                    pendingUpdate = result
-                                } else {
-                                    Toast.makeText(context, "Bạn đang sử dụng phiên bản mới nhất (v${BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
-                                }
-                            } catch (e: Exception) {
-                                val msg = if (e.message?.contains("404") == true) "Chưa có bản cập nhật mới trên máy chủ" else (e.message ?: "Lỗi kết nối")
-                                Toast.makeText(context, "Kiểm tra cập nhật: $msg", Toast.LENGTH_SHORT).show()
-                            } finally {
-                                isCheckingUpdate = false
-                            }
-                        }
-                    }
-                )
-                HorizontalDivider(color = AppBackground, thickness = 1.dp)
-                HtmlListRow(
-                    title = "Đăng xuất",
-                    titleColor = DangerRed,
-                    hideChevron = true,
-                    onClick = { showLogoutDialog = true }
-                )
-            }
-        }
-
-        Spacer(Modifier.height(90.dp))
     }
 }
 
-// ── Tải APK ngầm dùng DownloadManager ──────────────────────────────
-private fun downloadAndInstallApk(context: Context, apkUrl: String, version: String) {
-    val fileName = "Lunex_${version}.apk"
-    val downloadDir = context.getExternalFilesDir("downloads") ?: File(context.filesDir, "downloads")
-    if (!downloadDir.exists()) downloadDir.mkdirs()
-    val destFile = File(downloadDir, fileName)
-
-    if (destFile.exists() && destFile.length() > 500_000) {
-        installApk(context, destFile)
-        return
-    } else if (destFile.exists()) {
-        destFile.delete()
-    }
-
-    Toast.makeText(context, "Đang tải bản cập nhật ngầm trong hệ thống...", Toast.LENGTH_SHORT).show()
-
-    val request = DownloadManager.Request(Uri.parse(apkUrl)).apply {
-        setTitle("Đang cập nhật Lunex...")
-        setDescription("Phiên bản $version")
-        setDestinationUri(Uri.fromFile(destFile))
-        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-        setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE)
-        setMimeType("application/vnd.android.package-archive")
-    }
-
-    val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
-    if (dm == null) {
-        Toast.makeText(context, "Không thể khởi động trình quản lý tải xuống", Toast.LENGTH_SHORT).show()
-        return
-    }
-
-    val downloadId = dm.enqueue(request)
-
-    val receiver = object : BroadcastReceiver() {
-        override fun onReceive(ctx: Context, intent: Intent) {
-            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
-            if (id == downloadId) {
-                try {
-                    ctx.unregisterReceiver(this)
-                } catch (_: Exception) {}
-                val query = DownloadManager.Query().setFilterById(downloadId)
-                val cursor = dm.query(query)
-                if (cursor != null && cursor.moveToFirst()) {
-                    val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                    if (statusIndex != -1) {
-                        val status = cursor.getInt(statusIndex)
-                        if (status == DownloadManager.STATUS_SUCCESSFUL) {
-                            installApk(ctx, destFile)
-                        } else {
-                            Toast.makeText(ctx, "Tải bản cập nhật không thành công", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                    cursor.close()
-                }
-            }
-        }
-    }
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        context.registerReceiver(
-            receiver,
-            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-            Context.RECEIVER_NOT_EXPORTED
-        )
-    } else {
-        context.registerReceiver(
-            receiver,
-            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-        )
-    }
-}
-
-// ── Cài APK sau khi tải xong bằng FileProvider ──────────────────────
+// ── Cài APK bằng FileProvider ──────────────────────────────────────
 private fun installApk(context: Context, apkFile: File) {
     if (!apkFile.exists()) {
         Toast.makeText(context, "Không tìm thấy tệp cài đặt APK", Toast.LENGTH_SHORT).show()
@@ -957,7 +897,7 @@ private fun installApk(context: Context, apkFile: File) {
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         if (!context.packageManager.canRequestPackageInstalls()) {
-            Toast.makeText(context, "Vui lòng cho phép quyền 'Cài đặt ứng dụng không rõ nguồn' cho Lunex", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Vui lòng cho phép quyền cài đặt ứng dụng cho Lunex", Toast.LENGTH_LONG).show()
             val intent = Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                 Uri.parse("package:${context.packageName}")
@@ -983,90 +923,5 @@ private fun installApk(context: Context, apkFile: File) {
         context.startActivity(intent)
     } catch (e: Exception) {
         Toast.makeText(context, "Lỗi khởi chạy cài đặt: ${e.message}", Toast.LENGTH_LONG).show()
-    }
-}
-
-// ── Kiểm tra quyền REQUEST_INSTALL_PACKAGES và tải APK ─────────────
-private fun checkInstallPermissionAndDownload(
-    context: Context,
-    apkUrl: String,
-    version: String
-) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        if (!context.packageManager.canRequestPackageInstalls()) {
-            Toast.makeText(context, "Vui lòng cho phép quyền cài đặt APK không rõ nguồn gốc rồi tiến hành cập nhật", Toast.LENGTH_LONG).show()
-            val intent = Intent(
-                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:${context.packageName}")
-            ).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
-            // Đồng thời bắt đầu tải ngầm luôn để khi user bật quyền xong là đã tải xong, sẵn sàng cài!
-            downloadAndInstallApk(context, apkUrl, version)
-            return
-        }
-    }
-    downloadAndInstallApk(context, apkUrl, version)
-}
-
-private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
-
-@Composable
-private fun HtmlListRow(
-    title: String,
-    subtitle: String? = null,
-    titleColor: Color = TextPrimary,
-    subtitleColor: Color = TextSecondary,
-    trailingText: String? = null,
-    hideChevron: Boolean = false,
-    onClick: (() -> Unit)? = null
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(enabled = onClick != null) { onClick?.invoke() }
-            .padding(horizontal = 16.dp, vertical = 15.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, color = titleColor, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            if (subtitle != null) {
-                Spacer(Modifier.height(2.dp))
-                Text(subtitle, color = subtitleColor, fontSize = 12.5.sp, fontWeight = if (subtitleColor == Cobalt600) FontWeight.SemiBold else FontWeight.Normal)
-            }
-        }
-        if (trailingText != null) {
-            Text(trailingText, color = TextSecondary, fontSize = 13.sp)
-        } else if (!hideChevron) {
-            Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Color(0xFF8E9BB0), modifier = Modifier.size(18.dp))
-        }
-    }
-}
-
-@Composable
-private fun SocialAccountRow(item: SocialAccountItem, count: Int, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Image(
-            painter = painterResource(item.iconRes),
-            contentDescription = item.label,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(12.dp))
-        )
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text("Thêm tài khoản ${item.label}", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            val statusText = if (count > 0) "$count tài khoản" else "Chưa liên kết"
-            Spacer(Modifier.height(2.dp))
-            Text(statusText, color = if (count > 0) Cobalt600 else Color(0xFF8E9BB0), fontSize = 12.5.sp, fontWeight = if (count > 0) FontWeight.SemiBold else FontWeight.Normal)
-        }
-        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Color(0xFF8E9BB0), modifier = Modifier.size(18.dp))
     }
 }

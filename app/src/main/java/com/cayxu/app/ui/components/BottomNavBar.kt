@@ -5,10 +5,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Assignment
+import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Widgets
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,9 +25,9 @@ data class NavItem(val route: String, val label: String, val icon: androidx.comp
 
 private val bottomItems = listOf(
     NavItem(Routes.HOME, "Trang chủ", Icons.Outlined.Home),
-    NavItem(Routes.TASKS, "Nhiệm vụ", Icons.Outlined.Assignment),
-    NavItem(Routes.UTILITIES, "Tiện ích", Icons.Outlined.Widgets),
-    NavItem(Routes.ACCOUNT, "Tài khoản", Icons.Outlined.Person)
+    NavItem(Routes.TASKS, "Nhiệm vụ", Icons.Outlined.Checklist),
+    NavItem(Routes.UTILITIES, "Hoạt động", Icons.Outlined.Schedule),
+    NavItem(Routes.ACCOUNT, "Hồ sơ", Icons.Outlined.Person)
 )
 
 @Composable
@@ -35,9 +35,8 @@ fun CayXuBottomBar(navController: NavController) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    val primaryBlue = Color(0xFF0A84FF)
+    val primaryBlue = Color(0xFF0284C7)
     val inactiveColor = Color(0xFF94A3B8)
-    val indicatorColor = Color(0xFFEAF4FF)
     val borderColor = Color(0xFFF1F5F9)
 
     Surface(
@@ -85,7 +84,7 @@ fun CayXuBottomBar(navController: NavController) {
                         selectedTextColor = primaryBlue,
                         unselectedIconColor = inactiveColor,
                         unselectedTextColor = inactiveColor,
-                        indicatorColor = indicatorColor
+                        indicatorColor = Color.Transparent
                     )
                 )
             }
