@@ -84,6 +84,18 @@ class GolikeApiClient(
         return execute(newRequestBuilder("$BASE_URL/tiktok-account/verify-account-id").post(body).build())
     }
 
+    // Lấy thông tin nick chỉ định cần follow để xác minh cấu hình: GET /api/tiktok-account/verify-account-id?account_id={accountId}
+    fun getTikTokVerifyTarget(accountId: String): JSONObject? =
+        execute(newRequestBuilder("$BASE_URL/tiktok-account/verify-account-id?account_id=$accountId").get().build())
+
+    // Xác nhận hoàn tất cấu hình lên Golike: POST /api/tiktok-account/verify {"account_id": accountId}
+    fun verifyTikTokAccount(accountId: String): JSONObject? {
+        val body = JSONObject().apply {
+            put("account_id", accountId)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        return execute(newRequestBuilder("$BASE_URL/tiktok-account/verify").post(body).build())
+    }
+
     // 3. Lấy nhiệm vụ (Get Job)
     fun getTikTokJob(accountId: String): JSONObject? =
         execute(newRequestBuilder("$BASE_URL/advertising/publishers/tiktok/jobs?account_id=$accountId").get().build())

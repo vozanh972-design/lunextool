@@ -1,6 +1,10 @@
 package com.cayxu.app.ui.screens.golike
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -640,13 +644,38 @@ fun GolikeAccountScreen(navController: NavController) {
                                     GolikeRunningManager.stopAll(currentAccounts)
                                     Toast.makeText(context, "Đã dừng tất cả tài khoản Golike", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    val targets = if (selectedForRunIds.isNotEmpty()) {
-                                        accountsForVariant.filter { it.uid in selectedForRunIds }
-                                    } else {
-                                        accountsForVariant.filter { it.handle.trim().removePrefix("@").lowercase() in linkedHandles }
+                                    // Bước 1: Kiểm Tra Nick Được Chọn
+                                    if (selectedForRunIds.isEmpty()) {
+                                        Toast.makeText(context, "Vui lòng chọn ít nhất 1 tài khoản để chạy!", Toast.LENGTH_SHORT).show()
+                                        return@Button
                                     }
+
+                                    // Bước 2: Kiểm Tra & Yêu Cầu Quyền Mở Popup / Màn Nổi (Overlay)
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {
+                                        val intent = Intent(
+                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            Uri.parse("package:${context.packageName}")
+                                        )
+                                        context.startActivity(intent)
+                                        Toast.makeText(context, "Vui lòng cấp quyền 'Hiển thị trên các ứng dụng khác' để chạy!", Toast.LENGTH_LONG).show()
+                                        return@Button
+                                    }
+
+                                    if (!TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
+                                        Toast.makeText(context, "Vui lòng bật quyền Trợ năng (Accessibility) để tự động thao tác TikTok!", Toast.LENGTH_LONG).show()
+                                        TikTokAppLauncher.openAccessibilitySettings(context)
+                                        return@Button
+                                    }
+
+                                    if (!isLoggedIn) {
+                                        Toast.makeText(context, "Vui lòng đăng nhập tài khoản Golike trước khi chạy!", Toast.LENGTH_SHORT).show()
+                                        showWebViewLoginDialog = true
+                                        return@Button
+                                    }
+
+                                    val targets = accountsForVariant.filter { it.uid in selectedForRunIds }
                                     if (targets.isEmpty()) {
-                                        Toast.makeText(context, "Chưa có tài khoản nào để chạy!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Vui lòng chọn ít nhất 1 tài khoản để chạy!", Toast.LENGTH_SHORT).show()
                                         return@Button
                                     }
                                     targets.forEach { ttAcc ->
@@ -1042,7 +1071,7 @@ fun GolikeAccountScreen(navController: NavController) {
                         Spacer(Modifier.width(6.dp))
                     }
 
-                    val allUidsInTab = accountsForVariant.filter { it.handle.trim().removePrefix("@").lowercase() in linkedHandles || it.uid in currentAccounts.filter { c -> c.isGolikeLinked }.map { c -> c.id } }.map { it.uid }
+                    val allUidsInTab = accountsForVariant.map { it.uid }
                     val allSelected = allUidsInTab.isNotEmpty() && allUidsInTab.all { it in selectedForRunIds }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -1117,26 +1146,18 @@ fun GolikeAccountScreen(navController: NavController) {
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         accountsForVariant.forEach { account ->
-                            val handleLower = account.handle.trim().removePrefix("@").lowercase()
-                            val isLinked = handleLower in linkedHandles || account.uid in currentAccounts.filter { it.isGolikeLinked }.map { it.id }
                             val isThisReloading = account.uid in reloadingTikTokUids
 
                             GolikeTikTokAccountCard(
                                 account = account,
-                                isSelected = account.uid in selectedForRunIds,
-                                isAdded = isLinked,
-                                isAdding = addingUid == account.uid,
                                 isCheckedForRun = account.uid in selectedForRunIds,
                                 isReloading = isThisReloading,
                                 onCheckedForRunChange = { checked ->
-                                    if (!isLinked) return@GolikeTikTokAccountCard
                                     selectedForRunIds = if (checked) selectedForRunIds + account.uid
                                     else selectedForRunIds - account.uid
                                 },
                                 onClick = {
-                                    if (isLinked) {
-                                        selectedForRunIds = if (account.uid in selectedForRunIds) selectedForRunIds - account.uid else selectedForRunIds + account.uid
-                                    }
+                                    selectedForRunIds = if (account.uid in selectedForRunIds) selectedForRunIds - account.uid else selectedForRunIds + account.uid
                                 },
                                 onReloadProfile = {
                                     if (isThisReloading || account.handle.isBlank()) return@GolikeTikTokAccountCard
@@ -1666,15 +1687,11 @@ private fun formatTikTokCount(count: Long): String {
 @Composable
 private fun GolikeTikTokAccountCard(
     account: TikTokAccount,
-    isSelected: Boolean,
-    isAdded: Boolean,
-    isAdding: Boolean,
     isCheckedForRun: Boolean,
     isReloading: Boolean,
     onCheckedForRunChange: (Boolean) -> Unit,
     onClick: () -> Unit,
-    onReloadProfile: () -> Unit,
-    onAddClick: () -> Unit
+    onReloadProfile: () -> Unit
 ) {
     val title = account.displayName.ifBlank { account.handle.ifBlank { "TikTok User" } }
     val initialLetter = (title.firstOrNull { it.isLetterOrDigit() } ?: 'T').uppercase()
@@ -1691,28 +1708,21 @@ private fun GolikeTikTokAccountCard(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
             ) {
-                if (isAdded) {
-                    onCheckedForRunChange(!isCheckedForRun)
-                } else {
-                    onClick()
-                }
+                onCheckedForRunChange(!isCheckedForRun)
             }
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isAdded) {
-                Checkbox(
-                    checked = isCheckedForRun,
-                    onCheckedChange = onCheckedForRunChange,
-                    colors = CheckboxDefaults.colors(checkedColor = TikTokBrandBlack),
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-            } else {
-                Spacer(Modifier.width(8.dp))
-            }
+            // Checkbox tích chọn acc ở đầu mỗi card
+            Checkbox(
+                checked = isCheckedForRun,
+                onCheckedChange = onCheckedForRunChange,
+                colors = CheckboxDefaults.colors(checkedColor = TikTokBrandBlack),
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.width(8.dp))
 
             // Avatar TikTok hiển thị ảnh HD thực tế
             Box(
@@ -1837,7 +1847,7 @@ private fun GolikeTikTokAccountCard(
 
             Spacer(Modifier.width(4.dp))
 
-            // Nút làm mới (Reload) thông tin profile TikTok
+            // Nút làm mới (Reload) thông tin profile TikTok - bên phải chỉ giữ lại icon reload
             IconButton(
                 onClick = onReloadProfile,
                 enabled = !isReloading,
@@ -1856,34 +1866,6 @@ private fun GolikeTikTokAccountCard(
                         tint = TextSecondary,
                         modifier = Modifier.size(18.dp)
                     )
-                }
-            }
-
-            // Nút Đã thêm / + Cấu hình
-            when {
-                isAdding -> {
-                    CircularProgressIndicator(color = TikTokBrandBlack, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-                }
-                isAdded -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Check, contentDescription = null, tint = TikTokBrandBlack, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Đã thêm", color = TikTokBrandBlack, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-                else -> {
-                    OutlinedButton(
-                        onClick = onAddClick,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = GolikeBrandOrange),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, GolikeBrandOrange),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = null, tint = GolikeBrandOrange, modifier = Modifier.size(12.dp))
-                        Spacer(Modifier.width(2.dp))
-                        Text("Cấu hình", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = GolikeBrandOrange)
-                    }
                 }
             }
         }
