@@ -96,24 +96,28 @@ object IntegrityGuard {
         return Debug.isDebuggerConnected() || Debug.waitingForDebugger()
     }
 
+    /**
+     * Chống bung APK sửa code (Anti-Repack):
+     * Kiểm tra chữ ký Keystore của file APK lúc khởi động.
+     * Lấy chữ ký SHA-256 của file APK lúc runtime.
+     * Nếu khác với mã SHA-256 của Keystore chính chủ -> Tự đóng ứng dụng (exitProcess(0)).
+     */
+    fun checkApkSignatureOrExit(context: Context) {
+        if (com.cayxu.app.BuildConfig.DEBUG) return
+        if (EXPECTED_SIGNATURE_SHA256.isNotBlank() && isSignatureInvalid(context)) {
+            kotlin.system.exitProcess(0)
+        }
+    }
+
     @Suppress("DEPRECATION")
-    private fun isSignatureInvalid(context: Context): Boolean {
+    fun isSignatureInvalid(context: Context): Boolean {
         if (EXPECTED_SIGNATURE_SHA256.isBlank()) return false
         return try {
-            val actualHash = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val info = context.packageManager.getPackageInfo(
-                    context.packageName, PackageManager.GET_SIGNING_CERTIFICATES
-                )
-                val signers = info.signingInfo?.apkContentsSigners?.takeIf { it.isNotEmpty() }
-                    ?: info.signingInfo?.signingCertificateHistory
-                signers?.firstOrNull()?.let { sha256(it.toByteArray()) }
-            } else {
-                val info = context.packageManager.getPackageInfo(
-                    context.packageName, PackageManager.GET_SIGNATURES
-                )
-                info.signatures?.firstOrNull()?.let { sha256(it.toByteArray()) }
-            }
-            actualHash != null && !actualHash.equals(EXPECTED_SIGNATURE_SHA256, ignoreCase = true)
+            val actualHash = currentSignatureSha256(context)
+            if (actualHash == "?") return false
+            val cleanActual = actualHash.replace(":", "").trim()
+            val cleanExpected = EXPECTED_SIGNATURE_SHA256.replace(":", "").trim()
+            !cleanActual.equals(cleanExpected, ignoreCase = true)
         } catch (e: Exception) {
             // Không xác định được chữ ký (lỗi hệ thống) -> không tự ý khoá app vì
             // false positive sẽ khoá nhầm người dùng hợp lệ.

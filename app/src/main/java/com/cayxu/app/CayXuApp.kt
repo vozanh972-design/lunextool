@@ -9,6 +9,9 @@ class CayXuApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        // 1. Chống bung APK sửa code (Anti-Repack): Kiểm tra chữ ký Keystore APK lúc runtime
+        IntegrityGuard.checkApkSignatureOrExit(this)
+
         val prefs = SecurePrefs(this)
 
         // Kiểm tra tính toàn vẹn chữ ký và môi trường an toàn (chỉ chặn khi release có can thiệp)

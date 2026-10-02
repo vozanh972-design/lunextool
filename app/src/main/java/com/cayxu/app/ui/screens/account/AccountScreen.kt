@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.cayxu.app.BuildConfig
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.ui.navigation.Routes
@@ -76,60 +78,66 @@ fun AccountScreen(navController: NavController) {
     val coroutineScope = rememberCoroutineScope()
 
     val accountId = remember { securePrefs.getOrCreateAccountId() }
-    val buyerUsername = remember { securePrefs.getBuyerUsername() }
     val deviceId = remember { DeviceUtils.getAndroidId(context) }
 
-    val rawPackage = remember { securePrefs.getPackageName() }
-    val packageName = if (!rawPackage.isNullOrBlank() && rawPackage != "Premium") rawPackage.uppercase() else "PRO"
-    val rawExpiresAt = remember { securePrefs.getExpiresAt() }
+    var buyerUsername by remember { mutableStateOf(securePrefs.getBuyerUsername()) }
+    var packageName by remember { mutableStateOf(securePrefs.getPackageName()?.uppercase() ?: "PRO") }
+    var rawExpiresAt by remember { mutableStateOf(securePrefs.getExpiresAt()) }
+
+    LaunchedEffect(Unit) {
+        val key = securePrefs.getKey()
+        if (!key.isNullOrBlank()) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val repository = com.cayxu.app.data.repository.AuthRepository()
+                    val result = repository.verifyKey(key, deviceId)
+                    if (result is com.cayxu.app.data.repository.AuthResult.Success) {
+                        result.data.effectiveUsername?.let {
+                            securePrefs.saveBuyerUsername(it)
+                            buyerUsername = it
+                        }
+                        result.data.packageName?.let {
+                            securePrefs.savePackageName(it)
+                            packageName = it.uppercase()
+                        }
+                        result.data.expiresAt?.let {
+                            securePrefs.saveExpiresAt(it)
+                            rawExpiresAt = it
+                        }
+                    } else if (result is com.cayxu.app.data.repository.AuthResult.ApiError) {
+                        // Server giả mạo hoặc key không hợp lệ
+                        securePrefs.clearKey()
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                            navController.navigate(Routes.LOGIN) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    val username = buyerUsername?.trim() ?: ""
+    val displayName = if (username.isNotBlank()) username else "Đang tải..."
+
     val expiryDate = remember(rawExpiresAt) {
         if (!rawExpiresAt.isNullOrBlank()) {
-            rawExpiresAt.split(" ").firstOrNull() ?: rawExpiresAt
+            rawExpiresAt!!.split(" ").firstOrNull() ?: rawExpiresAt!!
         } else {
-            "03/10/2026"
-        }
-    }
-    val remainingInfo = remember(rawExpiresAt) {
-        try {
-            if (!rawExpiresAt.isNullOrBlank()) {
-                val datePart = rawExpiresAt.split(" ").first()
-                val format = if (datePart.contains("-")) {
-                    java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-                } else if (datePart.contains("/")) {
-                    java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
-                } else null
-
-                if (format != null) {
-                    val expDate = format.parse(datePart)
-                    if (expDate != null) {
-                        val diffMs = expDate.time - System.currentTimeMillis()
-                        val days = (diffMs / (1000 * 60 * 60 * 24)).coerceAtLeast(0)
-                        if (days > 0) "Còn $days ngày" else "Hết hạn hôm nay"
-                    } else "Còn 5 ngày"
-                } else "Còn 5 ngày"
-            } else "Còn 5 ngày"
-        } catch (_: Exception) {
-            "Còn 5 ngày"
+            "2026-10-03"
         }
     }
 
-    val displayName = if (!buyerUsername.isNullOrBlank()) buyerUsername else "Minh Anh"
-    val userHandle = "@${(buyerUsername ?: "minhanh").lowercase().replace(" ", "")} · Thành viên từ 08/2026"
-
-    val userInitials = remember(displayName) {
-        val trimmed = displayName.trim()
-        val parts = trimmed.split(" ").filter { it.isNotBlank() }
-        if (parts.size >= 2) {
-            "${parts[0].first()}${parts[1].first()}".uppercase()
-        } else {
-            trimmed.take(2).uppercase().ifBlank { "MA" }
-        }
+    val avatarUrl = remember(username, deviceId) {
+        val seed = if (username.isNotBlank()) username else deviceId
+        "https://api.dicebear.com/9.x/bottts-neutral/png?seed=${Uri.encode(seed)}&size=160"
     }
 
     var avatarUriString by remember { mutableStateOf(securePrefs.getAvatarUri()) }
     var avatarBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var showLogoutDialog by remember { mutableStateOf(false) }
-    var showQrDialog by remember { mutableStateOf(false) }
     var notificationsEnabled by remember { mutableStateOf(true) }
 
     // Update manager states
@@ -195,71 +203,6 @@ fun AccountScreen(navController: NavController) {
             dismissButton = {
                 OutlinedButton(onClick = { showLogoutDialog = false }) {
                     Text("Hủy", color = FigmaTextSecondary)
-                }
-            }
-        )
-    }
-
-    // Dialog hiển thị mã QR tài khoản
-    if (showQrDialog) {
-        AlertDialog(
-            onDismissRequest = { showQrDialog = false },
-            title = {
-                Text(
-                    text = "Mã QR tài khoản",
-                    fontWeight = FontWeight.Bold,
-                    color = FigmaTextPrimary
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(150.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFFE0F2FE))
-                            .border(1.dp, Color(0xFFBAE6FD), RoundedCornerShape(16.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.QrCodeScanner,
-                            contentDescription = null,
-                            tint = FigmaBlue,
-                            modifier = Modifier.size(90.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(
-                        text = "ID: $accountId",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = FigmaTextPrimary
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Mã máy: $deviceId",
-                        fontSize = 12.sp,
-                        color = FigmaTextSecondary
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        clipboardManager.setText(AnnotatedString(accountId))
-                        Toast.makeText(context, "Đã sao chép ID tài khoản", Toast.LENGTH_SHORT).show()
-                        showQrDialog = false
-                    }
-                ) {
-                    Text("Sao chép ID", fontWeight = FontWeight.Bold, color = FigmaBlue)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showQrDialog = false }) {
-                    Text("Đóng", color = FigmaTextSecondary)
                 }
             }
         )
@@ -450,63 +393,33 @@ fun AccountScreen(navController: NavController) {
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Bên trái: Avatar tròn bo viền mềm
-                Box(
+                // Avatar Động Dicebear (Dựa trên Username Người Mua)
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(avatarUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "User Avatar",
                     modifier = Modifier
                         .size(56.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFFE0F2FE))
-                        .clickable { pickImageLauncher.launch(arrayOf("image/*")) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    val bitmap = avatarBitmap
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap,
-                            contentDescription = "Ảnh đại diện",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize().clip(CircleShape)
-                        )
-                    } else {
-                        Text(
-                            text = userInitials,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = FigmaBlue
-                        )
-                    }
-                }
+                        .background(Color(0xFFE2E8F0)),
+                    contentScale = ContentScale.Crop
+                )
 
                 Spacer(modifier = Modifier.width(14.dp))
 
-                // Ở giữa: Tên người dùng & handle
+                // Ở giữa: Tên người dùng hiển thị to rõ, sang trọng (đã bỏ dòng phụ @username...)
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = displayName,
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = FigmaTextPrimary
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = userHandle,
-                        fontSize = 13.sp,
-                        color = FigmaTextSecondary
-                    )
                 }
 
-                // Bên phải: Icon quét mã QR màu xanh dương #0284C7
-                IconButton(
-                    onClick = { showQrDialog = true },
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.QrCodeScanner,
-                        contentDescription = "Mã QR",
-                        tint = FigmaBlue,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
+                // Đã xóa bỏ hoàn toàn icon / nút mã QR theo yêu cầu
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -524,87 +437,41 @@ fun AccountScreen(navController: NavController) {
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 20.dp)
                 ) {
-                    // Hàng trên: Gói bản quyền & Trạng thái
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        // Cột trái: Gói bản quyền
-                        Column {
-                            Text(
-                                text = "Gói bản quyền",
-                                fontSize = 13.sp,
-                                color = FigmaTextSecondary
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = packageName,
-                                fontSize = 30.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = FigmaTextPrimary,
-                                letterSpacing = (-0.5).sp
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Mã máy: " + deviceId.take(12) + "...",
-                                fontSize = 11.sp,
-                                color = FigmaTextMuted
-                            )
-                        }
-
-                        // Cột phải: Trạng thái
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = "Trạng thái",
-                                fontSize = 13.sp,
-                                color = FigmaTextSecondary
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color(0xFFEEF2FF)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Shield,
-                                        contentDescription = null,
-                                        tint = FigmaPurple,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Đang kích hoạt",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = FigmaPurple
-                                    )
-                                }
-                            }
-                        }
+                    // Hàng trên: Gói bản quyền (Đã bỏ cụm trạng thái đang kích hoạt)
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Gói bản quyền",
+                            fontSize = 13.sp,
+                            color = FigmaTextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (packageName.startsWith("GÓI", ignoreCase = true)) packageName else "GÓI $packageName",
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = FigmaTextPrimary,
+                            letterSpacing = (-0.5).sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Mã máy: " + deviceId.take(12) + "...",
+                            fontSize = 11.5.sp,
+                            color = FigmaTextMuted
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(18.dp))
 
-                    // Hàng dưới: Thanh tiến trình hạn dùng
+                    // Hàng dưới: Hạn dùng (Đã xóa bỏ chữ lặp bên phải)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "Hạn dùng: $expiryDate",
-                            fontSize = 12.5.sp,
-                            color = FigmaTextSecondary
-                        )
-                        Text(
-                            text = remainingInfo,
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = FigmaPurple
+                            fontWeight = FontWeight.Medium,
+                            color = FigmaTextSecondary
                         )
                     }
 

@@ -39,9 +39,12 @@ class KeyRecheckWorker(appContext: Context, params: WorkerParameters) : Coroutin
         if (!key.isNullOrBlank() && !prefs.isPermanentlyBlocked()) {
             val deviceId = DeviceUtils.getAndroidId(applicationContext)
             val repository = AuthRepository()
-            when (repository.verifyKey(key, deviceId)) {
+            when (val result = repository.verifyKey(key, deviceId)) {
                 is AuthResult.Success -> {
-                    // Vẫn hợp lệ -> không làm gì thêm.
+                    // Vẫn hợp lệ -> cập nhật thông tin mới nhất từ server
+                    result.data.effectiveUsername?.let { prefs.saveBuyerUsername(it) }
+                    result.data.packageName?.let { prefs.savePackageName(it) }
+                    result.data.expiresAt?.let { prefs.saveExpiresAt(it) }
                 }
                 is AuthResult.ApiError -> {
                     // Server xác nhận key không còn hợp lệ (hết hạn / bị thu hồi /

@@ -11,6 +11,9 @@ data class VerifyKeyResponse(
     @SerializedName("message") val message: String? = null,
     @SerializedName("device_locked") val deviceLocked: Boolean? = null,
 
+    @SerializedName("username") val username: String? = null,
+    @SerializedName("key") val key: String? = null,
+    @SerializedName("signature") val signature: String? = null,
     @SerializedName("package") val packageName: String? = null,
     @SerializedName("max_days") val maxDays: Int? = null,
     @SerializedName("days_left") val daysLeft: Int? = null,
@@ -22,6 +25,9 @@ data class VerifyKeyResponse(
     @SerializedName("buyer") val buyer: BuyerInfo? = null
 ) {
     val isSuccess: Boolean get() = status == "success"
+
+    val effectiveUsername: String?
+        get() = username?.trim()?.takeIf { it.isNotBlank() } ?: buyer?.username?.trim()?.takeIf { it.isNotBlank() }
 }
 
 data class BuyerInfo(
