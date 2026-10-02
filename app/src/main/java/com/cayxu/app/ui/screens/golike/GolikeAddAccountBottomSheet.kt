@@ -168,25 +168,9 @@ fun GolikeAddAccountBottomSheet(
             return
         }
 
-        isScanningTikTok = true
-        TikTokCaptureBridge.startWaiting(variant)
-        try {
-            val overlayIntent = Intent(context, TikTokCaptureOverlayService::class.java).apply {
-                putExtra(TikTokCaptureOverlayService.EXTRA_VARIANT, variant.name)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(overlayIntent)
-            } else {
-                context.startService(overlayIntent)
-            }
-        } catch (_: Exception) {
-        }
-
-        val launched = TikTokAppLauncher.launch(context, variant)
-        if (!launched) {
-            isScanningTikTok = false
-            Toast.makeText(context, "Không thể mở ứng dụng TikTok", Toast.LENGTH_SHORT).show()
-        }
+        // Tái sử dụng nguyên bản Màn nổi kiểm tra TikTok của XSMM
+        com.cayxu.app.ui.overlay.xsmm.startXsmmVerifyTikTokAccount(context, variant)
+        onDismiss()
     }
 
     val platformTitle = when (platform.lowercase()) {
@@ -301,7 +285,6 @@ fun GolikeAddAccountBottomSheet(
                 // 4. Nút Hành Động Chính (Main Action Button)
                 Button(
                     onClick = { startScanTikTok() },
-                    enabled = !isScanningTikTok,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF111827),
                         disabledContainerColor = Color(0xFF374151)
@@ -311,34 +294,19 @@ fun GolikeAddAccountBottomSheet(
                         .fillMaxWidth()
                         .height(50.dp)
                 ) {
-                    if (isScanningTikTok) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            text = "Đang kiểm tra tài khoản...",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Filled.PlayArrow,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "Kiểm tra tài khoản",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Kiểm tra tài khoản",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
                 }
 
                 Spacer(Modifier.height(16.dp))

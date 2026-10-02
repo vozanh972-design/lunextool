@@ -142,6 +142,19 @@ fun XsmmAccountScreen(navController: NavController) {
         }
     }
 
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (selectedPlatform == "tiktok") {
+                    allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(selectedPlatform, facebookAccounts) {
         if (selectedPlatform == "facebook") {
             facebookAccounts.forEach { acc ->

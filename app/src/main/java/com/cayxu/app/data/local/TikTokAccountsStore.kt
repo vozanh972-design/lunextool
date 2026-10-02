@@ -43,7 +43,8 @@ object TikTokAccountsStore {
                         videoCount = p.getOrElse(13) { "0" }.toLongOrNull() ?: 0L,
                         bio = p.getOrElse(14) { "" },
                         isLive = p.getOrElse(15) { "1" } == "1",
-                        createDateFormatted = p.getOrElse(16) { "" }
+                        createDateFormatted = p.getOrElse(16) { "" },
+                        proxy = p.getOrElse(17) { "" }
                     )
                 } catch (e: Exception) {
                     null
@@ -58,7 +59,8 @@ object TikTokAccountsStore {
         handle: String,
         displayName: String = "",
         avatarUrl: String = "",
-        variant: TikTokAppVariant
+        variant: TikTokAppVariant,
+        proxy: String = ""
     ): TikTokAccount {
         val cleanHandle = handle.trim().removePrefix("@")
         val normIncoming = cleanHandle.lowercase()
@@ -76,7 +78,8 @@ object TikTokAccountsStore {
                 displayName = displayName.ifBlank { old.displayName },
                 avatarUrl = avatarUrl.ifBlank { old.avatarUrl },
                 status = TikTokAccountStatus.ACTIVE,
-                variant = variant
+                variant = variant,
+                proxy = proxy.ifBlank { old.proxy }
             ).also { current[existingIndex] = it }
         } else {
             TikTokAccount(
@@ -85,7 +88,8 @@ object TikTokAccountsStore {
                 displayName = displayName,
                 avatarUrl = avatarUrl,
                 status = TikTokAccountStatus.ACTIVE,
-                variant = variant
+                variant = variant,
+                proxy = proxy
             ).also { current.add(it) }
         }
 
@@ -101,6 +105,11 @@ object TikTokAccountsStore {
 
         save(context, deduped)
         return account
+    }
+
+    fun updateProxy(context: Context, uid: String, proxy: String) {
+        val current = getAccounts(context).map { if (it.uid == uid) it.copy(proxy = proxy.trim()) else it }
+        save(context, current)
     }
 
     fun updateAccount(context: Context, account: TikTokAccount) {
@@ -172,7 +181,8 @@ object TikTokAccountsStore {
                 a.videoCount.toString(),
                 a.bio,
                 if (a.isLive) "1" else "0",
-                a.createDateFormatted
+                a.createDateFormatted,
+                a.proxy
             ).joinToString(FIELD_SEP)
         }
         prefs(context).edit().putString(KEY_ACCOUNTS, raw).apply()

@@ -30,10 +30,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.cayxu.app.ui.theme.*
@@ -85,23 +88,24 @@ suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient,
             val localTikTokAccounts = com.cayxu.app.data.local.TikTokAccountsStore.getAccounts(context).filter { it.enabled }
 
             // 2. Lấy danh sách nick TikTok đã liên kết trên Golike qua Gateway API
-            val res = client.getTikTokAccounts()
-            val dataArray = res?.optJSONArray("data")
-
             val serverMap = mutableMapOf<String, JSONObject>()
-            if (dataArray != null) {
-                for (i in 0 until dataArray.length()) {
-                    val item = dataArray.optJSONObject(i) ?: continue
-                    val uname = item.optString("unique_username").ifBlank {
-                        item.optString("username").ifBlank {
-                            item.optString("nickname")
+            try {
+                val res = if (GolikeAccountsStore.isLoggedIn(context)) client.getTikTokAccounts() else null
+                val dataArray = res?.optJSONArray("data")
+                if (dataArray != null) {
+                    for (i in 0 until dataArray.length()) {
+                        val item = dataArray.optJSONObject(i) ?: continue
+                        val uname = item.optString("unique_username").ifBlank {
+                            item.optString("username").ifBlank {
+                                item.optString("nickname")
+                            }
+                        }.trim().removePrefix("@").lowercase()
+                        if (uname.isNotBlank()) {
+                            serverMap[uname] = item
                         }
-                    }.trim().removePrefix("@").lowercase()
-                    if (uname.isNotBlank()) {
-                        serverMap[uname] = item
                     }
                 }
-            }
+            } catch (_: Exception) {}
 
             val processedHandles = mutableSetOf<String>()
 
@@ -122,6 +126,7 @@ suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient,
                         isLive = local.isLive,
                         isGolikeLinked = true,
                         golikeAccountId = accountId,
+                        proxy = local.proxy,
                         lastStatus = "Đã liên kết Golike • Sẵn sàng"
                     )
                     GolikeAccountsStore.addOrUpdateAccount(context, acc)
@@ -136,13 +141,14 @@ suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient,
                         isLive = local.isLive,
                         isGolikeLinked = existing?.isGolikeLinked ?: false,
                         golikeAccountId = existing?.golikeAccountId.orEmpty(),
+                        proxy = existing?.proxy?.ifBlank { local.proxy } ?: local.proxy,
                         lastStatus = if (existing?.isGolikeLinked == true) existing.lastStatus else "Chưa liên kết Golike"
                     )
                     GolikeAccountsStore.addOrUpdateAccount(context, acc)
                 }
             }
 
-            // 4. Bổ sung các nick đã có trên Golike nhưng chưa có trong máy
+            // 4. Bổ sung các nick đã có trên Golike nhưng chưa có trong máy vào Kho chung
             for ((serverHandle, serverItem) in serverMap) {
                 if (!processedHandles.contains(serverHandle)) {
                     val accountId = serverItem.optString("id")
@@ -163,6 +169,15 @@ suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient,
                         lastStatus = "Đã liên kết Golike • Sẵn sàng"
                     )
                     GolikeAccountsStore.addOrUpdateAccount(context, acc)
+                    try {
+                        com.cayxu.app.data.local.TikTokAccountsStore.addFromCapture(
+                            context = context,
+                            handle = serverHandle,
+                            displayName = displayUname,
+                            avatarUrl = serverAvatar,
+                            variant = com.cayxu.app.data.local.TikTokAppVariant.STANDARD
+                        )
+                    } catch (_: Exception) {}
                 }
             }
         } else {
@@ -249,38 +264,37 @@ fun GolikeAccountScreen(navController: NavController) {
         currentAccounts = GolikeAccountsStore.getAccounts(context, selectedPlatform)
     }
 
-    LaunchedEffect(selectedPlatform) {
-        if (selectedPlatform.lowercase() == "tiktok") {
-            // Nạp trước danh sách nick TikTok trên thiết bị nếu dữ liệu Golike đang trống
-            val stored = GolikeAccountsStore.getAccounts(context, "tiktok")
-            if (stored.isEmpty()) {
-                val locals = com.cayxu.app.data.local.TikTokAccountsStore.getAccounts(context).filter { it.enabled }
-                locals.forEach { local ->
-                    val cleanHandle = local.handle.trim().removePrefix("@").lowercase()
-                    val acc = GolikeAccount(
-                        id = cleanHandle,
-                        platform = "tiktok",
-                        username = local.handle,
-                        avatar = local.avatarUrl,
-                        isLive = local.isLive,
-                        isGolikeLinked = false,
-                        golikeAccountId = "",
-                        lastStatus = "Chưa liên kết Golike"
-                    )
-                    GolikeAccountsStore.addOrUpdateAccount(context, acc)
-                }
-            }
-            if (isLoggedIn) {
-                scope.launch(Dispatchers.IO) {
-                    val client = GolikeAccountsStore.getApiClient(context)
-                    syncLinkedAccountsFromApi(context, client, "tiktok")
-                    withContext(Dispatchers.Main) {
-                        reloadAccounts()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                reloadAccounts()
+                if (selectedPlatform.lowercase() == "tiktok" && isLoggedIn) {
+                    scope.launch(Dispatchers.IO) {
+                        val client = GolikeAccountsStore.getApiClient(context)
+                        syncLinkedAccountsFromApi(context, client, "tiktok")
+                        withContext(Dispatchers.Main) {
+                            reloadAccounts()
+                        }
                     }
                 }
             }
         }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(selectedPlatform) {
         reloadAccounts()
+        if (selectedPlatform.lowercase() == "tiktok" && isLoggedIn) {
+            scope.launch(Dispatchers.IO) {
+                val client = GolikeAccountsStore.getApiClient(context)
+                syncLinkedAccountsFromApi(context, client, "tiktok")
+                withContext(Dispatchers.Main) {
+                    reloadAccounts()
+                }
+            }
+        }
         selectedForRunIds = emptySet()
     }
 

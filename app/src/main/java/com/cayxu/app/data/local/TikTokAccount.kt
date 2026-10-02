@@ -41,5 +41,6 @@ data class TikTokAccount(
     val videoCount: Long = 0L,
     val bio: String = "",
     val isLive: Boolean = true,
-    val createDateFormatted: String = ""
+    val createDateFormatted: String = "",
+    val proxy: String = ""
 )
