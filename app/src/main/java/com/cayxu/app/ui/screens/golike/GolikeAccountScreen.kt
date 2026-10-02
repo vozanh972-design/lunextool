@@ -44,6 +44,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.data.local.TikTokAccount
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
@@ -1189,33 +1190,6 @@ fun GolikeAccountScreen(navController: NavController) {
                                         } finally {
                                             withContext(Dispatchers.Main) {
                                                 reloadingTikTokUids = reloadingTikTokUids - account.uid
-                                            }
-                                        }
-                                    }
-                                },
-                                onAddClick = {
-                                    if (!isLoggedIn) {
-                                        Toast.makeText(context, "Vui lòng đăng nhập Golike trước", Toast.LENGTH_SHORT).show()
-                                        showWebViewLoginDialog = true
-                                        return@GolikeTikTokAccountCard
-                                    }
-                                    addingUid = account.uid
-                                    scope.launch(Dispatchers.IO) {
-                                        val client = GolikeAccountsStore.getApiClient(context)
-                                        val result = GolikeTikTokTaskRunner.verifyAndLinkTikTokAccount(
-                                            context = context,
-                                            client = client,
-                                            username = account.handle,
-                                            onProgress = { }
-                                        )
-                                        withContext(Dispatchers.Main) {
-                                            addingUid = null
-                                            if (result.isSuccess) {
-                                                reloadAccounts()
-                                                Toast.makeText(context, "Đã liên kết @${account.handle} vào Golike thành công!", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                val msg = result.exceptionOrNull()?.message ?: "Lỗi xác minh"
-                                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                                             }
                                         }
                                     }
