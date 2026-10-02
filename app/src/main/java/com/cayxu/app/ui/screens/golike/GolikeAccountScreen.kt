@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -39,6 +40,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.cayxu.app.data.local.TikTokAccount
+import com.cayxu.app.data.local.TikTokAccountsStore
+import com.cayxu.app.data.local.TikTokAppVariant
+import com.cayxu.app.tiktok.checker.TikTokProfileCheckerClient
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -243,15 +248,21 @@ fun GolikeAccountScreen(navController: NavController) {
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
     var selectedErrorAccount by remember { mutableStateOf<GolikeAccount?>(null) }
 
+    // TikTok variants và Store chung
+    var selectedVariant by remember { mutableStateOf(TikTokAppVariant.STANDARD) }
+    var allTikTokAccounts by remember {
+        mutableStateOf(TikTokAccountsStore.getAccounts(context).filter { it.enabled })
+    }
+    var reloadingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var addingUid by remember { mutableStateOf<String?>(null) }
+
     // Danh sách tài khoản theo nền tảng
     var currentAccounts by remember {
         mutableStateOf(GolikeAccountsStore.getAccounts(context, selectedPlatform))
     }
 
     // Đếm số lượng tài khoản theo từng tab
-    val tiktokCount = remember(currentAccounts, selectedPlatform) {
-        if (selectedPlatform == "tiktok") currentAccounts.size else GolikeAccountsStore.getAccounts(context, "tiktok").size
-    }
+    val tiktokCount = remember(allTikTokAccounts) { allTikTokAccounts.size }
     val facebookCount = remember(currentAccounts, selectedPlatform) {
         if (selectedPlatform == "facebook") currentAccounts.size else GolikeAccountsStore.getAccounts(context, "facebook").size
     }
@@ -262,6 +273,7 @@ fun GolikeAccountScreen(navController: NavController) {
     // Đồng bộ danh sách tài khoản khi đổi tab
     fun reloadAccounts() {
         currentAccounts = GolikeAccountsStore.getAccounts(context, selectedPlatform)
+        allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -369,6 +381,9 @@ fun GolikeAccountScreen(navController: NavController) {
                         val count = selectedForRunIds.size
                         selectedForRunIds.forEach { id -> GolikeRunningManager.stop(id) }
                         GolikeAccountsStore.removeAccounts(context, selectedPlatform, selectedForRunIds)
+                        if (selectedPlatform.lowercase() == "tiktok") {
+                            TikTokAccountsStore.removeAccounts(context, selectedForRunIds.toList())
+                        }
                         selectedForRunIds = emptySet()
                         showDeleteConfirmSheet = false
                         reloadAccounts()
@@ -761,77 +776,275 @@ fun GolikeAccountScreen(navController: NavController) {
             Spacer(Modifier.height(14.dp))
 
             // 4. DANH SÁCH TÀI KHOẢN ĐANG CHẠY
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                val platformName = when (selectedPlatform) {
-                    "facebook" -> "Facebook"
-                    "instagram" -> "Instagram"
-                    else -> "TikTok"
-                }
-                Text("Tài khoản $platformName", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+            val accountsForVariant = remember(allTikTokAccounts, selectedVariant) {
+                allTikTokAccounts.filter { it.variant == selectedVariant }
+            }
+            val linkedHandles = remember(currentAccounts) {
+                currentAccounts.filter { it.isGolikeLinked }.map { it.username.trim().removePrefix("@").lowercase() }.toSet()
+            }
 
-                // Nút Xóa thùng rác khi có nick được chọn
-                if (selectedForRunIds.isNotEmpty()) {
+            if (selectedPlatform == "tiktok") {
+                // Header TikTok chuẩn XSMM (Ảnh 1)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Tài khoản TikTok",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = TextPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    if (selectedForRunIds.isNotEmpty()) {
+                        IconButton(
+                            onClick = { showDeleteConfirmSheet = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(DangerRed.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Xóa tài khoản đã chọn", tint = DangerRed, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        Spacer(Modifier.width(6.dp))
+                    }
+
+                    val allUidsInTab = accountsForVariant.filter { it.handle.trim().removePrefix("@").lowercase() in linkedHandles || it.uid in currentAccounts.filter { c -> c.isGolikeLinked }.map { c -> c.id } }.map { it.uid }
+                    val allSelected = allUidsInTab.isNotEmpty() && allUidsInTab.all { it in selectedForRunIds }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                selectedForRunIds = if (allSelected) selectedForRunIds - allUidsInTab.toSet()
+                                else selectedForRunIds + allUidsInTab.toSet()
+                            }
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Checkbox(
+                            checked = allSelected,
+                            onCheckedChange = null,
+                            colors = CheckboxDefaults.colors(checkedColor = TikTokBrandBlack),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Tất cả", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
+
+                    Spacer(Modifier.width(6.dp))
+
                     IconButton(
-                        onClick = { showDeleteConfirmSheet = true },
+                        onClick = { showAddAccountSheet = true },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Box(
                             modifier = Modifier
                                 .size(28.dp)
                                 .clip(CircleShape)
-                                .background(DangerRed.copy(alpha = 0.12f)),
+                                .background(TikTokBrandBlack),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Xóa đã chọn", tint = DangerRed, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.Add, contentDescription = "Thêm/Kiểm tra tài khoản TikTok", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                // ---- 3 tab: TikTok / TikTok Lite / TikTok Studio ----
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    VariantTabChip("TikTok", TikTokAppVariant.STANDARD, selectedVariant, allTikTokAccounts) { selectedVariant = it }
+                    VariantTabChip("TikTok Lite", TikTokAppVariant.LITE, selectedVariant, allTikTokAccounts) { selectedVariant = it }
+                    VariantTabChip("TikTok Studio", TikTokAppVariant.STUDIO, selectedVariant, allTikTokAccounts) { selectedVariant = it }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                if (accountsForVariant.isEmpty()) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardWhite),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Chưa có tài khoản nào ở phiên bản này.", color = TextSecondary, fontSize = 13.sp)
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = { showAddAccountSheet = true },
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("Kiểm tra / Thêm tài khoản TikTok", color = TikTokBrandBlack, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        accountsForVariant.forEach { account ->
+                            val handleLower = account.handle.trim().removePrefix("@").lowercase()
+                            val isLinked = handleLower in linkedHandles || account.uid in currentAccounts.filter { it.isGolikeLinked }.map { it.id }
+                            val isThisReloading = account.uid in reloadingTikTokUids
+
+                            GolikeTikTokAccountCard(
+                                account = account,
+                                isSelected = account.uid in selectedForRunIds,
+                                isAdded = isLinked,
+                                isAdding = addingUid == account.uid,
+                                isCheckedForRun = account.uid in selectedForRunIds,
+                                isReloading = isThisReloading,
+                                onCheckedForRunChange = { checked ->
+                                    if (!isLinked) return@GolikeTikTokAccountCard
+                                    selectedForRunIds = if (checked) selectedForRunIds + account.uid
+                                    else selectedForRunIds - account.uid
+                                },
+                                onClick = {
+                                    if (isLinked) {
+                                        selectedForRunIds = if (account.uid in selectedForRunIds) selectedForRunIds - account.uid else selectedForRunIds + account.uid
+                                    }
+                                },
+                                onReloadProfile = {
+                                    if (isThisReloading || account.handle.isBlank()) return@GolikeTikTokAccountCard
+                                    reloadingTikTokUids = reloadingTikTokUids + account.uid
+                                    scope.launch(Dispatchers.IO) {
+                                        try {
+                                            val client = TikTokProfileCheckerClient()
+                                            val profile = client.fetchProfile(account.handle)
+                                            if (profile != null) {
+                                                TikTokAccountsStore.updateFullProfile(context, account.uid, profile)
+                                                withContext(Dispatchers.Main) {
+                                                    allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+                                                    val msg = if (profile.isLive) {
+                                                        "Đã cập nhật @${profile.username}: Live (${formatTikTokCount(profile.followerCount)} follow)"
+                                                    } else {
+                                                        "Tài khoản @${profile.username} không tồn tại hoặc bị khóa"
+                                                    }
+                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                }
+                                            } else {
+                                                withContext(Dispatchers.Main) {
+                                                    Toast.makeText(context, "Không thể kết nối TikTok, vui lòng thử lại", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            withContext(Dispatchers.Main) {
+                                                Toast.makeText(context, "Lỗi cập nhật: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } finally {
+                                            withContext(Dispatchers.Main) {
+                                                reloadingTikTokUids = reloadingTikTokUids - account.uid
+                                            }
+                                        }
+                                    }
+                                },
+                                onAddClick = {
+                                    if (!isLoggedIn) {
+                                        Toast.makeText(context, "Vui lòng đăng nhập Golike trước", Toast.LENGTH_SHORT).show()
+                                        showWebViewLoginDialog = true
+                                        return@GolikeTikTokAccountCard
+                                    }
+                                    addingUid = account.uid
+                                    scope.launch(Dispatchers.IO) {
+                                        val client = GolikeAccountsStore.getApiClient(context)
+                                        val result = GolikeTikTokTaskRunner.verifyAndLinkTikTokAccount(
+                                            context = context,
+                                            client = client,
+                                            username = account.handle,
+                                            onProgress = { }
+                                        )
+                                        withContext(Dispatchers.Main) {
+                                            addingUid = null
+                                            if (result.isSuccess) {
+                                                reloadAccounts()
+                                                Toast.makeText(context, "Đã liên kết @${account.handle} vào Golike thành công!", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                val msg = result.exceptionOrNull()?.message ?: "Lỗi xác minh"
+                                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    val platformName = when (selectedPlatform) {
+                        "facebook" -> "Facebook"
+                        "instagram" -> "Instagram"
+                        else -> "TikTok"
+                    }
+                    Text("Tài khoản $platformName", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+
+                    // Nút Xóa thùng rác khi có nick được chọn
+                    if (selectedForRunIds.isNotEmpty()) {
+                        IconButton(
+                            onClick = { showDeleteConfirmSheet = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(DangerRed.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Xóa đã chọn", tint = DangerRed, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        Spacer(Modifier.width(6.dp))
+                    }
+
+                    // Nút Đồng bộ nick từ Golike & Thiết bị
+                    IconButton(
+                        onClick = {
+                            scope.launch(Dispatchers.IO) {
+                                val client = GolikeAccountsStore.getApiClient(context)
+                                syncLinkedAccountsFromApi(context, client, selectedPlatform)
+                                withContext(Dispatchers.Main) {
+                                    reloadAccounts()
+                                    Toast.makeText(context, "Đã đồng bộ tài khoản $platformName!", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(GolikeBrandOrange.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "Đồng bộ", tint = GolikeBrandOrange, modifier = Modifier.size(17.dp))
                         }
                     }
                     Spacer(Modifier.width(6.dp))
-                }
 
-                // Nút Đồng bộ nick từ Golike & Thiết bị
-                IconButton(
-                    onClick = {
-                        scope.launch(Dispatchers.IO) {
-                            val client = GolikeAccountsStore.getApiClient(context)
-                            syncLinkedAccountsFromApi(context, client, selectedPlatform)
-                            withContext(Dispatchers.Main) {
-                                reloadAccounts()
-                                Toast.makeText(context, "Đã đồng bộ tài khoản $platformName!", Toast.LENGTH_SHORT).show()
-                            }
+                    // Nút Thêm tài khoản (+) ở góc phải
+                    IconButton(
+                        onClick = { showAddAccountSheet = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(GolikeBrandOrange.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = "Thêm tài khoản", tint = GolikeBrandOrange, modifier = Modifier.size(18.dp))
                         }
-                    },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(GolikeBrandOrange.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Đồng bộ", tint = GolikeBrandOrange, modifier = Modifier.size(17.dp))
                     }
                 }
-                Spacer(Modifier.width(6.dp))
 
-                // Nút Thêm tài khoản (+) ở góc phải
-                IconButton(
-                    onClick = { showAddAccountSheet = true },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(GolikeBrandOrange.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = "Thêm tài khoản", tint = GolikeBrandOrange, modifier = Modifier.size(18.dp))
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(10.dp))
 
             if (currentAccounts.isEmpty()) {
                 Box(
@@ -1179,124 +1392,470 @@ fun GolikeAccountScreen(navController: NavController) {
         }
 
         // 5. THANH ĐIỀU KHIỂN DƯỚI CÙNG (BOTTOM BAR)
-        val allIds = remember(currentAccounts) { currentAccounts.map { it.id }.toSet() }
-        val isAllSelected = currentAccounts.isNotEmpty() && allIds.isNotEmpty() && allIds.all { it in selectedForRunIds }
-        val isAnyRunning = remember(currentAccounts) { GolikeRunningManager.isAnyRunning(currentAccounts) }
+        if (selectedPlatform == "tiktok") {
+            // ---- TikTok: 2 nút Cấu hình chạy + Chạy to màu đen TikTok (Chuẩn XSMM Ảnh 1) ----
+            val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
+            val linkedHandles = currentAccounts.filter { it.isGolikeLinked }.map { it.username.trim().removePrefix("@").lowercase() }.toSet()
+            val runCount = selectedForRunIds.size
+            val isAnyRunning = GolikeRunningManager.isAnyRunning(currentAccounts)
 
-        Surface(
-            color = CardWhite,
-            shadowElevation = 8.dp,
-            modifier = Modifier.fillMaxWidth()
-        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .background(AppBackground)
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Nút "Cấu hình" (icon bánh răng)
                 OutlinedButton(
                     onClick = { showConfigSheet = true },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = GolikeBrandOrange),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, GolikeBrandOrange.copy(alpha = 0.5f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TikTokBrandBlack),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, TikTokBrandBlack.copy(alpha = 0.5f)),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.height(42.dp)
+                    modifier = Modifier.weight(1f).height(48.dp)
                 ) {
-                    Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp), tint = GolikeBrandOrange)
+                    Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp), tint = TikTokBrandBlack)
                     Spacer(Modifier.width(6.dp))
-                    Text("Cấu hình", fontSize = 13.sp, color = GolikeBrandOrange)
+                    Text("Cấu hình chạy", maxLines = 1, color = TikTokBrandBlack, fontWeight = FontWeight.Medium)
                 }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Checkbox "Tất cả"
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                selectedForRunIds = if (isAllSelected) emptySet() else allIds
+                Button(
+                    onClick = {
+                        if (isAnyRunning) {
+                            GolikeRunningManager.stopAll(currentAccounts)
+                            Toast.makeText(context, "Đã dừng tất cả tài khoản Golike", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val targets = if (selectedForRunIds.isNotEmpty()) {
+                                accountsForVariant.filter { it.uid in selectedForRunIds }
+                            } else {
+                                accountsForVariant.filter { it.handle.trim().removePrefix("@").lowercase() in linkedHandles }
                             }
-                            .padding(horizontal = 6.dp, vertical = 6.dp)
-                    ) {
-                        Checkbox(
-                            checked = isAllSelected,
-                            onCheckedChange = null,
-                            colors = CheckboxDefaults.colors(checkedColor = GolikeBrandOrange),
-                            modifier = Modifier.size(20.dp)
+                            if (targets.isEmpty()) {
+                                Toast.makeText(context, "Chưa có tài khoản nào để chạy!", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            targets.forEach { ttAcc ->
+                                val cleanHandle = ttAcc.handle.trim().removePrefix("@")
+                                val gAcc = currentAccounts.firstOrNull { it.username.trim().removePrefix("@").equals(cleanHandle, ignoreCase = true) || it.id == ttAcc.uid }
+                                    ?: GolikeAccount(
+                                        id = ttAcc.uid.ifBlank { cleanHandle },
+                                        platform = "tiktok",
+                                        username = cleanHandle,
+                                        avatar = ttAcc.avatarUrl,
+                                        isLive = ttAcc.isLive,
+                                        isGolikeLinked = cleanHandle.lowercase() in linkedHandles,
+                                        lastStatus = "Sẵn sàng"
+                                    )
+                                startAccountTask(gAcc)
+                            }
+                            Toast.makeText(context, "Bắt đầu chạy ${targets.size} tài khoản TikTok Golike", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isAnyRunning) DangerRed else TikTokBrandBlack),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).height(48.dp)
+                ) {
+                    if (isAnyRunning) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color.White)
                         )
-                        Spacer(Modifier.width(4.dp))
-                        Text("Tất cả", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Dừng chạy", color = Color.White, fontWeight = FontWeight.Bold)
+                    } else {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (runCount > 0) "Chạy ($runCount)" else "Chạy", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        } else {
+            val allIds = remember(currentAccounts) { currentAccounts.map { it.id }.toSet() }
+            val isAllSelected = currentAccounts.isNotEmpty() && allIds.isNotEmpty() && allIds.all { it in selectedForRunIds }
+            val isAnyRunning = remember(currentAccounts) { GolikeRunningManager.isAnyRunning(currentAccounts) }
+
+            Surface(
+                color = CardWhite,
+                shadowElevation = 8.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Nút "Cấu hình" (icon bánh răng)
+                    OutlinedButton(
+                        onClick = { showConfigSheet = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = GolikeBrandOrange),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, GolikeBrandOrange.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.height(42.dp)
+                    ) {
+                        Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp), tint = GolikeBrandOrange)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Cấu hình", fontSize = 13.sp, color = GolikeBrandOrange)
                     }
 
-                    // Nút Xóa thùng rác đỏ khi có nick được chọn
-                    if (selectedForRunIds.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Checkbox "Tất cả"
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    selectedForRunIds = if (isAllSelected) emptySet() else allIds
+                                }
+                                .padding(horizontal = 6.dp, vertical = 6.dp)
+                        ) {
+                            Checkbox(
+                                checked = isAllSelected,
+                                onCheckedChange = null,
+                                colors = CheckboxDefaults.colors(checkedColor = GolikeBrandOrange),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Tất cả", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
+
+                        // Nút Xóa thùng rác đỏ khi có nick được chọn
+                        if (selectedForRunIds.isNotEmpty()) {
+                            IconButton(
+                                onClick = { showDeleteConfirmSheet = true },
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(DangerRed.copy(alpha = 0.12f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Xóa tài khoản đã chọn", tint = DangerRed, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                        }
+
+                        // Nút Chạy tất cả / Dừng tất cả to tròn
                         IconButton(
-                            onClick = { showDeleteConfirmSheet = true },
+                            onClick = {
+                                if (isAnyRunning) {
+                                    GolikeRunningManager.stopAll(currentAccounts)
+                                    Toast.makeText(context, "Đã dừng tất cả tài khoản Golike", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val targets = if (selectedForRunIds.isNotEmpty()) {
+                                        currentAccounts.filter { it.id in selectedForRunIds }
+                                    } else {
+                                        currentAccounts
+                                    }
+                                    if (targets.isEmpty()) {
+                                        Toast.makeText(context, "Chưa có tài khoản nào để chạy!", Toast.LENGTH_SHORT).show()
+                                        return@IconButton
+                                    }
+                                    targets.forEach { acc ->
+                                        startAccountTask(acc)
+                                    }
+                                    Toast.makeText(context, "Bắt đầu chạy ${targets.size} tài khoản Golike", Toast.LENGTH_SHORT).show()
+                                }
+                            },
                             modifier = Modifier.size(38.dp)
                         ) {
                             Box(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(DangerRed.copy(alpha = 0.12f)),
+                                    .background(if (isAnyRunning) DangerRed else GolikeBrandOrange),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Xóa tài khoản đã chọn", tint = DangerRed, modifier = Modifier.size(20.dp))
+                                if (isAnyRunning) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(11.dp)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(Color.White)
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Filled.PlayArrow,
+                                        contentDescription = "Chạy tất cả",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
 
-                    // Nút Chạy tất cả / Dừng tất cả to tròn
-                    IconButton(
-                        onClick = {
-                            if (isAnyRunning) {
-                                GolikeRunningManager.stopAll(currentAccounts)
-                                Toast.makeText(context, "Đã dừng tất cả tài khoản Golike", Toast.LENGTH_SHORT).show()
-                            } else {
-                                val targets = if (selectedForRunIds.isNotEmpty()) {
-                                    currentAccounts.filter { it.id in selectedForRunIds }
-                                } else {
-                                    currentAccounts
-                                }
-                                if (targets.isEmpty()) {
-                                    Toast.makeText(context, "Chưa có tài khoản nào để chạy!", Toast.LENGTH_SHORT).show()
-                                    return@IconButton
-                                }
-                                targets.forEach { acc ->
-                                    startAccountTask(acc)
-                                }
-                                Toast.makeText(context, "Bắt đầu chạy ${targets.size} tài khoản Golike", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.size(38.dp)
+@Composable
+private fun VariantTabChip(
+    label: String,
+    variant: TikTokAppVariant,
+    selectedVariant: TikTokAppVariant,
+    allAccounts: List<TikTokAccount>,
+    onClick: (TikTokAppVariant) -> Unit
+) {
+    val isSelected = variant == selectedVariant
+    val count = allAccounts.count { it.variant == variant }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .background(if (isSelected) TikTokBrandBlack else CardWhite, RoundedCornerShape(12.dp))
+            .border(
+                width = if (isSelected) 1.5.dp else 1.dp,
+                color = if (isSelected) TikTokBrandBlack else Color(0xFFEEF1F5),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .clickable { onClick(variant) }
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(
+            "$label ($count)",
+            color = if (isSelected) Color.White else TextPrimary,
+            fontSize = 12.5.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+        )
+    }
+}
+
+private fun formatTikTokCount(count: Long): String {
+    return when {
+        count >= 1_000_000 -> String.format(Locale.US, "%.1fM", count / 1_000_000.0)
+        count >= 1_000 -> String.format(Locale.US, "%.1fK", count / 1_000.0)
+        else -> count.toString()
+    }
+}
+
+@Composable
+private fun GolikeTikTokAccountCard(
+    account: TikTokAccount,
+    isSelected: Boolean,
+    isAdded: Boolean,
+    isAdding: Boolean,
+    isCheckedForRun: Boolean,
+    isReloading: Boolean,
+    onCheckedForRunChange: (Boolean) -> Unit,
+    onClick: () -> Unit,
+    onReloadProfile: () -> Unit,
+    onAddClick: () -> Unit
+) {
+    val title = account.displayName.ifBlank { account.handle.ifBlank { "TikTok User" } }
+    val initialLetter = (title.firstOrNull { it.isLetterOrDigit() } ?: 'T').uppercase()
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        border = if (isCheckedForRun) androidx.compose.foundation.BorderStroke(1.5.dp, TikTokBrandBlack) else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEEF1F5)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
+                if (isAdded) {
+                    onCheckedForRunChange(!isCheckedForRun)
+                } else {
+                    onClick()
+                }
+            }
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isAdded) {
+                Checkbox(
+                    checked = isCheckedForRun,
+                    onCheckedChange = onCheckedForRunChange,
+                    colors = CheckboxDefaults.colors(checkedColor = TikTokBrandBlack),
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+            } else {
+                Spacer(Modifier.width(8.dp))
+            }
+
+            // Avatar TikTok hiển thị ảnh HD thực tế
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .border(1.5.dp, Color(0xFF111111).copy(alpha = 0.6f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                if (account.avatarUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = account.avatarUrl,
+                        contentDescription = "Avatar TikTok",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF111111)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = initialLetter,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.width(10.dp))
+
+            // Nội dung thông tin tài khoản TikTok 4 dòng
+            Column(Modifier.weight(1f)) {
+                // Dòng 1: Tên hiển thị + Badge Live / Die
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.5.sp,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+
+                    // Badge Live / Die
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (account.isLive) Color(0xFF22C55E).copy(alpha = 0.12f) else DangerRed.copy(alpha = 0.12f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(6.dp)
                                 .clip(CircleShape)
-                                .background(if (isAnyRunning) DangerRed else GolikeBrandOrange),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isAnyRunning) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(11.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(Color.White)
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Filled.PlayArrow,
-                                    contentDescription = "Chạy tất cả",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
+                                .background(if (account.isLive) Color(0xFF16A34A) else DangerRed)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            if (account.isLive) "Live" else "Die",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (account.isLive) Color(0xFF16A34A) else DangerRed
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(1.dp))
+                // Dòng 2: @handle + bio (nếu có)
+                Text(
+                    text = "@${account.handle.ifBlank { "chưa_rõ" }}",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    maxLines = 1
+                )
+
+                if (account.bio.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = account.bio,
+                        color = TextSecondary.copy(alpha = 0.85f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Dòng 3: Thống kê: X followers • Y tim (màu hồng / rose #E11D48)
+                val statsList = buildList {
+                    if (account.followerCount > 0) add("${formatTikTokCount(account.followerCount)} followers")
+                    if (account.heartCount > 0) add("${formatTikTokCount(account.heartCount)} tim")
+                }
+                if (statsList.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = statsList.joinToString(" • "),
+                        color = Color(0xFFE1306C),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                // Dòng 4: Ngày tạo nick: Tạo: dd/MM/yyyy
+                if (account.createDateFormatted.isNotBlank()) {
+                    Spacer(Modifier.height(1.dp))
+                    Text(
+                        text = "Tạo: ${account.createDateFormatted}",
+                        color = TextSecondary,
+                        fontSize = 10.5.sp
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(4.dp))
+
+            // Nút làm mới (Reload) thông tin profile TikTok
+            IconButton(
+                onClick = onReloadProfile,
+                enabled = !isReloading,
+                modifier = Modifier.size(32.dp)
+            ) {
+                if (isReloading) {
+                    CircularProgressIndicator(
+                        color = TikTokBrandBlack,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(16.dp)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = "Làm mới thông tin TikTok",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // Nút Đã thêm / + Cấu hình
+            when {
+                isAdding -> {
+                    CircularProgressIndicator(color = TikTokBrandBlack, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                }
+                isAdded -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Check, contentDescription = null, tint = TikTokBrandBlack, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Đã thêm", color = TikTokBrandBlack, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+                else -> {
+                    OutlinedButton(
+                        onClick = onAddClick,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = GolikeBrandOrange),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, GolikeBrandOrange),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null, tint = GolikeBrandOrange, modifier = Modifier.size(12.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("Cấu hình", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = GolikeBrandOrange)
                     }
                 }
             }
