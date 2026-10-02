@@ -1,0 +1,154 @@
+name: 🧹 Dọn dẹp Workflow Runs
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep_oldest_runs:
+        description: 'Số lượng runs cũ nhất dưới cùng cần giữ lại'
+        required: true
+        default: '2'
+        type: string
+      protect_keystore:
+        description: 'Bảo vệ vĩnh viễn các run liên quan đến Keystore'
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  cleanup:
+    name: Xóa các run đã build (Xanh & Đỏ)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+
+    steps:
+      - name: Chạy script dọn dẹp workflow runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          KEEP_OLDEST: ${{ github.event.inputs.keep_oldest_runs }}
+          PROTECT_KEYSTORE: ${{ github.event.inputs.protect_keystore }}
+        run: |
+          python3 - << 'EOF'
+          import os
+          import sys
+          import json
+          import time
+          import urllib.request
+          import urllib.error
+
+          token = os.environ.get("GH_TOKEN")
+          repo = os.environ.get("GITHUB_REPOSITORY")
+          current_run_id = str(os.environ.get("CURRENT_RUN_ID", ""))
+          keep_oldest = int(os.environ.get("KEEP_OLDEST", "2"))
+          protect_keystore = os.environ.get("PROTECT_KEYSTORE", "true").lower() == "true"
+
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "GitHub-Action-Cleanup"
+          }
+
+          print(f"=== BẮT ĐẦU DỌN DẸP WORKFLOW RUNS CHO REPO: {repo} ===")
+          print(f"Số runs cũ nhất dưới cùng giữ lại: {keep_oldest}")
+          print(f"Bảo vệ run chứa 'keystore': {protect_keystore}")
+
+          # 1. Lấy toàn bộ workflow runs (hỗ trợ phân trang)
+          all_runs = []
+          page = 1
+          per_page = 100
+
+          while True:
+              url = f"https://api.github.com/repos/{repo}/actions/runs?per_page={per_page}&page={page}"
+              req = urllib.request.Request(url, headers=headers)
+              try:
+                  with urllib.request.urlopen(req) as resp:
+                      data = json.loads(resp.read().decode("utf-8"))
+                      runs = data.get("workflow_runs", [])
+                      if not runs:
+                          break
+                      all_runs.extend(runs)
+                      print(f"Đã tải trang {page}: {len(runs)} runs (Tổng cộng: {len(all_runs)})")
+                      if len(runs) < per_page:
+                          break
+                      page += 1
+              except Exception as e:
+                  print(f"Lỗi khi tải danh sách runs ở trang {page}: {e}")
+                  break
+
+          print(f"Tổng số workflow runs tìm thấy: {len(all_runs)}")
+          if not all_runs:
+              print("Không có run nào để xử lý.")
+              sys.exit(0)
+
+          # 2. Sắp xếp theo ngày tạo tăng dần (cũ nhất đứng đầu)
+          # Trên giao diện GitHub: run cũ nhất nằm ở dưới cùng!
+          sorted_runs = sorted(all_runs, key=lambda r: r.get("created_at", ""))
+
+          # 3. Xác định các run được bảo vệ
+          protected_ids = set()
+          # Bảo vệ N run cũ nhất (ở dưới cùng giao diện)
+          for r in sorted_runs[:keep_oldest]:
+              protected_ids.add(r["id"])
+              print(f"🛡️ BẢO VỆ (Cũ nhất): #{r['id']} - {r.get('name')} | Tạo lúc: {r.get('created_at')}")
+
+          # Bảo vệ các run có chữ keystore
+          if protect_keystore:
+              for r in sorted_runs:
+                  text = (str(r.get("name", "")) + " " + str(r.get("display_title", ""))).lower()
+                  if "keystore" in text and r["id"] not in protected_ids:
+                      protected_ids.add(r["id"])
+                      print(f"🛡️ BẢO VỆ (Keystore): #{r['id']} - {r.get('name')} | Tạo lúc: {r.get('created_at')}")
+
+          # 4. Lọc danh sách cần xóa (cả status thành công, thất bại, xanh, đỏ...)
+          to_delete = []
+          for r in sorted_runs:
+              run_id = r["id"]
+              if str(run_id) == current_run_id:
+                  continue # Không xóa run đang chạy hiện tại
+              if run_id in protected_ids:
+                  continue # Bỏ qua run được bảo vệ
+              to_delete.append(r)
+
+          print(f"\n👉 Tổng số runs sẽ xóa: {len(to_delete)}")
+          if not to_delete:
+              print("Không có run nào cần xóa.")
+              sys.exit(0)
+
+          # 5. Tiến hành xóa từng run
+          success_count = 0
+          fail_count = 0
+
+          for r in to_delete:
+              run_id = r["id"]
+              run_name = r.get("display_title") or r.get("name")
+              conclusion = r.get("conclusion") or r.get("status")
+              print(f"Đang xóa #{run_id} ({conclusion}) [{run_name}]...", end=" ")
+
+              del_url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}"
+              del_req = urllib.request.Request(del_url, headers=headers, method="DELETE")
+              try:
+                  with urllib.request.urlopen(del_req) as del_resp:
+                      if del_resp.status in (204, 200):
+                          print("✓ XÓA THÀNH CÔNG")
+                          success_count += 1
+                      else:
+                          print(f"✗ Mã phản hồi: {del_resp.status}")
+                          fail_count += 1
+              except urllib.error.HTTPError as he:
+                  print(f"✗ Lỗi HTTP {he.code}: {he.reason}")
+                  fail_count += 1
+              except Exception as ex:
+                  print(f"✗ Lỗi: {ex}")
+                  fail_count += 1
+
+              time.sleep(0.15) # Nghỉ nhẹ để tuân thủ rate limit
+
+          print(f"\n=== HOÀN TẤT DỌN DẸP ===")
+          print(f"✓ Đã xóa thành công: {success_count} runs")
+          if fail_count > 0:
+              print(f"✗ Thất bại: {fail_count} runs")
+          EOF
