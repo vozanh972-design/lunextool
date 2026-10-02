@@ -57,8 +57,6 @@ fun GolikeAddAccountBottomSheet(
     val scope = rememberCoroutineScope()
     var usernameOrUid by remember { mutableStateOf("") }
     var proxyInput by remember { mutableStateOf("") }
-    var isVerifying by remember { mutableStateOf(false) }
-    var verifyStatusText by remember { mutableStateOf("") }
     var isScanningTikTok by remember { mutableStateOf(false) }
     var selectedVariant by remember {
         mutableStateOf(
@@ -108,6 +106,8 @@ fun GolikeAddAccountBottomSheet(
                     } catch (_: Exception) {}
                     TikTokCaptureBridge.reset()
                     Toast.makeText(context, "Đã quét thành công nick: @$clean", Toast.LENGTH_SHORT).show()
+                    onAccountAdded()
+                    onDismiss()
                 }
                 is TikTokCaptureState.CapturedBatch -> {
                     isScanningTikTok = false
@@ -131,6 +131,8 @@ fun GolikeAddAccountBottomSheet(
                     }
                     TikTokCaptureBridge.reset()
                     Toast.makeText(context, "Đã quét thành công nick: @$usernameOrUid", Toast.LENGTH_SHORT).show()
+                    onAccountAdded()
+                    onDismiss()
                 }
                 is TikTokCaptureState.Failed -> {
                     isScanningTikTok = false
@@ -339,29 +341,7 @@ fun GolikeAddAccountBottomSheet(
                     }
                 }
 
-                Spacer(Modifier.height(18.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    HorizontalDivider(
-                        modifier = Modifier.weight(1f),
-                        thickness = 0.8.dp,
-                        color = Color(0xFFE2E8F0)
-                    )
-                    Text(
-                        text = "  hoặc nhập thủ công  ",
-                        fontSize = 11.sp,
-                        color = TextSecondary
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.weight(1f),
-                        thickness = 0.8.dp,
-                        color = Color(0xFFE2E8F0)
-                    )
-                }
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(16.dp))
             } else {
                 // Header cho Facebook / Instagram
                 Row(
@@ -404,158 +384,53 @@ fun GolikeAddAccountBottomSheet(
                     }
                 }
                 Spacer(Modifier.height(18.dp))
-            }
 
-            // Tên tài khoản / UID
-            Text(
-                text = "Tên đăng nhập / UID / @handle $platformTitle",
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary
-            )
-            Spacer(Modifier.height(6.dp))
-            OutlinedTextField(
-                value = usernameOrUid,
-                onValueChange = { usernameOrUid = it },
-                placeholder = {
-                    Text(
-                        when (platform.lowercase()) {
-                            "facebook" -> "Nhập UID Facebook hoặc link trang"
-                            "instagram" -> "Nhập username Instagram (ví dụ: nguyen_van_a)"
-                            else -> "Nhập @username TikTok"
-                        }
-                    )
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(Modifier.height(14.dp))
-
-            // Proxy (tùy chọn)
-            Text(
-                text = "Proxy gắn riêng cho nick (Tùy chọn: host:port hoặc host:port:user:pass)",
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary
-            )
-            Spacer(Modifier.height(6.dp))
-            OutlinedTextField(
-                value = proxyInput,
-                onValueChange = { proxyInput = it },
-                placeholder = { Text("127.0.0.1:8080:user:pass") },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            if (verifyStatusText.isNotBlank()) {
+                // Tên tài khoản / UID
                 Text(
-                    text = verifyStatusText,
-                    fontSize = 12.5.sp,
-                    color = GolikeBrandOrange,
+                    text = "Tên đăng nhập / UID / @handle $platformTitle",
+                    fontSize = 13.5.sp,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    color = TextPrimary
                 )
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            if (platform.lowercase() == "tiktok") {
-                // Nút Cấu hình & Xác minh ngay qua Golike
-                Button(
-                    onClick = {
-                        val rawInput = usernameOrUid.trim()
-                        if (rawInput.isBlank()) {
-                            Toast.makeText(context, "Vui lòng nhập tên @username TikTok", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        if (!GolikeAccountsStore.isLoggedIn(context)) {
-                            Toast.makeText(context, "Vui lòng đăng nhập Golike trước để xác minh", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        isVerifying = true
-                        scope.launch(Dispatchers.IO) {
-                            val client = GolikeAccountsStore.getApiClient(context)
-                            val res = GolikeTikTokTaskRunner.verifyAndLinkTikTokAccount(
-                                context = context,
-                                client = client,
-                                username = rawInput,
-                                onProgress = { step ->
-                                    verifyStatusText = step
-                                }
-                            )
-                            withContext(Dispatchers.Main) {
-                                isVerifying = false
-                                if (res.isSuccess) {
-                                    Toast.makeText(context, "Đã liên kết @$rawInput thành công!", Toast.LENGTH_SHORT).show()
-                                    onAccountAdded()
-                                    onDismiss()
-                                } else {
-                                    val err = res.exceptionOrNull()?.message ?: "Xác minh thất bại"
-                                    Toast.makeText(context, err, Toast.LENGTH_LONG).show()
-                                }
-                            }
-                        }
-                    },
-                    enabled = !isVerifying,
-                    colors = ButtonDefaults.buttonColors(containerColor = GolikeBrandOrange),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                ) {
-                    if (isVerifying) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Đang xác minh liên kết...", fontSize = 14.sp, color = Color.White)
-                    } else {
-                        Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = usernameOrUid,
+                    onValueChange = { usernameOrUid = it },
+                    placeholder = {
                         Text(
-                            text = "Xác minh & Liên kết Golike",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            when (platform.lowercase()) {
+                                "facebook" -> "Nhập UID Facebook hoặc link trang"
+                                "instagram" -> "Nhập username Instagram (ví dụ: nguyen_van_a)"
+                                else -> "Nhập UID hoặc tên đăng nhập"
+                            }
                         )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                // Nút lưu trước, xác minh sau
-                OutlinedButton(
-                    onClick = {
-                        val rawInput = usernameOrUid.trim()
-                        if (rawInput.isBlank()) {
-                            Toast.makeText(context, "Vui lòng nhập tên tài khoản", Toast.LENGTH_SHORT).show()
-                            return@OutlinedButton
-                        }
-                        val cleanId = rawInput.removePrefix("@").trim()
-                        val newAccount = GolikeAccount(
-                            id = cleanId,
-                            platform = "tiktok",
-                            username = rawInput,
-                            isLive = true,
-                            isGolikeLinked = false,
-                            proxy = proxyInput.trim(),
-                            lastStatus = "Chưa liên kết Golike"
-                        )
-                        GolikeAccountsStore.addOrUpdateAccount(context, newAccount)
-                        Toast.makeText(context, "Đã lưu nick @$cleanId (Chưa liên kết)", Toast.LENGTH_SHORT).show()
-                        onAccountAdded()
-                        onDismiss()
                     },
-                    enabled = !isVerifying,
+                    singleLine = true,
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                ) {
-                    Text("Lưu vào danh sách (Xác minh sau)", color = TextPrimary, fontSize = 13.5.sp)
-                }
-            } else {
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(14.dp))
+
+                // Proxy (tùy chọn)
+                Text(
+                    text = "Proxy gắn riêng cho nick (Tùy chọn: host:port hoặc host:port:user:pass)",
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = proxyInput,
+                    onValueChange = { proxyInput = it },
+                    placeholder = { Text("127.0.0.1:8080:user:pass") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(16.dp))
+
                 // Nút Thêm tài khoản Facebook / Instagram
                 Button(
                     onClick = {
@@ -594,9 +469,9 @@ fun GolikeAddAccountBottomSheet(
                         color = Color.White
                     )
                 }
-            }
 
-            Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(16.dp))
+            }
         }
     }
 }
