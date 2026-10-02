@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
@@ -50,12 +51,12 @@ fun WelcomeScreen(onGetStarted: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(bgWhite)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
                 .padding(horizontal = 24.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.Start
@@ -67,21 +68,13 @@ fun WelcomeScreen(onGetStarted: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Box(
+                Image(
+                    painter = painterResource(R.drawable.ic_app_logo),
+                    contentDescription = "LunexTool Logo",
                     modifier = Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(brandBlue),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_app_logo),
-                        contentDescription = "LunexTool Logo",
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                    )
-                }
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = "LUNEXTOOL",
@@ -207,9 +200,26 @@ fun WelcomeScreen(onGetStarted: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            // Khoảng trống đệm cuối danh sách để nội dung cuộn không bị nút che
+            Spacer(modifier = Modifier.height(84.dp))
+        }
 
-            // CỤM NÚT ĐÁY MÀN HÌNH (CHUẨN FIGMA)
+        // NÚT "BẮT ĐẦU NGAY" ĐẶT SÁT ĐÁY MÀN HÌNH (CHUẨN FIGMA)
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            bgWhite.copy(alpha = 0f),
+                            bgWhite.copy(alpha = 0.92f),
+                            bgWhite
+                        )
+                    )
+                )
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+        ) {
             Button(
                 onClick = onGetStarted,
                 shape = RoundedCornerShape(14.dp),
@@ -217,37 +227,16 @@ fun WelcomeScreen(onGetStarted: () -> Unit) {
                     containerColor = brandBlue,
                     contentColor = Color.White
                 ),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
             ) {
                 Text(
                     text = "Bắt đầu ngay",
-                    fontSize = 15.5.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 20.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Tôi đã có key kích hoạt",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = brandBlue,
-                    modifier = Modifier
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { onGetStarted() }
-                        .padding(vertical = 6.dp, horizontal = 12.dp)
                 )
             }
         }

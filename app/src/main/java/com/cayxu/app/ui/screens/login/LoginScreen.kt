@@ -103,21 +103,13 @@ fun LoginScreen(
                 modifier = Modifier.padding(32.dp)
             ) {
                 // Logo ứng dụng phong cách Figma
-                Box(
+                Image(
+                    painter = painterResource(R.drawable.ic_app_logo),
+                    contentDescription = "LunexTool Logo",
                     modifier = Modifier
-                        .size(64.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(brandBlue),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_app_logo),
-                        contentDescription = "LunexTool Logo",
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                    )
-                }
+                        .size(60.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                )
 
                 Spacer(Modifier.height(14.dp))
 
@@ -263,21 +255,13 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 16.dp)
             ) {
-                Box(
+                Image(
+                    painter = painterResource(R.drawable.ic_app_logo),
+                    contentDescription = "LunexTool Logo",
                     modifier = Modifier
                         .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(brandBlue),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_app_logo),
-                        contentDescription = "LunexTool Logo",
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                    )
-                }
+                        .clip(RoundedCornerShape(8.dp))
+                )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = "LUNEXTOOL",
