@@ -49,6 +49,9 @@ import com.cayxu.app.data.local.TikTokAccount
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.tiktok.checker.TikTokProfileCheckerClient
+import com.cayxu.app.ui.overlay.xsmm.XsmmJobRunnerOverlayService
+import com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge
+import com.cayxu.app.ui.overlay.xsmm.startXsmmJobRunnerOverlay
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -457,6 +460,7 @@ fun GolikeAccountScreen(navController: NavController) {
                     client = client,
                     onStatusChange = { newStatus ->
                         GolikeRunningManager.statusMap[acc.id] = newStatus
+                        XsmmJobStatusBridge.update(newStatus)
                         GolikeAccountsStore.updateAccountProgress(context, "tiktok", acc.id, newStatus)
                     },
                     onJobSuccess = { earned ->
@@ -468,12 +472,14 @@ fun GolikeAccountScreen(navController: NavController) {
                             GolikeSession.balance.value = newBal
                         }
                         GolikeAccountsStore.updateAccountProgress(context, "tiktok", acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = true)
+                        XsmmJobStatusBridge.update("+$earned đ (Xong $curSucc NV)")
                     },
                     onJobFailed = { reason ->
                         val curErr = (GolikeRunningManager.errorCountMap[acc.id] ?: acc.errorCount) + 1
                         GolikeRunningManager.errorCountMap[acc.id] = curErr
                         GolikeRunningManager.lastErrorDetailMap[acc.id] = reason
                         GolikeAccountsStore.updateAccountProgress(context, "tiktok", acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = false, errorDetail = reason)
+                        XsmmJobStatusBridge.update("Lỗi: $reason")
                     }
                 )
             }
@@ -643,6 +649,9 @@ fun GolikeAccountScreen(navController: NavController) {
                             onClick = {
                                 if (isAnyRunning) {
                                     GolikeRunningManager.stopAll(currentAccounts)
+                                    try {
+                                        context.stopService(Intent(context, XsmmJobRunnerOverlayService::class.java))
+                                    } catch (_: Exception) {}
                                     Toast.makeText(context, "Đã dừng tất cả tài khoản Golike", Toast.LENGTH_SHORT).show()
                                 } else {
                                     // Bước 1: Kiểm Tra Nick Được Chọn
@@ -658,12 +667,12 @@ fun GolikeAccountScreen(navController: NavController) {
                                             Uri.parse("package:${context.packageName}")
                                         )
                                         context.startActivity(intent)
-                                        Toast.makeText(context, "Vui lòng cấp quyền 'Hiển thị trên các ứng dụng khác' để chạy!", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "Vui lòng cấp quyền 'Hiển thị trên ứng dụng khác' để mở popup!", Toast.LENGTH_LONG).show()
                                         return@Button
                                     }
 
                                     if (!TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
-                                        Toast.makeText(context, "Vui lòng bật quyền Trợ năng (Accessibility) để tự động thao tác TikTok!", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "Vui lòng bật quyền Trợ năng cho CayXu!", Toast.LENGTH_LONG).show()
                                         TikTokAppLauncher.openAccessibilitySettings(context)
                                         return@Button
                                     }
@@ -679,6 +688,14 @@ fun GolikeAccountScreen(navController: NavController) {
                                         Toast.makeText(context, "Vui lòng chọn ít nhất 1 tài khoản để chạy!", Toast.LENGTH_SHORT).show()
                                         return@Button
                                     }
+
+                                    val selectedHandles = targets.map { it.handle.trim().removePrefix("@") }
+                                    // 1. Gọi hàm mở popup màn nổi (Dùng chung engine overlay từ XsmmJobRunnerLink.kt):
+                                    startXsmmJobRunnerOverlay(
+                                        context = context,
+                                        accountHandles = selectedHandles
+                                    )
+
                                     targets.forEach { ttAcc ->
                                         val cleanHandle = ttAcc.handle.trim().removePrefix("@")
                                         val gAcc = currentAccounts.firstOrNull { it.username.trim().removePrefix("@").equals(cleanHandle, ignoreCase = true) || it.id == ttAcc.uid }

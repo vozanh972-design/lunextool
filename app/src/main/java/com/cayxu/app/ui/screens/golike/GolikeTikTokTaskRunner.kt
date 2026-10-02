@@ -1,8 +1,11 @@
 package com.cayxu.app.ui.screens.golike
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge
+import com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -136,27 +139,49 @@ object GolikeTikTokTaskRunner {
             ?: targetData?.optString("unique_username").takeIf { !it.isNullOrBlank() }
             ?: targetData?.optString("nickname").orEmpty()
 
+        val targetUserId = targetData?.optString("user_id").takeIf { !it.isNullOrBlank() }
+            ?: targetData?.optString("target_user_id").takeIf { !it.isNullOrBlank() }
+            ?: targetData?.optString("target_id").takeIf { !it.isNullOrBlank() }
+            ?: targetData?.optString("id").takeIf { !it.isNullOrBlank() && it != targetAccountId }
+            .orEmpty()
+
         if (targetUser.isBlank() && targetLink.isBlank()) {
             targetUser = dataObj?.optString("target_user").takeIf { !it.isNullOrBlank() }
                 ?: dataObj?.optJSONObject("target_user")?.optString("username").takeIf { !it.isNullOrBlank() }
                 ?: dataObj?.optString("username").orEmpty()
         }
 
-        val targetUrl = when {
-            targetLink.isNotBlank() -> targetLink
-            targetUser.isNotBlank() -> "https://www.tiktok.com/@${targetUser.trim().removePrefix("@")}"
-            else -> ""
-        }
+        val targetUsername = targetUser.trim().removePrefix("@")
+        val targetProfileId = targetUserId.ifBlank { targetUsername }
 
-        // BƯỚC 4: Gọi thẳng Engine Follow dùng chung của XSMM TikTok
-        if (targetUrl.isNotBlank()) {
-            onProgress("Mở TikTok follow nick cấu hình @${targetUser.ifBlank { "chỉ định" }}...")
-            com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge.update("Mở TikTok follow cấu hình @$targetUser")
-            TikTokAppLauncher.openUserProfile(context, targetUrl)
+        // BƯỚC 4: Bật app TikTok mở đúng trang cá nhân của nick chỉ định & Follow
+        if (targetProfileId.isNotBlank() || targetLink.isNotBlank()) {
+            val statusMsg = "Mở TikTok follow cấu hình @${targetUsername.ifBlank { targetProfileId }}"
+            onProgress(statusMsg)
+            XsmmJobStatusBridge.update(statusMsg)
+
+            val tiktokIntent = Intent(Intent.ACTION_VIEW, Uri.parse("snssdk1128://user/profile/$targetProfileId")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(tiktokIntent)
+            } catch (e: Exception) {
+                // Fallback mở qua link web nếu chưa nhận deep link
+                val webUrl = targetLink.ifBlank { "https://www.tiktok.com/@$targetUsername" }
+                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse(webUrl)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try {
+                    context.startActivity(webIntent)
+                } catch (_: Exception) {
+                    TikTokAppLauncher.openUserProfile(context, webUrl)
+                }
+            }
             delay(1500L)
 
             if (TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
                 onProgress("Tự động bấm nút Follow...")
+                XsmmJobStatusBridge.update("Bấm nút Follow @$targetUsername...")
                 val actionId = XsmmTaskAutomationBridge.triggerTask(
                     taskType = "follow",
                     swipeBefore = false,
@@ -168,15 +193,20 @@ object GolikeTikTokTaskRunner {
                     val res = XsmmTaskAutomationBridge.result.value
                     if (res is com.cayxu.app.automation.tiktok.XsmmTaskActionResult.InProgress) {
                         onProgress(res.message)
+                        XsmmJobStatusBridge.update(res.message)
                     } else if (res is com.cayxu.app.automation.tiktok.XsmmTaskActionResult.Completed && res.actionId == actionId) {
                         onProgress(res.message)
+                        XsmmJobStatusBridge.update(res.message)
                         break
                     }
                     delay(400L)
                 }
             } else {
                 onProgress("Đang chờ Follow trên TikTok...")
-                delay(5000L)
+                for (sec in 5 downTo 1) {
+                    XsmmJobStatusBridge.update("Chờ Follow @$targetUsername (${sec}s)...")
+                    delay(1000L)
+                }
             }
         } else {
             delay(1200L)
@@ -184,6 +214,7 @@ object GolikeTikTokTaskRunner {
 
         // BƯỚC 5: Xác nhận hoàn tất cấu hình lên Golike: POST /api/tiktok-account/verify {"account_id": accountId}
         onProgress("Xác nhận hoàn tất cấu hình lên Golike...")
+        XsmmJobStatusBridge.update("Xác nhận cấu hình lên Golike...")
         var verifyRes = client.verifyTikTokAccount(targetAccountId)
         var vStatus = verifyRes?.optInt("status", 0) ?: 0
         var vSuccess = verifyRes?.optBoolean("success", false) ?: false
@@ -201,6 +232,7 @@ object GolikeTikTokTaskRunner {
         }
 
         if (vStatus == 200 || vSuccess || vMessage.contains("thành công", ignoreCase = true) || vMessage.contains("đã tồn tại", ignoreCase = true) || vMessage.contains("đã liên kết", ignoreCase = true)) {
+            XsmmJobStatusBridge.update("Cấu hình thành công @$username!")
             val finalAcc = GolikeAccount(
                 id = cleanUsername,
                 platform = "tiktok",
@@ -215,6 +247,7 @@ object GolikeTikTokTaskRunner {
             return@withContext Result.success(finalAcc)
         } else {
             val failMsg = vMessage.ifBlank { "Xác minh thất bại. Hãy chắc chắn bạn đã bấm Follow @$targetUser." }
+            XsmmJobStatusBridge.update("Lỗi: $failMsg")
             return@withContext Result.failure(Exception(failMsg))
         }
     }
