@@ -1,24 +1,25 @@
 package com.cayxu.app.ui.screens.welcome
 
-import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.GroupAdd
-import androidx.compose.material.icons.filled.MonetizationOn
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
@@ -29,192 +30,281 @@ import androidx.compose.ui.unit.sp
 import com.cayxu.app.R
 
 /**
- * GIAO DIỆN 1: MÀN GIỚI THIỆU (INTRO SCREEN)
- * Thiết kế chuẩn phong cách Digital Banking Dark Navy theo mẫu:
- * - Nền Navy Gradient sâu thẳm
- * - Top Bar: Logo AutoLunex + Tên thương hiệu
- * - Hero: Tiêu đề "Kiếm tiền online mỗi ngày chỉ với vài thao tác" & mô tả
- * - Danh sách 3 tính năng nổi bật: Cày xu mỗi ngày, Đổi xu lấy tiền thật, Mời bạn cùng cày
- * - Nút "Bắt đầu kiếm tiền" dạng pill trắng nổi bật ở đáy màn hình
+ * GIAO DIỆN CHÀO MỪNG (WELCOME SCREEN)
+ * Chuẩn phong cách thiết kế Figma Nexa Minimalist:
+ * - Nền trắng tinh tế #FFFFFF
+ * - Màu chủ đạo Apple Blue #0A84FF & Chữ than đậm #1C1C1E
+ * - Cụm Preview Card nhiệm vụ tương tác kèm 3 tính năng nổi bật
+ * - Nút chính "Bắt đầu ngay" bo góc hiện đại & Nút phụ "Tôi đã có key kích hoạt"
  */
 @Composable
 fun WelcomeScreen(onGetStarted: () -> Unit) {
-    val navy900 = Color(0xFF0A1730)
-    val navy800 = Color(0xFF0F2148)
-    val navy700 = Color(0xFF16305F)
-    val cobalt600 = Color(0xFF1D4ED8)
-    val cyan400 = Color(0xFF4FD1E8)
-    val textSoft = Color(0xFFA9BEE0)
+    val bgWhite = Color(0xFFFFFFFF)
+    val brandBlue = Color(0xFF0A84FF)
+    val textPrimary = Color(0xFF1C1C1E)
+    val textSecondary = Color(0xFF8E8E93)
+    val cardSurface = Color(0xFFF2F2F7)
+    val dividerColor = Color(0xFFE5E5EA)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        navy900,
-                        navy800,
-                        navy700,
-                        cobalt600
-                    )
-                )
-            )
+            .background(bgWhite)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = 24.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.Start
         ) {
             Spacer(modifier = Modifier.height(16.dp))
 
-            // TOP BAR: Logo & Tên thương hiệu
+            // TOP BAR: Logo ứng dụng & Tên thương hiệu
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_app_logo),
-                    contentDescription = "AutoLunex Logo",
+                Box(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(RoundedCornerShape(10.dp))
-                )
+                        .background(brandBlue),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_app_logo),
+                        contentDescription = "LunexTool Logo",
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                    )
+                }
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "AUTOLUNEX",
-                    fontSize = 18.sp,
+                    text = "LUNEXTOOL",
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.5.sp,
+                    color = textPrimary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(26.dp))
+
+            // HERO SECTION: Tiêu đề lớn & mô tả phụ
+            Text(
+                text = "Tương tác đơn giản,\nkiếm tiền mỗi ngày",
+                fontSize = 28.sp,
+                lineHeight = 36.sp,
+                fontWeight = FontWeight.Bold,
+                color = textPrimary
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = "Hoàn thành nhiệm vụ mạng xã hội, tích lũy thu nhập và đổi thưởng tiện lợi cùng LunexTool.",
+                fontSize = 14.5.sp,
+                lineHeight = 21.sp,
+                color = textSecondary
+            )
+
+            Spacer(modifier = Modifier.height(26.dp))
+
+            // PREVIEW BOX TÍNH NĂNG (CHUẨN FIGMA CARD)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(cardSurface)
+                    .padding(14.dp)
+            ) {
+                // Header của thẻ
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Nhiệm vụ tương tác",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = textPrimary
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFFEAF4FF))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "Nhận điểm",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = brandBlue
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Card trắng bên trong chứa 3 hàng tính năng
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        BenefitRow(
+                            icon = Icons.Filled.Favorite,
+                            iconBg = Color(0xFFEAF4FF),
+                            iconTint = brandBlue,
+                            title = "Thích nội dung phù hợp",
+                            desc = "Chỉ mất khoảng 1 phút hoàn thành",
+                            textColor = textPrimary,
+                            descColor = textSecondary
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 10.dp),
+                            color = dividerColor.copy(alpha = 0.6f),
+                            thickness = 0.8.dp
+                        )
+
+                        BenefitRow(
+                            icon = Icons.Filled.PersonAdd,
+                            iconBg = Color(0xFFEFEEFF),
+                            iconTint = Color(0xFF5856D6),
+                            title = "Theo dõi tài khoản uy tín",
+                            desc = "Nhiệm vụ được hệ thống kiểm duyệt",
+                            textColor = textPrimary,
+                            descColor = textSecondary
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 10.dp),
+                            color = dividerColor.copy(alpha = 0.6f),
+                            thickness = 0.8.dp
+                        )
+
+                        BenefitRow(
+                            icon = Icons.Filled.CheckCircle,
+                            iconBg = Color(0xFFEAF4FF),
+                            iconTint = brandBlue,
+                            title = "Xác nhận và nhận điểm",
+                            desc = "Theo dõi tiến độ ngay trong ứng dụng",
+                            textColor = textPrimary,
+                            descColor = textSecondary
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // CỤM NÚT ĐÁY MÀN HÌNH (CHUẨN FIGMA)
+            Button(
+                onClick = onGetStarted,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = brandBlue,
+                    contentColor = Color.White
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Text(
+                    text = "Bắt đầu ngay",
+                    fontSize = 15.5.sp,
+                    fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // HERO SECTION: Tiêu đề lớn & mô tả
-            Text(
-                text = "Kiếm tiền online mỗi ngày\nchỉ với vài thao tác",
-                fontSize = 28.sp,
-                lineHeight = 36.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                text = "Cày xu, hoàn thành nhiệm vụ và đổi thưởng thành tiền mặt — mọi lúc, mọi nơi.",
-                fontSize = 14.5.sp,
-                lineHeight = 22.sp,
-                color = textSoft
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // DANH SÁCH 3 TÍNH NĂNG CHÍNH
-            Column(
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                FeatureItem(
-                    icon = Icons.Filled.MonetizationOn,
-                    title = "Cày xu mỗi ngày",
-                    subtitle = "Hoàn thành nhiệm vụ đơn giản nhận xu miễn phí",
-                    iconColor = cyan400,
-                    textSoft = textSoft
-                )
-
-                FeatureItem(
-                    icon = Icons.Filled.AccountBalanceWallet,
-                    title = "Đổi xu lấy tiền thật",
-                    subtitle = "Rút tiền nhanh chóng, an toàn về ví hoặc ngân hàng",
-                    iconColor = cyan400,
-                    textSoft = textSoft
-                )
-
-                FeatureItem(
-                    icon = Icons.Filled.GroupAdd,
-                    title = "Mời bạn cùng cày",
-                    subtitle = "Nhận thêm hoa hồng khi giới thiệu bạn mới tham gia",
-                    iconColor = cyan400,
-                    textSoft = textSoft
-                )
-            }
-
-            // NÚT BẮT ĐẦU KIẾM TIỀN Ở ĐÁY MÀN HÌNH
-            Button(
-                onClick = onGetStarted,
-                shape = RoundedCornerShape(28.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = navy900
-                ),
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp)
-                    .shadow(elevation = 8.dp, shape = RoundedCornerShape(28.dp), spotColor = Color.Black)
+                    .padding(bottom = 20.dp),
+                contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Bắt đầu kiếm tiền",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = navy900
+                    text = "Tôi đã có key kích hoạt",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = brandBlue,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { onGetStarted() }
+                        .padding(vertical = 6.dp, horizontal = 12.dp)
                 )
             }
-
-            Spacer(modifier = Modifier.height(28.dp))
         }
     }
 }
 
 @Composable
-private fun FeatureItem(
+private fun BenefitRow(
     icon: ImageVector,
+    iconBg: Color,
+    iconTint: Color,
     title: String,
-    subtitle: String,
-    iconColor: Color,
-    textSoft: Color
+    desc: String,
+    textColor: Color,
+    descColor: Color
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
     ) {
-        // Icon container bo góc nền mờ trong suốt
         Box(
             modifier = Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(13.dp))
-                .background(Color.White.copy(alpha = 0.08f))
-                .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(13.dp)),
+                .size(38.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(iconBg),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = iconColor,
-                modifier = Modifier.size(22.dp)
+                tint = iconTint,
+                modifier = Modifier.size(20.dp)
             )
         }
 
-        Spacer(modifier = Modifier.width(14.dp))
+        Spacer(modifier = Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor
             )
-            Spacer(modifier = Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = subtitle,
-                fontSize = 12.5.sp,
-                lineHeight = 18.sp,
-                color = textSoft
+                text = desc,
+                fontSize = 11.5.sp,
+                color = descColor
             )
         }
+
+        Icon(
+            imageVector = Icons.Filled.ChevronRight,
+            contentDescription = null,
+            tint = Color(0xFFC7C7CC),
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
