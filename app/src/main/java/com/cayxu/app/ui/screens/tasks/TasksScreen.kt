@@ -3,22 +3,19 @@ package com.cayxu.app.ui.screens.tasks
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,31 +35,45 @@ private val FigmaBg = Color(0xFFF9FAFB)
 private val FigmaCardBg = Color(0xFFFFFFFF)
 private val FigmaBorder = Color(0xFFEEF1F5)
 private val FigmaTextPrimary = Color(0xFF1C1C1E)
-private val FigmaTextSecondary = Color(0xFF8E8E93)
-private val FigmaBrandBlue = Color(0xFF0A84FF)
-private val FigmaBadgeBg = Color(0xFFEAF4FF)
+private val FigmaTextSecondary = Color(0xFF6B7280)
 
 private data class TaskPlatformItem(
     val id: String,
-    val platformName: String,
-    val title: String,
-    val metadata: String,
-    val reward: String,
-    val category: String,
+    val name: String,
+    val subtitle: String,
     val icon: ImageVector,
     val iconBg: Color,
     val iconTint: Color,
     val onClick: (NavController, android.content.Context) -> Unit
 )
 
-private val taskItems = listOf(
+private val platformItems = listOf(
+    TaskPlatformItem(
+        id = "nhiemvucheo",
+        name = "Nhiemvucheo",
+        subtitle = "Nhiệm vụ tăng sub, view, tương tác đa kênh",
+        icon = Icons.Filled.SwapHoriz,
+        iconBg = Color(0xFFEAF4FF),
+        iconTint = Color(0xFF2563EB),
+        onClick = { navController, _ ->
+            navController.navigate(Routes.simpleTaskPlatform("Nhiemvucheo")) { launchSingleTop = true }
+        }
+    ),
+    TaskPlatformItem(
+        id = "tuongtaccheo",
+        name = "Tuongtaccheo",
+        subtitle = "Nhiệm vụ tương tác chéo giữa các nền tảng",
+        icon = Icons.Filled.Favorite,
+        iconBg = Color(0xFFFDF2F8),
+        iconTint = Color(0xFFEC4899),
+        onClick = { navController, _ ->
+            navController.navigate(Routes.simpleTaskPlatform("Tuongtaccheo")) { launchSingleTop = true }
+        }
+    ),
     TaskPlatformItem(
         id = "xsmm",
-        platformName = "XSMM · TikTok & Facebook",
-        title = "Tự động tương tác Facebook & TikTok",
-        metadata = "Theo dõi · Thích bài · 1 phút",
-        reward = "+60 điểm",
-        category = "Theo dõi",
+        name = "XSMM",
+        subtitle = "Nhiệm vụ tăng tương tác Facebook, TikTok",
         icon = Icons.Filled.CheckCircle,
         iconBg = Color(0xFFF0FDF4),
         iconTint = Color(0xFF16A34A),
@@ -81,11 +92,8 @@ private val taskItems = listOf(
     ),
     TaskPlatformItem(
         id = "golike",
-        platformName = "Golike · Kiếm tiền mạng xã hội",
-        title = "Kiếm tiền TikTok, Facebook, Instagram",
-        metadata = "Tương tác đa kênh · Nhận thưởng",
-        reward = "+80 điểm",
-        category = "Tương tác",
+        name = "Golike",
+        subtitle = "Nhiệm vụ tương tác kiếm tiền mạng xã hội đa kênh",
         icon = Icons.Filled.Star,
         iconBg = Color(0xFFFEF3C7),
         iconTint = Color(0xFFF59E0B),
@@ -93,60 +101,28 @@ private val taskItems = listOf(
             com.cayxu.app.ui.screens.golike.GolikeSession.restore(context)
             navController.navigate(Routes.GOLIKE_ACCOUNT) { launchSingleTop = true }
         }
-    ),
-    TaskPlatformItem(
-        id = "nhiemvucheo",
-        platformName = "Nhiemvucheo · Đa kênh",
-        title = "Tăng sub, like, view tương tác đa kênh",
-        metadata = "Thích bài · 2 phút",
-        reward = "+50 điểm",
-        category = "Thích bài",
-        icon = Icons.Filled.SwapHoriz,
-        iconBg = Color(0xFFEAF4FF),
-        iconTint = Color(0xFF2563EB),
-        onClick = { navController, _ ->
-            navController.navigate(Routes.simpleTaskPlatform("Nhiemvucheo")) { launchSingleTop = true }
-        }
-    ),
-    TaskPlatformItem(
-        id = "tuongtaccheo",
-        platformName = "Tuongtaccheo · Mạng xã hội",
-        title = "Nhiệm vụ tương tác chéo uy tín",
-        metadata = "Theo dõi · 3 phút",
-        reward = "+40 điểm",
-        category = "Theo dõi",
-        icon = Icons.Filled.Favorite,
-        iconBg = Color(0xFFFDF2F8),
-        iconTint = Color(0xFFEC4899),
-        onClick = { navController, _ ->
-            navController.navigate(Routes.simpleTaskPlatform("Tuongtaccheo")) { launchSingleTop = true }
-        }
     )
 )
 
 /**
- * MÀN HÌNH KHÁM PHÁ NHIỆM VỤ (TASKS SCREEN)
- * Chuẩn 100% thiết kế Figma "Khám phá nhiệm vụ":
- * - Header: Tiêu đề "Nhiệm vụ" (30.sp), Subtitle "Chọn việc phù hợp với bạn", Icon Tune
- * - Ô tìm kiếm: "Tìm nền tảng hoặc nhiệm vụ", Icon Search, Icon Mic
- * - Thanh bộ lọc Filter Chips: "Tất cả", "Theo dõi", "Thích bài", "Tương tác"
- * - Danh sách nhiệm vụ "Dành cho bạn": Card bo góc 18.dp, Badge "+50 điểm" chuẩn Figma
- * - Khung lưu ý Task Tip: Icon khiên bảo mật + Lời khuyên kiểm duyệt
+ * MÀN HÌNH NHIỆM VỤ (TASKS SCREEN)
+ * Chuẩn hóa tinh gọn theo chuẩn Figma:
+ * - Header tiêu đề "Nhiệm vụ" (30.sp), Subtitle "Chọn việc phù hợp với bạn" (Đã bỏ nút bộ lọc)
+ * - Ô tìm kiếm nền tảng & nhiệm vụ
+ * - Tiêu đề nhóm "Dành cho bạn"
+ * - Card nền tảng tinh gọn: Icon bo tròn 12.dp + Tên + Phụ đề + Mũi tên điều hướng >
+ * - Đã xóa sạch 5 thành phần thừa theo yêu cầu
  */
 @Composable
 fun TasksScreen(navController: NavController) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
-    var selectedFilter by remember { mutableStateOf("Tất cả") }
-    val filters = listOf("Tất cả", "Theo dõi", "Thích bài", "Tương tác")
 
-    val filteredList = remember(searchQuery, selectedFilter) {
-        taskItems.filter { item ->
-            val matchFilter = selectedFilter == "Tất cả" || item.category == selectedFilter
-            val matchQuery = searchQuery.isBlank() ||
-                    item.platformName.contains(searchQuery, ignoreCase = true) ||
-                    item.title.contains(searchQuery, ignoreCase = true)
-            matchFilter && matchQuery
+    val filteredList = remember(searchQuery) {
+        platformItems.filter { item ->
+            searchQuery.isBlank() ||
+                    item.name.contains(searchQuery, ignoreCase = true) ||
+                    item.subtitle.contains(searchQuery, ignoreCase = true)
         }
     }
 
@@ -164,49 +140,26 @@ fun TasksScreen(navController: NavController) {
         ) {
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 1. PAGE HEADING (CHUẨN FIGMA)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "Nhiệm vụ",
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = FigmaTextPrimary,
-                        letterSpacing = (-0.5).sp
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Chọn việc phù hợp với bạn",
-                        fontSize = 14.sp,
-                        color = FigmaTextSecondary
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(FigmaCardBg)
-                        .border(1.dp, FigmaBorder, RoundedCornerShape(12.dp))
-                        .clickable { /* Mở bộ lọc nâng cao */ },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Tune,
-                        contentDescription = "Bộ lọc",
-                        tint = FigmaTextPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+            // 1. PAGE HEADING (ĐÃ BỎ NÚT BỘ LỌC 3 GẠCH)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Nhiệm vụ",
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = FigmaTextPrimary,
+                    letterSpacing = (-0.5).sp
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Chọn việc phù hợp với bạn",
+                    fontSize = 14.sp,
+                    color = Color(0xFF8E8E93)
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 2. SEARCH FIELD (CHUẨN FIGMA)
+            // 2. SEARCH FIELD
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -224,7 +177,7 @@ fun TasksScreen(navController: NavController) {
                     Icon(
                         imageVector = Icons.Filled.Search,
                         contentDescription = "Tìm kiếm",
-                        tint = FigmaTextSecondary,
+                        tint = Color(0xFF8E8E93),
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
@@ -233,7 +186,7 @@ fun TasksScreen(navController: NavController) {
                             Text(
                                 text = "Tìm nền tảng hoặc nhiệm vụ",
                                 fontSize = 14.5.sp,
-                                color = FigmaTextSecondary
+                                color = Color(0xFF8E8E93)
                             )
                         }
                         BasicTextField(
@@ -253,55 +206,22 @@ fun TasksScreen(navController: NavController) {
                             onClick = { searchQuery = "" },
                             modifier = Modifier.size(24.dp)
                         ) {
-                            Text("✕", fontSize = 14.sp, color = FigmaTextSecondary)
+                            Text("✕", fontSize = 14.sp, color = Color(0xFF8E8E93))
                         }
                     } else {
                         Icon(
                             imageVector = Icons.Filled.Mic,
                             contentDescription = "Giọng nói",
-                            tint = FigmaTextSecondary,
+                            tint = Color(0xFF8E8E93),
                             modifier = Modifier.size(19.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // 3. FILTERS (CHIPS CHUẨN FIGMA)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                filters.forEach { filterText ->
-                    val isSelected = filterText == selectedFilter
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(if (isSelected) FigmaBrandBlue else FigmaCardBg)
-                            .then(
-                                if (!isSelected) Modifier.border(1.dp, FigmaBorder, RoundedCornerShape(999.dp))
-                                else Modifier
-                            )
-                            .clickable { selectedFilter = filterText }
-                            .padding(horizontal = 15.dp, vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = filterText,
-                            fontSize = 12.5.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) Color.White else FigmaTextSecondary
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(22.dp))
-
-            // 4. SECTION HEADER: "Dành cho bạn" + "12 nhiệm vụ"
+            // 3. SECTION HEADER: "Dành cho bạn"
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -317,20 +237,20 @@ fun TasksScreen(navController: NavController) {
                     text = "${filteredList.size} nền tảng",
                     fontSize = 13.5.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = FigmaBrandBlue
+                    color = Color(0xFF0A84FF)
                 )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 5. TASK CARDS (CHUẨN FIGMA 18.dp RADIUS, PADDING 14.dp, BADGE +40 điểm)
+            // 4. PLATFORM CARDS (TINH GỌN CHUẨN FIGMA)
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 filteredList.forEach { item ->
                     Card(
-                        shape = RoundedCornerShape(18.dp),
+                        shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
                         border = androidx.compose.foundation.BorderStroke(1.dp, FigmaBorder),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { item.onClick(navController, context) }
@@ -338,14 +258,14 @@ fun TasksScreen(navController: NavController) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(14.dp),
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Icon nền tảng
+                            // Bên trái: Icon nền tảng bo góc 12.dp
                             Box(
                                 modifier = Modifier
                                     .size(46.dp)
-                                    .clip(RoundedCornerShape(14.dp))
+                                    .clip(RoundedCornerShape(12.dp))
                                     .background(item.iconBg),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -357,91 +277,36 @@ fun TasksScreen(navController: NavController) {
                                 )
                             }
 
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(14.dp))
 
-                            // Chi tiết nhiệm vụ
+                            // Ở giữa: Tên nền tảng + Phụ đề ngắn gọn
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = item.platformName,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = FigmaTextSecondary
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = item.title,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = FigmaTextPrimary,
-                                    lineHeight = 20.sp
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = item.metadata,
-                                    fontSize = 12.sp,
-                                    color = FigmaTextSecondary
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(10.dp))
-
-                            // Reward Badge (+40 điểm / +50 điểm)
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(FigmaBadgeBg)
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = item.reward,
-                                    fontSize = 12.sp,
+                                    text = item.name,
+                                    fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = FigmaBrandBlue
+                                    color = FigmaTextPrimary
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = item.subtitle,
+                                    fontSize = 13.sp,
+                                    color = FigmaTextSecondary,
+                                    lineHeight = 18.sp
                                 )
                             }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // Bên phải: Mũi tên điều hướng >
+                            Icon(
+                                imageVector = Icons.Filled.ChevronRight,
+                                contentDescription = null,
+                                tint = Color(0xFF9CA3AF),
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // 6. TASK TIP (CHUẨN FIGMA)
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = FigmaBadgeBg),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(Color.White),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Security,
-                            contentDescription = null,
-                            tint = FigmaBrandBlue,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    Text(
-                        text = "LunexTool chỉ đề xuất nhiệm vụ đã được kiểm duyệt và phù hợp với tài khoản của bạn.",
-                        fontSize = 12.5.sp,
-                        lineHeight = 18.sp,
-                        color = Color(0xFF3B82F6),
-                        fontWeight = FontWeight.Medium
-                    )
                 }
             }
 
