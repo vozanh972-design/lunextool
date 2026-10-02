@@ -79,6 +79,40 @@ fun AccountScreen(navController: NavController) {
     val buyerUsername = remember { securePrefs.getBuyerUsername() }
     val deviceId = remember { DeviceUtils.getAndroidId(context) }
 
+    val rawPackage = remember { securePrefs.getPackageName() }
+    val packageName = if (!rawPackage.isNullOrBlank() && rawPackage != "Premium") rawPackage.uppercase() else "PRO"
+    val rawExpiresAt = remember { securePrefs.getExpiresAt() }
+    val expiryDate = remember(rawExpiresAt) {
+        if (!rawExpiresAt.isNullOrBlank()) {
+            rawExpiresAt.split(" ").firstOrNull() ?: rawExpiresAt
+        } else {
+            "03/10/2026"
+        }
+    }
+    val remainingInfo = remember(rawExpiresAt) {
+        try {
+            if (!rawExpiresAt.isNullOrBlank()) {
+                val datePart = rawExpiresAt.split(" ").first()
+                val format = if (datePart.contains("-")) {
+                    java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                } else if (datePart.contains("/")) {
+                    java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
+                } else null
+
+                if (format != null) {
+                    val expDate = format.parse(datePart)
+                    if (expDate != null) {
+                        val diffMs = expDate.time - System.currentTimeMillis()
+                        val days = (diffMs / (1000 * 60 * 60 * 24)).coerceAtLeast(0)
+                        if (days > 0) "Còn $days ngày" else "Hết hạn hôm nay"
+                    } else "Còn 5 ngày"
+                } else "Còn 5 ngày"
+            } else "Còn 5 ngày"
+        } catch (_: Exception) {
+            "Còn 5 ngày"
+        }
+    }
+
     val displayName = if (!buyerUsername.isNullOrBlank()) buyerUsername else "Minh Anh"
     val userHandle = "@${(buyerUsername ?: "minhanh").lowercase().replace(" ", "")} · Thành viên từ 08/2026"
 
@@ -477,7 +511,7 @@ fun AccountScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 📌 3. THẺ THỐNG KÊ ĐIỂM & CẤP ĐỘ UY TÍN (STAT CARD)
+            // 📌 3. THẺ GÓI KEY BẢN QUYỀN & HẠN DÙNG (STAT CARD THEO FIGMA)
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
@@ -490,33 +524,39 @@ fun AccountScreen(navController: NavController) {
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 20.dp)
                 ) {
-                    // Hàng trên: Tổng điểm & Cấp độ uy tín
+                    // Hàng trên: Gói bản quyền & Trạng thái
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.Top
                     ) {
-                        // Cột trái: Tổng điểm
+                        // Cột trái: Gói bản quyền
                         Column {
                             Text(
-                                text = "Tổng điểm",
+                                text = "Gói bản quyền",
                                 fontSize = 13.sp,
                                 color = FigmaTextSecondary
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "1.280",
-                                fontSize = 32.sp,
+                                text = packageName,
+                                fontSize = 30.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = FigmaTextPrimary,
                                 letterSpacing = (-0.5).sp
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Mã máy: " + deviceId.take(12) + "...",
+                                fontSize = 11.sp,
+                                color = FigmaTextMuted
+                            )
                         }
 
-                        // Cột phải: Cấp độ uy tín
+                        // Cột phải: Trạng thái
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
-                                text = "Cấp độ uy tín",
+                                text = "Trạng thái",
                                 fontSize = 13.sp,
                                 color = FigmaTextSecondary
                             )
@@ -537,8 +577,8 @@ fun AccountScreen(navController: NavController) {
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "Uy tín 4",
-                                        fontSize = 12.5.sp,
+                                        text = "Đang kích hoạt",
+                                        fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = FigmaPurple
                                     )
@@ -549,21 +589,21 @@ fun AccountScreen(navController: NavController) {
 
                     Spacer(modifier = Modifier.height(18.dp))
 
-                    // Hàng dưới: Thanh tiến trình cấp bậc
+                    // Hàng dưới: Thanh tiến trình hạn dùng
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Thêm 120 điểm để lên cấp 5",
+                            text = "Hạn dùng: $expiryDate",
                             fontSize = 12.5.sp,
                             color = FigmaTextSecondary
                         )
                         Text(
-                            text = "72%",
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            text = remainingInfo,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
                             color = FigmaPurple
                         )
                     }

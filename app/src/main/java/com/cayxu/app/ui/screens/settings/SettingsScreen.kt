@@ -2,60 +2,62 @@ package com.cayxu.app.ui.screens.settings
 
 import android.app.Activity
 import android.view.WindowManager
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import com.cayxu.app.BuildConfig
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.ui.navigation.Routes
-import com.cayxu.app.ui.theme.AppBackground
-import com.cayxu.app.ui.theme.CardWhite
-import com.cayxu.app.ui.theme.DangerRed
-import com.cayxu.app.ui.theme.Primary
-import com.cayxu.app.ui.theme.SuccessGreen
-import com.cayxu.app.ui.theme.TextPrimary
-import com.cayxu.app.ui.theme.TextSecondary
 import com.cayxu.app.worker.AppAlertNotifier
 import com.cayxu.app.worker.AppBackgroundService
+
+private val FigmaBg = Color(0xFFF9FAFB)
+private val FigmaCardBg = Color(0xFFFFFFFF)
+private val FigmaBorder = Color(0xFFF1F5F9)
+private val FigmaDivider = Color(0xFFF8FAFC)
+private val FigmaTextPrimary = Color(0xFF1E293B)
+private val FigmaTextHeader = Color(0xFF111827)
+private val FigmaTextSection = Color(0xFF64748B)
+private val FigmaTextMuted = Color(0xFF94A3B8)
+private val FigmaBlue = Color(0xFF0284C7)
+private val FigmaIconBg = Color(0xFFF0F7FF)
+private val FigmaDanger = Color(0xFFEF4444)
 
 @Composable
 fun SettingsScreen(navController: NavController) {
     val context = LocalContext.current
     val securePrefs = remember { SecurePrefs(context) }
 
-    // "Giữ màn hình sáng" là công tắc thật, tác động trực tiếp lên cửa sổ Activity hiện tại
-    // (không phải mock) - bật/tắt FLAG_KEEP_SCREEN_ON ngay khi gạt.
     var keepScreenOn by remember { mutableStateOf(false) }
-
-    // "Thông báo đẩy" - công tắc THẬT: cảnh báo lên thanh thông báo khi tài khoản chạy bị lỗi
     var pushNotifications by remember { mutableStateOf(AppAlertNotifier.isPushEnabled(context)) }
-
-    // "Chạy ngầm" - công tắc THẬT: bật/tắt AppBackgroundService (Foreground Service)
-    // Trạng thái được đọc từ SharedPrefs và phản ánh service thực sự đang chạy hay không
     var backgroundServiceEnabled by remember { mutableStateOf(AppBackgroundService.isEnabled(context)) }
 
-    val notificationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
             AppBackgroundService.start(context)
@@ -67,31 +69,51 @@ fun SettingsScreen(navController: NavController) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(AppBackground)
+            .background(FigmaBg)
+            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
     ) {
-        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
-            IconButton(
-                onClick = { navController.popBackStack() },
-                modifier = Modifier.align(Alignment.CenterStart).padding(start = 6.dp)
+        // 📌 1. TOP BAR TIÊU ĐỀ
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp, bottom = 12.dp, start = 16.dp, end = 16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(FigmaCardBg)
+                    .border(1.dp, FigmaBorder, RoundedCornerShape(12.dp))
+                    .clickable { navController.popBackStack() }
+                    .align(Alignment.CenterStart),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Quay lại", tint = TextPrimary)
+                Icon(
+                    imageVector = Icons.Filled.ArrowBack,
+                    contentDescription = "Quay lại",
+                    tint = FigmaTextHeader,
+                    modifier = Modifier.size(20.dp)
+                )
             }
+
             Text(
-                "Cài đặt",
-                fontSize = 18.sp,
+                text = "Cài đặt",
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary,
+                color = FigmaTextHeader,
                 modifier = Modifier.align(Alignment.Center)
             )
         }
 
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-            SettingsSectionLabel("Thông báo")
+            Spacer(Modifier.height(8.dp))
+
+            // 📌 2. NHÓM THÔNG BÁO
+            SettingsSectionLabel("THÔNG BÁO")
             SettingsGroup {
                 SettingsSwitchRow(
-                    icon = Icons.Filled.Notifications,
-                    iconColor = Primary,
+                    icon = Icons.Outlined.Notifications,
                     title = "Thông báo đẩy",
                     checked = pushNotifications,
                     onCheckedChange = { checked ->
@@ -99,7 +121,7 @@ fun SettingsScreen(navController: NavController) {
                         AppAlertNotifier.setPushEnabled(context, checked)
                         if (checked) {
                             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                                val hasPerm = ContextCompat.checkSelfPermission(
                                     context,
                                     android.Manifest.permission.POST_NOTIFICATIONS
                                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -108,22 +130,22 @@ fun SettingsScreen(navController: NavController) {
                                 }
                             }
                             AppAlertNotifier.createChannel(context)
-                            android.widget.Toast.makeText(context, "Đã bật cảnh báo khi tài khoản lỗi", android.widget.Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Đã bật cảnh báo khi tài khoản lỗi", Toast.LENGTH_SHORT).show()
                         } else {
-                            android.widget.Toast.makeText(context, "Đã tắt cảnh báo khi tài khoản lỗi", android.widget.Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Đã tắt cảnh báo khi tài khoản lỗi", Toast.LENGTH_SHORT).show()
                         }
                     }
                 )
+                HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
                 SettingsSwitchRow(
-                    icon = Icons.Filled.Sync,
-                    iconColor = Color(0xFF16A34A),
+                    icon = Icons.Outlined.Sync,
                     title = "Chạy ngầm",
                     checked = backgroundServiceEnabled,
                     onCheckedChange = { checked ->
                         backgroundServiceEnabled = checked
                         if (checked) {
                             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                                val hasPerm = ContextCompat.checkSelfPermission(
                                     context,
                                     android.Manifest.permission.POST_NOTIFICATIONS
                                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -132,29 +154,22 @@ fun SettingsScreen(navController: NavController) {
                                 }
                             }
                             AppBackgroundService.start(context)
-                            android.widget.Toast.makeText(
-                                context,
-                                "Đã bật chạy ngầm - app tiếp tục chạy khi đóng",
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
+                            Toast.makeText(context, "Đã bật chạy ngầm - app tiếp tục chạy khi đóng", Toast.LENGTH_SHORT).show()
                         } else {
                             AppBackgroundService.stop(context)
-                            android.widget.Toast.makeText(
-                                context,
-                                "Đã tắt chạy ngầm",
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
+                            Toast.makeText(context, "Đã tắt chạy ngầm", Toast.LENGTH_SHORT).show()
                         }
                     }
                 )
             }
 
             Spacer(Modifier.height(20.dp))
-            SettingsSectionLabel("Giao diện")
+
+            // 📌 3. NHÓM GIAO DIỆN
+            SettingsSectionLabel("GIAO DIỆN")
             SettingsGroup {
                 SettingsSwitchRow(
-                    icon = Icons.Filled.LightMode,
-                    iconColor = Color(0xFFF59E0B),
+                    icon = Icons.Outlined.LightMode,
                     title = "Giữ màn hình sáng",
                     checked = keepScreenOn,
                     onCheckedChange = { checked ->
@@ -167,83 +182,128 @@ fun SettingsScreen(navController: NavController) {
                         }
                     }
                 )
+                HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
                 SettingsSwitchRow(
-                    icon = Icons.Filled.DarkMode,
-                    iconColor = TextSecondary,
+                    icon = Icons.Outlined.DarkMode,
                     title = "Chế độ tối",
                     checked = com.cayxu.app.ui.theme.ThemeState.isDarkMode,
                     onCheckedChange = { checked ->
                         com.cayxu.app.ui.theme.ThemeState.setDarkMode(context, checked)
                     }
                 )
+                HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
                 SettingsRow(
-                    icon = Icons.Filled.Language,
-                    iconColor = Primary,
+                    icon = Icons.Outlined.Language,
                     title = "Ngôn ngữ",
                     trailingText = "Tiếng Việt",
-                    onClick = { }
+                    onClick = { Toast.makeText(context, "Mặc định: Tiếng Việt", Toast.LENGTH_SHORT).show() }
                 )
             }
 
             Spacer(Modifier.height(20.dp))
-            SettingsSectionLabel("Hỗ trợ")
+
+            // 📌 4. NHÓM HỖ TRỢ & HỆ THỐNG
+            SettingsSectionLabel("HỖ TRỢ & HỆ THỐNG")
             SettingsGroup {
-                SettingsRow(icon = Icons.Filled.HelpOutline, iconColor = Color(0xFF0EA5E9), title = "Trung tâm hỗ trợ", onClick = { })
-                SettingsRow(icon = Icons.Filled.Description, iconColor = Color(0xFF7C3AED), title = "Điều khoản sử dụng", onClick = { })
-                SettingsRow(icon = Icons.Filled.Shield, iconColor = SuccessGreen, title = "Chính sách bảo mật", onClick = { })
                 SettingsRow(
-                    icon = Icons.Filled.Info,
-                    iconColor = TextSecondary,
+                    icon = Icons.Outlined.HelpOutline,
+                    title = "Trung tâm hỗ trợ",
+                    onClick = { Toast.makeText(context, "Đang mở trung tâm hỗ trợ", Toast.LENGTH_SHORT).show() }
+                )
+                HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
+                SettingsRow(
+                    icon = Icons.Outlined.Description,
+                    title = "Điều khoản sử dụng",
+                    onClick = { Toast.makeText(context, "Đang mở điều khoản sử dụng", Toast.LENGTH_SHORT).show() }
+                )
+                HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
+                SettingsRow(
+                    icon = Icons.Outlined.Shield,
+                    title = "Chính sách bảo mật",
+                    onClick = { Toast.makeText(context, "Đang mở chính sách bảo mật", Toast.LENGTH_SHORT).show() }
+                )
+                HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
+                SettingsRow(
+                    icon = Icons.Outlined.Info,
                     title = "Phiên bản ứng dụng",
                     trailingText = BuildConfig.VERSION_NAME,
-                    onClick = { }
+                    onClick = { Toast.makeText(context, "Phiên bản v${BuildConfig.VERSION_NAME}", Toast.LENGTH_SHORT).show() }
                 )
             }
 
             Spacer(Modifier.height(24.dp))
 
+            // 📌 5. NÚT ĐĂNG XUẤT Ở ĐÁY
             Card(
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = CardWhite),
+                colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
+                border = BorderStroke(1.dp, Color(0xFFFEE2E2)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier.fillMaxWidth().clickable { showLogoutConfirm = true }
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showLogoutConfirm = true }
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 14.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Filled.ExitToApp, contentDescription = null, tint = DangerRed, modifier = Modifier.size(18.dp))
+                    Icon(
+                        imageVector = Icons.Outlined.Logout,
+                        contentDescription = null,
+                        tint = FigmaDanger,
+                        modifier = Modifier.size(19.dp)
+                    )
                     Spacer(Modifier.width(8.dp))
-                    Text("Đăng xuất", color = DangerRed, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(
+                        text = "Đăng xuất tài khoản",
+                        color = FigmaDanger,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.5.sp
+                    )
                 }
             }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(36.dp))
         }
     }
 
     if (showLogoutConfirm) {
         AlertDialog(
             onDismissRequest = { showLogoutConfirm = false },
-            title = { Text("Đăng xuất") },
-            text = { Text("Bạn có chắc muốn đăng xuất? Key đã lưu trên máy sẽ bị xoá, bạn cần nhập lại key ở lần mở app sau.") },
+            title = {
+                Text(
+                    text = "Đăng xuất tài khoản",
+                    fontWeight = FontWeight.Bold,
+                    color = FigmaTextHeader
+                )
+            },
+            text = {
+                Text(
+                    text = "Bạn có chắc muốn đăng xuất? Key đã lưu trên máy sẽ bị xoá, bạn cần nhập lại key ở lần mở app sau.",
+                    fontSize = 14.sp,
+                    color = Color(0xFF6B7280)
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    showLogoutConfirm = false
-                    // Xoá key đăng nhập đã lưu (EncryptedSharedPreferences) rồi quay về màn nhập key,
-                    // xoá sạch back stack để không thể bấm Back quay lại các màn cần đăng nhập.
-                    securePrefs.clearKey()
-                    navController.navigate(Routes.LOGIN) {
-                        popUpTo(0) { inclusive = true }
-                    }
-                }) {
-                    Text("Đăng xuất", color = DangerRed, fontWeight = FontWeight.Bold)
+                Button(
+                    onClick = {
+                        showLogoutConfirm = false
+                        securePrefs.clearKey()
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = FigmaDanger)
+                ) {
+                    Text("Đăng xuất", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showLogoutConfirm = false }) {
-                    Text("Huỷ")
+                OutlinedButton(onClick = { showLogoutConfirm = false }) {
+                    Text("Huỷ", color = Color(0xFF6B7280))
                 }
             }
         )
@@ -252,16 +312,23 @@ fun SettingsScreen(navController: NavController) {
 
 @Composable
 private fun SettingsSectionLabel(text: String) {
-    Text(text, color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    Text(
+        text = text,
+        color = FigmaTextSection,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.5.sp
+    )
     Spacer(Modifier.height(8.dp))
 }
 
 @Composable
 private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
     Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
+        border = BorderStroke(1.dp, FigmaBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(content = content)
@@ -271,7 +338,6 @@ private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
 @Composable
 private fun SettingsRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    iconColor: Color,
     title: String,
     trailingText: String? = null,
     onClick: () -> Unit
@@ -280,49 +346,94 @@ private fun SettingsRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 13.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier.size(34.dp).background(iconColor.copy(alpha = 0.12f), CircleShape),
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(FigmaIconBg),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(17.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = FigmaBlue,
+                modifier = Modifier.size(19.dp)
+            )
         }
-        Spacer(Modifier.width(12.dp))
-        Text(title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(14.dp))
+        Text(
+            text = title,
+            color = FigmaTextPrimary,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f)
+        )
         if (trailingText != null) {
-            Text(trailingText, color = TextSecondary, fontSize = 13.sp)
+            Text(
+                text = trailingText,
+                color = FigmaTextMuted,
+                fontSize = 13.5.sp
+            )
             Spacer(Modifier.width(4.dp))
         }
-        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+        Icon(
+            imageVector = Icons.Filled.ChevronRight,
+            contentDescription = null,
+            tint = FigmaTextMuted,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
 @Composable
 private fun SettingsSwitchRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    iconColor: Color,
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier.size(34.dp).background(iconColor.copy(alpha = 0.12f), CircleShape),
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(FigmaIconBg),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(17.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = FigmaBlue,
+                modifier = Modifier.size(19.dp)
+            )
         }
-        Spacer(Modifier.width(12.dp))
-        Text(title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(14.dp))
+        Text(
+            text = title,
+            color = FigmaTextPrimary,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f)
+        )
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(checkedThumbColor = CardWhite, checkedTrackColor = Primary)
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = FigmaBlue,
+                checkedBorderColor = Color.Transparent,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = Color(0xFFE2E8F0),
+                uncheckedBorderColor = Color.Transparent
+            )
         )
     }
 }
