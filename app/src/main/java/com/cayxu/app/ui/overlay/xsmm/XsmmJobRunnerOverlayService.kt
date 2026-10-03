@@ -503,11 +503,12 @@ class XsmmJobRunnerOverlayService : Service() {
     private fun startGolikeAutomationRunner(variant: TikTokAppVariant) {
         runnerJob?.cancel()
         runnerJob = serviceScope.launch(Dispatchers.IO) {
-            val client = GolikeAccountsStore.getApiClient(applicationContext)
-            if (!GolikeAccountsStore.isLoggedIn(applicationContext) || client.authToken.isNullOrBlank()) {
+            val token = GolikeAccountsStore.getToken(applicationContext)
+            if (token.isNullOrBlank() || !GolikeAccountsStore.isLoggedIn(applicationContext)) {
                 XsmmJobStatusBridge.update("Lỗi: Chưa đăng nhập Golike")
                 return@launch
             }
+            val client = GolikeAccountsStore.getApiClient(applicationContext)
 
             val activeList = accountHandles.ifEmpty { listOf("") }
             val config = GolikeRunConfigStore.get(applicationContext, "tiktok")

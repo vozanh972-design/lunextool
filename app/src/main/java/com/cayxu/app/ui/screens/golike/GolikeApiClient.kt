@@ -11,11 +11,11 @@ import java.util.concurrent.TimeUnit
  * Client kết nối 100% chuẩn Golike trích xuất từ GoMax 1.2.2
  */
 class GolikeApiClient(
-    private var authToken: String? = null,
-    private var tToken: String? = null,
-    private var deviceId: String? = null,
-    private var username: String? = null,
-    private var gAuth: String? = null
+    var authToken: String? = null,
+    var tToken: String? = null,
+    var deviceId: String? = null,
+    var username: String? = null,
+    var gAuth: String? = null
 ) {
     companion object {
         const val BASE_URL = "https://gateway.golike.net/api"
