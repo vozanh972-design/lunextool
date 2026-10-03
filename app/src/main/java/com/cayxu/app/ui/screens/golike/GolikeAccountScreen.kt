@@ -51,7 +51,7 @@ import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.tiktok.checker.TikTokProfileCheckerClient
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobRunnerOverlayService
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge
-import com.cayxu.app.ui.overlay.xsmm.startXsmmJobRunnerOverlay
+import com.cayxu.app.ui.overlay.xsmm.startGolikeJobRunnerOverlay
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -664,26 +664,20 @@ fun GolikeAccountScreen(navController: NavController) {
                                     }
 
                                     val selectedHandles = targets.map { it.handle.trim().removePrefix("@") }
-                                    // 1. Gọi hàm mở popup màn nổi (Dùng chung engine overlay từ XsmmJobRunnerLink.kt):
-                                    startXsmmJobRunnerOverlay(
-                                        context = context,
-                                        accountHandles = selectedHandles
-                                    )
 
                                     targets.forEach { ttAcc ->
-                                        val cleanHandle = ttAcc.handle.trim().removePrefix("@")
-                                        val gAcc = currentAccounts.firstOrNull { it.username.trim().removePrefix("@").equals(cleanHandle, ignoreCase = true) || it.id == ttAcc.uid }
-                                            ?: GolikeAccount(
-                                                id = ttAcc.uid.ifBlank { cleanHandle },
-                                                platform = "tiktok",
-                                                username = cleanHandle,
-                                                avatar = ttAcc.avatarUrl,
-                                                isLive = ttAcc.isLive,
-                                                isGolikeLinked = cleanHandle.lowercase() in linkedHandles,
-                                                lastStatus = "Sẵn sàng"
-                                            )
-                                        startAccountTask(gAcc)
+                                        val cleanHandle = ttAcc.handle.trim().removePrefix("@").lowercase()
+                                        GolikeRunningManager.runningAccounts[cleanHandle] = true
+                                        GolikeRunningManager.runningAccounts[ttAcc.uid] = true
                                     }
+
+                                    // 1. Gọi hàm mở popup màn nổi Golike (chạy 100% logic Golike với overlay màu cam):
+                                    startGolikeJobRunnerOverlay(
+                                        context = context,
+                                        accountHandles = selectedHandles,
+                                        variant = selectedVariant
+                                    )
+
                                     Toast.makeText(context, "Bắt đầu chạy ${targets.size} tài khoản TikTok Golike", Toast.LENGTH_SHORT).show()
                                 }
                             },

@@ -26,6 +26,12 @@ import com.cayxu.app.data.repository.XsmmAccountsResult
 import com.cayxu.app.data.repository.XsmmAddAccountResult
 import com.cayxu.app.data.repository.XsmmTasks2Result
 import com.cayxu.app.data.repository.XsmmTasksRepository
+import com.cayxu.app.ui.screens.golike.GolikeAccount
+import com.cayxu.app.ui.screens.golike.GolikeAccountsStore
+import com.cayxu.app.ui.screens.golike.GolikeRunningManager
+import com.cayxu.app.ui.screens.golike.GolikeRunConfigStore
+import com.cayxu.app.ui.screens.golike.GolikeSession
+import com.cayxu.app.ui.screens.golike.GolikeTikTokTaskRunner
 import com.cayxu.app.ui.screens.xsmm.XsmmSession
 import kotlin.math.min
 import kotlinx.coroutines.CoroutineScope
@@ -42,8 +48,11 @@ class XsmmJobRunnerOverlayService : Service() {
         const val EXTRA_ACCOUNT_HANDLES = "extra_account_handles"
         const val EXTRA_MODE = "extra_mode"
         const val EXTRA_VARIANT = "extra_variant"
+        const val EXTRA_PLATFORM = "extra_platform"
         const val MODE_RUN_JOBS = "run_jobs"
         const val MODE_VERIFY_ONLY = "verify_only"
+        const val PLATFORM_XSMM = "xsmm"
+        const val PLATFORM_GOLIKE = "golike"
     }
 
     private lateinit var windowManager: WindowManager
@@ -67,6 +76,23 @@ class XsmmJobRunnerOverlayService : Service() {
     private var lastBubbleX = -1
     private var lastBubbleY = -1
 
+    private var currentPlatform: String = PLATFORM_XSMM
+
+    private val themeColor: Int
+        get() = if (currentPlatform == PLATFORM_GOLIKE) Color.parseColor("#FF7A00") else Color.parseColor("#16A34A")
+
+    private val themeLightBg: Int
+        get() = if (currentPlatform == PLATFORM_GOLIKE) Color.parseColor("#2EFF7A00") else Color.parseColor("#2E16A34A")
+
+    private val themeDivider: Int
+        get() = if (currentPlatform == PLATFORM_GOLIKE) Color.parseColor("#22FF7A00") else Color.parseColor("#2216A34A")
+
+    private val currencyUnit: String
+        get() = if (currentPlatform == PLATFORM_GOLIKE) "đ" else "xu"
+
+    private val platformTitle: String
+        get() = if (currentPlatform == PLATFORM_GOLIKE) "Golike" else "XSMM"
+
     private suspend fun checkPauseWait() {
         if (isPaused) {
             XsmmJobStatusBridge.update("Đã tạm dừng (nhấn Tiếp tục để chạy lại)")
@@ -79,6 +105,11 @@ class XsmmJobRunnerOverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val platformExtra = intent?.getStringExtra(EXTRA_PLATFORM)
+        if (!platformExtra.isNullOrBlank()) {
+            currentPlatform = platformExtra.lowercase()
+        }
+
         if (fullPanel == null && miniBubble == null) {
             val mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_RUN_JOBS
             val variantStr = intent?.getStringExtra(EXTRA_VARIANT)
@@ -103,6 +134,8 @@ class XsmmJobRunnerOverlayService : Service() {
 
             if (mode == MODE_VERIFY_ONLY) {
                 startVerifyOnlyRunner(variant, accountHandles.firstOrNull().orEmpty())
+            } else if (currentPlatform == PLATFORM_GOLIKE) {
+                startGolikeAutomationRunner(variant)
             } else {
                 startAutomationRunner()
             }
@@ -467,8 +500,106 @@ class XsmmJobRunnerOverlayService : Service() {
         }
     }
 
+    private fun startGolikeAutomationRunner(variant: TikTokAppVariant) {
+        runnerJob?.cancel()
+        runnerJob = serviceScope.launch(Dispatchers.IO) {
+            val client = GolikeAccountsStore.getApiClient(applicationContext)
+            if (!GolikeAccountsStore.isLoggedIn(applicationContext) || client.authToken.isNullOrBlank()) {
+                XsmmJobStatusBridge.update("Lỗi: Chưa đăng nhập Golike")
+                return@launch
+            }
+
+            val activeList = accountHandles.ifEmpty { listOf("") }
+            val config = GolikeRunConfigStore.get(applicationContext, "tiktok")
+
+            activeList.forEach { handle ->
+                val clean = handle.trim().removePrefix("@").lowercase()
+                GolikeRunningManager.runningAccounts[clean] = true
+            }
+
+            XsmmJobStatusBridge.update("Bắt đầu chạy Golike TikTok...")
+
+            while (isActive) {
+                for (handle in activeList) {
+                    if (!isActive) break
+
+                    // Kiểm tra giới hạn số lượng hoàn thành
+                    if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) {
+                        XsmmJobStatusBridge.update("Đã đạt mục tiêu $totalCompleted nhiệm vụ. Hoàn thành!")
+                        return@launch
+                    }
+
+                    checkPauseWait()
+
+                    val cleanHandle = handle.trim().removePrefix("@").lowercase()
+                    val currentAccounts = GolikeAccountsStore.getAccounts(applicationContext, "tiktok")
+                    val matchedAcc = currentAccounts.firstOrNull {
+                        it.username.trim().removePrefix("@").equals(cleanHandle, ignoreCase = true) || it.id.equals(cleanHandle, ignoreCase = true)
+                    } ?: GolikeAccount(
+                        id = cleanHandle,
+                        platform = "tiktok",
+                        username = cleanHandle,
+                        avatar = "",
+                        isLive = true,
+                        isGolikeLinked = false,
+                        lastStatus = "Sẵn sàng"
+                    )
+
+                    GolikeRunningManager.runningAccounts[matchedAcc.id] = true
+                    launch(Dispatchers.Main) {
+                        updateProgressDisplay()
+                    }
+
+                    // Tự động thu nhỏ màn nổi khi bắt đầu chạy để không che màn hình
+                    launch(Dispatchers.Main) {
+                        if (!isPaused && fullPanel != null) showMiniBubble()
+                    }
+
+                    GolikeTikTokTaskRunner.runTikTokTaskLoop(
+                        context = applicationContext,
+                        account = matchedAcc,
+                        client = client,
+                        variant = variant,
+                        onStatusChange = { newStatus ->
+                            XsmmJobStatusBridge.update(newStatus)
+                            GolikeRunningManager.statusMap[matchedAcc.id] = newStatus
+                            GolikeAccountsStore.updateAccountProgress(applicationContext, "tiktok", matchedAcc.id, newStatus)
+                        },
+                        onJobSuccess = { earned ->
+                            totalCompleted++
+                            totalEarnedPoints += earned
+                            val curSucc = (GolikeRunningManager.successCountMap[matchedAcc.id] ?: matchedAcc.successCount) + 1
+                            GolikeRunningManager.successCountMap[matchedAcc.id] = curSucc
+
+                            val newBal = GolikeAccountsStore.getBalance(applicationContext) + earned
+                            GolikeAccountsStore.updateBalance(applicationContext, newBal)
+                            GolikeSession.balance.value = newBal
+
+                            GolikeAccountsStore.updateAccountProgress(applicationContext, "tiktok", matchedAcc.id, "Thành công +$earned đ", isSuccess = true)
+                            launch(Dispatchers.Main) {
+                                updateProgressDisplay()
+                            }
+                            XsmmJobStatusBridge.update("+$earned đ (Xong $totalCompleted NV)")
+                        },
+                        onJobFailed = { reason ->
+                            val curErr = (GolikeRunningManager.errorCountMap[matchedAcc.id] ?: matchedAcc.errorCount) + 1
+                            GolikeRunningManager.errorCountMap[matchedAcc.id] = curErr
+                            GolikeRunningManager.lastErrorDetailMap[matchedAcc.id] = reason
+                            GolikeAccountsStore.updateAccountProgress(applicationContext, "tiktok", matchedAcc.id, "Lỗi: $reason", isSuccess = false, errorDetail = reason)
+                            XsmmJobStatusBridge.update("Lỗi: $reason")
+                        }
+                    )
+
+                    checkPauseWait()
+                }
+
+                delay(2000L)
+            }
+        }
+    }
+
     private fun updateProgressDisplay() {
-        progressInfoView?.text = "Đã làm: $totalCompleted NV  |  +$totalEarnedPoints xu"
+        progressInfoView?.text = "Đã làm: $totalCompleted NV  |  +$totalEarnedPoints $currencyUnit"
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -517,17 +648,17 @@ class XsmmJobRunnerOverlayService : Service() {
             background = GradientDrawable().apply {
                 cornerRadius = dp(18).toFloat()
                 setColor(Color.parseColor("#F00E1611"))
-                setStroke(dp(1.5f), Color.parseColor("#16A34A"))
+                setStroke(dp(1.5f), themeColor)
             }
         }
 
         // Header
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        header.addView(View(this).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#16A34A")) } }, LinearLayout.LayoutParams(dp(9), dp(9)).apply { rightMargin = dp(8) })
+        header.addView(View(this).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(themeColor) } }, LinearLayout.LayoutParams(dp(9), dp(9)).apply { rightMargin = dp(8) })
         header.addView(TextView(this).apply { text = "CayXu"; setTextColor(Color.WHITE); textSize = 16f; setTypeface(typeface, android.graphics.Typeface.BOLD) })
         header.addView(TextView(this).apply { val v = appVersionName(); text = if (v.isNotBlank()) "v$v" else ""; setTextColor(Color.parseColor("#8A93A6")); textSize = 12f; setPadding(dp(8), 0, 0, 0) })
         header.addView(View(this), LinearLayout.LayoutParams(0, 0, 1f))
-        header.addView(circleBtn("\u21A9", Color.parseColor("#2E16A34A"), Color.parseColor("#16A34A")) { TikTokAppLauncher.bringToolToFront(applicationContext) })
+        header.addView(circleBtn("\u21A9", themeLightBg, themeColor) { TikTokAppLauncher.bringToolToFront(applicationContext) })
         header.addView(spacer(8))
         header.addView(circleBtn("\u2013", Color.parseColor("#2E2E38"), Color.parseColor("#C7CBD4")) { showMiniBubble() })
         header.addView(spacer(8))
@@ -535,7 +666,7 @@ class XsmmJobRunnerOverlayService : Service() {
         root.addView(header)
         root.addView(divider())
 
-        root.addView(infoRow("Chế độ", "XSMM", Color.parseColor("#16A34A")))
+        root.addView(infoRow("Chế độ", platformTitle, themeColor))
         val accSummary = when {
             accountHandles.isEmpty() -> "Chưa chọn tài khoản"
             accountHandles.size == 1 -> "@${accountHandles.first()}"
@@ -544,8 +675,8 @@ class XsmmJobRunnerOverlayService : Service() {
         root.addView(infoRow("Tài khoản", accSummary, Color.WHITE))
 
         val progressTv = TextView(this).apply {
-            text = "Đã làm: $totalCompleted NV  |  +$totalEarnedPoints xu"
-            setTextColor(Color.parseColor("#34D399"))
+            text = "Đã làm: $totalCompleted NV  |  +$totalEarnedPoints $currencyUnit"
+            setTextColor(if (currentPlatform == PLATFORM_GOLIKE) Color.parseColor("#FFA500") else Color.parseColor("#34D399"))
             textSize = 12.5f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(0, dp(2), 0, dp(4))
@@ -563,7 +694,7 @@ class XsmmJobRunnerOverlayService : Service() {
         }
         statusRow.addView(
             View(this).apply {
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#16A34A")) }
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(themeColor) }
             },
             LinearLayout.LayoutParams(dp(7), dp(7)).apply { rightMargin = dp(8) }
         )
@@ -603,7 +734,7 @@ class XsmmJobRunnerOverlayService : Service() {
             btn.text = "▶  TIẾP TỤC"
             btn.background = GradientDrawable().apply {
                 cornerRadius = dp(14).toFloat()
-                setColor(Color.parseColor("#16A34A")) // Xanh lá tiếp tục
+                setColor(themeColor) // Màu tiếp tục theo nền tảng
             }
         } else {
             btn.text = "\u25A0  TẠM DỪNG"
@@ -636,7 +767,7 @@ class XsmmJobRunnerOverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP or Gravity.START; x = initialX; y = initialY }
         bubbleParams = params
-        val bubble = FrameLayout(this).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#F00E1611")); setStroke(dp(1.5f), Color.parseColor("#16A34A")) } }
+        val bubble = FrameLayout(this).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#F00E1611")); setStroke(dp(1.5f), themeColor) } }
         bubble.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher_round) }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { val i = dp(6); setMargins(i, i, i, i) })
         var drag = false; var ix = 0; var iy = 0; var tx = 0f; var ty = 0f
         bubble.setOnTouchListener { _, e ->
@@ -667,7 +798,7 @@ class XsmmJobRunnerOverlayService : Service() {
     }
     private fun spacer(v: Int): View = View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(v), 0) }
     private fun divider(): View = View(this).apply {
-        setBackgroundColor(Color.parseColor("#2216A34A"))
+        setBackgroundColor(themeDivider)
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply { topMargin = dp(10); bottomMargin = dp(10) }
     }
     private fun infoRow(label: String, value: String, valueColor: Int): View {
@@ -682,6 +813,11 @@ class XsmmJobRunnerOverlayService : Service() {
         runnerJob?.cancel()
         serviceScope.cancel()
         XsmmJobStatusBridge.clear()
+        if (currentPlatform == PLATFORM_GOLIKE) {
+            GolikeRunningManager.runningAccounts.keys.forEach { k ->
+                GolikeRunningManager.runningAccounts[k] = false
+            }
+        }
         fullPanel?.let { runCatching { windowManager.removeView(it) } }
         miniBubble?.let { runCatching { windowManager.removeView(it) } }
         fullPanel = null
