@@ -83,7 +83,12 @@ class GolikeApiClient(
     fun verifyTikTokAccountId(accountId: String, username: String): JSONObject? {
         val cleanUsername = username.trim().removePrefix("@")
         val body = JSONObject().apply {
-            put("account_id", accountId)
+            val numId = accountId.toLongOrNull()
+            if (numId != null) {
+                put("account_id", numId)
+            } else {
+                put("account_id", accountId)
+            }
             put("unique_username", cleanUsername)
             put("username", cleanUsername)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)

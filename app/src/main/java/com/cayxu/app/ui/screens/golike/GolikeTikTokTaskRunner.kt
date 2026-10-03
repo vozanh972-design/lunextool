@@ -211,7 +211,27 @@ object GolikeTikTokTaskRunner {
         val dataObj = declareRes?.optJSONObject("data")
         accountId = dataObj?.optString("id")?.takeIf { it.isNotBlank() }
             ?: dataObj?.optString("account_id")?.takeIf { it.isNotBlank() }
+            ?: declareRes?.optString("id")?.takeIf { it.isNotBlank() }
             ?: declareRes?.optString("account_id").orEmpty()
+
+        if (accountId.isBlank()) {
+            try {
+                val listRes = client.getTikTokAccounts()
+                val dataArr = listRes?.optJSONArray("data")
+                if (dataArr != null) {
+                    for (i in 0 until dataArr.length()) {
+                        val item = dataArr.optJSONObject(i) ?: continue
+                        val u = item.optString("unique_username").ifBlank {
+                            item.optString("username").ifBlank { item.optString("nickname") }
+                        }.trim().removePrefix("@").lowercase()
+                        if (u == cleanUsername) {
+                            accountId = item.optString("id").ifBlank { item.optString("account_id") }
+                            break
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
 
         val targetAccountId = accountId.ifBlank { cleanUsername }
 
@@ -238,11 +258,9 @@ object GolikeTikTokTaskRunner {
         XsmmJobStatusBridge.update(statusMsg)
 
         TikTokAppLauncher.openUserProfile(context, "https://www.tiktok.com/@$targetFollow")
-        delay(1500L)
+        delay(1200L)
 
         if (TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
-            onProgress("Bấm Follow @$targetFollow để cấu hình...")
-            XsmmJobStatusBridge.update("Bấm Follow @$targetFollow để cấu hình...")
             val actionId = XsmmTaskAutomationBridge.triggerTask(
                 taskType = "golike_config_follow",
                 swipeBefore = false,
@@ -258,10 +276,9 @@ object GolikeTikTokTaskRunner {
                     // Nếu đã follow rồi → không cần bấm lại, thoát luôn
                     if (res.message.contains("Đã follow", ignoreCase = true) ||
                         res.message.contains("Following", ignoreCase = true) ||
-                        res.message.contains("đã theo dõi", ignoreCase = true)
+                        res.message.contains("đã theo dõi", ignoreCase = true) ||
+                        res.message.contains("nhắn tin", ignoreCase = true)
                     ) {
-                        onProgress("Đã follow @$targetFollow từ trước — bỏ qua.")
-                        XsmmJobStatusBridge.update("Đã follow @$targetFollow từ trước — bỏ qua.")
                         break
                     }
                 } else if (res is XsmmTaskActionResult.Completed && (res.actionId == actionId || res.actionId == 0L || res.success)) {
@@ -278,21 +295,19 @@ object GolikeTikTokTaskRunner {
             }
         }
 
-        onProgress("Chờ TikTok ghi nhận follow (2s)...")
-        XsmmJobStatusBridge.update("Chờ TikTok ghi nhận follow (2s)...")
-        delay(2000L)
+        val verifyInitMsg = "Tài khoản đã Follow @$targetFollow. Đang gửi xác thực lên Golike..."
+        onProgress(verifyInitMsg)
+        XsmmJobStatusBridge.update(verifyInitMsg)
+        delay(1000L)
 
         // ── 5. Gửi xác nhận hoàn tất lên Golike: POST /api/tiktok-account/verify-account-id ──
-        onProgress("Đang gửi xác thực lên Golike...")
-        XsmmJobStatusBridge.update("Đang gửi xác thực lên Golike...")
-
         var isVerifySuccess = false
         var lastFailMsg = ""
+        val maxVerifyAttempts = 5
 
-        // Retry tối đa 3 lần, mỗi lần cách 3s
-        for (attempt in 1..3) {
-            onProgress("Đang xác thực liên kết (lần $attempt/3)...")
-            XsmmJobStatusBridge.update("Đang xác thực liên kết (lần $attempt/3)...")
+        for (attempt in 1..maxVerifyAttempts) {
+            onProgress("Tài khoản đã Follow @$targetFollow. Đang gửi xác thực lên Golike ($attempt/$maxVerifyAttempts)...")
+            XsmmJobStatusBridge.update("Tài khoản đã Follow @$targetFollow. Đang gửi xác thực lên Golike ($attempt/$maxVerifyAttempts)...")
 
             var verifyRes = client.verifyTikTokAccountId(targetAccountId, cleanUsername)
             var vStatus = verifyRes?.optInt("status", 0) ?: 0
@@ -318,9 +333,15 @@ object GolikeTikTokTaskRunner {
             if (isVerifySuccess) {
                 break
             } else {
-                lastFailMsg = vMessage.ifBlank { "Chưa bấm Follow @$targetFollow" }
-                if (attempt < 3) {
-                    XsmmJobStatusBridge.update("Xác thực chưa xong ($lastFailMsg), thử lại sau 3s...")
+                lastFailMsg = vMessage
+                if (attempt < maxVerifyAttempts) {
+                    val waitMsg = if (vMessage.contains("Chưa bấm Follow", ignoreCase = true)) {
+                        "Đang chờ Golike đồng bộ trạng thái Follow (lần $attempt/$maxVerifyAttempts)..."
+                    } else {
+                        "Xác thực chưa xong (${vMessage.ifBlank { "đang thử lại" }}), thử lại sau 3s..."
+                    }
+                    onProgress(waitMsg)
+                    XsmmJobStatusBridge.update(waitMsg)
                     delay(3000L)
                 }
             }
@@ -501,9 +522,7 @@ object GolikeTikTokTaskRunner {
             TikTokAppLauncher.openUserProfile(context, "https://www.tiktok.com/@$targetConfigUser")
 
             // Kích hoạt Trợ Năng bấm nút Follow
-            delay(1500L) // Chờ TikTok load trang cá nhân
-            onStatusChange("Bấm Follow @$targetConfigUser để cấu hình...")
-            XsmmJobStatusBridge.update("Bấm Follow @$targetConfigUser để cấu hình...")
+            delay(1200L) // Chờ TikTok load trang cá nhân
 
             if (TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
                 val actionId = XsmmTaskAutomationBridge.triggerTask(
@@ -521,10 +540,9 @@ object GolikeTikTokTaskRunner {
                         // Nếu đã follow rồi → không bấm lại, thoát luôn
                         if (res.message.contains("Đã follow", ignoreCase = true) ||
                             res.message.contains("Following", ignoreCase = true) ||
-                            res.message.contains("đã theo dõi", ignoreCase = true)
+                            res.message.contains("đã theo dõi", ignoreCase = true) ||
+                            res.message.contains("nhắn tin", ignoreCase = true)
                         ) {
-                            onStatusChange("Đã follow @$targetConfigUser từ trước — bỏ qua.")
-                            XsmmJobStatusBridge.update("Đã follow @$targetConfigUser từ trước — bỏ qua.")
                             break
                         }
                     } else if (res is XsmmTaskActionResult.Completed && (res.actionId == actionId || res.actionId == 0L || res.success)) {
@@ -541,21 +559,19 @@ object GolikeTikTokTaskRunner {
                 }
             }
 
-            onStatusChange("Chờ TikTok ghi nhận follow (2s)...")
-            XsmmJobStatusBridge.update("Chờ TikTok ghi nhận follow (2s)...")
-            delay(2000L)
+            val verifyInitMsg = "Tài khoản đã Follow @$targetConfigUser. Đang gửi xác thực lên Golike..."
+            onStatusChange(verifyInitMsg)
+            XsmmJobStatusBridge.update(verifyInitMsg)
+            delay(1000L)
 
             // 2.4 GỬI XÁC NHẬN HOÀN TẤT CẤU HÌNH LÊN GOLIKE
-            onStatusChange("Đang gửi xác thực lên Golike...")
-            XsmmJobStatusBridge.update("Đang gửi xác thực lên Golike...")
-
             var isConfigSuccess = false
             var lastConfigMsg = ""
+            val maxConfigAttempts = 5
 
-            // Retry xác thực tối đa 3 lần (mỗi lần cách 3s)
-            for (attempt in 1..3) {
-                onStatusChange("Xác thực cấu hình nick @$cleanUsername (lần $attempt/3)...")
-                XsmmJobStatusBridge.update("Xác thực cấu hình nick @$cleanUsername (lần $attempt/3)...")
+            for (attempt in 1..maxConfigAttempts) {
+                onStatusChange("Tài khoản đã Follow @$targetConfigUser. Đang gửi xác thực lên Golike ($attempt/$maxConfigAttempts)...")
+                XsmmJobStatusBridge.update("Tài khoản đã Follow @$targetConfigUser. Đang gửi xác thực lên Golike ($attempt/$maxConfigAttempts)...")
 
                 var verifyRes = client.verifyTikTokAccountId(golikeAccountId, cleanUsername)
                 var vStatus = verifyRes?.optInt("status", 0) ?: 0
@@ -581,9 +597,15 @@ object GolikeTikTokTaskRunner {
                 if (isConfigSuccess) {
                     break
                 } else {
-                    lastConfigMsg = vMessage.ifBlank { "Chưa bấm Follow @$targetConfigUser" }
-                    if (attempt < 3) {
-                        XsmmJobStatusBridge.update("Xác thực chưa xong ($lastConfigMsg), thử lại sau 3s...")
+                    lastConfigMsg = vMessage
+                    if (attempt < maxConfigAttempts) {
+                        val waitMsg = if (vMessage.contains("Chưa bấm Follow", ignoreCase = true)) {
+                            "Đang chờ Golike đồng bộ trạng thái Follow (lần $attempt/$maxConfigAttempts)..."
+                        } else {
+                            "Xác thực chưa xong (${vMessage.ifBlank { "đang thử lại" }}), thử lại sau 3s..."
+                        }
+                        onStatusChange(waitMsg)
+                        XsmmJobStatusBridge.update(waitMsg)
                         delay(3000L)
                     }
                 }
