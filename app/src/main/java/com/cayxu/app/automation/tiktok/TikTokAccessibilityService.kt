@@ -1439,6 +1439,67 @@ class TikTokAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Nhận diện trạng thái tài khoản đã được follow từ trước trên trang cá nhân TikTok.
+     * (Nút chuyển thành "Đang theo dõi", "Following", "Bạn bè", "Friends" v.v.)
+     */
+    private fun findAlreadyFollowingNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val rootBounds = Rect()
+        root.getBoundsInScreen(rootBounds)
+        val rootH = if (rootBounds.height() > 0) rootBounds.height() else resources.displayMetrics.heightPixels
+        val rootW = if (rootBounds.width() > 0) rootBounds.width() else resources.displayMetrics.widthPixels
+
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        collectAlreadyFollowingCandidates(root, rootW, rootH, candidates)
+        return candidates.firstOrNull()
+    }
+
+    private fun collectAlreadyFollowingCandidates(
+        node: AccessibilityNodeInfo,
+        rootW: Int,
+        rootH: Int,
+        out: MutableList<AccessibilityNodeInfo>,
+        depth: Int = 0
+    ) {
+        if (depth > 40) return
+
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+
+        // Bỏ qua thanh điều hướng đáy màn hình (y >= 80%)
+        if (bounds.top >= rootH * 0.80f) return
+
+        val inProfileArea = bounds.top >= rootH * 0.12f && bounds.bottom <= rootH * 0.70f
+
+        val desc = (node.contentDescription?.toString() ?: "").trim().lowercase()
+        val text = (node.text?.toString() ?: "").trim().lowercase()
+
+        // Bỏ qua các text số đếm follower/following của profile (thường có số)
+        val isStats = text.any { it.isDigit() } || desc.any { it.isDigit() }
+
+        if (!isStats) {
+            val followingLabels = setOf(
+                "đang theo dõi", "đang follow", "following", "bạn bè", "friends", "đã follow", "đã theo dõi"
+            )
+            val isMatch = followingLabels.any { text == it || desc == it } ||
+                    (text.startsWith("đang theo dõi") && !text.contains("người")) ||
+                    (desc.startsWith("đang theo dõi") && !desc.contains("người")) ||
+                    text == "bạn bè" || desc == "bạn bè" ||
+                    text == "friends" || desc == "friends" ||
+                    text == "following" || desc == "following"
+
+            if (inProfileArea && isMatch) {
+                out.add(node)
+                return
+            }
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectAlreadyFollowingCandidates(child, rootW, rootH, out, depth + 1)
+        }
+    }
+
     private fun findHomeTabNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         val labels = setOf("trang chủ", "home", "dành cho bạn", "for you")
         return findNodeByText(root, labels, exact = false)
@@ -1462,6 +1523,43 @@ class TikTokAccessibilityService : AccessibilityService() {
         xsmmTaskJob?.cancel()
         xsmmTaskJob = scope.launch {
             try {
+                // Nhánh chuyên biệt: Cấu hình liên kết tài khoản Golike (@gosen.vietnam hoặc nick chỉ định)
+                if (action.taskType.contains("golike", ignoreCase = true)) {
+                    XsmmTaskAutomationBridge.updateProgress("Kiểm tra trang cá nhân cấu hình...")
+                    delay(1500)
+                    var alreadyFollowed = false
+                    val maxTries = 10
+                    for (i in 0 until maxTries) {
+                        val root = findTikTokRoot()
+                        if (root != null) {
+                            val alreadyNode = findAlreadyFollowingNode(root)
+                            if (alreadyNode != null) {
+                                XsmmTaskAutomationBridge.updateProgress("Đã follow từ trước")
+                                delay(800)
+                                alreadyFollowed = true
+                                break
+                            }
+
+                            val followNode = findFollowButtonNode(root)
+                            if (followNode != null) {
+                                XsmmTaskAutomationBridge.updateProgress("Đã thấy nút Follow, đang bấm...")
+                                clickNode(followNode)
+                                delay(1800)
+                                break
+                            }
+                        }
+                        delay(500)
+                    }
+
+                    // Hoàn tất cấu hình: Báo hoàn tất ngay cho Golike runner, TUYỆT ĐỐI KHÔNG lướt feed Home!
+                    XsmmTaskAutomationBridge.completeTask(
+                        action.actionId,
+                        true,
+                        if (alreadyFollowed) "Đã follow từ trước" else "Đã Follow thành công"
+                    )
+                    return@launch
+                }
+
                 // TUYỆT ĐỐI KHÔNG vuốt lên nếu là nhiệm vụ Follow (Follow mở thẳng trang cá nhân, vuốt sẽ làm trôi nút Follow)
                 if (action.swipeBefore && !action.taskType.contains("follow", ignoreCase = true)) {
                     XsmmTaskAutomationBridge.updateProgress("Đang lướt trước khi làm...")
@@ -1478,6 +1576,14 @@ class TikTokAccessibilityService : AccessibilityService() {
                     for (i in 0 until maxTries) {
                         val root = findTikTokRoot()
                         if (root != null) {
+                            // Kiểm tra nếu đã follow rồi
+                            val alreadyNode = findAlreadyFollowingNode(root)
+                            if (alreadyNode != null) {
+                                XsmmTaskAutomationBridge.updateProgress("Đã follow từ trước!")
+                                taskSuccess = true
+                                break
+                            }
+
                             val followNode = findFollowButtonNode(root)
                             if (followNode != null) {
                                 XsmmTaskAutomationBridge.updateProgress("Đã thấy nút Follow, đang bấm...")
@@ -1505,7 +1611,16 @@ class TikTokAccessibilityService : AccessibilityService() {
                     taskSuccess = true
                 }
 
-                // Luôn trở về Home và lướt tin đợi job tiếp theo
+                if (!action.returnHomeAndSwipe) {
+                    XsmmTaskAutomationBridge.completeTask(
+                        action.actionId,
+                        taskSuccess,
+                        if (taskSuccess) "Thành công" else "Không tìm thấy nút tương tác"
+                    )
+                    return@launch
+                }
+
+                // Trở về Home và lướt tin đợi job tiếp theo nếu được yêu cầu
                 XsmmTaskAutomationBridge.updateProgress("Đang về Home lướt tin đợi nhiệm vụ tiếp...")
                 performGlobalAction(GLOBAL_ACTION_BACK)
                 delay(800)
