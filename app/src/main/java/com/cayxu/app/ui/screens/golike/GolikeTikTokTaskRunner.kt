@@ -358,7 +358,8 @@ object GolikeTikTokTaskRunner {
             var verifyRes = client.verifyTikTokAccountId(targetAccountId, cleanUsername)
             android.util.Log.d("GolikeVerify", "verifyTikTokAccountId (attempt $attempt) response: $verifyRes")
 
-            var vStatus = verifyRes?.optInt("status", verifyRes?.optInt("http_code", 0)) ?: 0
+            val httpCode = verifyRes?.optInt("http_code", 0) ?: 0
+            var vStatus = verifyRes?.optInt("status", httpCode) ?: httpCode
             var vSuccess = verifyRes?.optBoolean("success", false) ?: false
             var vMessage = verifyRes?.optString("message").orEmpty()
 
@@ -367,7 +368,8 @@ object GolikeTikTokTaskRunner {
                 android.util.Log.d("GolikeVerify", "verifyTikTokAccount fallback response: $fallbackRes")
                 if (fallbackRes != null) {
                     verifyRes = fallbackRes
-                    vStatus = fallbackRes.optInt("status", fallbackRes.optInt("http_code", 0))
+                    val fallbackHttpCode = fallbackRes.optInt("http_code", 0)
+                    vStatus = fallbackRes.optInt("status", fallbackHttpCode)
                     vSuccess = fallbackRes.optBoolean("success", false)
                     vMessage = fallbackRes.optString("message").orEmpty()
                 }
@@ -630,7 +632,8 @@ object GolikeTikTokTaskRunner {
                     var verifyRes = client.verifyTikTokAccountId(targetConfigAccountId, cleanUsername)
                     android.util.Log.d("GolikeVerify", "verifyTikTokAccountId loop (attempt $attempt) response: $verifyRes")
 
-                    var vStatus = verifyRes?.optInt("status", verifyRes?.optInt("http_code", 0)) ?: 0
+                    val httpCode = verifyRes?.optInt("http_code", 0) ?: 0
+                    var vStatus = verifyRes?.optInt("status", httpCode) ?: httpCode
                     var vSuccess = verifyRes?.optBoolean("success", false) ?: false
                     var vMessage = verifyRes?.optString("message").orEmpty()
 
@@ -639,7 +642,8 @@ object GolikeTikTokTaskRunner {
                         android.util.Log.d("GolikeVerify", "verifyTikTokAccount fallback loop response: $fallbackRes")
                         if (fallbackRes != null) {
                             verifyRes = fallbackRes
-                            vStatus = fallbackRes.optInt("status", fallbackRes.optInt("http_code", 0))
+                            val fallbackHttpCode = fallbackRes.optInt("http_code", 0)
+                            vStatus = fallbackRes.optInt("status", fallbackHttpCode)
                             vSuccess = fallbackRes.optBoolean("success", false)
                             vMessage = fallbackRes.optString("message").orEmpty()
                         }
