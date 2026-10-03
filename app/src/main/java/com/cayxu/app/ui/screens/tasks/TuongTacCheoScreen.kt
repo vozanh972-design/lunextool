@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Facebook
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -1178,6 +1179,19 @@ fun TuongTacCheoScreen(navController: NavController) {
                 icon = Icons.Filled.Facebook,
                 modifier = Modifier.weight(1f),
                 onClick = { selectedTab = 1 }
+            )
+
+            val tikTokCount = remember { com.cayxu.app.data.local.TikTokAccountsStore.getAccounts(context).size }
+            TtcTabButton(
+                label = "TikTok",
+                count = tikTokCount,
+                isSelected = false,
+                selectedColor = Color(0xFF0F172A),
+                icon = Icons.Filled.MusicNote,
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    navController.navigate(com.cayxu.app.ui.navigation.Routes.TUONG_TAC_CHEO_TIKTOK) { launchSingleTop = true }
+                }
             )
         }
 

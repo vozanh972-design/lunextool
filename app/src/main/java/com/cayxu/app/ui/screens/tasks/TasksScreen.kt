@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -68,6 +69,17 @@ private val platformItems = listOf(
         iconTint = Color(0xFFEC4899),
         onClick = { navController, _ ->
             navController.navigate(Routes.simpleTaskPlatform("Tuongtaccheo")) { launchSingleTop = true }
+        }
+    ),
+    TaskPlatformItem(
+        id = "tuongtaccheo_tiktok",
+        name = "Tuongtaccheo TikTok",
+        subtitle = "Nhiệm vụ tương tác chéo TikTok kiếm xu",
+        icon = Icons.Filled.MusicNote,
+        iconBg = Color(0xFFF1F5F9),
+        iconTint = Color(0xFF0F172A),
+        onClick = { navController, _ ->
+            navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK) { launchSingleTop = true }
         }
     ),
     TaskPlatformItem(

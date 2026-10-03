@@ -64,6 +64,7 @@ object Routes {
     const val XSMM_ACCOUNT = "xsmm_account"
     const val XSMM_RUN_CONFIG = "xsmm_run_config"
     const val GOLIKE_ACCOUNT = "golike_account"
+    const val TUONG_TAC_CHEO_TIKTOK = "tuong_tac_cheo_tiktok"
 
     const val LINK_ACCOUNT = "link_account/{platform}/{iconRes}"
     const val ADD_ACCOUNT = "add_account/{platform}/{iconRes}"
@@ -262,6 +263,9 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             }
             composable(Routes.GOLIKE_ACCOUNT) {
                 com.cayxu.app.ui.screens.golike.GolikeAccountScreen(navController)
+            }
+            composable(Routes.TUONG_TAC_CHEO_TIKTOK) {
+                com.cayxu.app.ui.screens.tasks.TuongTacCheoTikTokScreen(navController)
             }
             composable(
                 route = Routes.LINK_ACCOUNT,

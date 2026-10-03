@@ -45,6 +45,10 @@ import com.cayxu.app.ui.theme.TextSecondary
  */
 @Composable
 fun SimpleTaskPlatformScreen(navController: NavController, service: String) {
+    if (service.equals("Tuongtaccheo_tiktok", ignoreCase = true) || service.equals("Tuongtaccheo TikTok", ignoreCase = true)) {
+        TuongTacCheoTikTokScreen(navController)
+        return
+    }
     if (service.equals("Tuongtaccheo", ignoreCase = true)) {
         TuongTacCheoScreen(navController)
         return
