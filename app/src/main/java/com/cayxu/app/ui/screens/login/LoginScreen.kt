@@ -89,147 +89,23 @@ fun LoginScreen(
         }
     }
 
-    // Nếu đang tự động kiểm tra key khi mở app -> hiển thị màn hình animated loading/success/error
+    // Nếu đang tự động kiểm tra key khi mở app -> hiển thị Bottom Sheet Modal chuẩn Figma
     if (uiState.autoVerifyStatus != AutoVerifyStatus.IDLE) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(bgWhite),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier.padding(32.dp)
-            ) {
-                // Logo ứng dụng phong cách Figma
-                Image(
-                    painter = painterResource(R.drawable.ic_app_logo),
-                    contentDescription = "LunexTool Logo",
-                    modifier = Modifier
-                        .size(60.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                )
-
-                Spacer(Modifier.height(14.dp))
-
-                Text(
-                    text = "LUNEXTOOL",
-                    fontSize = 21.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.5.sp,
-                    color = textPrimary
-                )
-
-                Spacer(Modifier.height(44.dp))
-
-                // Hiệu ứng animated loading / checkmark / cross
-                AnimatedContent(
-                    targetState = uiState.autoVerifyStatus,
-                    label = "VerifyStatusAnim"
-                ) { status ->
-                    when (status) {
-                        AutoVerifyStatus.CHECKING -> {
-                            Box(
-                                modifier = Modifier.size(60.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(
-                                    color = brandBlue,
-                                    strokeWidth = 3.5.dp,
-                                    modifier = Modifier.size(44.dp)
-                                )
-                            }
-                        }
-                        AutoVerifyStatus.SUCCESS -> {
-                            Box(
-                                modifier = Modifier
-                                    .size(60.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF34C759).copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF34C759)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Check,
-                                        contentDescription = "Success",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(26.dp)
-                                    )
-                                }
-                            }
-                        }
-                        AutoVerifyStatus.ERROR -> {
-                            Box(
-                                modifier = Modifier
-                                    .size(60.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFFFF3B30).copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFFFF3B30)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Close,
-                                        contentDescription = "Error",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(26.dp)
-                                    )
-                                }
-                            }
-                        }
-                        AutoVerifyStatus.IDLE -> {}
-                    }
-                }
-
-                Spacer(Modifier.height(18.dp))
-
-                val titleText = when (uiState.autoVerifyStatus) {
-                    AutoVerifyStatus.CHECKING -> if (isEnglish) "Verifying activation key..." else "Đang kiểm tra key kích hoạt..."
-                    AutoVerifyStatus.SUCCESS -> if (isEnglish) "Key verified successfully!" else "Đã xác minh key thành công!"
-                    AutoVerifyStatus.ERROR -> if (isEnglish) "Verification failed" else "Xác minh key thất bại"
-                    AutoVerifyStatus.IDLE -> ""
-                }
-                val subtitleText = when (uiState.autoVerifyStatus) {
-                    AutoVerifyStatus.CHECKING -> if (isEnglish) "Please wait a moment" else "Vui lòng chờ trong giây lát"
-                    AutoVerifyStatus.SUCCESS -> if (isEnglish) "Entering application..." else "Đang vào ứng dụng..."
-                    AutoVerifyStatus.ERROR -> uiState.errorMessage ?: (if (isEnglish) "Invalid or expired key" else "Key không hợp lệ hoặc đã hết hạn")
-                    AutoVerifyStatus.IDLE -> ""
-                }
-
-                Text(
-                    text = titleText,
-                    fontSize = 16.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = when (uiState.autoVerifyStatus) {
-                        AutoVerifyStatus.SUCCESS -> Color(0xFF34C759)
-                        AutoVerifyStatus.ERROR -> Color(0xFFFF3B30)
-                        else -> textPrimary
-                    },
-                    textAlign = TextAlign.Center
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = subtitleText,
-                    fontSize = 13.sp,
-                    color = textSecondary,
-                    textAlign = TextAlign.Center
-                )
+        KeyCheckBottomSheetScreen(
+            status = uiState.autoVerifyStatus,
+            errorMessage = uiState.errorMessage,
+            isEnglish = isEnglish,
+            brandBlue = brandBlue,
+            textPrimary = textPrimary,
+            textSecondary = textSecondary,
+            onSwitchAccount = {
+                // Xóa key đã lưu và reset về màn nhập key
+                viewModel.clearSavedKey()
             }
-        }
+        )
         return
     }
+
 
     Box(
         modifier = Modifier

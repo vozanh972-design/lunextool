@@ -95,6 +95,13 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(keyInput = value, errorMessage = null)
     }
 
+    /** Xóa key đã lưu và reset về màn nhập key (dùng cho nút "Dùng tài khoản khác") */
+    fun clearSavedKey() {
+        securePrefs.clearKey()
+        _uiState.value = LoginUiState() // Reset hoàn toàn về trạng thái ban đầu
+    }
+
+
     fun login(onSuccess: () -> Unit) {
         val key = _uiState.value.keyInput.trim()
         if (key.isEmpty()) {
