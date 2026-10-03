@@ -26,17 +26,28 @@ object GolikeAuthWebView {
           }
           window.hasInjectedAuthDetector = true;
 
-          function readHeader(headers, name) {
-            if (!headers || !name) return '';
+          function getHeaderValue(headers, keyName) {
+            if (!headers || !keyName) return '';
+            let target = keyName.toLowerCase();
             try {
-              if (typeof headers.get === 'function') 
-                return headers.get(name) || headers.get(name.toLowerCase()) || headers.get(name.toUpperCase()) || '';
+              if (typeof headers.get === 'function') {
+                return headers.get(target) || headers.get(keyName) || '';
+              }
             } catch(e) {}
             try {
               if (Array.isArray(headers)) {
                 for (let i = 0; i < headers.length; i++) {
                   let h = headers[i] || [];
-                  if (String(h[0]).toLowerCase() === name.toLowerCase()) return h[1] || '';
+                  if (String(h[0]).toLowerCase() === target) return String(h[1] || '');
+                }
+              }
+            } catch(e) {}
+            try {
+              if (typeof headers === 'object') {
+                for (let k in headers) {
+                  if (Object.prototype.hasOwnProperty.call(headers, k)) {
+                    if (String(k).toLowerCase() === target) return String(headers[k] || '');
+                  }
                 }
               }
             } catch(e) {}
@@ -70,45 +81,24 @@ object GolikeAuthWebView {
                 if (!userId && storageKey === 'user_id') userId = raw;
               }
 
-              // Quét localStorage tìm auth token lưu sẵn
-              let storedToken = localStorage.getItem('token') || localStorage.getItem('authorization') || '';
-              if (!storedToken) {
-                try {
-                  let authObj = JSON.parse(localStorage.getItem('auth') || '{}');
-                  if (authObj && authObj.token) storedToken = authObj.token;
-                  else if (authObj && authObj.access_token) storedToken = authObj.access_token;
-                } catch(e) {}
-              }
-              if (!storedToken) {
-                try {
-                  let userObj = JSON.parse(localStorage.getItem('user') || '{}');
-                  if (userObj && userObj.token) storedToken = userObj.token;
-                } catch(e) {}
-              }
-
-              if (window.GoMaxApp && window.GoMaxApp.sendGatewayHeaders && (deviceId || username)) {
-                GoMaxApp.sendGatewayHeaders('', deviceId || '', username || '');
-              }
               if (window.GoMaxApp && window.GoMaxApp.sendSessionStore) {
                 GoMaxApp.sendSessionStore(signingKey || '', userId || '', webData || 'null');
               }
-              if (storedToken && storedToken !== 'null' && storedToken !== 'undefined' && storedToken !== 'Bearer null') {
-                if (window.GoMaxApp && window.GoMaxApp.sendAuthData) {
-                  GoMaxApp.sendAuthData(storedToken, '');
-                }
+              if (window.GoMaxApp && window.GoMaxApp.sendGatewayHeaders && (deviceId || username)) {
+                GoMaxApp.sendGatewayHeaders('', deviceId || '', username || '');
               }
             } catch(e) {}
           }
 
           window.goMaxCaptureSessionStore = captureSessionStore;
 
-          function captureHeaders(headers) {
+          function captureAllHeaders(headers) {
             captureSessionStore();
-            let auth = readHeader(headers, 'authorization');
-            let tHeader = readHeader(headers, 't');
-            let gAuth = readHeader(headers, 'g-auth');
-            let gDeviceId = readHeader(headers, 'g-device-id');
-            let gUsername = readHeader(headers, 'g-username');
+            let auth = getHeaderValue(headers, 'authorization');
+            let tHeader = getHeaderValue(headers, 't');
+            let gAuth = getHeaderValue(headers, 'g-auth');
+            let gDeviceId = getHeaderValue(headers, 'g-device-id');
+            let gUsername = getHeaderValue(headers, 'g-username');
 
             if (gAuth || gDeviceId || gUsername) {
               if (window.GoMaxApp && window.GoMaxApp.sendGatewayHeaders) {
@@ -122,33 +112,49 @@ object GolikeAuthWebView {
             }
           }
 
+          // Hook window.fetch
           let origFetch = window.fetch;
           window.fetch = function() {
             let args = arguments;
-            if (args[1] && args[1].headers) captureHeaders(args[1].headers);
+            if (args[1] && args[1].headers) {
+              captureAllHeaders(args[1].headers);
+            }
             return origFetch.apply(this, args);
           };
 
+          // Hook XMLHttpRequest
           let origSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
           XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
             if (!this._headers) this._headers = {};
             this._headers[header] = value;
-            if (String(header).toLowerCase() === 'authorization' && value && value !== 'Bearer null') {
-              if (window.GoMaxApp && window.GoMaxApp.sendAuthData) {
-                GoMaxApp.sendAuthData(value, this._headers['t'] || '');
-              }
-            }
             return origSetRequestHeader.apply(this, arguments);
           };
 
-          // Thực hiện quét ngay và lặp lại định kỳ
+          let origSend = XMLHttpRequest.prototype.send;
+          XMLHttpRequest.prototype.send = function() {
+            if (this._headers) {
+              captureAllHeaders(this._headers);
+            }
+            return origSend.apply(this, arguments);
+          };
+
+          // Thực hiện quét session store định kỳ
           captureSessionStore();
-          setInterval(captureSessionStore, 1200);
+          setInterval(captureSessionStore, 1000);
         })();
     """
 
     interface AuthCallback {
-        fun onAuthCaptured(authToken: String, tToken: String?, deviceId: String?, username: String?, gAuth: String?)
+        fun onAuthCaptured(
+            authToken: String,
+            tToken: String,
+            deviceId: String,
+            username: String,
+            gAuth: String,
+            signingKey: String,
+            userId: String,
+            webData: String
+        )
     }
 
     class JsBridge(private val callback: AuthCallback) {
@@ -157,6 +163,9 @@ object GolikeAuthWebView {
         private var savedDeviceId: String? = null
         private var savedUsername: String? = null
         private var savedGAuth: String? = null
+        private var savedSigningKey: String? = null
+        private var savedUserId: String? = null
+        private var savedWebData: String? = null
 
         @JavascriptInterface
         fun sendAuthData(auth: String, t: String) {
@@ -178,13 +187,36 @@ object GolikeAuthWebView {
 
         @JavascriptInterface
         fun sendSessionStore(signingKey: String, userId: String, webData: String) {
+            if (signingKey.isNotBlank()) savedSigningKey = signingKey
+            if (userId.isNotBlank()) savedUserId = userId
+            if (webData.isNotBlank() && webData != "null") savedWebData = webData
             checkAndNotify()
         }
 
         private fun checkAndNotify() {
             val auth = savedAuth
-            if (!auth.isNullOrBlank() && auth != "Bearer null" && auth != "Bearer undefined") {
-                callback.onAuthCaptured(auth, savedT, savedDeviceId, savedUsername, savedGAuth)
+            val t = savedT
+            val devId = savedDeviceId
+            val uname = savedUsername
+            val gAuth = savedGAuth
+
+            // BẮT BUỘC ĐỦ CẢ 5 THÀNH PHẦN SESSION CỦA GOLIKE GATEWAY TRƯỚC KHI BÁO THÀNH CÔNG
+            if (!auth.isNullOrBlank() && auth != "Bearer null" && auth != "Bearer undefined" &&
+                !t.isNullOrBlank() &&
+                !devId.isNullOrBlank() &&
+                !uname.isNullOrBlank() &&
+                !gAuth.isNullOrBlank()
+            ) {
+                callback.onAuthCaptured(
+                    authToken = auth,
+                    tToken = t,
+                    deviceId = devId,
+                    username = uname,
+                    gAuth = gAuth,
+                    signingKey = savedSigningKey.orEmpty(),
+                    userId = savedUserId.orEmpty(),
+                    webData = savedWebData.orEmpty()
+                )
             }
         }
     }

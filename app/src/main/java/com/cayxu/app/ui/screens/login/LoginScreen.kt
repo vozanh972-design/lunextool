@@ -84,18 +84,6 @@ fun LoginScreen(
     }
 
 
-    // Nếu đang tự động kiểm tra key khi mở app -> hiển thị Bottom Sheet Modal chuẩn Figma
-    if (uiState.autoVerifyStatus != AutoVerifyStatus.IDLE) {
-        KeyCheckBottomSheetScreen(
-            status = uiState.autoVerifyStatus,
-            errorMessage = uiState.errorMessage,
-            isEnglish = isEnglish,
-            brandBlue = brandBlue,
-            textPrimary = textPrimary,
-            textSecondary = textSecondary
-        )
-        return
-    }
 
 
     Box(
@@ -482,6 +470,21 @@ fun LoginScreen(
                     )
                 }
             }
+        }
+
+        // Overlay Bottom Sheet tự động trượt lên để recheck key ngay trên nền màn nhập key chuẩn Figma
+        if (uiState.autoVerifyStatus != AutoVerifyStatus.IDLE) {
+            KeyCheckBottomSheetScreen(
+                status = uiState.autoVerifyStatus,
+                errorMessage = uiState.errorMessage,
+                isEnglish = isEnglish,
+                brandBlue = brandBlue,
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onDismiss = {
+                    viewModel.dismissAutoVerify()
+                }
+            )
         }
     }
 }

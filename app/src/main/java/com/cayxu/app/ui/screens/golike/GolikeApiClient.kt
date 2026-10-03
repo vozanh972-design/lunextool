@@ -53,6 +53,12 @@ class GolikeApiClient(
         return builder
     }
 
+    // 0. Đồng bộ Protocol Golike (Chuẩn GoMax bắt buộc sau khi đăng nhập)
+    fun syncProtocol(): JSONObject? {
+        val req = newRequestBuilder("$BASE_URL/app/golike-protocol").get().build()
+        return execute(req)
+    }
+
     // 1. Lấy thông tin user và số dư
     fun getMe(): JSONObject? {
         val req = newRequestBuilder("$BASE_URL/users/me").get().build()

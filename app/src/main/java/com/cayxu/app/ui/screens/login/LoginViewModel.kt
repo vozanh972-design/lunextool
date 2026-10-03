@@ -71,14 +71,13 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.value = _uiState.value.copy(autoVerifyStatus = AutoVerifyStatus.IDLE, isCheckingSavedKey = false)
                 }
                 is AuthResult.ApiError, is AuthResult.NetworkError -> {
-                    // Key không còn hợp lệ -> xoá và quay về Login
+                    // Key không còn hợp lệ -> xoá key cũ
                     securePrefs.clearKey()
                     _uiState.value = _uiState.value.copy(
                         autoVerifyStatus = AutoVerifyStatus.ERROR,
-                        errorMessage = if (result is AuthResult.ApiError) result.message else "Lỗi kết nối khi xác thực key"
+                        errorMessage = if (result is AuthResult.ApiError) result.message else "Lỗi kết nối khi xác thực key",
+                        isCheckingSavedKey = false
                     )
-                    kotlinx.coroutines.delay(1000L) // Hiệu ứng dấu X đỏ mượt mà
-                    _uiState.value = _uiState.value.copy(autoVerifyStatus = AutoVerifyStatus.IDLE, isCheckingSavedKey = false)
                 }
             }
         }
@@ -91,8 +90,12 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         return v
     }
 
+    fun dismissAutoVerify() {
+        _uiState.value = _uiState.value.copy(autoVerifyStatus = AutoVerifyStatus.IDLE)
+    }
+
     fun onKeyInputChange(value: String) {
-        _uiState.value = _uiState.value.copy(keyInput = value, errorMessage = null)
+        _uiState.value = _uiState.value.copy(keyInput = value, errorMessage = null, autoVerifyStatus = AutoVerifyStatus.IDLE)
     }
 
     /** Xóa key đã lưu và reset về màn nhập key (dùng cho nút "Dùng tài khoản khác") */

@@ -22,11 +22,14 @@ object GolikeTikTokTaskRunner {
     // Trả về null nếu đủ, trả về thông báo lỗi nếu thiếu.
     // ─────────────────────────────────────────────────────────────────────────
     private fun checkSession(client: GolikeApiClient): String? {
-        if (client.authToken.isNullOrBlank()) return "Phiên đăng nhập Golike hết hạn — thiếu Authorization token. Vui lòng đăng nhập lại Golike."
-        if (client.tToken.isNullOrBlank()) return "Vui lòng đăng nhập lại Golike để làm mới phiên (thiếu t-token)."
-        if (client.deviceId.isNullOrBlank()) return "Vui lòng đăng nhập lại Golike để làm mới phiên (thiếu g-device-id)."
-        if (client.username.isNullOrBlank()) return "Vui lòng đăng nhập lại Golike để làm mới phiên (thiếu g-username)."
-        if (client.gAuth.isNullOrBlank()) return "Vui lòng đăng nhập lại Golike để làm mới phiên (thiếu g-auth)."
+        if (client.authToken.isNullOrBlank() ||
+            client.tToken.isNullOrBlank() ||
+            client.deviceId.isNullOrBlank() ||
+            client.username.isNullOrBlank() ||
+            client.gAuth.isNullOrBlank()
+        ) {
+            return "Phiên Golike hết hạn. Vui lòng đăng nhập lại Golike."
+        }
         return null
     }
 
@@ -120,11 +123,12 @@ object GolikeTikTokTaskRunner {
     /**
      * BƯỚC 3: Tự động cấu hình và xác minh tài khoản TikTok vào Golike theo chuẩn GoMax:
      * 0. Guard: Kiểm tra session đủ 5 trường.
-     * 1. Kiểm tra nick đã đăng ký Golike chưa — nếu rồi, lấy ID và return success ngay.
-     * 2. Nếu chưa: Khai báo nick lên Golike.
+     * 1. Kiểm tra cache map hoặc API xem nick đã đăng ký Golike chưa — nếu rồi, lấy ID và return success ngay.
+     * 2. Nếu chưa: Khai báo nick lên Golike (POST /api/tiktok-account).
      * 3. Lấy nick chỉ định cấu hình từ Golike (mặc định @gosen.vietnam).
      * 4. Tự động mở profile TikTok và bấm Follow (bỏ qua nếu đã follow rồi).
-     * 5. Chờ 3-5s và gửi xác nhận.
+     * 5. Chờ 3-5s và gửi xác nhận (POST /api/tiktok-account/verify-account-id).
+     * 6. Lưu mapping vào golike_tiktok_map.
      */
     suspend fun verifyAndLinkTikTokAccount(
         context: Context,
@@ -145,29 +149,35 @@ object GolikeTikTokTaskRunner {
             return@withContext Result.failure(Exception(sessionErr))
         }
 
-        onProgress("Kiểm tra nick @$cleanUsername trên Golike...")
-        XsmmJobStatusBridge.update("Kiểm tra nick @$cleanUsername trên Golike...")
+        // ── 0. Kiểm tra cache golike_tiktok_map trước ──
+        var accountId = GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanUsername).orEmpty()
 
-        // ── 1. Kiểm tra xem tài khoản đã có trên Golike chưa ──
-        var accountId = ""
-        try {
-            val listRes = client.getTikTokAccounts()
-            val listData = listRes?.optJSONArray("data")
-            if (listData != null) {
-                for (i in 0 until listData.length()) {
-                    val item = listData.optJSONObject(i) ?: continue
-                    val sUname = item.optString("unique_username").ifBlank {
-                        item.optString("username").ifBlank { item.optString("nickname") }
-                    }.trim().removePrefix("@").lowercase()
+        // ── 1. Kiểm tra xem tài khoản đã có trên Golike chưa qua API ──
+        if (accountId.isBlank()) {
+            onProgress("Kiểm tra nick @$cleanUsername trên Golike...")
+            XsmmJobStatusBridge.update("Kiểm tra nick @$cleanUsername trên Golike...")
+            try {
+                val listRes = client.getTikTokAccounts()
+                val listData = listRes?.optJSONArray("data")
+                if (listData != null) {
+                    for (i in 0 until listData.length()) {
+                        val item = listData.optJSONObject(i) ?: continue
+                        val sUname = item.optString("unique_username").ifBlank {
+                            item.optString("username").ifBlank { item.optString("nickname") }
+                        }.trim().removePrefix("@").lowercase()
 
-                    if (sUname == cleanUsername) {
-                        accountId = item.optString("id").ifBlank { item.optString("account_id") }
-                        break
+                        if (sUname == cleanUsername) {
+                            accountId = item.optString("id").ifBlank { item.optString("account_id") }
+                            if (accountId.isNotBlank()) {
+                                GolikeAccountsStore.saveTikTokMapping(context, cleanUsername, accountId)
+                            }
+                            break
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                android.util.Log.e("GolikeApi", "Lỗi kiểm tra danh sách TikTok hiện tại: ${e.message}")
             }
-        } catch (e: Exception) {
-            android.util.Log.e("GolikeApi", "Lỗi kiểm tra danh sách TikTok hiện tại: ${e.message}")
         }
 
         // ── Nếu đã có trên Golike → bỏ qua toàn bộ cấu hình, return thành công ngay ──
@@ -197,7 +207,7 @@ object GolikeTikTokTaskRunner {
         if (declareMsg.contains("tải lại trang", ignoreCase = true) ||
             declareMsg.contains("phiên bản mới nhất", ignoreCase = true)
         ) {
-            val errMsg = "Vui lòng đăng nhập lại Golike để làm mới phiên (g-auth hết hạn)."
+            val errMsg = "Phiên Golike hết hạn. Vui lòng đăng nhập lại Golike."
             onProgress(errMsg)
             XsmmJobStatusBridge.update(errMsg)
             return@withContext Result.failure(Exception(errMsg))
@@ -303,6 +313,9 @@ object GolikeTikTokTaskRunner {
 
         if (isVerifySuccess) {
             XsmmJobStatusBridge.update("Cấu hình nick @$cleanUsername thành công!")
+            // Lưu mapping vào golike_tiktok_map
+            GolikeAccountsStore.saveTikTokMapping(context, cleanUsername, targetAccountId)
+
             val finalAcc = GolikeAccount(
                 id = cleanUsername,
                 platform = "tiktok",
@@ -363,8 +376,10 @@ object GolikeTikTokTaskRunner {
         }
 
         // BƯỚC 2: CẤU HÌNH XÁC MINH TRÊN GOLIKE CHUẨN GOMAX (KHAI BÁO + FOLLOW @gosen.vietnam + XÁC NHẬN)
-        // 2.1 Kiểm tra nick đã có trên Golike chưa — nếu rồi thì bỏ qua bước cấu hình
-        var golikeAccountId = account.golikeAccountId
+        // 2.1 Kiểm tra nick đã có trên Golike chưa (từ cache map hoặc API) — nếu rồi thì bỏ qua bước cấu hình
+        var golikeAccountId = account.golikeAccountId.ifBlank {
+            GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanUsername).orEmpty()
+        }
         var skipConfig = golikeAccountId.isNotBlank()
 
         if (!skipConfig) {
@@ -381,7 +396,10 @@ object GolikeTikTokTaskRunner {
                         }.trim().removePrefix("@").lowercase()
                         if (u == cleanUsername) {
                             golikeAccountId = item.optString("id").ifBlank { item.optString("account_id") }
-                            skipConfig = golikeAccountId.isNotBlank()
+                            if (golikeAccountId.isNotBlank()) {
+                                GolikeAccountsStore.saveTikTokMapping(context, cleanUsername, golikeAccountId)
+                                skipConfig = true
+                            }
                             break
                         }
                     }
@@ -405,7 +423,7 @@ object GolikeTikTokTaskRunner {
             if (declareMsg.contains("tải lại trang", ignoreCase = true) ||
                 declareMsg.contains("phiên bản mới nhất", ignoreCase = true)
             ) {
-                val errMsg = "Vui lòng đăng nhập lại Golike để làm mới phiên (g-auth hết hạn)."
+                val errMsg = "Phiên Golike hết hạn. Vui lòng đăng nhập lại Golike."
                 onStatusChange(errMsg)
                 XsmmJobStatusBridge.update(errMsg)
                 onJobFailed(errMsg)
@@ -430,6 +448,9 @@ object GolikeTikTokTaskRunner {
                             }.trim().removePrefix("@").lowercase()
                             if (u == cleanUsername) {
                                 golikeAccountId = item.optString("id").ifBlank { item.optString("account_id") }
+                                if (golikeAccountId.isNotBlank()) {
+                                    GolikeAccountsStore.saveTikTokMapping(context, cleanUsername, golikeAccountId)
+                                }
                                 break
                             }
                         }
@@ -534,6 +555,10 @@ object GolikeTikTokTaskRunner {
             if (isConfigSuccess) {
                 onStatusChange("Cấu hình nick @$cleanUsername thành công!")
                 XsmmJobStatusBridge.update("Cấu hình nick @$cleanUsername thành công!")
+
+                // Lưu mapping vào golike_tiktok_map
+                GolikeAccountsStore.saveTikTokMapping(context, cleanUsername, golikeAccountId)
+
                 val updatedAcc = GolikeAccount(
                     id = cleanUsername,
                     platform = "tiktok",

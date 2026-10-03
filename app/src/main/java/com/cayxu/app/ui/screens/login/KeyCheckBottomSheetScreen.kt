@@ -32,7 +32,8 @@ fun KeyCheckBottomSheetScreen(
     isEnglish: Boolean,
     brandBlue: Color,
     textPrimary: Color,
-    textSecondary: Color
+    textSecondary: Color,
+    onDismiss: () -> Unit = {}
 ) {
     val blueLightBg = brandBlue.copy(alpha = 0.12f)
     val successGreen = Color(0xFF34C759)
@@ -69,7 +70,16 @@ fun KeyCheckBottomSheetScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF000000).copy(alpha = 0.30f)),
+            .background(Color(0xFF000000).copy(alpha = 0.35f))
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null
+            ) {
+                // Cho phép chạm vào nền mờ ngoài bottom sheet để đóng nếu gặp lỗi hoặc muốn nhập key
+                if (status == AutoVerifyStatus.ERROR) {
+                    onDismiss()
+                }
+            },
         contentAlignment = Alignment.BottomCenter
     ) {
         // ── Bottom Sheet ──
@@ -78,9 +88,13 @@ fun KeyCheckBottomSheetScreen(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                 .background(sheetBg)
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null
+                ) { /* Chặn click xuyên qua vùng scrim */ }
                 .navigationBarsPadding()
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp),
+                .padding(bottom = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
