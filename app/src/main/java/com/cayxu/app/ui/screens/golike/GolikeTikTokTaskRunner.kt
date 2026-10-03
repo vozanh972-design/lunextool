@@ -144,17 +144,21 @@ object GolikeTikTokTaskRunner {
                     val sUnique = item.optString("unique_username").trim().removePrefix("@").lowercase()
                     val sUser = item.optString("username").trim().removePrefix("@").lowercase()
                     val sNick = item.optString("nickname").trim().removePrefix("@").lowercase()
+                    val sAccount = item.optString("tiktok_account").trim().removePrefix("@").lowercase()
+                    val sName = item.optString("name").trim().removePrefix("@").lowercase()
 
                     val isMatch = sUnique == cleanUsername || sUser == cleanUsername || sNick == cleanUsername ||
+                            sAccount == cleanUsername || sName == cleanUsername ||
                             (sUnique.isNotBlank() && (sUnique.contains(cleanUsername) || cleanUsername.contains(sUnique))) ||
-                            (sUser.isNotBlank() && (sUser.contains(cleanUsername) || cleanUsername.contains(sUser)))
+                            (sUser.isNotBlank() && (sUser.contains(cleanUsername) || cleanUsername.contains(sUser))) ||
+                            (sAccount.isNotBlank() && (sAccount.contains(cleanUsername) || cleanUsername.contains(sAccount)))
 
                     if (isMatch) {
-                        val idStr = item.optString("id").ifBlank {
-                            item.optString("account_id").ifBlank {
-                                val numId = item.optLong("id", 0L)
-                                if (numId > 0L) numId.toString() else ""
-                            }
+                        val rawId = item.opt("id") ?: item.opt("account_id")
+                        val idStr = when (rawId) {
+                            is Number -> rawId.toLong().toString()
+                            is String -> rawId.trim()
+                            else -> item.optString("id").ifBlank { item.optString("account_id") }
                         }
                         if (idStr.isNotBlank()) {
                             android.util.Log.d("GolikeVerify", "Khớp nick @$cleanUsername -> Golike account_id: $idStr")
@@ -347,75 +351,78 @@ object GolikeTikTokTaskRunner {
         delay(1000L)
 
         // ── 5. Gửi xác nhận hoàn tất lên Golike: POST /api/tiktok-account/verify-account-id ──
-        var isVerifySuccess = false
+        var retryCount = 0
+        val maxRetries = 3
+        var verifySuccess = false
+        var verifiedAccountId = ""
         var lastFailMsg = ""
-        val maxVerifyAttempts = 3
 
-        for (attempt in 1..maxVerifyAttempts) {
-            onProgress("Tài khoản đã Follow @$targetFollow. Đang gửi xác thực lên Golike ($attempt/$maxVerifyAttempts)...")
-            XsmmJobStatusBridge.update("Tài khoản đã Follow @$targetFollow. Đang gửi xác thực lên Golike ($attempt/$maxVerifyAttempts)...")
+        while (retryCount < maxRetries && !verifySuccess) {
+            retryCount++
+            val waitNotice = "Đang gửi xác thực lên Golike (lần $retryCount/$maxRetries)..."
+            onProgress(waitNotice)
+            XsmmJobStatusBridge.update(waitNotice)
 
-            var verifyRes = client.verifyTikTokAccountId(targetAccountId, cleanUsername)
-            android.util.Log.d("GolikeVerify", "verifyTikTokAccountId (attempt $attempt) response: $verifyRes")
+            var response = client.verifyTikTokAccountId(targetAccountId, cleanUsername)
+            android.util.Log.d("GolikeVerify", "Verify Response (lần $retryCount): $response")
 
-            val httpCode = verifyRes?.optInt("http_code", 0) ?: 0
-            var vStatus = verifyRes?.optInt("status", httpCode) ?: httpCode
-            var vSuccess = verifyRes?.optBoolean("success", false) ?: false
-            var vMessage = verifyRes?.optString("message").orEmpty()
+            val httpCode = response?.optInt("http_code", 0) ?: 0
+            var statusCode = response?.optInt("status", httpCode) ?: httpCode
+            var isSuccess = response?.optBoolean("success", false) ?: false
+            var message = response?.optString("message", "").orEmpty()
+            lastFailMsg = message
 
-            if (vStatus != 200 && !vSuccess && !vMessage.contains("thành công", ignoreCase = true)) {
+            if (statusCode != 200 && !isSuccess && !message.contains("thành công", ignoreCase = true)) {
                 val fallbackRes = client.verifyTikTokAccount(targetAccountId)
-                android.util.Log.d("GolikeVerify", "verifyTikTokAccount fallback response: $fallbackRes")
                 if (fallbackRes != null) {
-                    verifyRes = fallbackRes
-                    val fallbackHttpCode = fallbackRes.optInt("http_code", 0)
-                    vStatus = fallbackRes.optInt("status", fallbackHttpCode)
-                    vSuccess = fallbackRes.optBoolean("success", false)
-                    vMessage = fallbackRes.optString("message").orEmpty()
+                    val fallbackHttp = fallbackRes.optInt("http_code", 0)
+                    statusCode = fallbackRes.optInt("status", fallbackHttp)
+                    isSuccess = fallbackRes.optBoolean("success", false)
+                    message = fallbackRes.optString("message", "").orEmpty()
+                    lastFailMsg = message
+                    response = fallbackRes
                 }
             }
 
-            // TRƯỜNG HỢP A (Thành công chuẩn):
-            val isNormalSuccess = (vStatus == 200 && vSuccess) ||
-                    vMessage.contains("thành công", ignoreCase = true) ||
-                    vMessage.contains("đã xác nhận", ignoreCase = true)
+            // KIỂM TRA ĐIỀU KIỆN THÀNH CÔNG:
+            // 1. Thành công chuẩn (status 200 hoặc success == true hoặc có chữ thành công/đã xác nhận)
+            // 2. HOẶC server báo tài khoản này ĐÃ ĐƯỢC LIÊN KẾT / ĐÃ TỒN TẠI TỪ TRƯỚC
+            val isAlreadyLinked = message.contains("đã tồn tại", ignoreCase = true) ||
+                    message.contains("đã liên kết", ignoreCase = true) ||
+                    message.contains("đã được liên kết", ignoreCase = true) ||
+                    message.contains("tài khoản này đã", ignoreCase = true) ||
+                    message.contains("already", ignoreCase = true) ||
+                    message.contains("không tìm thấy yêu cầu", ignoreCase = true)
 
-            // TRƯỜNG HỢP B (Tài khoản đã liên kết từ trước):
-            val isAlreadyLinked = vMessage.contains("đã tồn tại", ignoreCase = true) ||
-                    vMessage.contains("đã được liên kết", ignoreCase = true) ||
-                    vMessage.contains("đã liên kết", ignoreCase = true) ||
-                    vMessage.contains("already", ignoreCase = true) ||
-                    vMessage.contains("tài khoản này đã", ignoreCase = true) ||
-                    vMessage.contains("không tìm thấy yêu cầu", ignoreCase = true)
+            val isNormalSuccess = isSuccess || statusCode == 200 ||
+                    message.contains("thành công", ignoreCase = true) ||
+                    message.contains("đã xác nhận", ignoreCase = true)
 
             if (isNormalSuccess || isAlreadyLinked) {
-                isVerifySuccess = true
-                if (isAlreadyLinked) {
-                    val realId = findExistingTikTokAccountId(client, cleanUsername)
-                    if (!realId.isNullOrBlank()) {
-                        accountId = realId
-                    }
+                verifySuccess = true
+                verifiedAccountId = response?.optJSONObject("data")?.optString("id", "").orEmpty()
+                if (verifiedAccountId.isBlank()) {
+                    verifiedAccountId = findExistingTikTokAccountId(client, cleanUsername) ?: targetAccountId
                 }
                 break
             } else {
-                lastFailMsg = vMessage
-                // TRƯỜNG HỢP C (Thực sự chưa xác nhận được): retry tối đa 3 lần
-                if (attempt < maxVerifyAttempts) {
-                    val waitMsg = if (vMessage.contains("Chưa bấm Follow", ignoreCase = true)) {
-                        "Đang chờ Golike đồng bộ trạng thái Follow (lần $attempt/$maxVerifyAttempts)..."
-                    } else {
-                        "Xác thực chưa xong (${vMessage.ifBlank { "đang thử lại" }}), thử lại sau 3s..."
-                    }
+                if (retryCount < maxRetries) {
+                    val waitMsg = "Xác thực chưa xong: ${message.ifBlank { "đang thử lại" }}. Thử lại sau 3s..."
                     onProgress(waitMsg)
                     XsmmJobStatusBridge.update(waitMsg)
                     delay(3000L)
+                } else {
+                    val failMsg = "Xác thực thất bại: $message"
+                    onProgress(failMsg)
+                    XsmmJobStatusBridge.update(failMsg)
                 }
             }
         }
 
-        if (isVerifySuccess) {
-            val finalId = accountId.ifBlank { targetAccountId }
-            val successMsg = "Cấu hình thành công @$cleanUsername! Đang bắt đầu làm nhiệm vụ..."
+        // SAU KHI THOÁT KHỎI VÒNG LẶP:
+        if (verifySuccess) {
+            val finalId = verifiedAccountId.ifBlank { targetAccountId }
+            val successMsg = "Liên kết thành công! Đang lấy nhiệm vụ..."
             onProgress(successMsg)
             XsmmJobStatusBridge.update(successMsg)
             GolikeAccountsStore.saveTikTokMapping(context, cleanUsername, finalId)
@@ -434,10 +441,10 @@ object GolikeTikTokTaskRunner {
             delay(1000L)
             return@withContext Result.success(finalAcc)
         } else {
-            val failMsg = "Lỗi: " + lastFailMsg.ifBlank { "Chưa thể xác nhận liên kết Golike" }
-            XsmmJobStatusBridge.update(failMsg)
-            onProgress(failMsg)
-            return@withContext Result.failure(Exception(failMsg))
+            val err = "Dừng: Không thể xác thực tài khoản với Golike (${lastFailMsg.ifBlank { "Hết lượt thử" }})."
+            XsmmJobStatusBridge.update(err)
+            onProgress(err)
+            return@withContext Result.failure(Exception(err))
         }
     }
 
@@ -621,77 +628,77 @@ object GolikeTikTokTaskRunner {
                 delay(1000L)
 
                 // 2.4 GỬI XÁC NHẬN HOÀN TẤT CẤU HÌNH LÊN GOLIKE
+                var retryCount = 0
+                val maxConfigAttempts = 3
                 var isConfigSuccess = false
                 var lastConfigMsg = ""
-                val maxConfigAttempts = 3
+                var verifiedAccountId = ""
 
-                for (attempt in 1..maxConfigAttempts) {
-                    onStatusChange("Tài khoản đã Follow @$targetConfigUser. Đang gửi xác thực lên Golike ($attempt/$maxConfigAttempts)...")
-                    XsmmJobStatusBridge.update("Tài khoản đã Follow @$targetConfigUser. Đang gửi xác thực lên Golike ($attempt/$maxConfigAttempts)...")
+                while (retryCount < maxConfigAttempts && !isConfigSuccess) {
+                    retryCount++
+                    val waitNotice = "Đang gửi xác thực lên Golike (lần $retryCount/$maxConfigAttempts)..."
+                    onStatusChange(waitNotice)
+                    XsmmJobStatusBridge.update(waitNotice)
 
                     var verifyRes = client.verifyTikTokAccountId(targetConfigAccountId, cleanUsername)
-                    android.util.Log.d("GolikeVerify", "verifyTikTokAccountId loop (attempt $attempt) response: $verifyRes")
+                    android.util.Log.d("GolikeVerify", "verifyTikTokAccountId loop (lần $retryCount): $verifyRes")
 
                     val httpCode = verifyRes?.optInt("http_code", 0) ?: 0
                     var vStatus = verifyRes?.optInt("status", httpCode) ?: httpCode
                     var vSuccess = verifyRes?.optBoolean("success", false) ?: false
                     var vMessage = verifyRes?.optString("message").orEmpty()
+                    lastConfigMsg = vMessage
 
                     if (vStatus != 200 && !vSuccess && !vMessage.contains("thành công", ignoreCase = true)) {
                         val fallbackRes = client.verifyTikTokAccount(targetConfigAccountId)
                         android.util.Log.d("GolikeVerify", "verifyTikTokAccount fallback loop response: $fallbackRes")
                         if (fallbackRes != null) {
-                            verifyRes = fallbackRes
                             val fallbackHttpCode = fallbackRes.optInt("http_code", 0)
                             vStatus = fallbackRes.optInt("status", fallbackHttpCode)
                             vSuccess = fallbackRes.optBoolean("success", false)
                             vMessage = fallbackRes.optString("message").orEmpty()
+                            lastConfigMsg = vMessage
+                            verifyRes = fallbackRes
                         }
                     }
 
-                    // TRƯỜNG HỢP A (Thành công chuẩn):
+                    // KIỂM TRA ĐIỀU KIỆN THÀNH CÔNG:
+                    val isAlreadyLinked = vMessage.contains("đã tồn tại", ignoreCase = true) ||
+                            vMessage.contains("đã được liên kết", ignoreCase = true) ||
+                            vMessage.contains("đã liên kết", ignoreCase = true) ||
+                            vMessage.contains("tài khoản này đã", ignoreCase = true) ||
+                            vMessage.contains("already", ignoreCase = true) ||
+                            vMessage.contains("không tìm thấy yêu cầu", ignoreCase = true)
+
                     val isNormalSuccess = (vStatus == 200 && vSuccess) ||
                             vMessage.contains("thành công", ignoreCase = true) ||
                             vMessage.contains("đã xác nhận", ignoreCase = true)
 
-                    // TRƯỜNG HỢP B (Tài khoản đã liên kết từ trước):
-                    val isAlreadyLinked = vMessage.contains("đã tồn tại", ignoreCase = true) ||
-                            vMessage.contains("đã được liên kết", ignoreCase = true) ||
-                            vMessage.contains("đã liên kết", ignoreCase = true) ||
-                            vMessage.contains("already", ignoreCase = true) ||
-                            vMessage.contains("tài khoản này đã", ignoreCase = true) ||
-                            vMessage.contains("không tìm thấy yêu cầu", ignoreCase = true)
-
                     if (isNormalSuccess || isAlreadyLinked) {
                         isConfigSuccess = true
-                        if (isAlreadyLinked) {
-                            val realId = findExistingTikTokAccountId(client, cleanUsername)
-                            if (!realId.isNullOrBlank()) {
-                                golikeAccountId = realId
-                            }
-                        } else if (golikeAccountId.isBlank()) {
-                            golikeAccountId = targetConfigAccountId
+                        verifiedAccountId = verifyRes?.optJSONObject("data")?.optString("id", "").orEmpty()
+                        if (verifiedAccountId.isBlank()) {
+                            verifiedAccountId = findExistingTikTokAccountId(client, cleanUsername) ?: targetConfigAccountId
                         }
+                        golikeAccountId = verifiedAccountId
                         break
                     } else {
-                        lastConfigMsg = vMessage
-                        // TRƯỜNG HỢP C (Thực sự chưa xác nhận được): retry tối đa 3 lần
-                        if (attempt < maxConfigAttempts) {
-                            val waitMsg = if (vMessage.contains("Chưa bấm Follow", ignoreCase = true)) {
-                                "Đang chờ Golike đồng bộ trạng thái Follow (lần $attempt/$maxConfigAttempts)..."
-                            } else {
-                                "Xác thực chưa xong (${vMessage.ifBlank { "đang thử lại" }}), thử lại sau 3s..."
-                            }
+                        if (retryCount < maxConfigAttempts) {
+                            val waitMsg = "Xác thực chưa xong: ${vMessage.ifBlank { "đang thử lại" }}. Thử lại sau 3s..."
                             onStatusChange(waitMsg)
                             XsmmJobStatusBridge.update(waitMsg)
                             delay(3000L)
+                        } else {
+                            val failMsg = "Xác thực thất bại: $vMessage"
+                            onStatusChange(failMsg)
+                            XsmmJobStatusBridge.update(failMsg)
                         }
                     }
                 }
 
                 if (isConfigSuccess) {
                     val finalId = golikeAccountId.ifBlank { targetConfigAccountId }
-                    val successMsg = "Cấu hình thành công @$cleanUsername! Đang bắt đầu làm nhiệm vụ..."
+                    val successMsg = "Liên kết thành công! Đang lấy nhiệm vụ..."
                     onStatusChange(successMsg)
                     XsmmJobStatusBridge.update(successMsg)
 
@@ -712,7 +719,7 @@ object GolikeTikTokTaskRunner {
                     GolikeAccountsStore.updateAccountProgress(context, "tiktok", cleanUsername, "Đã cấu hình • Sẵn sàng", isSuccess = true)
                     delay(1200L)
                 } else {
-                    val err = "Lỗi: " + lastConfigMsg.ifBlank { "Chưa thể xác nhận liên kết Golike" }
+                    val err = "Dừng: Không thể xác thực tài khoản với Golike (${lastConfigMsg.ifBlank { "Hết lượt thử" }})."
                     onStatusChange(err)
                     XsmmJobStatusBridge.update(err)
                     onJobFailed(err)

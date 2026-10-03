@@ -105,6 +105,7 @@ suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient,
             try {
                 val res = if (GolikeAccountsStore.isLoggedIn(context)) client.getTikTokAccounts() else null
                 val dataArray = res?.optJSONArray("data")
+                    ?: res?.optJSONObject("data")?.optJSONArray("data")
                 if (dataArray != null) {
                     for (i in 0 until dataArray.length()) {
                         val item = dataArray.optJSONObject(i) ?: continue
@@ -131,7 +132,12 @@ suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient,
                 val serverItem = serverMap[cleanHandle]
 
                 if (serverItem != null) {
-                    val accountId = serverItem.optString("id").ifBlank { serverItem.optString("account_id") }
+                    val rawId = serverItem.opt("id") ?: serverItem.opt("account_id")
+                    val accountId = when (rawId) {
+                        is Number -> rawId.toLong().toString()
+                        is String -> rawId.trim()
+                        else -> serverItem.optString("id").ifBlank { serverItem.optString("account_id") }
+                    }
                     val serverAvatar = serverItem.optString("avatar")
                     val acc = GolikeAccount(
                         id = cleanHandle,
@@ -145,19 +151,26 @@ suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient,
                         lastStatus = "Đã liên kết Golike • Sẵn sàng"
                     )
                     GolikeAccountsStore.addOrUpdateAccount(context, acc)
+                    if (accountId.isNotBlank()) {
+                        GolikeAccountsStore.saveTikTokMapping(context, cleanHandle, accountId)
+                    }
                 } else {
                     // Nick trên máy chưa liên kết Golike
                     val existing = GolikeAccountsStore.getAccounts(context, "tiktok").firstOrNull { it.id.equals(cleanHandle, ignoreCase = true) }
+                    val cachedId = GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanHandle).orEmpty()
+                    val finalId = existing?.golikeAccountId?.ifBlank { cachedId } ?: cachedId
+                    val isLinked = (existing?.isGolikeLinked == true || finalId.isNotBlank())
+
                     val acc = GolikeAccount(
                         id = cleanHandle,
                         platform = "tiktok",
                         username = local.handle,
                         avatar = local.avatarUrl,
                         isLive = local.isLive,
-                        isGolikeLinked = existing?.isGolikeLinked ?: false,
-                        golikeAccountId = existing?.golikeAccountId.orEmpty(),
+                        isGolikeLinked = isLinked,
+                        golikeAccountId = finalId,
                         proxy = existing?.proxy?.ifBlank { local.proxy } ?: local.proxy,
-                        lastStatus = if (existing?.isGolikeLinked == true) existing.lastStatus else "Chưa liên kết Golike"
+                        lastStatus = if (isLinked) "Đã liên kết Golike • Sẵn sàng" else "Chưa liên kết Golike"
                     )
                     GolikeAccountsStore.addOrUpdateAccount(context, acc)
                 }
@@ -166,7 +179,12 @@ suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient,
             // 4. Bổ sung các nick đã có trên Golike nhưng chưa có trong máy vào Kho chung
             for ((serverHandle, serverItem) in serverMap) {
                 if (!processedHandles.contains(serverHandle)) {
-                    val accountId = serverItem.optString("id")
+                    val rawId = serverItem.opt("id") ?: serverItem.opt("account_id")
+                    val accountId = when (rawId) {
+                        is Number -> rawId.toLong().toString()
+                        is String -> rawId.trim()
+                        else -> serverItem.optString("id").ifBlank { serverItem.optString("account_id") }
+                    }
                     val serverAvatar = serverItem.optString("avatar")
                     val displayUname = serverItem.optString("nickname").ifBlank {
                         serverItem.optString("unique_username").ifBlank {
@@ -184,6 +202,9 @@ suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient,
                         lastStatus = "Đã liên kết Golike • Sẵn sàng"
                     )
                     GolikeAccountsStore.addOrUpdateAccount(context, acc)
+                    if (accountId.isNotBlank()) {
+                        GolikeAccountsStore.saveTikTokMapping(context, serverHandle, accountId)
+                    }
                     try {
                         com.cayxu.app.data.local.TikTokAccountsStore.addFromCapture(
                             context = context,
@@ -427,9 +448,17 @@ fun GolikeAccountScreen(navController: NavController) {
         if (selectedPlatform.lowercase() == "tiktok") {
             scope.launch(Dispatchers.IO) {
                 val client = GolikeAccountsStore.getApiClient(context)
+                val cleanHandle = acc.username.trim().removePrefix("@").lowercase()
+                val cachedId = acc.golikeAccountId.ifBlank {
+                    GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanHandle).orEmpty()
+                }
+                val effectiveAcc = if (cachedId.isNotBlank()) {
+                    acc.copy(isGolikeLinked = true, golikeAccountId = cachedId)
+                } else acc
+
                 GolikeTikTokTaskRunner.runTikTokTaskLoop(
                     context = context,
-                    account = acc,
+                    account = effectiveAcc,
                     client = client,
                     variant = selectedVariant,
                     onStatusChange = { newStatus ->
