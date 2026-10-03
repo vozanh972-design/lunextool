@@ -2,6 +2,8 @@ package com.cayxu.app.ui.screens.login
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -72,7 +74,7 @@ fun KeyCheckBottomSheetScreen(
             .fillMaxSize()
             .background(Color(0xFF000000).copy(alpha = 0.35f))
             .clickable(
-                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                interactionSource = remember { MutableInteractionSource() },
                 indication = null
             ) {
                 // Cho phép chạm vào nền mờ ngoài bottom sheet để đóng nếu gặp lỗi hoặc muốn nhập key
@@ -89,7 +91,7 @@ fun KeyCheckBottomSheetScreen(
                 .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                 .background(sheetBg)
                 .clickable(
-                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) { /* Chặn click xuyên qua vùng scrim */ }
                 .navigationBarsPadding()
