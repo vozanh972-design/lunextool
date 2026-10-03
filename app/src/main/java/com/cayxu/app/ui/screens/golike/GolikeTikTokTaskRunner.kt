@@ -296,7 +296,7 @@ object GolikeTikTokTaskRunner {
         onProgress("Lấy nick chỉ định cấu hình từ Golike...")
         var targetUser = ""
         try {
-            val targetRes = client.getTikTokVerifyTarget(targetAccountId)
+            val targetRes = client.getTikTokVerifyTarget(targetAccountId, cleanUsername)
             val targetData = targetRes?.optJSONObject("data") ?: targetRes
             targetUser = targetData?.optString("target_user")?.takeIf { it.isNotBlank() }
                 ?: targetData?.optString("username")?.takeIf { it.isNotBlank() }
@@ -386,7 +386,7 @@ object GolikeTikTokTaskRunner {
             }
 
             if (statusCode != 200 && !isSuccess && !serverMessage.contains("thành công", ignoreCase = true) && !serverMessage.contains("đã xác nhận", ignoreCase = true)) {
-                val fallbackRes = client.verifyTikTokAccount(targetAccountId)
+                val fallbackRes = client.verifyTikTokAccount(targetAccountId, cleanUsername)
                 if (fallbackRes != null) {
                     val fallbackHttp = fallbackRes.optInt("http_code", 0)
                     val fallbackStatus = fallbackRes.optInt("status", fallbackHttp)
@@ -617,7 +617,7 @@ object GolikeTikTokTaskRunner {
                 // 2.3 MỞ TIKTOK FOLLOW NICK CHỈ ĐỊNH ĐỂ CẤU HÌNH (CHUẨN GOMAX @gosen.vietnam)
                 var targetConfigUser = "gosen.vietnam"
                 try {
-                    val targetRes = client.getTikTokVerifyTarget(targetConfigAccountId)
+                    val targetRes = client.getTikTokVerifyTarget(targetConfigAccountId, cleanUsername)
                     val targetData = targetRes?.optJSONObject("data") ?: targetRes
                     val tu = targetData?.optString("target_user")?.takeIf { it.isNotBlank() }
                         ?: targetData?.optString("username")?.takeIf { it.isNotBlank() }
@@ -703,7 +703,7 @@ object GolikeTikTokTaskRunner {
                     }
 
                     if (vStatus != 200 && !vSuccess && !serverMessage.contains("thành công", ignoreCase = true) && !serverMessage.contains("đã xác nhận", ignoreCase = true)) {
-                        val fallbackRes = client.verifyTikTokAccount(targetConfigAccountId)
+                        val fallbackRes = client.verifyTikTokAccount(targetConfigAccountId, cleanUsername)
                         android.util.Log.d("GolikeVerify", "verifyTikTokAccount fallback loop response: $fallbackRes")
                         if (fallbackRes != null) {
                             val fallbackHttpCode = fallbackRes.optInt("http_code", 0)

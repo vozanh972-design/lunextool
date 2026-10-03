@@ -74,6 +74,7 @@ class GolikeApiClient(
     fun declareTikTokAccount(username: String): JSONObject? {
         val cleanUsername = username.trim().removePrefix("@")
         val body = JSONObject().apply {
+            put("unique_id", cleanUsername)
             put("unique_username", cleanUsername)
             put("username", cleanUsername)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
@@ -86,9 +87,12 @@ class GolikeApiClient(
             val numId = accountId.toLongOrNull()
             if (numId != null) {
                 put("account_id", numId)
+                put("id", numId)
             } else {
                 put("account_id", accountId)
+                put("id", accountId)
             }
+            put("unique_id", cleanUsername)
             put("unique_username", cleanUsername)
             put("username", cleanUsername)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
@@ -96,13 +100,33 @@ class GolikeApiClient(
     }
 
     // Lấy thông tin nick chỉ định cần follow để xác minh cấu hình: GET /api/tiktok-account/verify-account-id?account_id={accountId}
-    fun getTikTokVerifyTarget(accountId: String): JSONObject? =
-        execute(newRequestBuilder("$BASE_URL/tiktok-account/verify-account-id?account_id=$accountId").get().build())
+    fun getTikTokVerifyTarget(accountId: String, username: String = ""): JSONObject? {
+        val cleanUsername = username.trim().removePrefix("@")
+        val query = if (cleanUsername.isNotBlank()) {
+            "$BASE_URL/tiktok-account/verify-account-id?account_id=$accountId&unique_id=$cleanUsername"
+        } else {
+            "$BASE_URL/tiktok-account/verify-account-id?account_id=$accountId"
+        }
+        return execute(newRequestBuilder(query).get().build())
+    }
 
     // Xác nhận hoàn tất cấu hình lên Golike: POST /api/tiktok-account/verify {"account_id": accountId}
-    fun verifyTikTokAccount(accountId: String): JSONObject? {
+    fun verifyTikTokAccount(accountId: String, username: String = ""): JSONObject? {
+        val cleanUsername = username.trim().removePrefix("@")
         val body = JSONObject().apply {
-            put("account_id", accountId)
+            val numId = accountId.toLongOrNull()
+            if (numId != null) {
+                put("account_id", numId)
+                put("id", numId)
+            } else {
+                put("account_id", accountId)
+                put("id", accountId)
+            }
+            if (cleanUsername.isNotBlank()) {
+                put("unique_id", cleanUsername)
+                put("unique_username", cleanUsername)
+                put("username", cleanUsername)
+            }
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         return execute(newRequestBuilder("$BASE_URL/tiktok-account/verify").post(body).build())
     }

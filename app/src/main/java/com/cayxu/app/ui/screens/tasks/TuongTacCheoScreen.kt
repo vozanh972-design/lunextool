@@ -1180,19 +1180,6 @@ fun TuongTacCheoScreen(navController: NavController) {
                 modifier = Modifier.weight(1f),
                 onClick = { selectedTab = 1 }
             )
-
-            val tikTokCount = remember { com.cayxu.app.data.local.TikTokAccountsStore.getAccounts(context).size }
-            TtcTabButton(
-                label = "TikTok",
-                count = tikTokCount,
-                isSelected = false,
-                selectedColor = Color(0xFF0F172A),
-                icon = Icons.Filled.MusicNote,
-                modifier = Modifier.weight(1f),
-                onClick = {
-                    navController.navigate(com.cayxu.app.ui.navigation.Routes.TUONG_TAC_CHEO_TIKTOK) { launchSingleTop = true }
-                }
-            )
         }
 
         Spacer(Modifier.height(12.dp))
