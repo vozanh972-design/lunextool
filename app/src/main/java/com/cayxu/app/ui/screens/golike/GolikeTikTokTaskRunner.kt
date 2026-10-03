@@ -490,6 +490,7 @@ object GolikeTikTokTaskRunner {
         }
 
         // BƯỚC 3: CHUYỂN NGAY SANG VÒNG LẶP LÀM JOB CỦA GOLIKE
+        val golikeAccId = golikeAccountId.ifBlank { account.id }
         GolikeRunningManager.runningAccounts[account.id] = true
         GolikeRunningManager.runningAccounts[cleanUsername] = true
         var consecutiveFails = 0
