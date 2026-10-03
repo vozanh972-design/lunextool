@@ -87,6 +87,14 @@ object GolikeAuthWebView {
               if (window.GoMaxApp && window.GoMaxApp.sendGatewayHeaders && (deviceId || username)) {
                 GoMaxApp.sendGatewayHeaders('', deviceId || '', username || '');
               }
+
+              // Kiểm tra thêm token trong localStorage nếu có
+              let localAuth = localStorage.getItem('token') || localStorage.getItem('authorization') || localStorage.getItem('access_token');
+              if (localAuth && window.GoMaxApp && window.GoMaxApp.sendAuthData) {
+                let cleanAuth = localAuth.startsWith('Bearer ') ? localAuth : ('Bearer ' + localAuth);
+                let tVal = localStorage.getItem('t') || '';
+                window.GoMaxApp.sendAuthData(cleanAuth, tVal);
+              }
             } catch(e) {}
           }
 
@@ -137,6 +145,13 @@ object GolikeAuthWebView {
             }
             return origSend.apply(this, arguments);
           };
+
+          // Chủ động trigger gọi API /api/users/me để bộ hook fetch/xhr tóm đủ headers
+          try {
+            if (window.fetch && (location.href.indexOf('app.golike.net') !== -1 || location.pathname !== '/login')) {
+              window.fetch('/api/users/me').catch(function(){});
+            }
+          } catch(e) {}
 
           // Thực hiện quét session store định kỳ
           captureSessionStore();
@@ -195,17 +210,14 @@ object GolikeAuthWebView {
 
         private fun checkAndNotify() {
             val auth = savedAuth
-            val t = savedT
-            val devId = savedDeviceId
-            val uname = savedUsername
-            val gAuth = savedGAuth
+            val t = savedT.orEmpty()
+            val devId = savedDeviceId.orEmpty()
+            val uname = savedUsername.orEmpty()
+            val gAuth = savedGAuth.orEmpty()
 
-            // BẮT BUỘC ĐỦ CẢ 5 THÀNH PHẦN SESSION CỦA GOLIKE GATEWAY TRƯỚC KHI BÁO THÀNH CÔNG
+            // Điều kiện thành công chuẩn GoMax: Có auth (Bearer Token) và (username hoặc deviceId)
             if (!auth.isNullOrBlank() && auth != "Bearer null" && auth != "Bearer undefined" &&
-                !t.isNullOrBlank() &&
-                !devId.isNullOrBlank() &&
-                !uname.isNullOrBlank() &&
-                !gAuth.isNullOrBlank()
+                (uname.isNotBlank() || devId.isNotBlank())
             ) {
                 callback.onAuthCaptured(
                     authToken = auth,

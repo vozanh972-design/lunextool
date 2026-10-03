@@ -22,12 +22,7 @@ object GolikeTikTokTaskRunner {
     // Trả về null nếu đủ, trả về thông báo lỗi nếu thiếu.
     // ─────────────────────────────────────────────────────────────────────────
     private fun checkSession(client: GolikeApiClient): String? {
-        if (client.authToken.isNullOrBlank() ||
-            client.tToken.isNullOrBlank() ||
-            client.deviceId.isNullOrBlank() ||
-            client.username.isNullOrBlank() ||
-            client.gAuth.isNullOrBlank()
-        ) {
+        if (client.authToken.isNullOrBlank() || client.username.isNullOrBlank()) {
             return "Phiên Golike hết hạn. Vui lòng đăng nhập lại Golike."
         }
         return null
