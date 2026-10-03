@@ -614,8 +614,11 @@ object GolikeTikTokTaskRunner {
                 val err = lastConfigMsg.ifBlank { "Chưa bấm Follow @$targetConfigUser" }
                 onStatusChange("Cấu hình thất bại: $err")
                 XsmmJobStatusBridge.update("Cấu hình thất bại: $err")
+                onJobFailed(err)
+                GolikeRunningManager.runningAccounts[account.id] = false
+                GolikeRunningManager.runningAccounts[cleanUsername] = false
                 delay(1500L)
-                return@withContext Result.failure(Exception("Cấu hình thất bại: $err"))
+                return@withContext
             }
         }
 
