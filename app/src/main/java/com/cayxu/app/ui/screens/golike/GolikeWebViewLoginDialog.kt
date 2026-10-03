@@ -46,6 +46,8 @@ fun GolikeWebViewLoginDialog(
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     val isCaptured = remember { AtomicBoolean(false) }
     var loadingProgress by remember { mutableIntStateOf(0) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+
     // BƯỚC 2: Polling định kỳ mỗi 1.2s từ Android ép web gọi /api/users/me và quét session
     LaunchedEffect(webViewInstance) {
         val wv = webViewInstance ?: return@LaunchedEffect
