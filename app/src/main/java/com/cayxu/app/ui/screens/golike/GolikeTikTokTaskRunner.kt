@@ -187,33 +187,7 @@ object GolikeTikTokTaskRunner {
         onProgress(statusMsg)
         XsmmJobStatusBridge.update(statusMsg)
 
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("snssdk1128://user/profile/$targetFollow")).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        var opened = false
-        try {
-            context.startActivity(intent)
-            opened = true
-        } catch (_: Exception) {
-            try {
-                val intent2 = Intent(Intent.ACTION_VIEW, Uri.parse("snssdk1128://user/profile?unique_id=$targetFollow")).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent2)
-                opened = true
-            } catch (_: Exception) {}
-        }
-
-        if (!opened) {
-            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.tiktok.com/@$targetFollow")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            try {
-                context.startActivity(webIntent)
-            } catch (_: Exception) {
-                TikTokAppLauncher.openUserProfile(context, "https://www.tiktok.com/@$targetFollow")
-            }
-        }
+        TikTokAppLauncher.openUserProfile(context, "https://www.tiktok.com/@$targetFollow")
         delay(1500L)
 
         if (TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
@@ -377,33 +351,7 @@ object GolikeTikTokTaskRunner {
         onStatusChange("Mở follow nick cấu hình @$targetConfigUser...")
         XsmmJobStatusBridge.update("Mở follow nick cấu hình @$targetConfigUser...")
 
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("snssdk1128://user/profile/$targetConfigUser")).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        var opened = false
-        try {
-            context.startActivity(intent)
-            opened = true
-        } catch (_: Exception) {
-            try {
-                val intent2 = Intent(Intent.ACTION_VIEW, Uri.parse("snssdk1128://user/profile?unique_id=$targetConfigUser")).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent2)
-                opened = true
-            } catch (_: Exception) {}
-        }
-
-        if (!opened) {
-            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.tiktok.com/@$targetConfigUser")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            try {
-                context.startActivity(webIntent)
-            } catch (_: Exception) {
-                TikTokAppLauncher.openUserProfile(context, "https://www.tiktok.com/@$targetConfigUser")
-            }
-        }
+        TikTokAppLauncher.openUserProfile(context, "https://www.tiktok.com/@$targetConfigUser")
 
         // Kích hoạt Trợ Năng bấm nút Follow
         delay(1500L) // Chờ TikTok load trang cá nhân
