@@ -374,7 +374,7 @@ fun TuongTacCheoTikTokScreen(navController: NavController) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 36.dp, horizontal = 20.dp),
-                            horizontalAlignment = Alignment.CenterVertically
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.MusicNote,

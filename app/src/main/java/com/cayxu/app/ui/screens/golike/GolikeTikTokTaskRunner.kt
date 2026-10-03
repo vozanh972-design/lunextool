@@ -378,8 +378,8 @@ object GolikeTikTokTaskRunner {
 
             // Lấy message nguyên văn từ server Golike:
             var serverMessage = when {
-                !response?.optString("message").isNullOrBlank() -> response.optString("message")
-                !response?.optString("error").isNullOrBlank() -> response.optString("error")
+                !response?.optString("message").isNullOrBlank() -> response?.optString("message").orEmpty()
+                !response?.optString("error").isNullOrBlank() -> response?.optString("error").orEmpty()
                 !response?.optJSONObject("data")?.optString("message").isNullOrBlank() -> response?.optJSONObject("data")?.optString("message").orEmpty()
                 !response?.optJSONObject("error")?.optString("message").isNullOrBlank() -> response?.optJSONObject("error")?.optString("message").orEmpty()
                 else -> ""
@@ -392,8 +392,8 @@ object GolikeTikTokTaskRunner {
                     val fallbackStatus = fallbackRes.optInt("status", fallbackHttp)
                     val fallbackSuccess = fallbackRes.optBoolean("success", false) == true
                     val fallbackMessage = when {
-                        !fallbackRes.optString("message").isNullOrBlank() -> fallbackRes.optString("message")
-                        !fallbackRes.optString("error").isNullOrBlank() -> fallbackRes.optString("error")
+                        !fallbackRes.optString("message").isNullOrBlank() -> fallbackRes.optString("message").orEmpty()
+                        !fallbackRes.optString("error").isNullOrBlank() -> fallbackRes.optString("error").orEmpty()
                         !fallbackRes.optJSONObject("data")?.optString("message").isNullOrBlank() -> fallbackRes.optJSONObject("data")?.optString("message").orEmpty()
                         !fallbackRes.optJSONObject("error")?.optString("message").isNullOrBlank() -> fallbackRes.optJSONObject("error")?.optString("message").orEmpty()
                         else -> ""
@@ -695,8 +695,8 @@ object GolikeTikTokTaskRunner {
 
                     // Lấy message nguyên văn từ server Golike:
                     var serverMessage = when {
-                        !verifyRes?.optString("message").isNullOrBlank() -> verifyRes.optString("message")
-                        !verifyRes?.optString("error").isNullOrBlank() -> verifyRes.optString("error")
+                        !verifyRes?.optString("message").isNullOrBlank() -> verifyRes?.optString("message").orEmpty()
+                        !verifyRes?.optString("error").isNullOrBlank() -> verifyRes?.optString("error").orEmpty()
                         !verifyRes?.optJSONObject("data")?.optString("message").isNullOrBlank() -> verifyRes?.optJSONObject("data")?.optString("message").orEmpty()
                         !verifyRes?.optJSONObject("error")?.optString("message").isNullOrBlank() -> verifyRes?.optJSONObject("error")?.optString("message").orEmpty()
                         else -> ""
@@ -710,8 +710,8 @@ object GolikeTikTokTaskRunner {
                             val fallbackStatus = fallbackRes.optInt("status", fallbackHttpCode)
                             val fallbackSuccess = fallbackRes.optBoolean("success", false) == true
                             val fallbackMessage = when {
-                                !fallbackRes.optString("message").isNullOrBlank() -> fallbackRes.optString("message")
-                                !fallbackRes.optString("error").isNullOrBlank() -> fallbackRes.optString("error")
+                                !fallbackRes.optString("message").isNullOrBlank() -> fallbackRes.optString("message").orEmpty()
+                                !fallbackRes.optString("error").isNullOrBlank() -> fallbackRes.optString("error").orEmpty()
                                 !fallbackRes.optJSONObject("data")?.optString("message").isNullOrBlank() -> fallbackRes.optJSONObject("data")?.optString("message").orEmpty()
                                 !fallbackRes.optJSONObject("error")?.optString("message").isNullOrBlank() -> fallbackRes.optJSONObject("error")?.optString("message").orEmpty()
                                 else -> ""
