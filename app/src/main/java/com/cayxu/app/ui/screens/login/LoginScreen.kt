@@ -83,11 +83,6 @@ fun LoginScreen(
         }
     }
 
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let {
-            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
-        }
-    }
 
     // Nếu đang tự động kiểm tra key khi mở app -> hiển thị Bottom Sheet Modal chuẩn Figma
     if (uiState.autoVerifyStatus != AutoVerifyStatus.IDLE) {
@@ -97,11 +92,7 @@ fun LoginScreen(
             isEnglish = isEnglish,
             brandBlue = brandBlue,
             textPrimary = textPrimary,
-            textSecondary = textSecondary,
-            onSwitchAccount = {
-                // Xóa key đã lưu và reset về màn nhập key
-                viewModel.clearSavedKey()
-            }
+            textSecondary = textSecondary
         )
         return
     }

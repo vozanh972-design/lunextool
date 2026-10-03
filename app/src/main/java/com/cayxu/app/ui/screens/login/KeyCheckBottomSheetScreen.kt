@@ -32,8 +32,7 @@ fun KeyCheckBottomSheetScreen(
     isEnglish: Boolean,
     brandBlue: Color,
     textPrimary: Color,
-    textSecondary: Color,
-    onSwitchAccount: () -> Unit
+    textSecondary: Color
 ) {
     val blueLightBg = brandBlue.copy(alpha = 0.12f)
     val successGreen = Color(0xFF34C759)
@@ -228,29 +227,6 @@ fun KeyCheckBottomSheetScreen(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(28.dp))
-
-            // 7. Nút "Dùng tài khoản khác"
-            OutlinedButton(
-                onClick = onSwitchAccount,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = brandBlue
-                ),
-                border = ButtonDefaults.outlinedButtonBorder.copy(
-                    brush = androidx.compose.ui.graphics.SolidColor(brandBlue.copy(alpha = 0.6f))
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-            ) {
-                Text(
-                    text = if (isEnglish) "Use another account" else "Dùng tài khoản khác",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = brandBlue
-                )
-            }
         }
     }
 }
