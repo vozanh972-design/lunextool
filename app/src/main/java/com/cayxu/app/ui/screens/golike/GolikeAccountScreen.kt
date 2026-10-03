@@ -427,37 +427,11 @@ fun GolikeAccountScreen(navController: NavController) {
         if (selectedPlatform.lowercase() == "tiktok") {
             scope.launch(Dispatchers.IO) {
                 val client = GolikeAccountsStore.getApiClient(context)
-                var targetAcc = acc
-                if (!acc.isGolikeLinked || acc.golikeAccountId.isBlank()) {
-                    GolikeRunningManager.statusMap[acc.id] = "Đang tự động cấu hình xác minh vào Golike..."
-                    val verifyRes = GolikeTikTokTaskRunner.verifyAndLinkTikTokAccount(
-                        context = context,
-                        client = client,
-                        username = acc.username,
-                        onProgress = { step ->
-                            GolikeRunningManager.statusMap[acc.id] = step
-                        }
-                    )
-                    if (verifyRes.isSuccess) {
-                        targetAcc = verifyRes.getOrThrow()
-                        withContext(Dispatchers.Main) {
-                            reloadAccounts()
-                            Toast.makeText(context, "Cấu hình thành công @${acc.username} vào Golike!", Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        val err = verifyRes.exceptionOrNull()?.message ?: "Xác minh tài khoản thất bại"
-                        GolikeRunningManager.statusMap[acc.id] = "Lỗi: $err"
-                        GolikeRunningManager.lastErrorDetailMap[acc.id] = err
-                        GolikeRunningManager.runningAccounts[acc.id] = false
-                        GolikeAccountsStore.updateAccountProgress(context, "tiktok", acc.id, "Lỗi: $err", isSuccess = false, errorDetail = err)
-                        return@launch
-                    }
-                }
-
                 GolikeTikTokTaskRunner.runTikTokTaskLoop(
                     context = context,
-                    account = targetAcc,
+                    account = acc,
                     client = client,
+                    variant = selectedVariant,
                     onStatusChange = { newStatus ->
                         GolikeRunningManager.statusMap[acc.id] = newStatus
                         XsmmJobStatusBridge.update(newStatus)
