@@ -163,9 +163,14 @@ class GolikeApiClient(
                 val code = res.code
                 val bodyStr = res.body?.string().orEmpty()
                 android.util.Log.d("GolikeApi", "[$method] $url -> HTTP $code | Response: $bodyStr")
+                android.util.Log.d("GolikeVerify", "Status: $code, Body: $bodyStr")
                 if (bodyStr.isBlank()) return null
                 try {
-                    JSONObject(bodyStr)
+                    val json = JSONObject(bodyStr)
+                    if (!json.has("http_code")) {
+                        json.put("http_code", code)
+                    }
+                    json
                 } catch (e: Exception) {
                     android.util.Log.w("GolikeApi", "Response is not a valid JSONObject: $bodyStr")
                     null
