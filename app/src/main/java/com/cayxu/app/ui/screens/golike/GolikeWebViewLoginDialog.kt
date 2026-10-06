@@ -210,7 +210,10 @@ fun GolikeWebViewLoginDialog(
                                             gAuth: String,
                                             signingKey: String,
                                             userId: String,
-                                            webData: String
+                                            webData: String,
+                                            version: String,
+                                            client: String,
+                                            scheme: String
                                         ) {
                                             if (!isCaptured.compareAndSet(false, true)) return
 
@@ -228,6 +231,12 @@ fun GolikeWebViewLoginDialog(
                                                 signingKey = signingKey,
                                                 userId = userId,
                                                 webData = webData
+                                            )
+                                            GolikeAccountsStore.saveVersionData(
+                                                context = context,
+                                                version = version,
+                                                client = client,
+                                                scheme = scheme
                                             )
 
                                             // BƯỚC 3: CẬP NHẬT GOLIKE SESSION, ĐÓNG WEBVIEW & THÔNG BÁO TRÊN MAIN THREAD
@@ -256,23 +265,36 @@ fun GolikeWebViewLoginDialog(
                                                     tToken = tToken,
                                                     deviceId = deviceId,
                                                     username = resolvedUsername,
-                                                    gAuth = gAuth
+                                                    gAuth = gAuth,
+                                                    version = version,
+                                                    client = client,
+                                                    scheme = scheme
                                                 )
 
                                                 // 2. Đồng bộ protocol Golike (Chuẩn GoMax)
                                                 try {
                                                     val protoRes = client.syncProtocol()
                                                     val protoData = protoRes?.optJSONObject("data") ?: protoRes
-                                                    val scheme = protoData?.optString("scheme").orEmpty()
+                                                    val syncScheme = protoData?.optString("scheme").orEmpty().ifBlank { scheme }
                                                     val protocol = protoData?.optString("protocol").orEmpty()
                                                     val gauthVer = protoData?.optString("gauth_version").orEmpty()
-                                                    val appVer = protoData?.optString("version_app").orEmpty()
+                                                    val appVer = protoData?.optString("version_app").orEmpty().ifBlank { version }
                                                     GolikeAccountsStore.saveProtocolData(
                                                         context = context,
-                                                        scheme = scheme,
+                                                        scheme = syncScheme,
                                                         protocol = protocol,
                                                         gauthVersion = gauthVer,
                                                         versionApp = appVer
+                                                    )
+                                                    client.updateSession(
+                                                        authToken = authToken,
+                                                        tToken = tToken,
+                                                        deviceId = deviceId,
+                                                        username = resolvedUsername,
+                                                        gAuth = gAuth,
+                                                        version = appVer,
+                                                        client = client,
+                                                        scheme = syncScheme
                                                     )
                                                 } catch (e: Exception) {
                                                     android.util.Log.w("GolikeProtocol", "Lỗi sync protocol: ${e.message}")

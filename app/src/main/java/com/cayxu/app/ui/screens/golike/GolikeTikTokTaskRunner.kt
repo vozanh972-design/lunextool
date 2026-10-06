@@ -184,6 +184,11 @@ object GolikeTikTokTaskRunner {
             return@withContext Result.failure(Exception("Tên người dùng TikTok không hợp lệ"))
         }
 
+        // ── Nạp đầy đủ các headers phiên bản từ SharedPreferences vào client trước khi gọi API ──
+        client.version = GolikeAccountsStore.getVersionApp(context)
+        client.client = GolikeAccountsStore.getClient(context)
+        client.scheme = GolikeAccountsStore.getScheme(context)
+
         // ── Guard: Kiểm tra đủ 5 trường session bắt buộc của Golike Gateway ──
         val sessionErr = checkSession(client)
         if (sessionErr != null) {
@@ -500,6 +505,11 @@ object GolikeTikTokTaskRunner {
     ) = withContext(Dispatchers.IO) {
         val cfg = GolikeRunConfigStore.get(context, "tiktok")
         val cleanUsername = account.username.trim().removePrefix("@").lowercase()
+
+        // ── Nạp đầy đủ các headers phiên bản từ SharedPreferences vào client trước khi gọi API ──
+        client.version = GolikeAccountsStore.getVersionApp(context)
+        client.client = GolikeAccountsStore.getClient(context)
+        client.scheme = GolikeAccountsStore.getScheme(context)
 
         // ── Guard: Kiểm tra đủ 5 trường session bắt buộc của Golike Gateway ──
         val sessionErr = checkSession(client)

@@ -72,6 +72,18 @@ object GolikeAuthWebView {
                 if (!username) username = String(state.username || state.user_name || '');
               }
 
+              // Trích xuất phiên bản từ Vuex store hoặc text trang
+              let version = '';
+              try {
+                if (state && (state.app_version || state.version)) {
+                  version = String(state.app_version || state.version);
+                }
+                if (!version) {
+                  let match = document.body && document.body.innerText ? document.body.innerText.match(/(\d+\.\d+\.\d+\.\d+)/) : null;
+                  if (match) version = match[1];
+                }
+              } catch(e) {}
+
               // Quét localStorage tìm signing_key và user_id
               for (let i = 0; i < localStorage.length; i++) {
                 let storageKey = localStorage.key(i);
@@ -79,6 +91,7 @@ object GolikeAuthWebView {
                 if (!raw) continue;
                 if (!signingKey && storageKey === 'signing_key') signingKey = raw;
                 if (!userId && storageKey === 'user_id') userId = raw;
+                if (!version && (storageKey === 'version' || storageKey === 'app_version')) version = raw;
               }
 
               if (window.GoMaxApp && window.GoMaxApp.sendSessionStore) {
@@ -86,6 +99,9 @@ object GolikeAuthWebView {
               }
               if (window.GoMaxApp && window.GoMaxApp.sendGatewayHeaders && (deviceId || username)) {
                 GoMaxApp.sendGatewayHeaders('', deviceId || '', username || '');
+              }
+              if (window.GoMaxApp && window.GoMaxApp.sendVersionInfo && version) {
+                GoMaxApp.sendVersionInfo(version, 'web', 'https');
               }
 
               // Kiểm tra thêm token trong localStorage nếu có
@@ -107,10 +123,18 @@ object GolikeAuthWebView {
             let gAuth = getHeaderValue(headers, 'g-auth');
             let gDeviceId = getHeaderValue(headers, 'g-device-id');
             let gUsername = getHeaderValue(headers, 'g-username');
+            let gVersion = getHeaderValue(headers, 'g-version');
+            let gClient = getHeaderValue(headers, 'g-client');
+            let gScheme = getHeaderValue(headers, 'g-scheme');
 
             if (gAuth || gDeviceId || gUsername) {
               if (window.GoMaxApp && window.GoMaxApp.sendGatewayHeaders) {
                 GoMaxApp.sendGatewayHeaders(gAuth || '', gDeviceId || '', gUsername || '');
+              }
+            }
+            if (gVersion || gClient || gScheme) {
+              if (window.GoMaxApp && window.GoMaxApp.sendVersionInfo) {
+                GoMaxApp.sendVersionInfo(gVersion || '', gClient || '', gScheme || '');
               }
             }
             if (auth && auth !== 'null' && auth !== 'undefined' && auth !== 'Bearer null') {
@@ -168,7 +192,10 @@ object GolikeAuthWebView {
             gAuth: String,
             signingKey: String,
             userId: String,
-            webData: String
+            webData: String,
+            version: String = "26.09.17.1",
+            client: String = "web",
+            scheme: String = "https"
         )
     }
 
@@ -181,6 +208,9 @@ object GolikeAuthWebView {
         private var savedSigningKey: String? = null
         private var savedUserId: String? = null
         private var savedWebData: String? = null
+        private var savedVersion: String = "26.09.17.1"
+        private var savedClient: String = "web"
+        private var savedScheme: String = "https"
 
         @JavascriptInterface
         fun sendAuthData(auth: String, t: String) {
@@ -197,6 +227,14 @@ object GolikeAuthWebView {
             if (gAuth.isNotBlank()) savedGAuth = gAuth
             if (deviceId.isNotBlank()) savedDeviceId = deviceId
             if (username.isNotBlank()) savedUsername = username
+            checkAndNotify()
+        }
+
+        @JavascriptInterface
+        fun sendVersionInfo(version: String, client: String, scheme: String) {
+            if (version.isNotBlank()) savedVersion = version
+            if (client.isNotBlank()) savedClient = client
+            if (scheme.isNotBlank()) savedScheme = scheme
             checkAndNotify()
         }
 
@@ -227,7 +265,10 @@ object GolikeAuthWebView {
                     gAuth = gAuth,
                     signingKey = savedSigningKey.orEmpty(),
                     userId = savedUserId.orEmpty(),
-                    webData = savedWebData.orEmpty()
+                    webData = savedWebData.orEmpty(),
+                    version = savedVersion.ifBlank { "26.09.17.1" },
+                    client = savedClient.ifBlank { "web" },
+                    scheme = savedScheme.ifBlank { "https" }
                 )
             }
         }

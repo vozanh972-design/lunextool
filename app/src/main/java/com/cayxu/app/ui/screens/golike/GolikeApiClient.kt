@@ -15,7 +15,10 @@ class GolikeApiClient(
     var tToken: String? = null,
     var deviceId: String? = null,
     var username: String? = null,
-    var gAuth: String? = null
+    var gAuth: String? = null,
+    var version: String? = null,
+    var client: String? = null,
+    var scheme: String? = null
 ) {
     companion object {
         const val BASE_URL = "https://gateway.golike.net/api"
@@ -28,12 +31,24 @@ class GolikeApiClient(
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    fun updateSession(authToken: String, tToken: String?, deviceId: String?, username: String?, gAuth: String?) {
+    fun updateSession(
+        authToken: String,
+        tToken: String?,
+        deviceId: String?,
+        username: String?,
+        gAuth: String?,
+        version: String? = null,
+        client: String? = null,
+        scheme: String? = null
+    ) {
         this.authToken = if (authToken.startsWith("Bearer ", ignoreCase = true)) authToken else "Bearer $authToken"
         this.tToken = tToken
         this.deviceId = deviceId
         this.username = username
         this.gAuth = gAuth
+        this.version = version ?: this.version
+        this.client = client ?: this.client
+        this.scheme = scheme ?: this.scheme
     }
 
     private fun newRequestBuilder(url: String): Request.Builder {
@@ -43,12 +58,24 @@ class GolikeApiClient(
             .header("Origin", "https://app.golike.net")
             .header("Referer", "https://app.golike.net/")
             .header("Accept", "application/json, text/plain, */*")
+            .header("Content-Type", "application/json;charset=utf-8")
 
+        // Bộ token xác thực
         authToken?.let { builder.header("Authorization", if (it.startsWith("Bearer ", ignoreCase = true)) it else "Bearer $it") }
         tToken?.let { if (it.isNotBlank()) builder.header("t", it) }
+
+        // Bộ headers định danh của Golike (chuẩn GoMax)
         deviceId?.let { if (it.isNotBlank()) builder.header("g-device-id", it) }
         username?.let { if (it.isNotBlank()) builder.header("g-username", it) }
         gAuth?.let { if (it.isNotBlank()) builder.header("g-auth", it) }
+
+        // BỔ SUNG CÁC HEADERS VERSION BẮT BUỘC (Tránh lỗi cập nhật phiên bản):
+        val finalVersion = version?.takeIf { it.isNotBlank() } ?: "26.09.17.1"
+        val finalClient = client?.takeIf { it.isNotBlank() } ?: "web"
+        val finalScheme = scheme?.takeIf { it.isNotBlank() } ?: "https"
+        builder.header("g-version", finalVersion)
+        builder.header("g-client", finalClient)
+        builder.header("g-scheme", finalScheme)
 
         return builder
     }

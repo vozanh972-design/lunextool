@@ -46,6 +46,7 @@ object GolikeAccountsStore {
     private const val KEY_PROTOCOL = "golike_protocol"
     private const val KEY_GAUTH_VERSION = "golike_gauth_version"
     private const val KEY_VERSION_APP = "golike_version_app"
+    private const val KEY_CLIENT = "golike_client"
     private const val KEY_PREFIX_ACCOUNTS = "golike_accounts_"
 
     private val gson = Gson()
@@ -130,6 +131,28 @@ object GolikeAccountsStore {
         editor.commit()
     }
 
+    fun saveVersionData(
+        context: Context,
+        version: String = "",
+        client: String = "",
+        scheme: String = ""
+    ) {
+        val editor = prefs(context).edit()
+        if (version.isNotBlank()) editor.putString(KEY_VERSION_APP, version.trim())
+        if (client.isNotBlank()) editor.putString(KEY_CLIENT, client.trim())
+        if (scheme.isNotBlank()) editor.putString(KEY_SCHEME, scheme.trim())
+        editor.commit()
+    }
+
+    fun getVersionApp(context: Context): String =
+        prefs(context).getString(KEY_VERSION_APP, "")?.takeIf { it.isNotBlank() } ?: "26.09.17.1"
+
+    fun getClient(context: Context): String =
+        prefs(context).getString(KEY_CLIENT, "")?.takeIf { it.isNotBlank() } ?: "web"
+
+    fun getScheme(context: Context): String =
+        prefs(context).getString(KEY_SCHEME, "")?.takeIf { it.isNotBlank() } ?: "https"
+
     fun saveTikTokMapping(context: Context, username: String, golikeAccountId: String) {
         val clean = username.trim().removePrefix("@").lowercase()
         if (clean.isBlank() || golikeAccountId.isBlank()) return
@@ -173,6 +196,7 @@ object GolikeAccountsStore {
             .remove(KEY_WEB_DATA)
             .remove(KEY_TIKTOK_MAP)
             .remove(KEY_SCHEME)
+            .remove(KEY_CLIENT)
             .remove(KEY_PROTOCOL)
             .remove(KEY_GAUTH_VERSION)
             .remove(KEY_VERSION_APP)
@@ -188,7 +212,10 @@ object GolikeAccountsStore {
             tToken = getTToken(context),
             deviceId = getDeviceId(context),
             username = getUsername(context),
-            gAuth = getGAuth(context)
+            gAuth = getGAuth(context),
+            version = getVersionApp(context),
+            client = getClient(context),
+            scheme = getScheme(context)
         )
     }
 
