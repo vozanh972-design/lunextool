@@ -260,7 +260,7 @@ fun GolikeWebViewLoginDialog(
 
                                             // 2. Chạy ngầm trong IO: Sync protocol, lấy số dư thật và danh sách nick
                                             scope.launch(Dispatchers.IO) {
-                                                val client = GolikeApiClient(
+                                                val apiClient = GolikeApiClient(
                                                     authToken = authToken,
                                                     tToken = tToken,
                                                     deviceId = deviceId,
@@ -273,7 +273,7 @@ fun GolikeWebViewLoginDialog(
 
                                                 // 2. Đồng bộ protocol Golike (Chuẩn GoMax)
                                                 try {
-                                                    val protoRes = client.syncProtocol()
+                                                    val protoRes = apiClient.syncProtocol()
                                                     val protoData = protoRes?.optJSONObject("data") ?: protoRes
                                                     val syncScheme = protoData?.optString("scheme").orEmpty().ifBlank { scheme }
                                                     val protocol = protoData?.optString("protocol").orEmpty()
@@ -286,7 +286,7 @@ fun GolikeWebViewLoginDialog(
                                                         gauthVersion = gauthVer,
                                                         versionApp = appVer
                                                     )
-                                                    client.updateSession(
+                                                    apiClient.updateSession(
                                                         authToken = authToken,
                                                         tToken = tToken,
                                                         deviceId = deviceId,
@@ -302,7 +302,7 @@ fun GolikeWebViewLoginDialog(
 
                                                 // 3. Lấy thông tin user và số dư thật
                                                 try {
-                                                    val meObj = client.getMe()
+                                                    val meObj = apiClient.getMe()
                                                     val dataObj = meObj?.optJSONObject("data")
                                                     val realUsername = dataObj?.optString("username")?.takeIf { it.isNotBlank() } ?: resolvedUsername
                                                     val realCoin = dataObj?.optLong("coin") ?: 0L
