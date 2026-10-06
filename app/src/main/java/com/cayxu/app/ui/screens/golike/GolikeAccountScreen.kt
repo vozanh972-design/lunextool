@@ -386,14 +386,26 @@ fun GolikeAccountScreen(navController: NavController) {
                 reloadAccounts()
                 // Tự động kéo thông tin người dùng và danh sách tài khoản MXH từ Golike về
                 scope.launch(Dispatchers.IO) {
-                    val client = GolikeAccountsStore.getApiClient(context)
-                    client.getMe().onSuccess { me ->
-                        GolikeAccountsStore.updateBalance(context, me.coin)
-                    }
-                    syncLinkedAccountsFromApi(context, client, selectedPlatform)
-                    withContext(Dispatchers.Main) {
-                        reloadAccounts()
-                    }
+                    try {
+                        val client = GolikeAccountsStore.getApiClient(context)
+                        val me = client.getMe()
+                        val data = me?.optJSONObject("data")
+                        val newCoin = data?.optLong("coin")
+                        val newUname = data?.optString("username")?.takeIf { it.isNotBlank() }
+                        if (newCoin != null) {
+                            GolikeAccountsStore.updateBalance(context, newCoin)
+                            withContext(Dispatchers.Main) {
+                                GolikeSession.updateBalance(context, newCoin)
+                                if (newUname != null) {
+                                    GolikeSession.username.value = newUname
+                                }
+                            }
+                        }
+                        syncLinkedAccountsFromApi(context, client, selectedPlatform)
+                        withContext(Dispatchers.Main) {
+                            reloadAccounts()
+                        }
+                    } catch (_: Exception) {}
                 }
             }
         )
