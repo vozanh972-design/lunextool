@@ -171,6 +171,14 @@ object GolikeAccountsStore {
             .remove(KEY_SIGNING_KEY)
             .remove(KEY_USER_ID)
             .remove(KEY_WEB_DATA)
+            .remove(KEY_TIKTOK_MAP)
+            .remove(KEY_SCHEME)
+            .remove(KEY_PROTOCOL)
+            .remove(KEY_GAUTH_VERSION)
+            .remove(KEY_VERSION_APP)
+            .remove("${KEY_PREFIX_ACCOUNTS}tiktok")
+            .remove("${KEY_PREFIX_ACCOUNTS}facebook")
+            .remove("${KEY_PREFIX_ACCOUNTS}instagram")
             .commit()
     }
 
@@ -187,6 +195,9 @@ object GolikeAccountsStore {
     // ===== QUẢN LÝ DANH SÁCH TÀI KHOẢN THEO NỀN TẢNG =====
 
     fun getAccounts(context: Context, platform: String): List<GolikeAccount> {
+        if (!isLoggedIn(context)) {
+            return emptyList()
+        }
         val key = "${KEY_PREFIX_ACCOUNTS}${platform.lowercase()}"
         val json = prefs(context).getString(key, null)
         val savedList: List<GolikeAccount> = if (!json.isNullOrBlank()) {

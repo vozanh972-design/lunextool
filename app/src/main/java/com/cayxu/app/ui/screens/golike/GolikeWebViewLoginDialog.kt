@@ -188,6 +188,17 @@ fun GolikeWebViewLoginDialog(
                                     ViewGroup.LayoutParams.MATCH_PARENT
                                 )
                                 webViewInstance = this
+                                // Dọn sạch cookie & storage web cũ nếu chưa đăng nhập để trang hiện form login mới
+                                if (!GolikeSession.isLoggedIn.value) {
+                                    try {
+                                        val cookieManager = android.webkit.CookieManager.getInstance()
+                                        cookieManager.removeAllCookies(null)
+                                        cookieManager.flush()
+                                        android.webkit.WebStorage.getInstance().deleteAllData()
+                                        clearCache(true)
+                                        clearHistory()
+                                    } catch (_: Exception) {}
+                                }
                                 GolikeAuthWebView.setupWebView(
                                     webView = this,
                                     callback = object : GolikeAuthWebView.AuthCallback {
@@ -205,14 +216,40 @@ fun GolikeWebViewLoginDialog(
 
                                             val resolvedUsername = username.ifBlank { "Golike User" }
 
-                                            // BƯỚC 3: LẬP TỨC ĐÓNG WEBVIEW / DISMISS DIALOG & TOAST TRÊN MAIN THREAD
+                                            // 1. Lưu phiên ban đầu vào Store ngay lập tức (.commit())
+                                            GolikeAccountsStore.saveLogin(
+                                                context = context,
+                                                token = authToken,
+                                                username = resolvedUsername,
+                                                balance = 0L,
+                                                tToken = tToken,
+                                                deviceId = deviceId,
+                                                gAuth = gAuth,
+                                                signingKey = signingKey,
+                                                userId = userId,
+                                                webData = webData
+                                            )
+
+                                            // BƯỚC 3: CẬP NHẬT GOLIKE SESSION, ĐÓNG WEBVIEW & THÔNG BÁO TRÊN MAIN THREAD
                                             scope.launch(Dispatchers.Main) {
+                                                GolikeSession.login(
+                                                    context = context,
+                                                    userToken = authToken,
+                                                    userUsername = resolvedUsername,
+                                                    userBalance = 0L,
+                                                    tToken = tToken,
+                                                    deviceId = deviceId,
+                                                    gAuth = gAuth,
+                                                    signingKey = signingKey,
+                                                    userId = userId,
+                                                    webData = webData
+                                                )
                                                 Toast.makeText(context, "Đã liên kết Golike: @$resolvedUsername", Toast.LENGTH_SHORT).show()
                                                 onLoginSuccess(resolvedUsername)
                                                 onDismiss()
                                             }
 
-                                            // Lưu session và sync protocol nền trong IO
+                                            // 2. Chạy ngầm trong IO: Sync protocol, lấy số dư thật và danh sách nick
                                             scope.launch(Dispatchers.IO) {
                                                 val client = GolikeApiClient(
                                                     authToken = authToken,
@@ -221,34 +258,6 @@ fun GolikeWebViewLoginDialog(
                                                     username = resolvedUsername,
                                                     gAuth = gAuth
                                                 )
-
-                                                // 1. Lưu phiên ban đầu vào Store & Session
-                                                GolikeAccountsStore.saveLogin(
-                                                    context = context,
-                                                    token = authToken,
-                                                    username = resolvedUsername,
-                                                    balance = 0L,
-                                                    tToken = tToken,
-                                                    deviceId = deviceId,
-                                                    gAuth = gAuth,
-                                                    signingKey = signingKey,
-                                                    userId = userId,
-                                                    webData = webData
-                                                )
-                                                withContext(Dispatchers.Main) {
-                                                    GolikeSession.login(
-                                                        context = context,
-                                                        userToken = authToken,
-                                                        userUsername = resolvedUsername,
-                                                        userBalance = 0L,
-                                                        tToken = tToken,
-                                                        deviceId = deviceId,
-                                                        gAuth = gAuth,
-                                                        signingKey = signingKey,
-                                                        userId = userId,
-                                                        webData = webData
-                                                    )
-                                                }
 
                                                 // 2. Đồng bộ protocol Golike (Chuẩn GoMax)
                                                 try {

@@ -89,6 +89,15 @@ object GolikeSession {
     }
 
     fun logout(context: Context) {
+        // 1. Dọn sạch phiên web cũ: Cookie và Storage của WebView
+        try {
+            val cookieManager = android.webkit.CookieManager.getInstance()
+            cookieManager.removeAllCookies(null)
+            cookieManager.flush()
+            android.webkit.WebStorage.getInstance().deleteAllData()
+        } catch (_: Exception) {}
+
+        // 2. Dọn sạch dữ liệu tài khoản cũ trong App:
         GolikeAccountsStore.clearSession(context)
         isLoggedIn.value = false
         username.value = ""
@@ -97,5 +106,8 @@ object GolikeSession {
         tToken.value = ""
         deviceId.value = ""
         gAuth.value = ""
+        signingKey.value = ""
+        userId.value = ""
+        webData.value = ""
     }
 }

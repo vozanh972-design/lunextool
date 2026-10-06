@@ -89,6 +89,14 @@ object GolikeRunningManager {
     fun stopAll(platformAccounts: List<GolikeAccount>) {
         platformAccounts.forEach { stop(it.id) }
     }
+
+    fun clearAll() {
+        runningAccounts.clear()
+        statusMap.clear()
+        successCountMap.clear()
+        errorCountMap.clear()
+        lastErrorDetailMap.clear()
+    }
 }
 
 /**
@@ -267,7 +275,7 @@ fun GolikeAccountScreen(navController: NavController) {
 
     val username by GolikeSession.username
     val balance by GolikeSession.balance
-    val isLoggedIn = !GolikeSession.token.value.isNullOrBlank()
+    val isLoggedIn by GolikeSession.isLoggedIn
 
     var isRefreshing by remember { mutableStateOf(false) }
     var selectedPlatform by remember { mutableStateOf("tiktok") }
@@ -281,30 +289,35 @@ fun GolikeAccountScreen(navController: NavController) {
 
     // TikTok variants và Store chung
     var selectedVariant by remember { mutableStateOf(TikTokAppVariant.STANDARD) }
-    var allTikTokAccounts by remember {
-        mutableStateOf(TikTokAccountsStore.getAccounts(context).filter { it.enabled })
+    var allTikTokAccounts by remember(isLoggedIn) {
+        mutableStateOf(if (isLoggedIn) TikTokAccountsStore.getAccounts(context).filter { it.enabled } else emptyList())
     }
     var reloadingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     var addingUid by remember { mutableStateOf<String?>(null) }
 
     // Danh sách tài khoản theo nền tảng
-    var currentAccounts by remember {
-        mutableStateOf(GolikeAccountsStore.getAccounts(context, selectedPlatform))
+    var currentAccounts by remember(isLoggedIn, selectedPlatform) {
+        mutableStateOf(if (isLoggedIn) GolikeAccountsStore.getAccounts(context, selectedPlatform) else emptyList())
     }
 
     // Đếm số lượng tài khoản theo từng tab
-    val tiktokCount = remember(allTikTokAccounts) { allTikTokAccounts.size }
-    val facebookCount = remember(currentAccounts, selectedPlatform) {
-        if (selectedPlatform == "facebook") currentAccounts.size else GolikeAccountsStore.getAccounts(context, "facebook").size
+    val tiktokCount = remember(allTikTokAccounts, isLoggedIn) { if (isLoggedIn) allTikTokAccounts.size else 0 }
+    val facebookCount = remember(currentAccounts, selectedPlatform, isLoggedIn) {
+        if (!isLoggedIn) 0 else if (selectedPlatform == "facebook") currentAccounts.size else GolikeAccountsStore.getAccounts(context, "facebook").size
     }
-    val instagramCount = remember(currentAccounts, selectedPlatform) {
-        if (selectedPlatform == "instagram") currentAccounts.size else GolikeAccountsStore.getAccounts(context, "instagram").size
+    val instagramCount = remember(currentAccounts, selectedPlatform, isLoggedIn) {
+        if (!isLoggedIn) 0 else if (selectedPlatform == "instagram") currentAccounts.size else GolikeAccountsStore.getAccounts(context, "instagram").size
     }
 
-    // Đồng bộ danh sách tài khoản khi đổi tab
+    // Đồng bộ danh sách tài khoản khi đổi tab hoặc sau khi đăng xuất/đăng nhập
     fun reloadAccounts() {
-        currentAccounts = GolikeAccountsStore.getAccounts(context, selectedPlatform)
-        allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+        if (!GolikeSession.isLoggedIn.value) {
+            currentAccounts = emptyList()
+            allTikTokAccounts = emptyList()
+        } else {
+            currentAccounts = GolikeAccountsStore.getAccounts(context, selectedPlatform)
+            allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+        }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -371,9 +384,12 @@ fun GolikeAccountScreen(navController: NavController) {
             onDismiss = { showWebViewLoginDialog = false },
             onLoginSuccess = { uname ->
                 reloadAccounts()
-                // Tự động kéo danh sách tài khoản MXH từ Golike về
+                // Tự động kéo thông tin người dùng và danh sách tài khoản MXH từ Golike về
                 scope.launch(Dispatchers.IO) {
                     val client = GolikeAccountsStore.getApiClient(context)
+                    client.getMe().onSuccess { me ->
+                        GolikeAccountsStore.updateBalance(context, me.coin)
+                    }
                     syncLinkedAccountsFromApi(context, client, selectedPlatform)
                     withContext(Dispatchers.Main) {
                         reloadAccounts()
@@ -1000,7 +1016,11 @@ fun GolikeAccountScreen(navController: NavController) {
 
                         IconButton(
                             onClick = {
+                                GolikeRunningManager.stopAll(currentAccounts)
+                                GolikeRunningManager.clearAll()
                                 GolikeSession.logout(context)
+                                selectedForRunIds = emptySet()
+                                reloadAccounts()
                                 Toast.makeText(context, "Đã đăng xuất tài khoản Golike", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.size(36.dp)
