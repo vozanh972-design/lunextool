@@ -287,8 +287,8 @@ fun GolikeAccountScreen(navController: NavController) {
         mutableStateOf(if (selectedPlatform != "tiktok" && isLoggedIn) GolikeAccountsStore.getAccounts(context, selectedPlatform) else emptyList())
     }
 
-    val displayAccounts: List<GolikeAccount>
-        get() = if (selectedPlatform == "tiktok") tiktokAccounts else otherAccounts
+    val displayAccounts: List<GolikeAccount> =
+        if (selectedPlatform == "tiktok") tiktokAccounts else otherAccounts
 
     // Đếm số lượng tài khoản theo từng tab
     val tiktokCount = tiktokAccounts.size
