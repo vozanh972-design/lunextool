@@ -31,24 +31,30 @@ data class GolikeAccount(
  */
 object GolikeAccountsStore {
     private const val PREFS_NAME = "golike_accounts_pref"
+    // ===== 17 TRƯỜNG CHUẨN GOLIKE (LƯU TRONG golike_accounts_pref) =====
     private const val KEY_TOKEN = "golike_token"
-    private const val KEY_USERNAME = "golike_username"
-    private const val KEY_BALANCE = "golike_balance"
     private const val KEY_T_HEADER = "golike_t_header"
-    private const val KEY_T_TOKEN = "golike_t_token"
-    private const val KEY_DEVICE_ID = "golike_device_id"
     private const val KEY_G_AUTH = "golike_g_auth"
-    private const val KEY_SIGNING_KEY = "golike_signing_key"
+    private const val KEY_DEVICE_ID = "golike_device_id"
+    private const val KEY_USERNAME = "golike_username"
     private const val KEY_USER_ID = "golike_user_id"
+    private const val KEY_SIGNING_KEY = "golike_signing_key"
     private const val KEY_WEB_DATA = "golike_web_data"
+    private const val KEY_WEB_COOKIES = "golike_web_cookies"
+    private const val KEY_HEADER = "golike_header"
+    private const val KEY_TIKTOK_MAP = "golike_tiktok_map"
+    private const val KEY_VERSION_APP = "golike_version_app"
     private const val KEY_WEB_VERSION = "golike_web_version"
     private const val KEY_WEB_VERSION_TEXT = "golike_web_version_text"
-    private const val KEY_TIKTOK_MAP = "golike_tiktok_map"
-    private const val KEY_SCHEME = "golike_scheme"
     private const val KEY_PROTOCOL = "golike_protocol"
     private const val KEY_GAUTH_VERSION = "golike_gauth_version"
-    private const val KEY_VERSION_APP = "golike_version_app"
+    private const val KEY_SCHEME = "golike_scheme"
+
+    // Các key bổ trợ
+    private const val KEY_BALANCE = "golike_balance"
+    private const val KEY_T_TOKEN = "golike_t_token"
     private const val KEY_CLIENT = "golike_client"
+    private const val KEY_TIKTOK_ACCOUNTS_LIST = "golike_tiktok_accounts_list"
     private const val KEY_PREFIX_ACCOUNTS = "golike_accounts_"
 
     private val gson = Gson()
@@ -87,8 +93,19 @@ object GolikeAccountsStore {
     fun getUserId(context: Context): String =
         prefs(context).getString(KEY_USER_ID, "").orEmpty()
 
-    fun getWebData(context: Context): String =
-        prefs(context).getString(KEY_WEB_DATA, "").orEmpty()
+    fun getWebCookies(context: Context): String =
+        prefs(context).getString(KEY_WEB_COOKIES, "").orEmpty()
+
+    fun getHeader(context: Context): String =
+        prefs(context).getString(KEY_HEADER, "").orEmpty()
+
+    fun saveWebCookies(context: Context, cookies: String) {
+        prefs(context).edit().putString(KEY_WEB_COOKIES, cookies.trim()).commit()
+    }
+
+    fun saveHeader(context: Context, header: String) {
+        prefs(context).edit().putString(KEY_HEADER, header.trim()).commit()
+    }
 
     fun saveLogin(
         context: Context,
@@ -100,7 +117,9 @@ object GolikeAccountsStore {
         gAuth: String = "",
         signingKey: String = "",
         userId: String = "",
-        webData: String = ""
+        webData: String = "",
+        webCookies: String = "",
+        header: String = ""
     ) {
         val editor = prefs(context).edit()
             .putString(KEY_TOKEN, token.trim())
@@ -115,6 +134,8 @@ object GolikeAccountsStore {
         if (signingKey.isNotBlank()) editor.putString(KEY_SIGNING_KEY, signingKey.trim())
         if (userId.isNotBlank()) editor.putString(KEY_USER_ID, userId.trim())
         if (webData.isNotBlank()) editor.putString(KEY_WEB_DATA, webData.trim())
+        if (webCookies.isNotBlank()) editor.putString(KEY_WEB_COOKIES, webCookies.trim())
+        if (header.isNotBlank()) editor.putString(KEY_HEADER, header.trim())
         editor.commit()
     }
 
@@ -209,6 +230,8 @@ object GolikeAccountsStore {
             .remove(KEY_SIGNING_KEY)
             .remove(KEY_USER_ID)
             .remove(KEY_WEB_DATA)
+            .remove(KEY_WEB_COOKIES)
+            .remove(KEY_HEADER)
             .remove(KEY_WEB_VERSION)
             .remove(KEY_WEB_VERSION_TEXT)
             .remove(KEY_TIKTOK_MAP)
@@ -217,6 +240,7 @@ object GolikeAccountsStore {
             .remove(KEY_PROTOCOL)
             .remove(KEY_GAUTH_VERSION)
             .remove(KEY_VERSION_APP)
+            .remove(KEY_TIKTOK_ACCOUNTS_LIST)
             .remove("${KEY_PREFIX_ACCOUNTS}tiktok")
             .remove("${KEY_PREFIX_ACCOUNTS}facebook")
             .remove("${KEY_PREFIX_ACCOUNTS}instagram")
@@ -299,8 +323,11 @@ object GolikeAccountsStore {
     // ===== QUẢN LÝ DANH SÁCH TÀI KHOẢN THEO NỀN TẢNG =====
 
     fun getAccounts(context: Context, platform: String): List<GolikeAccount> {
-        val key = "${KEY_PREFIX_ACCOUNTS}${platform.lowercase()}"
-        val json = prefs(context).getString(key, null)
+        val key = if (platform.lowercase() == "tiktok") KEY_TIKTOK_ACCOUNTS_LIST else "${KEY_PREFIX_ACCOUNTS}${platform.lowercase()}"
+        var json = prefs(context).getString(key, null)
+        if (json.isNullOrBlank() && platform.lowercase() == "tiktok") {
+            json = prefs(context).getString("${KEY_PREFIX_ACCOUNTS}tiktok", null)
+        }
         return if (!json.isNullOrBlank()) {
             runCatching {
                 val type = object : TypeToken<List<GolikeAccount>>() {}.type
@@ -312,14 +339,17 @@ object GolikeAccountsStore {
     }
 
     fun saveAccounts(context: Context, platform: String, list: List<GolikeAccount>) {
-        val key = "${KEY_PREFIX_ACCOUNTS}${platform.lowercase()}"
+        val key = if (platform.lowercase() == "tiktok") KEY_TIKTOK_ACCOUNTS_LIST else "${KEY_PREFIX_ACCOUNTS}${platform.lowercase()}"
         prefs(context).edit()
             .putString(key, gson.toJson(list))
             .commit()
     }
 
     fun clearTikTokAccounts(context: Context) {
-        prefs(context).edit().remove("${KEY_PREFIX_ACCOUNTS}tiktok").commit()
+        prefs(context).edit()
+            .remove(KEY_TIKTOK_ACCOUNTS_LIST)
+            .remove("${KEY_PREFIX_ACCOUNTS}tiktok")
+            .commit()
     }
 
     fun addOrUpdateAccount(context: Context, account: GolikeAccount) {

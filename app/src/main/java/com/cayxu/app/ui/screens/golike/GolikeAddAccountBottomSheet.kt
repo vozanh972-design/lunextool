@@ -174,8 +174,8 @@ fun GolikeAddAccountBottomSheet(
 
         // Đánh dấu cờ quét tài khoản cho Golike
         GolikeAccountsStore.setScanningTikTok(context, true)
-        // Tái sử dụng nguyên bản Màn nổi kiểm tra TikTok của XSMM
-        com.cayxu.app.ui.overlay.xsmm.startXsmmVerifyTikTokAccount(context, variant)
+        // Mở màn nổi kiểm tra tài khoản riêng biệt của Golike
+        startGolikeVerifyTikTokAccount(context, variant)
         onDismiss()
     }
 

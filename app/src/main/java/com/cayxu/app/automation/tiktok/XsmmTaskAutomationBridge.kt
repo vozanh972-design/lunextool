@@ -9,7 +9,8 @@ sealed class XsmmTaskAction {
     data class VerifyAndSwitchAccount(
         val targetHandle: String,
         val variant: com.cayxu.app.data.local.TikTokAppVariant = com.cayxu.app.data.local.TikTokAppVariant.STANDARD,
-        val actionId: Long = System.currentTimeMillis()
+        val actionId: Long = System.currentTimeMillis(),
+        val platform: String = "xsmm"
     ) : XsmmTaskAction()
     data class DoTask(
         val taskType: String,
@@ -39,14 +40,16 @@ object XsmmTaskAutomationBridge {
 
     fun triggerVerifyAccount(
         targetHandle: String,
-        variant: com.cayxu.app.data.local.TikTokAppVariant = com.cayxu.app.data.local.TikTokAppVariant.STANDARD
+        variant: com.cayxu.app.data.local.TikTokAppVariant = com.cayxu.app.data.local.TikTokAppVariant.STANDARD,
+        platform: String = "xsmm"
     ): Long {
         val id = System.currentTimeMillis()
         _result.value = XsmmTaskActionResult.InProgress("Đang kiểm tra tài khoản TikTok...")
         _action.value = XsmmTaskAction.VerifyAndSwitchAccount(
             targetHandle = targetHandle.trim().removePrefix("@"),
             variant = variant,
-            actionId = id
+            actionId = id,
+            platform = platform
         )
         return id
     }

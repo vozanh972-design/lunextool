@@ -52,8 +52,6 @@ import com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobRunnerOverlayService
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge
-import com.cayxu.app.ui.overlay.xsmm.startGolikeJobRunnerOverlay
-import com.cayxu.app.ui.overlay.xsmm.startXsmmVerifyTikTokAccount
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1255,7 +1253,7 @@ fun GolikeAccountScreen(navController: NavController) {
                                 showAddAccountSheet = true
                             } else {
                                 GolikeAccountsStore.setScanningTikTok(context, true)
-                                startXsmmVerifyTikTokAccount(context, selectedVariant)
+                                startGolikeVerifyTikTokAccount(context, selectedVariant)
                             }
                         },
                         modifier = Modifier.size(32.dp)

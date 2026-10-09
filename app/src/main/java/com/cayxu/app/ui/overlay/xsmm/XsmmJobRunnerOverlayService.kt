@@ -106,39 +106,47 @@ class XsmmJobRunnerOverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val platformExtra = intent?.getStringExtra(EXTRA_PLATFORM)
+            ?: intent?.getStringExtra("extra_platform")
         if (!platformExtra.isNullOrBlank()) {
             currentPlatform = platformExtra.lowercase()
         }
 
-        if (fullPanel == null && miniBubble == null) {
-            val mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_RUN_JOBS
-            val variantStr = intent?.getStringExtra(EXTRA_VARIANT)
-            val variant = variantStr?.let {
-                try { TikTokAppVariant.valueOf(it) } catch (_: Exception) { null }
-            } ?: TikTokAppVariant.STANDARD
+        val mode = intent?.getStringExtra(EXTRA_MODE)
+            ?: intent?.getStringExtra("extra_mode")
+            ?: MODE_RUN_JOBS
 
-            accountHandles = intent?.getStringExtra(EXTRA_ACCOUNT_HANDLES)
-                ?.split(",")
-                ?.map { it.trim().removePrefix("@") }
-                ?.filter { it.isNotBlank() }
-                .orEmpty()
-            windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-            showFullPanel()
+        if (fullPanel != null || miniBubble != null) {
+            runnerJob?.cancel()
+            fullPanel?.let { runCatching { windowManager.removeView(it) } }; fullPanel = null
+            miniBubble?.let { runCatching { windowManager.removeView(it) } }; miniBubble = null
+        }
 
-            serviceScope.launch {
-                XsmmJobStatusBridge.status.collect { text ->
-                    statusValueView?.text = text
-                    (statusValueView?.parent as? View)?.visibility = if (text.isBlank()) View.GONE else View.VISIBLE
-                }
+        val variantStr = intent?.getStringExtra(EXTRA_VARIANT)
+        val variant = variantStr?.let {
+            try { TikTokAppVariant.valueOf(it) } catch (_: Exception) { null }
+        } ?: TikTokAppVariant.STANDARD
+
+        accountHandles = intent?.getStringExtra(EXTRA_ACCOUNT_HANDLES)
+            ?.split(",")
+            ?.map { it.trim().removePrefix("@") }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        showFullPanel()
+
+        serviceScope.launch {
+            XsmmJobStatusBridge.status.collect { text ->
+                statusValueView?.text = text
+                (statusValueView?.parent as? View)?.visibility = if (text.isBlank()) View.GONE else View.VISIBLE
             }
+        }
 
-            if (mode == MODE_VERIFY_ONLY) {
-                startVerifyOnlyRunner(variant, accountHandles.firstOrNull().orEmpty())
-            } else if (currentPlatform == PLATFORM_GOLIKE) {
-                startGolikeAutomationRunner(variant)
-            } else {
-                startAutomationRunner()
-            }
+        if (mode == MODE_VERIFY_ONLY || mode == "verify_only") {
+            startVerifyOnlyRunner(variant, accountHandles.firstOrNull().orEmpty())
+        } else if (currentPlatform == PLATFORM_GOLIKE || mode == "golike") {
+            startGolikeAutomationRunner(variant)
+        } else {
+            startAutomationRunner()
         }
         return START_NOT_STICKY
     }
@@ -157,7 +165,11 @@ class XsmmJobRunnerOverlayService : Service() {
             TikTokAppLauncher.launch(applicationContext, variant, forceStopFirst = true)
             delay(1500L)
 
-            val verifyActionId = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.triggerVerifyAccount(cleanHandle, variant)
+            val verifyActionId = com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge.triggerVerifyAccount(
+                targetHandle = cleanHandle,
+                variant = variant,
+                platform = currentPlatform
+            )
             val verifyStartTime = System.currentTimeMillis()
             val maxVerifyWait = 90000L // 90s để máy yếu mở app và tải chậm thoải mái
 
@@ -179,6 +191,9 @@ class XsmmJobRunnerOverlayService : Service() {
 
             if (verifySuccess) {
                 XsmmJobStatusBridge.update("Hoàn tất kiểm tra!")
+                if (currentPlatform == PLATFORM_GOLIKE) {
+                    com.cayxu.app.ui.screens.golike.GolikeAccountsStore.importScannedTikTokAccounts(applicationContext)
+                }
                 delay(1200L)
             } else {
                 XsmmJobStatusBridge.update(verifyMsg.ifBlank { "Kiểm tra thất bại (hết thời gian)" })

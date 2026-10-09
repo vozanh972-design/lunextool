@@ -1739,13 +1739,22 @@ class TikTokAccessibilityService : AccessibilityService() {
                                 for (entry in entries) {
                                     val handleToSave = entry.handle.ifBlank { entry.displayName }.trim().removePrefix("@")
                                     if (handleToSave.isNotBlank()) {
-                                        com.cayxu.app.data.local.TikTokAccountsStore.addFromCapture(
-                                            context = applicationContext,
-                                            handle = handleToSave,
-                                            displayName = entry.displayName,
-                                            avatarUrl = "",
-                                            variant = action.variant
-                                        )
+                                        if (action.platform.lowercase() == "golike") {
+                                            com.cayxu.app.ui.screens.golike.GolikeTikTokAccountScanner.saveScannedAccount(
+                                                context = applicationContext,
+                                                handle = handleToSave,
+                                                displayName = entry.displayName,
+                                                variant = action.variant.name
+                                            )
+                                        } else {
+                                            com.cayxu.app.data.local.TikTokAccountsStore.addFromCapture(
+                                                context = applicationContext,
+                                                handle = handleToSave,
+                                                displayName = entry.displayName,
+                                                avatarUrl = "",
+                                                variant = action.variant
+                                            )
+                                        }
                                     }
                                 }
                                 val activeEntry = entries.firstOrNull { it.isActive } ?: entries.first()
@@ -1885,13 +1894,22 @@ class TikTokAccessibilityService : AccessibilityService() {
                                     XsmmTaskAutomationBridge.updateProgress("Đã nhận diện @$currentHandle")
                                     delay(800)
                                     val displayName = findDisplayNameNear(handleNode).ifBlank { currentHandle }
-                                    com.cayxu.app.data.local.TikTokAccountsStore.addFromCapture(
-                                        context = applicationContext,
-                                        handle = currentHandle,
-                                        displayName = displayName,
-                                        avatarUrl = "",
-                                        variant = action.variant
-                                    )
+                                    if (action.platform.lowercase() == "golike") {
+                                        com.cayxu.app.ui.screens.golike.GolikeTikTokAccountScanner.saveScannedAccount(
+                                            context = applicationContext,
+                                            handle = currentHandle,
+                                            displayName = displayName,
+                                            variant = action.variant.name
+                                        )
+                                    } else {
+                                        com.cayxu.app.data.local.TikTokAccountsStore.addFromCapture(
+                                            context = applicationContext,
+                                            handle = currentHandle,
+                                            displayName = displayName,
+                                            avatarUrl = "",
+                                            variant = action.variant
+                                        )
+                                    }
                                     XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đúng tài khoản @$currentHandle")
                                     return@launch
                                 } else {
