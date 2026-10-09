@@ -286,12 +286,8 @@ object GolikeAccountsStore {
      * để màn hình XSMM không bị dính nick lạ.
      */
     fun importScannedTikTokAccounts(context: Context): List<GolikeAccount> {
-        val deviceAccounts = TikTokAccountsStore.getAccounts(context)
-        val xsmmLinkedHandles = XsmmAccountStore.getAccountIdMap(context).keys
-            .map { it.lowercase().trim().removePrefix("@") }
-            .toSet()
-
         val currentGolike = getAccounts(context, "tiktok").toMutableList()
+        val deviceAccounts = runCatching { TikTokAccountsStore.getAccounts(context) }.getOrDefault(emptyList())
 
         deviceAccounts.forEach { acc ->
             val clean = acc.handle.trim().removePrefix("@")
@@ -316,12 +312,6 @@ object GolikeAccountsStore {
                         )
                     )
                 }
-
-                // CÔ LẬP DỮ LIỆU: Nếu nick này không thuộc danh sách liên kết của XSMM,
-                // xóa khỏi TikTokAccountsStore của XSMM để XSMM không bị dính nick lạ
-                if (!xsmmLinkedHandles.contains(clean.lowercase())) {
-                    TikTokAccountsStore.removeAccount(context, acc.uid)
-                }
             }
         }
 
@@ -330,6 +320,13 @@ object GolikeAccountsStore {
     }
 
     // ===== QUẢN LÝ DANH SÁCH TÀI KHOẢN THEO NỀN TẢNG =====
+
+    fun getTikTokAccounts(context: Context): List<GolikeAccount> =
+        getAccounts(context, "tiktok")
+
+    fun saveTikTokAccounts(context: Context, list: List<GolikeAccount>) {
+        saveAccounts(context, "tiktok", list)
+    }
 
     fun getAccounts(context: Context, platform: String): List<GolikeAccount> {
         val key = if (platform.lowercase() == "tiktok") KEY_TIKTOK_ACCOUNTS_LIST else "${KEY_PREFIX_ACCOUNTS}${platform.lowercase()}"
@@ -349,9 +346,12 @@ object GolikeAccountsStore {
 
     fun saveAccounts(context: Context, platform: String, list: List<GolikeAccount>) {
         val key = if (platform.lowercase() == "tiktok") KEY_TIKTOK_ACCOUNTS_LIST else "${KEY_PREFIX_ACCOUNTS}${platform.lowercase()}"
-        prefs(context).edit()
-            .putString(key, gson.toJson(list))
-            .commit()
+        val json = gson.toJson(list)
+        val editor = prefs(context).edit().putString(key, json)
+        if (platform.lowercase() == "tiktok") {
+            editor.putString("${KEY_PREFIX_ACCOUNTS}tiktok", json)
+        }
+        editor.commit()
     }
 
     fun clearTikTokAccounts(context: Context) {
