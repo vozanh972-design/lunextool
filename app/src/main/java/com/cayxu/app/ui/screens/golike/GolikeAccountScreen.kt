@@ -45,10 +45,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.cayxu.app.automation.tiktok.TikTokAppLauncher
+import com.cayxu.app.automation.tiktok.TikTokCaptureBridge
+import com.cayxu.app.automation.tiktok.TikTokCaptureState
+import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobRunnerOverlayService
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge
 import com.cayxu.app.ui.overlay.xsmm.startGolikeJobRunnerOverlay
+import com.cayxu.app.ui.overlay.xsmm.startXsmmVerifyTikTokAccount
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -97,63 +101,101 @@ object GolikeRunningManager {
 }
 
 /**
+ * Kiểm tra trạng thái liên kết Golike ngầm cho các tài khoản TikTok hiện có trong máy.
+ * - Nếu ĐÃ LIÊN KẾT (trùng username trên Golike): Cập nhật golikeAccountId và trạng thái sẵn sàng (KHÔNG cảnh báo).
+ * - Nếu CHƯA LIÊN KẾT: Đánh dấu isGolikeLinked = false để hiển thị tag "Cần liên kết Golike".
+ */
+suspend fun checkGolikeLinkedStatusForTikTokAccounts(context: Context, client: GolikeApiClient) {
+    if (!GolikeAccountsStore.isLoggedIn(context)) return
+    try {
+        val res = client.getTikTokAccounts()
+        val dataArray = res?.optJSONArray("data")
+            ?: res?.optJSONObject("data")?.optJSONArray("data")
+
+        val golikeNickMap = mutableMapOf<String, Pair<String, String>>()
+        if (dataArray != null) {
+            for (i in 0 until dataArray.length()) {
+                val item = dataArray.optJSONObject(i) ?: continue
+                val rawId = item.opt("id") ?: item.opt("account_id")
+                val accountId = when (rawId) {
+                    is Number -> rawId.toLong().toString()
+                    is String -> rawId.trim()
+                    else -> item.optString("id").ifBlank { item.optString("account_id") }
+                }
+                val avatar = item.optString("avatar")
+                val u1 = item.optString("unique_username").trim().removePrefix("@").lowercase()
+                val u2 = item.optString("username").trim().removePrefix("@").lowercase()
+                val u3 = item.optString("nickname").trim().removePrefix("@").lowercase()
+                val u4 = item.optString("tiktok_account").trim().removePrefix("@").lowercase()
+                val u5 = item.optString("name").trim().removePrefix("@").lowercase()
+
+                listOf(u1, u2, u3, u4, u5).filter { it.isNotBlank() }.forEach { handle ->
+                    golikeNickMap[handle] = Pair(accountId, avatar)
+                }
+            }
+        }
+
+        val currentAccounts = GolikeAccountsStore.getAccounts(context, "tiktok")
+        if (currentAccounts.isEmpty()) return
+
+        var hasChange = false
+        val updatedAccounts = currentAccounts.map { acc ->
+            val cleanHandle = acc.username.trim().removePrefix("@").lowercase()
+            val cleanId = acc.id.trim().removePrefix("@").lowercase()
+
+            val match = golikeNickMap[cleanHandle] ?: golikeNickMap[cleanId]
+            if (match != null) {
+                val (golikeId, serverAvatar) = match
+                GolikeAccountsStore.saveTikTokMapping(context, cleanHandle, golikeId)
+                if (cleanId != cleanHandle) {
+                    GolikeAccountsStore.saveTikTokMapping(context, cleanId, golikeId)
+                }
+                if (!acc.isGolikeLinked || acc.golikeAccountId != golikeId) {
+                    hasChange = true
+                    acc.copy(
+                        isGolikeLinked = true,
+                        golikeAccountId = golikeId,
+                        avatar = if (acc.avatar.isBlank() && serverAvatar.isNotBlank()) serverAvatar else acc.avatar,
+                        lastStatus = "Đã liên kết Golike • Sẵn sàng"
+                    )
+                } else acc
+            } else {
+                val cachedId = GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanHandle).orEmpty()
+                if (cachedId.isNotBlank()) {
+                    if (!acc.isGolikeLinked || acc.golikeAccountId != cachedId) {
+                        hasChange = true
+                        acc.copy(
+                            isGolikeLinked = true,
+                            golikeAccountId = cachedId,
+                            lastStatus = "Đã liên kết Golike • Sẵn sàng"
+                        )
+                    } else acc
+                } else {
+                    if (acc.isGolikeLinked || acc.golikeAccountId.isNotBlank()) {
+                        hasChange = true
+                        acc.copy(
+                            isGolikeLinked = false,
+                            golikeAccountId = "",
+                            lastStatus = "Cần liên kết Golike"
+                        )
+                    } else acc
+                }
+            }
+        }
+
+        if (hasChange) {
+            GolikeAccountsStore.saveAccounts(context, "tiktok", updatedAccounts)
+        }
+    } catch (_: Exception) {}
+}
+
+/**
  * Đồng bộ danh sách tài khoản đã liên kết từ API Golike về máy và quét tài khoản trên máy.
  */
 suspend fun syncLinkedAccountsFromApi(context: Context, client: GolikeApiClient, platform: String) {
     try {
         if (platform.lowercase() == "tiktok") {
-            if (!GolikeAccountsStore.isLoggedIn(context)) {
-                GolikeAccountsStore.saveAccounts(context, "tiktok", emptyList())
-                return
-            }
-            val res = client.getTikTokAccounts()
-            val dataArray = res?.optJSONArray("data")
-                ?: res?.optJSONObject("data")?.optJSONArray("data")
-            val accountsList = mutableListOf<GolikeAccount>()
-            if (dataArray != null) {
-                val seenHandles = mutableSetOf<String>()
-                for (i in 0 until dataArray.length()) {
-                    val item = dataArray.optJSONObject(i) ?: continue
-                    val rawHandle = item.optString("unique_username").ifBlank {
-                        item.optString("username").ifBlank {
-                            item.optString("nickname").ifBlank {
-                                item.optString("tiktok_account")
-                            }
-                        }
-                    }.trim().removePrefix("@")
-                    val cleanHandle = rawHandle.lowercase()
-                    if (cleanHandle.isBlank() || !seenHandles.add(cleanHandle)) continue
-
-                    val rawId = item.opt("id") ?: item.opt("account_id")
-                    val accountId = when (rawId) {
-                        is Number -> rawId.toLong().toString()
-                        is String -> rawId.trim()
-                        else -> item.optString("id").ifBlank { item.optString("account_id") }
-                    }
-                    val serverAvatar = item.optString("avatar")
-                    val displayUname = item.optString("nickname").ifBlank {
-                        item.optString("unique_username").ifBlank {
-                            item.optString("username", rawHandle)
-                        }
-                    }
-                    val acc = GolikeAccount(
-                        id = cleanHandle,
-                        platform = "tiktok",
-                        username = if (displayUname.isNotBlank()) displayUname else cleanHandle,
-                        avatar = serverAvatar,
-                        isLive = true,
-                        isGolikeLinked = true,
-                        golikeAccountId = accountId,
-                        lastStatus = "Đã liên kết Golike • Sẵn sàng"
-                    )
-                    accountsList.add(acc)
-                    if (accountId.isNotBlank()) {
-                        GolikeAccountsStore.saveTikTokMapping(context, cleanHandle, accountId)
-                    }
-                }
-            }
-            // Ghi đè chính xác 100% danh sách trả về từ API Golike, xóa sạch mọi acc lạ
-            GolikeAccountsStore.saveAccounts(context, "tiktok", accountsList)
+            checkGolikeLinkedStatusForTikTokAccounts(context, client)
         } else {
             val res = when (platform.lowercase()) {
                 "facebook" -> client.getFacebookAccounts()
@@ -272,13 +314,107 @@ fun GolikeAccountScreen(navController: NavController) {
         if (selectedPlatform.lowercase() == "tiktok" && isLoggedIn) {
             scope.launch(Dispatchers.IO) {
                 val client = GolikeAccountsStore.getApiClient(context)
-                syncLinkedAccountsFromApi(context, client, "tiktok")
+                checkGolikeLinkedStatusForTikTokAccounts(context, client)
                 withContext(Dispatchers.Main) {
                     reloadAccounts()
                 }
             }
         }
         selectedForRunIds = emptySet()
+    }
+
+    // Lắng nghe kết quả quét tài khoản TikTok từ màn nổi (Overlay)
+    LaunchedEffect(Unit) {
+        TikTokCaptureBridge.state.collect { state ->
+            when (state) {
+                is TikTokCaptureState.Captured -> {
+                    val clean = state.handle.trim().removePrefix("@")
+                    if (clean.isNotBlank()) {
+                        val gAcc = GolikeAccount(
+                            id = clean,
+                            platform = "tiktok",
+                            username = state.displayName.ifBlank { clean },
+                            avatar = state.avatarUrl,
+                            isLive = true,
+                            isGolikeLinked = false,
+                            lastStatus = "Cần liên kết Golike"
+                        )
+                        GolikeAccountsStore.addOrUpdateAccount(context, gAcc)
+                        try {
+                            TikTokAccountsStore.addFromCapture(
+                                context = context,
+                                handle = clean,
+                                displayName = state.displayName.ifBlank { clean },
+                                avatarUrl = state.avatarUrl,
+                                variant = state.variant
+                            )
+                        } catch (_: Exception) {}
+                        reloadAccounts()
+                        Toast.makeText(context, "Đã quét thành công nick: @$clean", Toast.LENGTH_SHORT).show()
+
+                        // Kiểm tra ngầm trạng thái liên kết với Golike
+                        if (isLoggedIn) {
+                            scope.launch(Dispatchers.IO) {
+                                val client = GolikeAccountsStore.getApiClient(context)
+                                checkGolikeLinkedStatusForTikTokAccounts(context, client)
+                                withContext(Dispatchers.Main) {
+                                    reloadAccounts()
+                                }
+                            }
+                        }
+                    }
+                    TikTokCaptureBridge.reset()
+                }
+                is TikTokCaptureState.CapturedBatch -> {
+                    val active = state.accounts.firstOrNull { it.isActive } ?: state.accounts.firstOrNull()
+                    val mainClean = active?.handle?.ifBlank { active.displayName }?.trim()?.removePrefix("@").orEmpty()
+                    state.accounts.forEach { entry ->
+                        val h = entry.handle.ifBlank { entry.displayName }.trim().removePrefix("@")
+                        if (h.isNotBlank()) {
+                            val gAcc = GolikeAccount(
+                                id = h,
+                                platform = "tiktok",
+                                username = entry.displayName.ifBlank { h },
+                                avatar = entry.avatarUrl,
+                                isLive = true,
+                                isGolikeLinked = false,
+                                lastStatus = "Cần liên kết Golike"
+                            )
+                            GolikeAccountsStore.addOrUpdateAccount(context, gAcc)
+                            try {
+                                TikTokAccountsStore.addFromCapture(
+                                    context = context,
+                                    handle = h,
+                                    displayName = entry.displayName,
+                                    avatarUrl = entry.avatarUrl,
+                                    variant = state.variant
+                                )
+                            } catch (_: Exception) {}
+                        }
+                    }
+                    reloadAccounts()
+                    if (mainClean.isNotBlank()) {
+                        Toast.makeText(context, "Đã quét thành công nick: @$mainClean", Toast.LENGTH_SHORT).show()
+                    }
+                    // Kiểm tra ngầm trạng thái liên kết với Golike
+                    if (isLoggedIn) {
+                        scope.launch(Dispatchers.IO) {
+                            val client = GolikeAccountsStore.getApiClient(context)
+                            checkGolikeLinkedStatusForTikTokAccounts(context, client)
+                            withContext(Dispatchers.Main) {
+                                reloadAccounts()
+                            }
+                        }
+                    }
+                    TikTokCaptureBridge.reset()
+                }
+                is TikTokCaptureState.Failed -> {
+                    Toast.makeText(context, state.reason, Toast.LENGTH_LONG).show()
+                    TikTokCaptureBridge.reset()
+                }
+                else -> Unit
+            }
+        }
     }
 
     // Modal BottomSheet Chi tiết lỗi
@@ -404,9 +540,46 @@ fun GolikeAccountScreen(navController: NavController) {
                 val cachedId = acc.golikeAccountId.ifBlank {
                     GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanHandle).orEmpty()
                 }
-                val effectiveAcc = if (cachedId.isNotBlank()) {
+                var effectiveAcc = if (cachedId.isNotBlank()) {
                     acc.copy(isGolikeLinked = true, golikeAccountId = cachedId)
                 } else acc
+
+                // Nếu chưa liên kết Golike: Tự động chạy quy trình liên kết nick trước
+                if (!effectiveAcc.isGolikeLinked || effectiveAcc.golikeAccountId.isBlank()) {
+                    GolikeRunningManager.statusMap[acc.id] = "Đang kiểm tra & liên kết nick với Golike..."
+                    XsmmJobStatusBridge.update("Đang kiểm tra & liên kết nick với Golike...")
+                    val linkResult = GolikeTikTokTaskRunner.verifyAndLinkTikTokAccount(
+                        context = context,
+                        client = client,
+                        username = cleanHandle,
+                        onProgress = { p ->
+                            GolikeRunningManager.statusMap[acc.id] = p
+                            XsmmJobStatusBridge.update(p)
+                        }
+                    )
+                    if (linkResult.isSuccess) {
+                        val linkedAcc = linkResult.getOrNull()
+                        val newId = linkedAcc?.golikeAccountId?.ifBlank {
+                            GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanHandle).orEmpty()
+                        }.orEmpty()
+                        effectiveAcc = effectiveAcc.copy(
+                            isGolikeLinked = true,
+                            golikeAccountId = newId,
+                            lastStatus = "Đã liên kết Golike • Sẵn sàng"
+                        )
+                        GolikeAccountsStore.addOrUpdateAccount(context, effectiveAcc)
+                        withContext(Dispatchers.Main) {
+                            reloadAccounts()
+                        }
+                    } else {
+                        val failMsg = linkResult.exceptionOrNull()?.message ?: "Không thể liên kết nick @$cleanHandle với Golike"
+                        GolikeRunningManager.statusMap[acc.id] = "Lỗi: $failMsg"
+                        XsmmJobStatusBridge.update("Lỗi: $failMsg")
+                        GolikeRunningManager.runningAccounts[acc.id] = false
+                        GolikeRunningManager.lastErrorDetailMap[acc.id] = failMsg
+                        return@launch
+                    }
+                }
 
                 GolikeTikTokTaskRunner.runTikTokTaskLoop(
                     context = context,
@@ -1057,16 +1230,22 @@ fun GolikeAccountScreen(navController: NavController) {
 
                     Spacer(Modifier.width(6.dp))
 
-                    // Nút làm mới/đồng bộ tài khoản TikTok từ API Golike
+                    // Nút Thêm/Quét tài khoản (+) bằng màn nổi (Overlay)
                     IconButton(
                         onClick = {
-                            scope.launch(Dispatchers.IO) {
-                                val client = GolikeAccountsStore.getApiClient(context)
-                                syncLinkedAccountsFromApi(context, client, "tiktok")
-                                withContext(Dispatchers.Main) {
-                                    reloadAccounts()
-                                    Toast.makeText(context, "Đã đồng bộ tài khoản TikTok từ Golike!", Toast.LENGTH_SHORT).show()
+                            val overlayGranted = TikTokAppLauncher.isOverlayPermissionGranted(context)
+                            val accessibilityGranted = TikTokAppLauncher.isAccessibilityServiceEnabled(context)
+                            if (!TikTokAppLauncher.isInstalled(context, selectedVariant)) {
+                                val variantName = when (selectedVariant) {
+                                    TikTokAppVariant.STANDARD -> "TikTok"
+                                    TikTokAppVariant.LITE -> "TikTok Lite"
+                                    TikTokAppVariant.STUDIO -> "TikTok Studio"
                                 }
+                                Toast.makeText(context, "Chưa cài đặt $variantName trên thiết bị này", Toast.LENGTH_SHORT).show()
+                            } else if (!overlayGranted || !accessibilityGranted) {
+                                showAddAccountSheet = true
+                            } else {
+                                startXsmmVerifyTikTokAccount(context, selectedVariant)
                             }
                         },
                         modifier = Modifier.size(32.dp)
@@ -1075,10 +1254,10 @@ fun GolikeAccountScreen(navController: NavController) {
                             modifier = Modifier
                                 .size(28.dp)
                                 .clip(CircleShape)
-                                .background(TikTokBrandBlack.copy(alpha = 0.1f)),
+                                .background(TikTokBrandBlack),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "Đồng bộ từ Golike", tint = TikTokBrandBlack, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.Add, contentDescription = "Thêm/Quét tài khoản TikTok", tint = Color.White, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -1105,23 +1284,9 @@ fun GolikeAccountScreen(navController: NavController) {
                             Modifier.padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("Chưa có tài khoản TikTok nào từ Golike.", color = TextSecondary, fontSize = 13.sp)
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedButton(
-                                onClick = {
-                                    scope.launch(Dispatchers.IO) {
-                                        val client = GolikeAccountsStore.getApiClient(context)
-                                        syncLinkedAccountsFromApi(context, client, "tiktok")
-                                        withContext(Dispatchers.Main) {
-                                            reloadAccounts()
-                                            Toast.makeText(context, "Đã đồng bộ tài khoản TikTok từ Golike!", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                },
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Text("⟳ Đồng bộ nick từ Golike", color = TikTokBrandBlack, fontWeight = FontWeight.SemiBold)
-                            }
+                            Text("Chưa có tài khoản nào được thêm.", color = TextSecondary, fontSize = 13.5.sp)
+                            Spacer(Modifier.height(4.dp))
+                            Text("Nhấn dấu (+) ở trên để quét tài khoản TikTok từ máy.", color = TextSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
                         }
                     }
                 } else {
@@ -1750,31 +1915,30 @@ private fun GolikeTikTokAccountCard(
                 )
 
                 // Dòng 3: Trạng thái liên kết Golike
-                Spacer(Modifier.height(2.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(
+                if (!account.isGolikeLinked) {
+                    Spacer(Modifier.height(3.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
-                            .background(GolikeBrandOrange.copy(alpha = 0.12f))
-                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                            .background(Color(0xFFFEF3C7))
+                            .border(0.5.dp, Color(0xFFF59E0B), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = if (account.isGolikeLinked) "Đã liên kết Golike" else "Chưa liên kết",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = GolikeBrandOrange
+                            text = "⚠ Cần liên kết Golike",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFD97706)
                         )
                     }
-                    if (account.golikeAccountId.isNotBlank()) {
-                        Text(
-                            text = "ID: ${account.golikeAccountId}",
-                            fontSize = 10.sp,
-                            color = TextSecondary
-                        )
-                    }
+                } else if (account.golikeAccountId.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "ID: ${account.golikeAccountId}",
+                        fontSize = 10.5.sp,
+                        color = TextSecondary
+                    )
                 }
             }
 

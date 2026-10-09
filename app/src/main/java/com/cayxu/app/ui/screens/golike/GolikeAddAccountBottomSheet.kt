@@ -104,6 +104,18 @@ fun GolikeAddAccountBottomSheet(
                             variant = state.variant
                         )
                     } catch (_: Exception) {}
+                    if (platform.lowercase() == "tiktok" && clean.isNotBlank()) {
+                        val gAcc = GolikeAccount(
+                            id = clean,
+                            platform = "tiktok",
+                            username = state.displayName.ifBlank { clean },
+                            avatar = state.avatarUrl,
+                            isLive = true,
+                            isGolikeLinked = false,
+                            lastStatus = "Cần liên kết Golike"
+                        )
+                        GolikeAccountsStore.addOrUpdateAccount(context, gAcc)
+                    }
                     TikTokCaptureBridge.reset()
                     Toast.makeText(context, "Đã quét thành công nick: @$clean", Toast.LENGTH_SHORT).show()
                     onAccountAdded()
@@ -126,6 +138,18 @@ fun GolikeAddAccountBottomSheet(
                                         variant = state.variant
                                     )
                                 } catch (_: Exception) {}
+                                if (platform.lowercase() == "tiktok") {
+                                    val gAcc = GolikeAccount(
+                                        id = h,
+                                        platform = "tiktok",
+                                        username = entry.displayName.ifBlank { h },
+                                        avatar = entry.avatarUrl,
+                                        isLive = true,
+                                        isGolikeLinked = false,
+                                        lastStatus = "Cần liên kết Golike"
+                                    )
+                                    GolikeAccountsStore.addOrUpdateAccount(context, gAcc)
+                                }
                             }
                         }
                     }
