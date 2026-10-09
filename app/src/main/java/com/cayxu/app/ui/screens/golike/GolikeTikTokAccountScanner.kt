@@ -23,13 +23,14 @@ object GolikeTikTokAccountScanner {
         if (clean.isBlank()) return
 
         val currentList = GolikeAccountsStore.getAccounts(context, "tiktok")
-        val existing = currentList.find { it.id.equals(clean, ignoreCase = true) }
+        val existing = currentList.find { it.id.equals(clean, ignoreCase = true) || it.username.equals(clean, ignoreCase = true) }
         val gAcc = existing?.copy(
-            username = displayName.ifBlank { existing.username.ifBlank { clean } }
+            id = clean,
+            username = clean
         ) ?: GolikeAccount(
             id = clean,
             platform = "tiktok",
-            username = displayName.ifBlank { clean },
+            username = clean,
             avatar = "",
             isLive = true,
             isGolikeLinked = false,

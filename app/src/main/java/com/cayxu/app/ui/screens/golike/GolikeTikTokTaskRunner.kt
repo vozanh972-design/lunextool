@@ -81,7 +81,7 @@ object GolikeTikTokTaskRunner {
         TikTokAppLauncher.launch(context, variant)
         delay(1500L)
 
-        val verifyActionId = XsmmTaskAutomationBridge.triggerVerifyAccount(cleanTarget, variant)
+        val verifyActionId = XsmmTaskAutomationBridge.triggerVerifyAccount(cleanTarget, variant, platform = "golike")
         val startTime = System.currentTimeMillis()
         val maxWaitTime = 60000L // Chờ tối đa 60s
         var matched = false
@@ -482,7 +482,7 @@ object GolikeTikTokTaskRunner {
             val finalAcc = GolikeAccount(
                 id = cleanUsername,
                 platform = "tiktok",
-                username = username,
+                username = cleanUsername,
                 avatar = "",
                 isLive = true,
                 isGolikeLinked = true,
@@ -514,7 +514,7 @@ object GolikeTikTokTaskRunner {
         onJobFailed: (reason: String) -> Unit
     ) = withContext(Dispatchers.IO) {
         val cfg = GolikeRunConfigStore.get(context, "tiktok")
-        val cleanUsername = account.username.trim().removePrefix("@").lowercase()
+        val cleanUsername = account.id.ifBlank { account.username }.trim().removePrefix("@").lowercase()
 
         // ── Nạp đầy đủ 100% session và headers phiên bản từ SharedPreferences vào client trước khi gọi API ──
         val token = GolikeAccountsStore.getToken(context).orEmpty()

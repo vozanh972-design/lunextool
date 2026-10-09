@@ -292,11 +292,12 @@ object GolikeAccountsStore {
         deviceAccounts.forEach { acc ->
             val clean = acc.handle.trim().removePrefix("@")
             if (clean.isNotBlank()) {
-                val existingIndex = currentGolike.indexOfFirst { it.id.equals(clean, ignoreCase = true) }
+                val existingIndex = currentGolike.indexOfFirst { it.id.equals(clean, ignoreCase = true) || it.username.equals(clean, ignoreCase = true) }
                 if (existingIndex >= 0) {
                     val existing = currentGolike[existingIndex]
                     currentGolike[existingIndex] = existing.copy(
-                        username = acc.displayName.ifBlank { existing.username.ifBlank { clean } },
+                        id = clean,
+                        username = clean,
                         avatar = if (acc.avatarUrl.isNotBlank()) acc.avatarUrl else existing.avatar
                     )
                 } else {
@@ -304,7 +305,7 @@ object GolikeAccountsStore {
                         GolikeAccount(
                             id = clean,
                             platform = "tiktok",
-                            username = acc.displayName.ifBlank { clean },
+                            username = clean,
                             avatar = acc.avatarUrl,
                             isLive = true,
                             isGolikeLinked = false,
@@ -334,7 +335,7 @@ object GolikeAccountsStore {
         if (json.isNullOrBlank() && platform.lowercase() == "tiktok") {
             json = prefs(context).getString("${KEY_PREFIX_ACCOUNTS}tiktok", null)
         }
-        return if (!json.isNullOrBlank()) {
+        val list = if (!json.isNullOrBlank()) {
             runCatching {
                 val type = object : TypeToken<List<GolikeAccount>>() {}.type
                 gson.fromJson<List<GolikeAccount>>(json, type) ?: emptyList<GolikeAccount>()
@@ -342,6 +343,18 @@ object GolikeAccountsStore {
         } else {
             emptyList()
         }
+
+        if (platform.lowercase() == "tiktok") {
+            return list.map { acc ->
+                val cleanHandle = acc.id.trim().removePrefix("@")
+                if (cleanHandle.isNotBlank() && (acc.username.contains(" ") || acc.username.isBlank())) {
+                    acc.copy(id = cleanHandle, username = cleanHandle)
+                } else {
+                    acc
+                }
+            }
+        }
+        return list
     }
 
     fun saveAccounts(context: Context, platform: String, list: List<GolikeAccount>) {

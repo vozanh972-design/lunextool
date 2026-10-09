@@ -98,7 +98,7 @@ fun GolikeAddAccountBottomSheet(
                         val gAcc = GolikeAccount(
                             id = clean,
                             platform = "tiktok",
-                            username = state.displayName.ifBlank { clean },
+                            username = clean,
                             avatar = state.avatarUrl,
                             isLive = true,
                             isGolikeLinked = false,
@@ -123,7 +123,7 @@ fun GolikeAddAccountBottomSheet(
                                 val gAcc = GolikeAccount(
                                     id = h,
                                     platform = "tiktok",
-                                    username = entry.displayName.ifBlank { h },
+                                    username = h,
                                     avatar = "",
                                     isLive = true,
                                     isGolikeLinked = false,

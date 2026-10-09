@@ -314,32 +314,15 @@ fun GolikeAccountScreen(navController: NavController) {
 
     // Khởi tạo nạp danh sách TikTok ngay khi mở màn hình
     LaunchedEffect(Unit) {
-        val initialTikTok = GolikeAccountsStore.getTikTokAccounts(context).ifEmpty {
-            GolikeAccountsStore.importScannedTikTokAccounts(context)
-        }
-        if (initialTikTok.isNotEmpty()) {
-            tiktokAccounts.clear()
-            tiktokAccounts.addAll(initialTikTok)
-        }
+        reloadAccounts()
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                if (selectedPlatform.lowercase() == "tiktok") {
-                    GolikeAccountsStore.setScanningTikTok(context, false)
-                    val scannedList = GolikeAccountsStore.importScannedTikTokAccounts(context).ifEmpty {
-                        GolikeAccountsStore.getTikTokAccounts(context)
-                    }
-                    if (scannedList.isNotEmpty()) {
-                        tiktokAccounts.clear()
-                        tiktokAccounts.addAll(scannedList)
-                        GolikeAccountsStore.saveTikTokAccounts(context, scannedList)
-                    }
-                } else {
-                    reloadAccounts()
-                }
+                GolikeAccountsStore.setScanningTikTok(context, false)
+                reloadAccounts()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -356,14 +339,7 @@ fun GolikeAccountScreen(navController: NavController) {
         XsmmTaskAutomationBridge.result.collect { res ->
             if (res is XsmmTaskActionResult.Completed) {
                 GolikeAccountsStore.setScanningTikTok(context, false)
-                val scannedList = GolikeAccountsStore.importScannedTikTokAccounts(context).ifEmpty {
-                    GolikeAccountsStore.getTikTokAccounts(context)
-                }
-                if (scannedList.isNotEmpty()) {
-                    tiktokAccounts.clear()
-                    tiktokAccounts.addAll(scannedList)
-                    GolikeAccountsStore.saveTikTokAccounts(context, scannedList)
-                }
+                reloadAccounts()
             }
         }
     }
@@ -378,7 +354,7 @@ fun GolikeAccountScreen(navController: NavController) {
                         val gAcc = GolikeAccount(
                             id = clean,
                             platform = "tiktok",
-                            username = state.displayName.ifBlank { clean },
+                            username = clean,
                             avatar = state.avatarUrl,
                             isLive = true,
                             isGolikeLinked = false,
@@ -405,7 +381,7 @@ fun GolikeAccountScreen(navController: NavController) {
                             val gAcc = GolikeAccount(
                                 id = h,
                                 platform = "tiktok",
-                                username = entry.displayName.ifBlank { h },
+                                username = h,
                                 avatar = "",
                                 isLive = true,
                                 isGolikeLinked = false,
@@ -555,7 +531,7 @@ fun GolikeAccountScreen(navController: NavController) {
         if (selectedPlatform.lowercase() == "tiktok") {
             scope.launch(Dispatchers.IO) {
                 val client = GolikeAccountsStore.getApiClient(context)
-                val cleanHandle = acc.username.trim().removePrefix("@").lowercase()
+                val cleanHandle = acc.id.ifBlank { acc.username }.trim().removePrefix("@").lowercase()
                 val cachedId = acc.golikeAccountId.ifBlank {
                     GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanHandle).orEmpty()
                 }
@@ -834,10 +810,10 @@ fun GolikeAccountScreen(navController: NavController) {
                                         return@Button
                                     }
 
-                                    val selectedHandles = targets.map { it.username.trim().removePrefix("@") }
+                                    val selectedHandles = targets.map { it.id.ifBlank { it.username }.trim().removePrefix("@") }
 
                                     targets.forEach { acc ->
-                                        val cleanHandle = acc.username.trim().removePrefix("@").lowercase()
+                                        val cleanHandle = acc.id.ifBlank { acc.username }.trim().removePrefix("@").lowercase()
                                         GolikeRunningManager.runningAccounts[cleanHandle] = true
                                         GolikeRunningManager.runningAccounts[acc.id] = true
                                     }
