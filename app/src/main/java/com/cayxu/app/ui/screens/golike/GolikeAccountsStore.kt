@@ -93,11 +93,20 @@ object GolikeAccountsStore {
     fun getUserId(context: Context): String =
         prefs(context).getString(KEY_USER_ID, "").orEmpty()
 
+    fun getWebData(context: Context): String =
+        prefs(context).getString(KEY_WEB_DATA, "").orEmpty()
+
     fun getWebCookies(context: Context): String =
         prefs(context).getString(KEY_WEB_COOKIES, "").orEmpty()
 
     fun getHeader(context: Context): String =
         prefs(context).getString(KEY_HEADER, "").orEmpty()
+
+    fun getProtocol(context: Context): String =
+        prefs(context).getString(KEY_PROTOCOL, "").orEmpty()
+
+    fun getGauthVersion(context: Context): String =
+        prefs(context).getString(KEY_GAUTH_VERSION, "").orEmpty()
 
     fun saveWebCookies(context: Context, cookies: String) {
         prefs(context).edit().putString(KEY_WEB_COOKIES, cookies.trim()).commit()
