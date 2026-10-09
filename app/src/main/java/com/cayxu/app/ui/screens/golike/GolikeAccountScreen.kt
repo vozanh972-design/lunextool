@@ -375,7 +375,7 @@ fun GolikeAccountScreen(navController: NavController) {
                                 id = h,
                                 platform = "tiktok",
                                 username = entry.displayName.ifBlank { h },
-                                avatar = entry.avatarUrl,
+                                avatar = "",
                                 isLive = true,
                                 isGolikeLinked = false,
                                 lastStatus = "Cần liên kết Golike"
@@ -386,7 +386,6 @@ fun GolikeAccountScreen(navController: NavController) {
                                     context = context,
                                     handle = h,
                                     displayName = entry.displayName,
-                                    avatarUrl = entry.avatarUrl,
                                     variant = state.variant
                                 )
                             } catch (_: Exception) {}

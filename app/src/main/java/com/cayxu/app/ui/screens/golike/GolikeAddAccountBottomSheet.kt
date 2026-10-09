@@ -143,7 +143,7 @@ fun GolikeAddAccountBottomSheet(
                                         id = h,
                                         platform = "tiktok",
                                         username = entry.displayName.ifBlank { h },
-                                        avatar = entry.avatarUrl,
+                                        avatar = "",
                                         isLive = true,
                                         isGolikeLinked = false,
                                         lastStatus = "Cần liên kết Golike"
