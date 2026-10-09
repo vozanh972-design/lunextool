@@ -144,6 +144,19 @@ object GolikeAccountsStore {
         editor.commit()
     }
 
+    fun saveWebVersionInfo(context: Context, webVersion: String?, webVersionText: String?) {
+        val editor = prefs(context).edit()
+        editor.putString(KEY_WEB_VERSION, webVersion?.takeIf { it.isNotBlank() } ?: "3.0")
+        editor.putString(KEY_WEB_VERSION_TEXT, webVersionText?.takeIf { it.isNotBlank() } ?: "26.09.17.1")
+        editor.commit()
+    }
+
+    fun getWebVersion(context: Context): String =
+        prefs(context).getString(KEY_WEB_VERSION, "3.0")?.takeIf { it.isNotBlank() } ?: "3.0"
+
+    fun getWebVersionText(context: Context): String =
+        prefs(context).getString(KEY_WEB_VERSION_TEXT, "26.09.17.1")?.takeIf { it.isNotBlank() } ?: "26.09.17.1"
+
     fun getVersionApp(context: Context): String =
         prefs(context).getString(KEY_VERSION_APP, "")?.takeIf { it.isNotBlank() } ?: "26.09.17.1"
 
@@ -194,6 +207,8 @@ object GolikeAccountsStore {
             .remove(KEY_SIGNING_KEY)
             .remove(KEY_USER_ID)
             .remove(KEY_WEB_DATA)
+            .remove(KEY_WEB_VERSION)
+            .remove(KEY_WEB_VERSION_TEXT)
             .remove(KEY_TIKTOK_MAP)
             .remove(KEY_SCHEME)
             .remove(KEY_CLIENT)
@@ -215,7 +230,9 @@ object GolikeAccountsStore {
             gAuth = getGAuth(context),
             version = getVersionApp(context),
             client = getClient(context),
-            scheme = getScheme(context)
+            scheme = getScheme(context),
+            webVersion = getWebVersion(context),
+            webVersionText = getWebVersionText(context)
         )
     }
 

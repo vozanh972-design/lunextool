@@ -1,6 +1,7 @@
 package com.cayxu.app.ui.screens.golike
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.net.http.SslError
 import android.util.Log
 import android.webkit.CookieManager
@@ -72,17 +73,28 @@ object GolikeAuthWebView {
                 if (!username) username = String(state.username || state.user_name || '');
               }
 
-              // Trích xuất phiên bản từ Vuex store hoặc text trang
-              let version = '';
+              // Trích xuất webVersion và webVersionText
+              let webVersion = '3.0';
+              if (state && (state.version || state.app_version)) {
+                webVersion = String(state.version || state.app_version);
+              }
+              if (!webVersion || webVersion === 'null' || webVersion === 'undefined') {
+                let localVer = localStorage.getItem('version') || localStorage.getItem('app_version');
+                if (localVer) webVersion = localVer;
+              }
+              if (!webVersion || webVersion === 'null' || webVersion === 'undefined') webVersion = '3.0';
+
+              let webVersionText = '';
               try {
-                if (state && (state.app_version || state.version)) {
-                  version = String(state.app_version || state.version);
-                }
-                if (!version) {
-                  let match = document.body && document.body.innerText ? document.body.innerText.match(/(\d+\.\d+\.\d+\.\d+)/) : null;
-                  if (match) version = match[1];
-                }
+                let match = document.body && document.body.innerText ? document.body.innerText.match(/(\d+\.\d+\.\d+\.\d+)/) : null;
+                if (match) webVersionText = match[1];
               } catch(e) {}
+              if (!webVersionText && (webVersion && webVersion !== '3.0')) {
+                webVersionText = webVersion;
+              }
+              if (!webVersionText) webVersionText = '26.09.17.1';
+
+              let version = webVersionText;
 
               // Quét localStorage tìm signing_key và user_id
               for (let i = 0; i < localStorage.length; i++) {
@@ -99,6 +111,9 @@ object GolikeAuthWebView {
               }
               if (window.GoMaxApp && window.GoMaxApp.sendGatewayHeaders && (deviceId || username)) {
                 GoMaxApp.sendGatewayHeaders('', deviceId || '', username || '');
+              }
+              if (window.GoMaxApp && window.GoMaxApp.sendWebVersionInfo) {
+                GoMaxApp.sendWebVersionInfo(webVersion || '3.0', webVersionText || '26.09.17.1');
               }
               if (window.GoMaxApp && window.GoMaxApp.sendVersionInfo && version) {
                 GoMaxApp.sendVersionInfo(version, 'web', 'https');
@@ -130,6 +145,11 @@ object GolikeAuthWebView {
             if (gAuth || gDeviceId || gUsername) {
               if (window.GoMaxApp && window.GoMaxApp.sendGatewayHeaders) {
                 GoMaxApp.sendGatewayHeaders(gAuth || '', gDeviceId || '', gUsername || '');
+              }
+            }
+            if (gVersion) {
+              if (window.GoMaxApp && window.GoMaxApp.sendWebVersionInfo) {
+                GoMaxApp.sendWebVersionInfo('3.0', gVersion);
               }
             }
             if (gVersion || gClient || gScheme) {
@@ -199,7 +219,12 @@ object GolikeAuthWebView {
         )
     }
 
-    class JsBridge(private val callback: AuthCallback) {
+    class JsBridge(
+        private val context: Context?,
+        private val callback: AuthCallback
+    ) {
+        constructor(callback: AuthCallback) : this(null, callback)
+
         private var savedAuth: String? = null
         private var savedT: String? = null
         private var savedDeviceId: String? = null
@@ -211,6 +236,8 @@ object GolikeAuthWebView {
         private var savedVersion: String = "26.09.17.1"
         private var savedClient: String = "web"
         private var savedScheme: String = "https"
+        private var savedWebVersion: String = "3.0"
+        private var savedWebVersionText: String = "26.09.17.1"
 
         @JavascriptInterface
         fun sendAuthData(auth: String, t: String) {
@@ -232,9 +259,38 @@ object GolikeAuthWebView {
 
         @JavascriptInterface
         fun sendVersionInfo(version: String, client: String, scheme: String) {
-            if (version.isNotBlank()) savedVersion = version
+            if (version.isNotBlank()) {
+                savedVersion = version
+                savedWebVersionText = version
+                context?.let { ctx ->
+                    try {
+                        GolikeAccountsStore.saveWebVersionInfo(ctx, savedWebVersion, version)
+                        GolikeAccountsStore.saveVersionData(ctx, version = version, client = client, scheme = scheme)
+                    } catch (e: Exception) {
+                        Log.e("GolikeJsBridge", "Lỗi lưu version info: ${e.message}")
+                    }
+                }
+            }
             if (client.isNotBlank()) savedClient = client
             if (scheme.isNotBlank()) savedScheme = scheme
+            checkAndNotify()
+        }
+
+        @JavascriptInterface
+        fun sendWebVersionInfo(webVersion: String, webVersionText: String) {
+            val finalWebVer = webVersion.takeIf { it.isNotBlank() && it != "null" && it != "undefined" } ?: "3.0"
+            val finalWebVerText = webVersionText.takeIf { it.isNotBlank() && it != "null" && it != "undefined" } ?: "26.09.17.1"
+            savedWebVersion = finalWebVer
+            savedWebVersionText = finalWebVerText
+            savedVersion = finalWebVerText
+            context?.let { ctx ->
+                try {
+                    GolikeAccountsStore.saveWebVersionInfo(ctx, finalWebVer, finalWebVerText)
+                    GolikeAccountsStore.saveVersionData(ctx, version = finalWebVerText)
+                } catch (e: Exception) {
+                    Log.e("GolikeJsBridge", "Lỗi lưu webVersionInfo: ${e.message}")
+                }
+            }
             checkAndNotify()
         }
 
@@ -257,6 +313,14 @@ object GolikeAuthWebView {
             if (!auth.isNullOrBlank() && auth != "Bearer null" && auth != "Bearer undefined" &&
                 (uname.isNotBlank() || devId.isNotBlank())
             ) {
+                // Đảm bảo luôn lưu webVersion và webVersionText vào Store khi login thành công
+                context?.let { ctx ->
+                    try {
+                        GolikeAccountsStore.saveWebVersionInfo(ctx, savedWebVersion, savedWebVersionText)
+                    } catch (_: Exception) {}
+                }
+
+                val effectiveVersion = savedWebVersionText.ifBlank { savedVersion }.ifBlank { "26.09.17.1" }
                 callback.onAuthCaptured(
                     authToken = auth,
                     tToken = t,
@@ -266,7 +330,7 @@ object GolikeAuthWebView {
                     signingKey = savedSigningKey.orEmpty(),
                     userId = savedUserId.orEmpty(),
                     webData = savedWebData.orEmpty(),
-                    version = savedVersion.ifBlank { "26.09.17.1" },
+                    version = effectiveVersion,
                     client = savedClient.ifBlank { "web" },
                     scheme = savedScheme.ifBlank { "https" }
                 )
@@ -314,7 +378,7 @@ object GolikeAuthWebView {
             }
         }
 
-        webView.addJavascriptInterface(JsBridge(callback), "GoMaxApp")
+        webView.addJavascriptInterface(JsBridge(webView.context, callback), "GoMaxApp")
         webView.webViewClient = object : WebViewClient() {
             override fun onPageCommitVisible(view: WebView?, url: String?) {
                 super.onPageCommitVisible(view, url)

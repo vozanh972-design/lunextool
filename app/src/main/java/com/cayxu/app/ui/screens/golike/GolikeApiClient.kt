@@ -18,7 +18,9 @@ class GolikeApiClient(
     var gAuth: String? = null,
     var version: String? = null,
     var client: String? = null,
-    var scheme: String? = null
+    var scheme: String? = null,
+    var webVersion: String? = null,
+    var webVersionText: String? = null
 ) {
     companion object {
         const val BASE_URL = "https://gateway.golike.net/api"
@@ -39,7 +41,9 @@ class GolikeApiClient(
         gAuth: String?,
         version: String? = null,
         client: String? = null,
-        scheme: String? = null
+        scheme: String? = null,
+        webVersion: String? = null,
+        webVersionText: String? = null
     ) {
         this.authToken = if (authToken.startsWith("Bearer ", ignoreCase = true)) authToken else "Bearer $authToken"
         this.tToken = tToken
@@ -49,6 +53,8 @@ class GolikeApiClient(
         this.version = version ?: this.version
         this.client = client ?: this.client
         this.scheme = scheme ?: this.scheme
+        this.webVersion = webVersion ?: this.webVersion
+        this.webVersionText = webVersionText ?: this.webVersionText
     }
 
     private fun newRequestBuilder(url: String): Request.Builder {
@@ -70,7 +76,10 @@ class GolikeApiClient(
         gAuth?.let { if (it.isNotBlank()) builder.header("g-auth", it) }
 
         // BỔ SUNG CÁC HEADERS VERSION BẮT BUỘC (Tránh lỗi cập nhật phiên bản):
-        val finalVersion = version?.takeIf { it.isNotBlank() } ?: "26.09.17.1"
+        val finalVersion = webVersionText?.takeIf { it.isNotBlank() }
+            ?: version?.takeIf { it.isNotBlank() }
+            ?: webVersion?.takeIf { it.isNotBlank() }
+            ?: "26.09.17.1"
         val finalClient = client?.takeIf { it.isNotBlank() } ?: "web"
         val finalScheme = scheme?.takeIf { it.isNotBlank() } ?: "https"
         builder.header("g-version", finalVersion)
