@@ -244,7 +244,7 @@ object GolikeAccountsStore {
         }
         val key = "${KEY_PREFIX_ACCOUNTS}${platform.lowercase()}"
         val json = prefs(context).getString(key, null)
-        val savedList: List<GolikeAccount> = if (!json.isNullOrBlank()) {
+        return if (!json.isNullOrBlank()) {
             runCatching {
                 val type = object : TypeToken<List<GolikeAccount>>() {}.type
                 gson.fromJson<List<GolikeAccount>>(json, type) ?: emptyList<GolikeAccount>()
@@ -252,49 +252,6 @@ object GolikeAccountsStore {
         } else {
             emptyList()
         }
-
-        if (platform.lowercase() == "tiktok") {
-            // Đọc trực tiếp từ Kho tài khoản TikTok chung của thiết bị (TikTokAccountsStore)
-            val sharedAccounts = com.cayxu.app.data.local.TikTokAccountsStore.getAccounts(context)
-            if (sharedAccounts.isNotEmpty()) {
-                val savedMap = savedList.associateBy { it.id.trim().removePrefix("@").lowercase() }
-                val merged = mutableListOf<GolikeAccount>()
-                val seen = mutableSetOf<String>()
-
-                for (shared in sharedAccounts) {
-                    val cleanHandle = shared.handle.trim().removePrefix("@").lowercase()
-                    if (cleanHandle.isBlank() || !seen.add(cleanHandle)) continue
-                    val existing = savedMap[cleanHandle]
-                    merged.add(
-                        existing?.copy(
-                            username = shared.handle,
-                            avatar = existing.avatar.ifBlank { shared.avatarUrl },
-                            isLive = shared.isLive,
-                            proxy = existing.proxy.ifBlank { shared.proxy }
-                        ) ?: GolikeAccount(
-                            id = cleanHandle,
-                            platform = "tiktok",
-                            username = shared.handle,
-                            avatar = shared.avatarUrl,
-                            isLive = shared.isLive,
-                            isGolikeLinked = false,
-                            golikeAccountId = "",
-                            proxy = shared.proxy,
-                            lastStatus = "Chưa liên kết Golike"
-                        )
-                    )
-                }
-                for (saved in savedList) {
-                    val cleanId = saved.id.trim().removePrefix("@").lowercase()
-                    if (cleanId.isNotBlank() && seen.add(cleanId)) {
-                        merged.add(saved)
-                    }
-                }
-                return merged
-            }
-        }
-
-        return savedList
     }
 
     fun saveAccounts(context: Context, platform: String, list: List<GolikeAccount>) {
@@ -302,6 +259,10 @@ object GolikeAccountsStore {
         prefs(context).edit()
             .putString(key, gson.toJson(list))
             .commit()
+    }
+
+    fun clearTikTokAccounts(context: Context) {
+        prefs(context).edit().remove("${KEY_PREFIX_ACCOUNTS}tiktok").commit()
     }
 
     fun addOrUpdateAccount(context: Context, account: GolikeAccount) {
@@ -313,18 +274,6 @@ object GolikeAccountsStore {
             currentList.add(account)
         }
         saveAccounts(context, account.platform, currentList)
-        if (account.platform.lowercase() == "tiktok") {
-            try {
-                com.cayxu.app.data.local.TikTokAccountsStore.addFromCapture(
-                    context = context,
-                    handle = account.username.ifBlank { account.id },
-                    displayName = account.username,
-                    avatarUrl = account.avatar,
-                    variant = com.cayxu.app.data.local.TikTokAppVariant.STANDARD,
-                    proxy = account.proxy
-                )
-            } catch (_: Exception) {}
-        }
     }
 
     /** Xóa vĩnh viễn danh sách tài khoản theo ID (sử dụng .commit()) */
@@ -334,17 +283,6 @@ object GolikeAccountsStore {
         val cleanSet = idsToRemove.map { it.trim().lowercase() }.toSet()
         val updated = currentList.filterNot { cleanSet.contains(it.id.trim().lowercase()) }
         saveAccounts(context, platform, updated)
-        if (platform.lowercase() == "tiktok") {
-            try {
-                val localTiktok = com.cayxu.app.data.local.TikTokAccountsStore.getAccounts(context)
-                val uidsToRemove = localTiktok.filter {
-                    cleanSet.contains(it.handle.trim().removePrefix("@").lowercase()) || cleanSet.contains(it.uid.lowercase())
-                }.map { it.uid }
-                if (uidsToRemove.isNotEmpty()) {
-                    com.cayxu.app.data.local.TikTokAccountsStore.removeAccounts(context, uidsToRemove)
-                }
-            } catch (_: Exception) {}
-        }
     }
 
     /** Cập nhật trạng thái liên kết Golike */

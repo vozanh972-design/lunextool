@@ -184,10 +184,20 @@ object GolikeTikTokTaskRunner {
             return@withContext Result.failure(Exception("Tên người dùng TikTok không hợp lệ"))
         }
 
-        // ── Nạp đầy đủ các headers phiên bản từ SharedPreferences vào client trước khi gọi API ──
-        client.version = GolikeAccountsStore.getVersionApp(context)
-        client.client = GolikeAccountsStore.getClient(context)
-        client.scheme = GolikeAccountsStore.getScheme(context)
+        // ── Nạp đầy đủ 100% session và headers phiên bản từ SharedPreferences vào client trước khi gọi API ──
+        val token = GolikeAccountsStore.getToken(context).orEmpty()
+        client.updateSession(
+            authToken = token,
+            tToken = GolikeAccountsStore.getTToken(context),
+            deviceId = GolikeAccountsStore.getDeviceId(context),
+            username = GolikeAccountsStore.getUsername(context),
+            gAuth = GolikeAccountsStore.getGAuth(context),
+            version = GolikeAccountsStore.getVersionApp(context),
+            client = GolikeAccountsStore.getClient(context),
+            scheme = GolikeAccountsStore.getScheme(context),
+            webVersion = GolikeAccountsStore.getWebVersion(context),
+            webVersionText = GolikeAccountsStore.getWebVersionText(context)
+        )
 
         // ── Guard: Kiểm tra đủ 5 trường session bắt buộc của Golike Gateway ──
         val sessionErr = checkSession(client)
@@ -506,10 +516,20 @@ object GolikeTikTokTaskRunner {
         val cfg = GolikeRunConfigStore.get(context, "tiktok")
         val cleanUsername = account.username.trim().removePrefix("@").lowercase()
 
-        // ── Nạp đầy đủ các headers phiên bản từ SharedPreferences vào client trước khi gọi API ──
-        client.version = GolikeAccountsStore.getVersionApp(context)
-        client.client = GolikeAccountsStore.getClient(context)
-        client.scheme = GolikeAccountsStore.getScheme(context)
+        // ── Nạp đầy đủ 100% session và headers phiên bản từ SharedPreferences vào client trước khi gọi API ──
+        val token = GolikeAccountsStore.getToken(context).orEmpty()
+        client.updateSession(
+            authToken = token,
+            tToken = GolikeAccountsStore.getTToken(context),
+            deviceId = GolikeAccountsStore.getDeviceId(context),
+            username = GolikeAccountsStore.getUsername(context),
+            gAuth = GolikeAccountsStore.getGAuth(context),
+            version = GolikeAccountsStore.getVersionApp(context),
+            client = GolikeAccountsStore.getClient(context),
+            scheme = GolikeAccountsStore.getScheme(context),
+            webVersion = GolikeAccountsStore.getWebVersion(context),
+            webVersionText = GolikeAccountsStore.getWebVersionText(context)
+        )
 
         // ── Guard: Kiểm tra đủ 5 trường session bắt buộc của Golike Gateway ──
         val sessionErr = checkSession(client)
