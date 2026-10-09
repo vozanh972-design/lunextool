@@ -79,6 +79,23 @@ object XsmmAccountStore {
         }.getOrDefault(emptyMap())
     }
 
+    private const val KEY_SAVED_TIKTOK_ACCOUNTS = "xsmm_tiktok_accounts_saved"
+
+    /** Lưu danh sách tài khoản TikTok của XSMM vĩnh viễn dạng JSON */
+    fun saveSavedTikTokAccounts(context: Context, accounts: List<TikTokAccount>) {
+        val json = gson.toJson(accounts)
+        prefs(context).edit().putString(KEY_SAVED_TIKTOK_ACCOUNTS, json).apply()
+    }
+
+    /** Lấy danh sách tài khoản TikTok của XSMM đã lưu vĩnh viễn */
+    fun getSavedTikTokAccounts(context: Context): List<TikTokAccount> {
+        val json = prefs(context).getString(KEY_SAVED_TIKTOK_ACCOUNTS, null) ?: return emptyList()
+        return runCatching {
+            val type = object : TypeToken<List<TikTokAccount>>() {}.type
+            gson.fromJson<List<TikTokAccount>>(json, type) ?: emptyList<TikTokAccount>()
+        }.getOrDefault(emptyList())
+    }
+
     fun clear(context: Context) {
         prefs(context).edit().clear().apply()
     }

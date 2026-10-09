@@ -320,12 +320,6 @@ fun GolikeAccountScreen(navController: NavController) {
         if (initialTikTok.isNotEmpty()) {
             tiktokAccounts.clear()
             tiktokAccounts.addAll(initialTikTok)
-            if (isLoggedIn) {
-                scope.launch(Dispatchers.IO) {
-                    val client = GolikeAccountsStore.getApiClient(context)
-                    checkGolikeLinkedStatusForTikTokAccounts(context, client, tiktokAccounts)
-                }
-            }
         }
     }
 
@@ -335,17 +329,13 @@ fun GolikeAccountScreen(navController: NavController) {
             if (event == Lifecycle.Event.ON_RESUME) {
                 if (selectedPlatform.lowercase() == "tiktok") {
                     GolikeAccountsStore.setScanningTikTok(context, false)
-                    val scannedList = GolikeAccountsStore.importScannedTikTokAccounts(context)
+                    val scannedList = GolikeAccountsStore.importScannedTikTokAccounts(context).ifEmpty {
+                        GolikeAccountsStore.getTikTokAccounts(context)
+                    }
                     if (scannedList.isNotEmpty()) {
                         tiktokAccounts.clear()
                         tiktokAccounts.addAll(scannedList)
                         GolikeAccountsStore.saveTikTokAccounts(context, scannedList)
-                    }
-                    if (GolikeSession.isLoggedIn.value && tiktokAccounts.isNotEmpty()) {
-                        scope.launch(Dispatchers.IO) {
-                            val client = GolikeAccountsStore.getApiClient(context)
-                            checkGolikeLinkedStatusForTikTokAccounts(context, client, tiktokAccounts)
-                        }
                     }
                 } else {
                     reloadAccounts()
@@ -358,12 +348,6 @@ fun GolikeAccountScreen(navController: NavController) {
 
     LaunchedEffect(selectedPlatform) {
         reloadAccounts()
-        if (selectedPlatform.lowercase() == "tiktok" && isLoggedIn && tiktokAccounts.isNotEmpty()) {
-            scope.launch(Dispatchers.IO) {
-                val client = GolikeAccountsStore.getApiClient(context)
-                checkGolikeLinkedStatusForTikTokAccounts(context, client, tiktokAccounts)
-            }
-        }
         selectedForRunIds = emptySet()
     }
 
@@ -372,17 +356,13 @@ fun GolikeAccountScreen(navController: NavController) {
         XsmmTaskAutomationBridge.result.collect { res ->
             if (res is XsmmTaskActionResult.Completed) {
                 GolikeAccountsStore.setScanningTikTok(context, false)
-                val scannedList = GolikeAccountsStore.importScannedTikTokAccounts(context)
+                val scannedList = GolikeAccountsStore.importScannedTikTokAccounts(context).ifEmpty {
+                    GolikeAccountsStore.getTikTokAccounts(context)
+                }
                 if (scannedList.isNotEmpty()) {
                     tiktokAccounts.clear()
                     tiktokAccounts.addAll(scannedList)
                     GolikeAccountsStore.saveTikTokAccounts(context, scannedList)
-                }
-                if (GolikeSession.isLoggedIn.value && tiktokAccounts.isNotEmpty()) {
-                    scope.launch(Dispatchers.IO) {
-                        val client = GolikeAccountsStore.getApiClient(context)
-                        checkGolikeLinkedStatusForTikTokAccounts(context, client, tiktokAccounts)
-                    }
                 }
             }
         }
@@ -413,13 +393,6 @@ fun GolikeAccountScreen(navController: NavController) {
                         }
                         GolikeAccountsStore.saveTikTokAccounts(context, tiktokAccounts.toList())
                         Toast.makeText(context, "Đã quét thành công nick: @$clean", Toast.LENGTH_SHORT).show()
-
-                        if (isLoggedIn) {
-                            scope.launch(Dispatchers.IO) {
-                                val client = GolikeAccountsStore.getApiClient(context)
-                                checkGolikeLinkedStatusForTikTokAccounts(context, client, tiktokAccounts)
-                            }
-                        }
                     }
                     TikTokCaptureBridge.reset()
                 }
@@ -450,12 +423,6 @@ fun GolikeAccountScreen(navController: NavController) {
                     GolikeAccountsStore.saveTikTokAccounts(context, tiktokAccounts.toList())
                     if (mainClean.isNotBlank()) {
                         Toast.makeText(context, "Đã quét thành công nick: @$mainClean", Toast.LENGTH_SHORT).show()
-                    }
-                    if (isLoggedIn) {
-                        scope.launch(Dispatchers.IO) {
-                            val client = GolikeAccountsStore.getApiClient(context)
-                            checkGolikeLinkedStatusForTikTokAccounts(context, client, tiktokAccounts)
-                        }
                     }
                     TikTokCaptureBridge.reset()
                 }
@@ -531,12 +498,6 @@ fun GolikeAccountScreen(navController: NavController) {
             onDismiss = { showAddAccountSheet = false },
             onAccountAdded = {
                 reloadAccounts()
-                if (selectedPlatform == "tiktok" && isLoggedIn) {
-                    scope.launch(Dispatchers.IO) {
-                        val client = GolikeAccountsStore.getApiClient(context)
-                        checkGolikeLinkedStatusForTikTokAccounts(context, client, tiktokAccounts)
-                    }
-                }
             }
         )
     }

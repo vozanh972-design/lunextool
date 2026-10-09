@@ -118,7 +118,10 @@ fun XsmmAccountScreen(navController: NavController) {
     var selectedFbDetailPage by remember { mutableStateOf<Pair<FacebookAccount, com.cayxu.app.data.local.FacebookPageItem>?>(null) }
     var showDeleteConfirmSheet by remember { mutableStateOf(false) }
 
-    var allTikTokAccounts by remember { mutableStateOf(TikTokAccountsStore.getAccounts(context).filter { it.enabled }) }
+    var allTikTokAccounts by remember {
+        val saved = XsmmAccountStore.getSavedTikTokAccounts(context).filter { it.enabled }
+        mutableStateOf(if (saved.isNotEmpty()) saved else TikTokAccountsStore.getAccounts(context).filter { it.enabled })
+    }
     var reloadingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
     var facebookAccounts by remember { mutableStateOf(com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)) }
@@ -133,13 +136,42 @@ fun XsmmAccountScreen(navController: NavController) {
     var livePageAvatars by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var livePageCovers by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
+    // Helper nạp tài khoản TikTok XSMM
+    fun reloadXsmmTikTok() {
+        val saved = XsmmAccountStore.getSavedTikTokAccounts(context).filter { it.enabled }
+        val storeAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+        val merged = if (saved.isEmpty()) {
+            storeAccounts
+        } else {
+            val list = saved.toMutableList()
+            storeAccounts.forEach { sa ->
+                val sHandle = sa.handle.trim().removePrefix("@").lowercase()
+                val idx = list.indexOfFirst { it.handle.trim().removePrefix("@").lowercase() == sHandle }
+                if (idx >= 0) {
+                    list[idx] = sa
+                } else {
+                    list.add(sa)
+                }
+            }
+            list
+        }
+        allTikTokAccounts = merged
+        if (merged.isNotEmpty()) {
+            XsmmAccountStore.saveSavedTikTokAccounts(context, merged)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        reloadXsmmTikTok()
+    }
+
     LaunchedEffect(selectedPlatform, showFacebookLoginSheet, showInstagramCookieSheet) {
         if (selectedPlatform == "facebook") {
             facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
         } else if (selectedPlatform == "instagram") {
             instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
         } else {
-            allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+            reloadXsmmTikTok()
         }
     }
 
@@ -148,7 +180,7 @@ fun XsmmAccountScreen(navController: NavController) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 if (selectedPlatform == "tiktok") {
-                    allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+                    reloadXsmmTikTok()
                 }
             }
         }
@@ -242,7 +274,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     }
                     jobs.forEach { it.join() }
                     withContext(Dispatchers.Main) {
-                        allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+                        reloadXsmmTikTok()
                     }
                 }
             }
@@ -557,7 +589,7 @@ fun XsmmAccountScreen(navController: NavController) {
             initialVariant = selectedVariant,
             onDismiss = {
                 showTikTokCheckSheet = false
-                allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+                reloadXsmmTikTok()
             }
         )
     }
@@ -658,7 +690,9 @@ fun XsmmAccountScreen(navController: NavController) {
                         targetUids.forEach { uid ->
                             com.cayxu.app.data.local.LinkedAccountsStore.removeAccount(context, "TikTok", uid)
                         }
-                        allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+                        val remaining = allTikTokAccounts.filterNot { it.uid in targetUids }
+                        allTikTokAccounts = remaining
+                        XsmmAccountStore.saveSavedTikTokAccounts(context, remaining)
                     }
                 }
                 selectedForRunUids = emptySet()
@@ -674,7 +708,7 @@ fun XsmmAccountScreen(navController: NavController) {
         } else if (selectedPlatform == "instagram") {
             instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
         } else {
-            allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+            reloadXsmmTikTok()
         }
 
         val token = XsmmAccountStore.getToken(context) ?: return@LaunchedEffect
@@ -1144,7 +1178,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                             if (profile != null) {
                                                 TikTokAccountsStore.updateFullProfile(context, account.uid, profile)
                                                 withContext(Dispatchers.Main) {
-                                                    allTikTokAccounts = TikTokAccountsStore.getAccounts(context).filter { it.enabled }
+                                                    reloadXsmmTikTok()
                                                     val msg = if (profile.isLive) {
                                                         "Đã cập nhật @${profile.username}: Live (${formatTikTokCount(profile.followerCount)} follow)"
                                                     } else {
