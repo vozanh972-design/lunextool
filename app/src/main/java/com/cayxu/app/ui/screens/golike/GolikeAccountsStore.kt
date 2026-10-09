@@ -1,6 +1,8 @@
 package com.cayxu.app.ui.screens.golike
 
 import android.content.Context
+import com.cayxu.app.data.local.TikTokAccountsStore
+import com.cayxu.app.data.local.XsmmAccountStore
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
@@ -236,12 +238,67 @@ object GolikeAccountsStore {
         )
     }
 
+    private const val KEY_IS_SCANNING_TIKTOK = "golike_is_scanning_tiktok"
+
+    fun isScanningTikTok(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_IS_SCANNING_TIKTOK, false)
+
+    fun setScanningTikTok(context: Context, scanning: Boolean) {
+        prefs(context).edit().putBoolean(KEY_IS_SCANNING_TIKTOK, scanning).commit()
+    }
+
+    /**
+     * Nạp toàn bộ tài khoản TikTok quét được từ ứng dụng máy vào kho Golike ("golike_accounts_pref").
+     * Đồng thời CÔ LẬP HOÀN TOÀN với XSMM: xóa bỏ các nick không thuộc XSMM khỏi TikTokAccountsStore ("cayxu_tiktok_accounts")
+     * để màn hình XSMM không bị dính nick lạ.
+     */
+    fun importScannedTikTokAccounts(context: Context): List<GolikeAccount> {
+        val deviceAccounts = TikTokAccountsStore.getAccounts(context)
+        val xsmmLinkedHandles = XsmmAccountStore.getAccountIdMap(context).keys
+            .map { it.lowercase().trim().removePrefix("@") }
+            .toSet()
+
+        val currentGolike = getAccounts(context, "tiktok").toMutableList()
+
+        deviceAccounts.forEach { acc ->
+            val clean = acc.handle.trim().removePrefix("@")
+            if (clean.isNotBlank()) {
+                val existingIndex = currentGolike.indexOfFirst { it.id.equals(clean, ignoreCase = true) }
+                if (existingIndex >= 0) {
+                    val existing = currentGolike[existingIndex]
+                    currentGolike[existingIndex] = existing.copy(
+                        username = acc.displayName.ifBlank { existing.username.ifBlank { clean } },
+                        avatar = if (acc.avatarUrl.isNotBlank()) acc.avatarUrl else existing.avatar
+                    )
+                } else {
+                    currentGolike.add(
+                        GolikeAccount(
+                            id = clean,
+                            platform = "tiktok",
+                            username = acc.displayName.ifBlank { clean },
+                            avatar = acc.avatarUrl,
+                            isLive = true,
+                            isGolikeLinked = false,
+                            lastStatus = "Cần liên kết Golike"
+                        )
+                    )
+                }
+
+                // CÔ LẬP DỮ LIỆU: Nếu nick này không thuộc danh sách liên kết của XSMM,
+                // xóa khỏi TikTokAccountsStore của XSMM để XSMM không bị dính nick lạ
+                if (!xsmmLinkedHandles.contains(clean.lowercase())) {
+                    TikTokAccountsStore.removeAccount(context, acc.uid)
+                }
+            }
+        }
+
+        saveAccounts(context, "tiktok", currentGolike)
+        return currentGolike
+    }
+
     // ===== QUẢN LÝ DANH SÁCH TÀI KHOẢN THEO NỀN TẢNG =====
 
     fun getAccounts(context: Context, platform: String): List<GolikeAccount> {
-        if (!isLoggedIn(context)) {
-            return emptyList()
-        }
         val key = "${KEY_PREFIX_ACCOUNTS}${platform.lowercase()}"
         val json = prefs(context).getString(key, null)
         return if (!json.isNullOrBlank()) {

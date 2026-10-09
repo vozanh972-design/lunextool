@@ -35,7 +35,6 @@ import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.automation.tiktok.TikTokCaptureBridge
 import com.cayxu.app.automation.tiktok.TikTokCaptureOverlayService
 import com.cayxu.app.automation.tiktok.TikTokCaptureState
-import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
@@ -95,15 +94,6 @@ fun GolikeAddAccountBottomSheet(
                     isScanningTikTok = false
                     val clean = state.handle.trim().removePrefix("@")
                     usernameOrUid = clean
-                    try {
-                        TikTokAccountsStore.addFromCapture(
-                            context = context,
-                            handle = clean,
-                            displayName = state.displayName.ifBlank { clean },
-                            avatarUrl = state.avatarUrl,
-                            variant = state.variant
-                        )
-                    } catch (_: Exception) {}
                     if (platform.lowercase() == "tiktok" && clean.isNotBlank()) {
                         val gAcc = GolikeAccount(
                             id = clean,
@@ -129,27 +119,17 @@ fun GolikeAddAccountBottomSheet(
                         usernameOrUid = clean
                         state.accounts.forEach { entry ->
                             val h = entry.handle.ifBlank { entry.displayName }.trim().removePrefix("@")
-                            if (h.isNotBlank()) {
-                                try {
-                                    TikTokAccountsStore.addFromCapture(
-                                        context = context,
-                                        handle = h,
-                                        displayName = entry.displayName,
-                                        variant = state.variant
-                                    )
-                                } catch (_: Exception) {}
-                                if (platform.lowercase() == "tiktok") {
-                                    val gAcc = GolikeAccount(
-                                        id = h,
-                                        platform = "tiktok",
-                                        username = entry.displayName.ifBlank { h },
-                                        avatar = "",
-                                        isLive = true,
-                                        isGolikeLinked = false,
-                                        lastStatus = "Cần liên kết Golike"
-                                    )
-                                    GolikeAccountsStore.addOrUpdateAccount(context, gAcc)
-                                }
+                            if (h.isNotBlank() && platform.lowercase() == "tiktok") {
+                                val gAcc = GolikeAccount(
+                                    id = h,
+                                    platform = "tiktok",
+                                    username = entry.displayName.ifBlank { h },
+                                    avatar = "",
+                                    isLive = true,
+                                    isGolikeLinked = false,
+                                    lastStatus = "Cần liên kết Golike"
+                                )
+                                GolikeAccountsStore.addOrUpdateAccount(context, gAcc)
                             }
                         }
                     }
@@ -192,6 +172,8 @@ fun GolikeAddAccountBottomSheet(
             return
         }
 
+        // Đánh dấu cờ quét tài khoản cho Golike
+        GolikeAccountsStore.setScanningTikTok(context, true)
         // Tái sử dụng nguyên bản Màn nổi kiểm tra TikTok của XSMM
         com.cayxu.app.ui.overlay.xsmm.startXsmmVerifyTikTokAccount(context, variant)
         onDismiss()
