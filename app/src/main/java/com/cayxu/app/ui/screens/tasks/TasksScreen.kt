@@ -1,5 +1,6 @@
 package com.cayxu.app.ui.screens.tasks
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,94 +31,87 @@ import androidx.navigation.NavController
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.theme.*
 
-private data class TaskPlatformItem(
+private data class FigmaTaskPlatform(
     val id: String,
     val name: String,
-    val subtitle: String,
+    val description: String,
     val icon: ImageVector,
     val iconBg: Color,
     val iconTint: Color,
     val onClick: (NavController, android.content.Context) -> Unit
 )
 
-private val platformItems = listOf(
-    TaskPlatformItem(
-        id = "xsmm",
-        name = "XSMM",
-        subtitle = "Tăng tương tác Facebook, TikTok đa kênh chuyên nghiệp.",
-        icon = Icons.Outlined.CheckCircle,
-        iconBg = Color(0xFFEFF6FF),
-        iconTint = Color(0xFF2563EB),
-        onClick = { navController, context ->
-            val isXsmmLoggedIn = com.cayxu.app.data.local.XsmmAccountStore.isLoggedIn(context)
-            if (isXsmmLoggedIn) {
-                com.cayxu.app.ui.screens.xsmm.XsmmSession.restore(context)
-            }
-            val route = if (isXsmmLoggedIn || com.cayxu.app.ui.screens.xsmm.XsmmSession.isLoggedIn.value) {
-                Routes.XSMM_ACCOUNT
-            } else {
-                Routes.XSMM_LOGIN
-            }
-            navController.navigate(route) { launchSingleTop = true }
-        }
-    ),
-    TaskPlatformItem(
-        id = "golike",
-        name = "Golike",
-        subtitle = "Nhiệm vụ tương tác kiếm tiền mạng xã hội đa kênh.",
-        icon = Icons.Outlined.Star,
-        iconBg = Color(0xFFFEF3C7),
-        iconTint = Color(0xFFD97706),
-        onClick = { navController, context ->
-            com.cayxu.app.ui.screens.golike.GolikeSession.restore(context)
+private val figmaPlatforms = listOf(
+    FigmaTaskPlatform(
+        id = "instagram",
+        name = "Instagram",
+        description = "Theo dõi và thích bài viết để nhận điểm.",
+        icon = Icons.Outlined.PhotoCamera,
+        iconBg = Color(0xFFFDF2F8),
+        iconTint = Color(0xFFE1306C),
+        onClick = { navController, _ ->
             navController.navigate(Routes.GOLIKE_ACCOUNT) { launchSingleTop = true }
         }
     ),
-    TaskPlatformItem(
-        id = "tuongtaccheo_tiktok",
-        name = "TikTok TTC",
-        subtitle = "Xem và tương tác với video yêu thích nhận thưởng.",
-        icon = Icons.Outlined.PlayCircle,
-        iconBg = Color(0xFFF1F5F9),
-        iconTint = Color(0xFF0F172A),
+    FigmaTaskPlatform(
+        id = "tiktok",
+        name = "TikTok",
+        description = "Xem và tương tác với video yêu thích.",
+        icon = Icons.Outlined.MusicNote,
+        iconBg = Color(0xFF0F172A),
+        iconTint = Color.White,
         onClick = { navController, _ ->
             navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK) { launchSingleTop = true }
         }
     ),
-    TaskPlatformItem(
-        id = "tuongtaccheo",
-        name = "Tuongtaccheo",
-        subtitle = "Tương tác chéo giữa các nền tảng mạng xã hội.",
-        icon = Icons.Outlined.FavoriteBorder,
-        iconBg = Color(0xFFFDF2F8),
-        iconTint = Color(0xFFDB2777),
+    FigmaTaskPlatform(
+        id = "facebook",
+        name = "Facebook",
+        description = "Thích và theo dõi những trang mới.",
+        icon = Icons.Outlined.ThumbUp,
+        iconBg = Color(0xFFEFF6FF),
+        iconTint = Color(0xFF1877F2),
         onClick = { navController, _ ->
-            navController.navigate(Routes.simpleTaskPlatform("Tuongtaccheo")) { launchSingleTop = true }
+            navController.navigate(Routes.simpleTaskPlatform("Facebook")) { launchSingleTop = true }
         }
     ),
-    TaskPlatformItem(
-        id = "nhiemvucheo",
-        name = "Nhiemvucheo",
-        subtitle = "Tăng sub, view, tương tác đa kênh tự động.",
-        icon = Icons.Outlined.Sync,
-        iconBg = Color(0xFFE0E7FF),
-        iconTint = Color(0xFF4F46E5),
-        onClick = { navController, _ ->
-            navController.navigate(Routes.simpleTaskPlatform("Nhiemvucheo")) { launchSingleTop = true }
+    FigmaTaskPlatform(
+        id = "youtube",
+        name = "YouTube",
+        description = "Xem video và đăng ký kênh sáng tạo.",
+        icon = Icons.Outlined.PlayArrow,
+        iconBg = Color(0xFFFEF2F2),
+        iconTint = Color(0xFFEF4444),
+        onClick = { _, context ->
+            Toast.makeText(context, "Nhiệm vụ YouTube đang được tối ưu", Toast.LENGTH_SHORT).show()
+        }
+    ),
+    FigmaTaskPlatform(
+        id = "twitter",
+        name = "X / Twitter",
+        description = "Theo dõi và thích bài đăng cộng đồng.",
+        icon = Icons.Outlined.Tag,
+        iconBg = Color(0xFFF1F5F9),
+        iconTint = Color(0xFF0F172A),
+        onClick = { _, context ->
+            Toast.makeText(context, "Nhiệm vụ X / Twitter đang được tối ưu", Toast.LENGTH_SHORT).show()
         }
     )
 )
 
+/**
+ * MÀN HÌNH DANH SÁCH NHIỆM VỤ — CHUẨN FIGMA 100% (SCREEN 14)
+ */
 @Composable
 fun TasksScreen(navController: NavController) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
 
     val filteredList = remember(searchQuery) {
-        platformItems.filter { item ->
+        figmaPlatforms.filter { item ->
             searchQuery.isBlank() ||
                     item.name.contains(searchQuery, ignoreCase = true) ||
-                    item.subtitle.contains(searchQuery, ignoreCase = true)
+                    item.description.contains(searchQuery, ignoreCase = true)
         }
     }
 
@@ -135,7 +129,7 @@ fun TasksScreen(navController: NavController) {
         ) {
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 1. Ô TÌM KIẾM CHUẨN FIGMA FRAME 14
+            // 1. Ô TÌM KIẾM CHUẨN FIGMA SCREEN 14
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = CardWhite,
@@ -162,7 +156,7 @@ fun TasksScreen(navController: NavController) {
                             Text(
                                 text = "Tìm nhiệm vụ, nền tảng...",
                                 fontSize = 15.sp,
-                                color = TextSecondary
+                                color = TextSecondary.copy(alpha = 0.8f)
                             )
                         }
                         BasicTextField(
@@ -183,7 +177,7 @@ fun TasksScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 2. TIÊU ĐỀ: DÀNH CHO BẠN (FIGMA FRAME 14)
+            // 2. TIÊU ĐỀ: DÀNH CHO BẠN (FIGMA SCREEN 14)
             Text(
                 text = "Dành cho bạn",
                 fontSize = 20.sp,
@@ -193,7 +187,7 @@ fun TasksScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 3. GRID 2 CỘT CHUẨN FIGMA
+            // 3. GRID 2 CỘT CHUẨN FIGMA (INSTAGRAM, TIKTOK, FACEBOOK, YOUTUBE, X/TWITTER)
             val chunkedItems = filteredList.chunked(2)
             chunkedItems.forEach { rowItems ->
                 Row(
@@ -202,7 +196,7 @@ fun TasksScreen(navController: NavController) {
                 ) {
                     rowItems.forEach { item ->
                         Box(modifier = Modifier.weight(1f)) {
-                            FigmaGridPlatformCard(
+                            FigmaPlatformGridCard(
                                 item = item,
                                 onClick = { item.onClick(navController, context) }
                             )
@@ -221,8 +215,8 @@ fun TasksScreen(navController: NavController) {
 }
 
 @Composable
-private fun FigmaGridPlatformCard(
-    item: TaskPlatformItem,
+private fun FigmaPlatformGridCard(
+    item: FigmaTaskPlatform,
     onClick: () -> Unit
 ) {
     Card(
@@ -240,7 +234,7 @@ private fun FigmaGridPlatformCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Icon & Chevron row
+            // Hàng Icon + Mũi tên >
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -264,7 +258,7 @@ private fun FigmaGridPlatformCard(
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
                     contentDescription = null,
-                    tint = TextSecondary.copy(alpha = 0.6f),
+                    tint = TextSecondary.copy(alpha = 0.5f),
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -281,7 +275,7 @@ private fun FigmaGridPlatformCard(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = item.subtitle,
+                text = item.description,
                 fontSize = 12.5.sp,
                 color = TextSecondary,
                 lineHeight = 17.sp,
