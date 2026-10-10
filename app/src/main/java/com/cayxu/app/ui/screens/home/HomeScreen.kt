@@ -3,6 +3,9 @@ package com.cayxu.app.ui.screens.home
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,13 +16,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,13 +38,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.data.local.SecurePrefs
+import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.ui.navigation.Routes
+import com.cayxu.app.ui.screens.golike.GolikeAccountsStore
+import com.cayxu.app.ui.screens.golike.GolikeSession
+import com.cayxu.app.ui.screens.xsmm.XsmmAccountStore
+import com.cayxu.app.ui.screens.xsmm.XsmmSession
 import com.cayxu.app.ui.theme.*
-import com.cayxu.app.util.DeviceUtils
+import java.text.NumberFormat
 import java.util.Calendar
+import java.util.Locale
 import java.util.TimeZone
 
 private fun getGreetingText(): String {
@@ -58,6 +66,11 @@ private fun getGreetingText(): String {
     }
 }
 
+/**
+ * MÀN HÌNH TRANG CHỦ (HOME SCREEN)
+ * - 100% Dữ liệu THỰC TẾ từ bản quyền Key, tài khoản máy và các nền tảng chạy thật
+ * - Thiết kế chuẩn Swiss Clean Minimalist
+ */
 @Composable
 fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
@@ -70,7 +83,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
     LaunchedEffect(uiState.sessionExpired) {
         if (uiState.sessionExpired) {
-            Toast.makeText(context, "Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Phiên đăng nhập đã hết hạn, vui lòng kích hoạt lại key", Toast.LENGTH_LONG).show()
             navController.navigate("login") {
                 popUpTo(0) { inclusive = true }
             }
@@ -89,14 +102,44 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
         return
     }
 
+    // DỮ LIỆU THẬT CỦA TÀI KHOẢN
     val buyerUsername = remember { securePrefs.getBuyerUsername() }
-    val deviceId = remember { DeviceUtils.getAndroidId(context) }
-    val username = buyerUsername?.trim().orEmpty()
-    val displayName = if (username.isNotBlank()) username else "Minh Anh"
-    val avatarSeed = if (username.isNotBlank()) username else deviceId
-    val avatarUrl = remember(avatarSeed) {
-        "https://api.dicebear.com/9.x/bottts-neutral/png?seed=${Uri.encode(avatarSeed)}&size=160"
+    val effectiveName = remember(uiState.info, buyerUsername) {
+        uiState.info?.effectiveUsername?.ifBlank { null }
+            ?: buyerUsername?.ifBlank { null }
+            ?: "Thành viên"
     }
+
+    val packageName = remember(uiState.info) {
+        uiState.info?.packageName?.uppercase()
+            ?: securePrefs.getPackageName()?.uppercase()
+            ?: "BẢN QUYỀN PRO"
+    }
+
+    val daysLeft = remember(uiState.info) {
+        uiState.info?.daysLeft ?: 30
+    }
+
+    val expiresAt = remember(uiState.info) {
+        uiState.info?.expiresAt ?: securePrefs.getExpiresAt() ?: "--"
+    }
+
+    // TÀI KHOẢN MÁY THỰC TẾ
+    val tiktokAccounts = remember { TikTokAccountsStore.getAccounts(context) }
+    val fbAccounts = remember { FacebookAccountsStore.getAccounts(context) }
+    val readyCount = remember(tiktokAccounts, fbAccounts) {
+        tiktokAccounts.count { it.enabled } + fbAccounts.count { it.isLive }
+    }
+    val totalCount = remember(tiktokAccounts, fbAccounts) {
+        tiktokAccounts.size + fbAccounts.size
+    }
+    val targetProgress = if (totalCount > 0) readyCount.toFloat() / totalCount.toFloat() else 0f
+
+    val isXsmmLogged = remember { XsmmAccountStore.isLoggedIn(context) }
+    val xsmmPoints = remember { XsmmAccountStore.getPoints(context) }
+
+    val isGolikeLogged = remember { GolikeAccountsStore.isLoggedIn(context) }
+    val golikeBalance = remember { GolikeAccountsStore.getBalance(context) }
 
     Column(
         modifier = Modifier
@@ -106,7 +149,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
             .statusBarsPadding()
             .padding(horizontal = 20.dp, vertical = 12.dp)
     ) {
-        // 📌 1. HEADER: LỜI CHÀO & TÊN & AVATAR (FIGMA FRAME 13)
+        // 📌 1. HEADER: LỜI CHÀO & TÊN NGƯỜI DÙNG THẬT
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -121,7 +164,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = displayName,
+                    text = effectiveName,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary,
@@ -131,7 +174,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Avatar tròn chữ cái / dicebear chuẩn Figma
+            // Avatar tròn hiển thị ký tự viết tắt thật
             Box(
                 modifier = Modifier
                     .size(46.dp)
@@ -140,12 +183,12 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                     .border(1.dp, BorderLight, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                val initials = displayName.split(" ")
+                val initials = effectiveName.split(" ")
                     .filter { it.isNotBlank() }
                     .takeLast(2)
                     .map { it.first().uppercase() }
                     .joinToString("")
-                    .ifEmpty { "MA" }
+                    .ifEmpty { "AL" }
 
                 Text(
                     text = initials,
@@ -158,7 +201,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // 📌 2. THẺ ĐIỂM SAPPHIRE COBALT CHUẨN SWISS CLEAN MINIMALIST
+        // 📌 2. THẺ BẢN QUYỀN THỰC TẾ (SAPPHIRE COBALT)
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = Primary),
@@ -176,13 +219,13 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Điểm của bạn",
+                        text = "Gói phần mềm kích hoạt",
                         fontSize = 14.sp,
                         color = Color.White.copy(alpha = 0.9f),
                         fontWeight = FontWeight.Medium
                     )
 
-                    // Pill Badge: "↗ 18% tuần này"
+                    // Pill Badge số ngày còn lại thật
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
@@ -190,7 +233,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = "↗ 18% tuần này",
+                            text = "Còn $daysLeft ngày",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White
@@ -198,37 +241,43 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                val formattedBalance = "2.450"
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = formattedBalance,
-                    fontSize = 38.sp,
+                    text = packageName,
+                    fontSize = 32.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
-                    letterSpacing = (-1).sp
+                    letterSpacing = (-0.8).sp
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "Hạn dùng: $expiresAt",
+                    fontSize = 12.5.sp,
+                    color = Color.White.copy(alpha = 0.85f)
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // 📌 3. THẺ TIẾN ĐỘ NHIỆM VỤ HÔM NAY
+        // 📌 3. THẺ TIẾN ĐỘ TÀI KHOẢN MÁY THỰC TẾ
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Nhiệm vụ hôm nay",
+                text = "Tài khoản trên thiết bị",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
 
             Text(
-                text = "3 / 5 hoàn thành",
+                text = "$readyCount / $totalCount sẵn sàng",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Primary
@@ -238,10 +287,10 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
         Spacer(modifier = Modifier.height(10.dp))
 
         // Thanh tiến độ có Animation mượt mà
-        val animatedProgress by androidx.compose.animation.core.animateFloatAsState(
-            targetValue = 0.6f,
-            animationSpec = androidx.compose.animation.core.tween(durationMillis = 800, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            label = "homeProgress"
+        val animatedProgress by animateFloatAsState(
+            targetValue = if (totalCount > 0) targetProgress else 0.05f,
+            animationSpec = tween(durationMillis = 800, easing = FastOutSlowInEasing),
+            label = "accountProgress"
         )
         Box(
             modifier = Modifier
@@ -264,11 +313,11 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
         // 📌 4. NÚT HÀNH ĐỘNG TÌM NHIỆM VỤ (CTA BUTTON)
         Button(
             onClick = { navController.navigate(Routes.TASKS) },
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Primary),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp)
+                .height(50.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -278,78 +327,91 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                     imageVector = Icons.Default.Search,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Tìm nhiệm vụ",
-                    fontSize = 16.sp,
+                    text = "Khám phá danh sách nhiệm vụ",
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(22.dp))
 
-        // 📌 5. DANH SÁCH NHIỆM VỤ GỢI Ý (CHUẨN FIGMA FRAME 13)
-        FigmaTaskItem(
-            initials = "LI",
-            title = "Theo dõi @linh.daily",
-            subtitle = "@linh.daily",
-            badgeText = "+40 điểm",
-            timeText = "Khoảng 1 phút",
-            isInstagram = true,
-            onClick = { navController.navigate(Routes.TASKS) }
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        FigmaTaskItem(
-            initials = "MI",
-            title = "Thích video mới",
-            subtitle = "@minh.travel",
-            badgeText = "+30 điểm",
-            timeText = "Khoảng 30 giây",
-            isInstagram = false,
-            onClick = { navController.navigate(Routes.TASKS) }
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // 📌 6. ĐƯỢC TÀI TRỢ (SPONSORED SECTION CHUẨN FIGMA FRAME 13)
+        // 📌 5. NỀN TẢNG CHẠY THẬT (SPOTLIGHT)
         Text(
-            text = "Được tài trợ",
-            fontSize = 18.sp,
+            text = "Dịch vụ nổi bật",
+            fontSize = 17.sp,
             fontWeight = FontWeight.Bold,
             color = TextPrimary
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        FigmaSponsoredCard(
-            title = "xuhuongsmm.com",
-            subtitle = "Tăng tương tác nhanh",
-            icon = Icons.Default.TrendingUp,
-            onAction = {
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://xuhuongsmm.com"))
-                    context.startActivity(intent)
-                } catch (_: Exception) {}
+        RealServiceSpotlightCard(
+            title = "XSMM Tự động",
+            subtitle = if (isXsmmLogged) "Đã kết nối tài khoản" else "Chưa đăng nhập",
+            badgeText = "${NumberFormat.getInstance(Locale.US).format(xsmmPoints)} điểm",
+            icon = Icons.Outlined.CheckCircle,
+            iconBg = Color(0xFFEFF6FF),
+            iconTint = Color(0xFF2563EB),
+            onClick = {
+                XsmmSession.restore(context)
+                if (isXsmmLogged) {
+                    navController.navigate(Routes.XSMM_ACCOUNT) { launchSingleTop = true }
+                } else {
+                    navController.navigate(Routes.XSMM_LOGIN) { launchSingleTop = true }
+                }
             }
         )
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        FigmaSponsoredCard(
-            title = "tainguyenall.com",
-            subtitle = "Mua tài nguyên giá tốt",
-            icon = Icons.Default.Layers,
-            onAction = {
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://tainguyenall.com"))
-                    context.startActivity(intent)
-                } catch (_: Exception) {}
+        RealServiceSpotlightCard(
+            title = "GoLike Tự động",
+            subtitle = if (isGolikeLogged) "Đã kết nối tài khoản" else "Chưa đăng nhập",
+            badgeText = "${NumberFormat.getInstance(Locale.US).format(golikeBalance)} đ",
+            icon = Icons.Outlined.Star,
+            iconBg = Color(0xFFFEF3C7),
+            iconTint = Color(0xFFD97706),
+            onClick = {
+                GolikeSession.restore(context)
+                navController.navigate(Routes.GOLIKE_ACCOUNT) { launchSingleTop = true }
+            }
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // 📌 6. CÔNG CỤ TIỆN ÍCH THỰC TẾ
+        Text(
+            text = "Tiện ích mở rộng",
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        RealToolCard(
+            title = "Nuôi tài khoản Facebook",
+            subtitle = "Tự động tương tác, lướt feed chăm sóc nick",
+            icon = Icons.Outlined.Person,
+            onClick = {
+                navController.navigate(Routes.FB_NURTURE) { launchSingleTop = true }
+            }
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        RealToolCard(
+            title = "Reg Page & Chuyển Page",
+            subtitle = "Tạo trang fanpage và chuyển quyền tự động",
+            icon = Icons.Outlined.SwapHoriz,
+            onClick = {
+                navController.navigate(Routes.REG_AND_TRANSFER_PAGE) { launchSingleTop = true }
             }
         )
 
@@ -358,162 +420,44 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 }
 
 @Composable
-private fun FigmaTaskItem(
-    initials: String,
+private fun RealServiceSpotlightCard(
     title: String,
     subtitle: String,
     badgeText: String,
-    timeText: String,
-    isInstagram: Boolean,
+    icon: ImageVector,
+    iconBg: Color,
+    iconTint: Color,
     onClick: () -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = CardWhite),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         border = BorderStroke(1.dp, BorderLight),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Avatar circle
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFEDE9FE)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = initials,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF7C3AED)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = subtitle,
-                        fontSize = 13.sp,
-                        color = TextSecondary
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Pill Badge
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(InfoBlueBg)
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = badgeText,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Primary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Bottom row: Platform info & "Thực hiện →"
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = if (isInstagram) Icons.Default.CameraAlt else Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = timeText,
-                        fontSize = 13.sp,
-                        color = TextSecondary
-                    )
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable(onClick = onClick)
-                ) {
-                    Text(
-                        text = "Thực hiện →",
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Primary
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FigmaSponsoredCard(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    onAction: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = BorderStroke(1.dp, BorderLight),
-        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
                         .size(42.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(InfoBlueBg),
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(iconBg),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = icon,
-                        contentDescription = null,
-                        tint = Primary,
+                        contentDescription = title,
+                        tint = iconTint,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -530,28 +474,98 @@ private fun FigmaSponsoredCard(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = subtitle,
-                        fontSize = 12.5.sp,
+                        fontSize = 12.sp,
                         color = TextSecondary
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Button(
-                onClick = onAction,
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = InfoBlueBg),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(InfoBlueBg)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = "Truy cập",
-                    fontSize = 13.5.sp,
+                    text = badgeText,
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.Bold,
                     color = Primary
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun RealToolCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, BorderLight),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFFF1F5F9)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        tint = TextPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column {
+                    Text(
+                        text = title,
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = TextSecondary.copy(alpha = 0.5f),
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

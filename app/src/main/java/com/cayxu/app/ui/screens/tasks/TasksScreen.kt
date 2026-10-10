@@ -1,6 +1,6 @@
 package com.cayxu.app.ui.screens.tasks
 
-import android.widget.Toast
+import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,79 +28,121 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.cayxu.app.data.local.TikTokAccountsStore
+import com.cayxu.app.data.local.TtcAccountsStore
 import com.cayxu.app.ui.navigation.Routes
+import com.cayxu.app.ui.screens.golike.GolikeAccountsStore
+import com.cayxu.app.ui.screens.golike.GolikeSession
+import com.cayxu.app.ui.screens.xsmm.XsmmAccountStore
+import com.cayxu.app.ui.screens.xsmm.XsmmSession
 import com.cayxu.app.ui.theme.*
+import java.text.NumberFormat
+import java.util.Locale
 
-private data class FigmaTaskPlatform(
+private data class RealTaskPlatform(
     val id: String,
     val name: String,
     val description: String,
+    val badgeProducer: (Context) -> String,
     val icon: ImageVector,
     val iconBg: Color,
     val iconTint: Color,
-    val onClick: (NavController, android.content.Context) -> Unit
+    val onClick: (NavController, Context) -> Unit
 )
 
-private val figmaPlatforms = listOf(
-    FigmaTaskPlatform(
-        id = "instagram",
-        name = "Instagram",
-        description = "Theo dõi và thích bài viết để nhận điểm.",
-        icon = Icons.Outlined.PhotoCamera,
-        iconBg = Color(0xFFFDF2F8),
-        iconTint = Color(0xFFE1306C),
-        onClick = { navController, _ ->
+private val realPlatforms = listOf(
+    RealTaskPlatform(
+        id = "xsmm",
+        name = "XSMM",
+        description = "Tăng tương tác Facebook, TikTok đa kênh tự động.",
+        badgeProducer = { ctx ->
+            if (XsmmAccountStore.isLoggedIn(ctx)) {
+                val pts = XsmmAccountStore.getPoints(ctx)
+                "${NumberFormat.getInstance(Locale.US).format(pts)} điểm"
+            } else {
+                "Chưa kết nối"
+            }
+        },
+        icon = Icons.Outlined.CheckCircle,
+        iconBg = Color(0xFFEFF6FF),
+        iconTint = Color(0xFF2563EB),
+        onClick = { navController, ctx ->
+            XsmmSession.restore(ctx)
+            if (XsmmAccountStore.isLoggedIn(ctx)) {
+                navController.navigate(Routes.XSMM_ACCOUNT) { launchSingleTop = true }
+            } else {
+                navController.navigate(Routes.XSMM_LOGIN) { launchSingleTop = true }
+            }
+        }
+    ),
+    RealTaskPlatform(
+        id = "golike",
+        name = "GoLike",
+        description = "Làm nhiệm vụ kiếm tiền mạng xã hội TikTok, Instagram.",
+        badgeProducer = { ctx ->
+            if (GolikeAccountsStore.isLoggedIn(ctx)) {
+                val bal = GolikeAccountsStore.getBalance(ctx)
+                "${NumberFormat.getInstance(Locale.US).format(bal)} đ"
+            } else {
+                "Chưa kết nối"
+            }
+        },
+        icon = Icons.Outlined.Star,
+        iconBg = Color(0xFFFEF3C7),
+        iconTint = Color(0xFFD97706),
+        onClick = { navController, ctx ->
+            GolikeSession.restore(ctx)
             navController.navigate(Routes.GOLIKE_ACCOUNT) { launchSingleTop = true }
         }
     ),
-    FigmaTaskPlatform(
-        id = "tiktok",
-        name = "TikTok",
-        description = "Xem và tương tác với video yêu thích.",
-        icon = Icons.Outlined.MusicNote,
-        iconBg = Color(0xFF0F172A),
-        iconTint = Color.White,
+    RealTaskPlatform(
+        id = "tuongtaccheo_tiktok",
+        name = "TikTok TTC",
+        description = "Tự động nhận job và chạy tương tác TikTok qua Accessibility.",
+        badgeProducer = { ctx ->
+            val count = TikTokAccountsStore.getAccounts(ctx).size
+            if (count > 0) "$count tài khoản" else "Chưa có acc"
+        },
+        icon = Icons.Outlined.PlayCircle,
+        iconBg = Color(0xFFF1F5F9),
+        iconTint = Color(0xFF0F172A),
         onClick = { navController, _ ->
             navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK) { launchSingleTop = true }
         }
     ),
-    FigmaTaskPlatform(
-        id = "facebook",
-        name = "Facebook",
-        description = "Thích và theo dõi những trang mới.",
-        icon = Icons.Outlined.ThumbUp,
-        iconBg = Color(0xFFEFF6FF),
-        iconTint = Color(0xFF1877F2),
+    RealTaskPlatform(
+        id = "tuongtaccheo",
+        name = "Tuongtaccheo",
+        description = "Trao đổi sub, like, tương tác đa kênh tự động.",
+        badgeProducer = { ctx ->
+            val count = TtcAccountsStore.getAccounts(ctx).size
+            if (count > 0) "$count tài khoản" else "Sẵn sàng"
+        },
+        icon = Icons.Outlined.FavoriteBorder,
+        iconBg = Color(0xFFFDF2F8),
+        iconTint = Color(0xFFDB2777),
         onClick = { navController, _ ->
-            navController.navigate(Routes.simpleTaskPlatform("Facebook")) { launchSingleTop = true }
+            navController.navigate(Routes.simpleTaskPlatform("Tuongtaccheo")) { launchSingleTop = true }
         }
     ),
-    FigmaTaskPlatform(
-        id = "youtube",
-        name = "YouTube",
-        description = "Xem video và đăng ký kênh sáng tạo.",
-        icon = Icons.Outlined.PlayArrow,
-        iconBg = Color(0xFFFEF2F2),
-        iconTint = Color(0xFFEF4444),
-        onClick = { _, context ->
-            Toast.makeText(context, "Nhiệm vụ YouTube đang được tối ưu", Toast.LENGTH_SHORT).show()
-        }
-    ),
-    FigmaTaskPlatform(
-        id = "twitter",
-        name = "X / Twitter",
-        description = "Theo dõi và thích bài đăng cộng đồng.",
-        icon = Icons.Outlined.Tag,
-        iconBg = Color(0xFFF1F5F9),
-        iconTint = Color(0xFF0F172A),
-        onClick = { _, context ->
-            Toast.makeText(context, "Nhiệm vụ X / Twitter đang được tối ưu", Toast.LENGTH_SHORT).show()
+    RealTaskPlatform(
+        id = "nhiemvucheo",
+        name = "Nhiemvucheo",
+        description = "Tăng sub, view, tương tác đa kênh tự động nhanh chóng.",
+        badgeProducer = { _ -> "Sẵn sàng" },
+        icon = Icons.Outlined.Sync,
+        iconBg = Color(0xFFE0E7FF),
+        iconTint = Color(0xFF4F46E5),
+        onClick = { navController, _ ->
+            navController.navigate(Routes.simpleTaskPlatform("Nhiemvucheo")) { launchSingleTop = true }
         }
     )
 )
 
 /**
- * MÀN HÌNH DANH SÁCH NHIỆM VỤ — CHUẨN FIGMA 100% (SCREEN 14)
+ * MÀN HÌNH DANH SÁCH NHIỆM VỤ (TASKS SCREEN)
+ * - 100% Chức năng THỰC TẾ của AutoLunex
+ * - Thiết kế chuẩn Swiss Clean Minimalist
  */
 @Composable
 fun TasksScreen(navController: NavController) {
@@ -108,7 +150,7 @@ fun TasksScreen(navController: NavController) {
     var searchQuery by remember { mutableStateOf("") }
 
     val filteredList = remember(searchQuery) {
-        figmaPlatforms.filter { item ->
+        realPlatforms.filter { item ->
             searchQuery.isBlank() ||
                     item.name.contains(searchQuery, ignoreCase = true) ||
                     item.description.contains(searchQuery, ignoreCase = true)
@@ -129,9 +171,9 @@ fun TasksScreen(navController: NavController) {
         ) {
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 1. Ô TÌM KIẾM CHUẨN FIGMA SCREEN 14
+            // 1. Ô TÌM KIẾM CHUẨN SWISS
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
                 color = CardWhite,
                 border = BorderStroke(1.dp, BorderLight),
                 modifier = Modifier
@@ -154,9 +196,9 @@ fun TasksScreen(navController: NavController) {
                     Box(modifier = Modifier.weight(1f)) {
                         if (searchQuery.isEmpty()) {
                             Text(
-                                text = "Tìm nhiệm vụ, nền tảng...",
+                                text = "Tìm dịch vụ, nền tảng nhiệm vụ...",
                                 fontSize = 15.sp,
-                                color = TextSecondary.copy(alpha = 0.8f)
+                                color = TextSecondary.copy(alpha = 0.7f)
                             )
                         }
                         BasicTextField(
@@ -177,17 +219,31 @@ fun TasksScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 2. TIÊU ĐỀ: DÀNH CHO BẠN (FIGMA SCREEN 14)
-            Text(
-                text = "Dành cho bạn",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            )
+            // 2. TIÊU ĐỀ SECTION
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Nền tảng nhiệm vụ",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    letterSpacing = (-0.3).sp
+                )
+
+                Text(
+                    text = "${filteredList.size} dịch vụ",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Primary
+                )
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 3. GRID 2 CỘT CHUẨN FIGMA (INSTAGRAM, TIKTOK, FACEBOOK, YOUTUBE, X/TWITTER)
+            // 3. GRID 2 CỘT HIỂN THỊ CÁC DỊCH VỤ THẬT
             val chunkedItems = filteredList.chunked(2)
             chunkedItems.forEach { rowItems ->
                 Row(
@@ -196,8 +252,9 @@ fun TasksScreen(navController: NavController) {
                 ) {
                     rowItems.forEach { item ->
                         Box(modifier = Modifier.weight(1f)) {
-                            FigmaPlatformGridCard(
+                            RealPlatformGridCard(
                                 item = item,
+                                badgeText = item.badgeProducer(context),
                                 onClick = { item.onClick(navController, context) }
                             )
                         }
@@ -215,18 +272,19 @@ fun TasksScreen(navController: NavController) {
 }
 
 @Composable
-private fun FigmaPlatformGridCard(
-    item: FigmaTaskPlatform,
+private fun RealPlatformGridCard(
+    item: RealTaskPlatform,
+    badgeText: String,
     onClick: () -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = CardWhite),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         border = BorderStroke(1.dp, BorderLight),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
     ) {
         Column(
@@ -234,7 +292,7 @@ private fun FigmaPlatformGridCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Hàng Icon + Mũi tên >
+            // Icon & Chevron row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -259,11 +317,11 @@ private fun FigmaPlatformGridCard(
                     imageVector = Icons.Default.ChevronRight,
                     contentDescription = null,
                     tint = TextSecondary.copy(alpha = 0.5f),
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Text(
                 text = item.name,
@@ -276,12 +334,31 @@ private fun FigmaPlatformGridCard(
 
             Text(
                 text = item.description,
-                fontSize = 12.5.sp,
+                fontSize = 12.sp,
                 color = TextSecondary,
-                lineHeight = 17.sp,
+                lineHeight = 16.5.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Badge trạng thái thật
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(InfoBlueBg)
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = badgeText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }

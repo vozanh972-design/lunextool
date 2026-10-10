@@ -1,5 +1,7 @@
 package com.cayxu.app.ui.screens.wallet
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -8,7 +10,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -21,66 +22,52 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.cayxu.app.data.local.FacebookAccountsStore
+import com.cayxu.app.data.local.TikTokAccountsStore
+import com.cayxu.app.data.local.TtcAccountsStore
+import com.cayxu.app.ui.navigation.Routes
+import com.cayxu.app.ui.screens.golike.GolikeAccountsStore
+import com.cayxu.app.ui.screens.golike.GolikeSession
+import com.cayxu.app.ui.screens.xsmm.XsmmAccountStore
+import com.cayxu.app.ui.screens.xsmm.XsmmSession
 import com.cayxu.app.ui.theme.*
+import java.text.NumberFormat
+import java.util.Locale
 
-private data class WalletTransactionItem(
-    val title: String,
-    val time: String,
-    val amount: String,
-    val isPositive: Boolean,
-    val icon: ImageVector,
-    val iconBg: Color,
-    val iconTint: Color
-)
-
-private val sampleTransactions = listOf(
-    WalletTransactionItem(
-        title = "Theo dõi Instagram",
-        time = "Hôm nay, 10:24",
-        amount = "+40 điểm",
-        isPositive = true,
-        icon = Icons.Outlined.PersonAdd,
-        iconBg = Color(0xFFEAF0FF),
-        iconTint = Color(0xFF2F6BFF)
-    ),
-    WalletTransactionItem(
-        title = "Thích video TikTok",
-        time = "Hôm nay, 09:48",
-        amount = "+30 điểm",
-        isPositive = true,
-        icon = Icons.Outlined.FavoriteBorder,
-        iconBg = Color(0xFFEAF0FF),
-        iconTint = Color(0xFF2F6BFF)
-    ),
-    WalletTransactionItem(
-        title = "Đổi thẻ điện thoại",
-        time = "Hôm qua, 18:12",
-        amount = "-1.000 điểm",
-        isPositive = false,
-        icon = Icons.Outlined.CardGiftcard,
-        iconBg = Color(0xFFEDE9FE),
-        iconTint = Color(0xFF7C3AED)
-    ),
-    WalletTransactionItem(
-        title = "Điểm mời bạn bè",
-        time = "Hôm qua, 14:06",
-        amount = "+100 điểm",
-        isPositive = true,
-        icon = Icons.Outlined.Group,
-        iconBg = Color(0xFFEAF0FF),
-        iconTint = Color(0xFF2F6BFF)
-    )
-)
-
+/**
+ * MÀN HÌNH VÍ ĐIỂM (WALLET SCREEN)
+ * - 100% Dữ liệu THỰC TẾ từ các nền tảng XSMM, GoLike, Tuongtaccheo
+ * - Thiết kế chuẩn Swiss Clean Minimalist
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WalletScreen(navController: NavController) {
     val context = LocalContext.current
-    var showWithdrawSheet by remember { mutableStateOf(false) }
+    var showWithdrawDialog by remember { mutableStateOf(false) }
+
+    // Đọc số liệu THỰC TẾ từ các kho lưu trữ
+    val xsmmPoints = remember { XsmmAccountStore.getPoints(context) }
+    val isXsmmLogged = remember { XsmmAccountStore.isLoggedIn(context) }
+    val xsmmUsername = remember { XsmmAccountStore.getUsername(context) }
+
+    val golikeBalance = remember { GolikeAccountsStore.getBalance(context) }
+    val isGolikeLogged = remember { GolikeAccountsStore.isLoggedIn(context) }
+    val golikeUsername = remember { GolikeAccountsStore.getUsername(context) }
+
+    val ttcAccounts = remember { TtcAccountsStore.getAccounts(context) }
+    val ttcCoins = remember(ttcAccounts) { ttcAccounts.sumOf { it.coins } }
+
+    val totalPoints = xsmmPoints + golikeBalance + ttcCoins
+    val formattedTotal = remember(totalPoints) {
+        NumberFormat.getInstance(Locale.US).format(totalPoints)
+    }
+
+    // Hoạt động tài khoản thực tế
+    val tiktokAccounts = remember { TikTokAccountsStore.getAccounts(context) }
+    val facebookAccounts = remember { FacebookAccountsStore.getAccounts(context) }
 
     Box(
         modifier = Modifier
@@ -96,7 +83,7 @@ fun WalletScreen(navController: NavController) {
         ) {
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 1. TIÊU ĐỀ: VÍ ĐIỂM (FIGMA FRAME 22)
+            // 1. TIÊU ĐỀ
             Text(
                 text = "Ví điểm",
                 fontSize = 28.sp,
@@ -107,7 +94,7 @@ fun WalletScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // 2. THẺ TỔNG ĐIỂM HIỆN CÓ (SAPPHIRE COBALT)
+            // 2. THẺ TỔNG ĐIỂM THẬT (SAPPHIRE COBALT)
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = Primary),
@@ -125,8 +112,8 @@ fun WalletScreen(navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Tổng điểm hiện có",
-                            fontSize = 14.5.sp,
+                            text = "Tổng điểm & xu tích lũy",
+                            fontSize = 14.sp,
                             color = Color.White.copy(alpha = 0.9f),
                             fontWeight = FontWeight.Medium
                         )
@@ -139,44 +126,50 @@ fun WalletScreen(navController: NavController) {
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "2.450",
-                        fontSize = 42.sp,
+                        text = formattedTotal,
+                        fontSize = 38.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         letterSpacing = (-1).sp
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "Tổng hợp từ XSMM, GoLike và Tuongtaccheo",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.8f)
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 3. HAI NÚT HÀNH ĐỘNG: ĐỔI QUÀ & RÚT ĐIỂM (FIGMA FRAME 22)
+            // 3. HAI NÚT HÀNH ĐỘNG
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Button(
-                    onClick = {
-                        Toast.makeText(context, "Tính năng Đổi quà đang cập nhật", Toast.LENGTH_SHORT).show()
-                    },
-                    shape = RoundedCornerShape(14.dp),
+                    onClick = { showWithdrawDialog = true },
+                    shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Primary),
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.CardGiftcard,
+                        imageVector = Icons.Outlined.AccountBalanceWallet,
                         contentDescription = null,
                         tint = Color.White,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Đổi quà",
+                        text = "Rút điểm",
                         fontSize = 14.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -184,8 +177,11 @@ fun WalletScreen(navController: NavController) {
                 }
 
                 OutlinedButton(
-                    onClick = { showWithdrawSheet = true },
-                    shape = RoundedCornerShape(14.dp),
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://lunex.io.vn/"))
+                        runCatching { context.startActivity(intent) }
+                    },
+                    shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(1.dp, BorderLight),
                     colors = ButtonDefaults.outlinedButtonColors(containerColor = CardWhite),
                     modifier = Modifier
@@ -193,14 +189,14 @@ fun WalletScreen(navController: NavController) {
                         .height(48.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.NorthEast,
+                        imageVector = Icons.Outlined.ShoppingCart,
                         contentDescription = null,
                         tint = Primary,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Rút điểm",
+                        text = "Nạp / Mua key",
                         fontSize = 14.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = Primary
@@ -210,223 +206,97 @@ fun WalletScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(26.dp))
 
-            // 4. TIÊU ĐỀ: GIAO DỊCH GẦN ĐÂY
+            // 4. TIÊU ĐỀ: CHI TIẾT TỪNG NỀN TẢNG
             Text(
-                text = "Giao dịch gần đây",
+                text = "Chi tiết số dư nền tảng",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // 5. DANH SÁCH GIAO DỊCH (FIGMA FRAME 22)
+            // Danh sách số dư thật từng dịch vụ
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                sampleTransactions.forEach { tx ->
-                    FigmaTransactionItem(item = tx)
-                }
+                // Thẻ XSMM
+                PlatformBalanceCard(
+                    title = "XSMM",
+                    subtitle = if (isXsmmLogged) "@$xsmmUsername (Đã kết nối)" else "Chưa đăng nhập tài khoản",
+                    balanceText = "${NumberFormat.getInstance(Locale.US).format(xsmmPoints)} điểm",
+                    icon = Icons.Outlined.CheckCircle,
+                    iconBg = Color(0xFFEFF6FF),
+                    iconTint = Color(0xFF2563EB),
+                    onClick = {
+                        XsmmSession.restore(context)
+                        if (isXsmmLogged) {
+                            navController.navigate(Routes.XSMM_ACCOUNT) { launchSingleTop = true }
+                        } else {
+                            navController.navigate(Routes.XSMM_LOGIN) { launchSingleTop = true }
+                        }
+                    }
+                )
+
+                // Thẻ GoLike
+                PlatformBalanceCard(
+                    title = "GoLike",
+                    subtitle = if (isGolikeLogged) "@$golikeUsername (Đã kết nối)" else "Chưa đăng nhập tài khoản",
+                    balanceText = "${NumberFormat.getInstance(Locale.US).format(golikeBalance)} đ",
+                    icon = Icons.Outlined.Star,
+                    iconBg = Color(0xFFFEF3C7),
+                    iconTint = Color(0xFFD97706),
+                    onClick = {
+                        GolikeSession.restore(context)
+                        navController.navigate(Routes.GOLIKE_ACCOUNT) { launchSingleTop = true }
+                    }
+                )
+
+                // Thẻ TTC
+                PlatformBalanceCard(
+                    title = "Tuongtaccheo",
+                    subtitle = "${ttcAccounts.size} tài khoản đã thêm",
+                    balanceText = "${NumberFormat.getInstance(Locale.US).format(ttcCoins)} xu",
+                    icon = Icons.Outlined.FavoriteBorder,
+                    iconBg = Color(0xFFFDF2F8),
+                    iconTint = Color(0xFFDB2777),
+                    onClick = {
+                        navController.navigate(Routes.simpleTaskPlatform("Tuongtaccheo")) { launchSingleTop = true }
+                    }
+                )
             }
 
-            Spacer(modifier = Modifier.height(30.dp))
-        }
+            Spacer(modifier = Modifier.height(26.dp))
 
-        // BottomSheet rút tiền (Figma Frame 25: Rút tiền)
-        if (showWithdrawSheet) {
-            WithdrawBottomSheet(onDismiss = { showWithdrawSheet = false })
-        }
-    }
-}
-
-@Composable
-private fun FigmaTransactionItem(item: WalletTransactionItem) {
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = BorderStroke(1.dp, BorderLight),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(item.iconBg),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = item.icon,
-                        contentDescription = null,
-                        tint = item.iconTint,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                Column {
-                    Text(
-                        text = item.title,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = item.time,
-                        fontSize = 12.5.sp,
-                        color = TextSecondary
-                    )
-                }
-            }
-
+            // 5. TIÊU ĐỀ: TÀI KHOẢN VÀ HOẠT ĐỘNG
             Text(
-                text = item.amount,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (item.isPositive) Primary else TextPrimary
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun WithdrawBottomSheet(onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    var pointsToWithdraw by remember { mutableStateOf("2000") }
-    var selectedMethod by remember { mutableStateOf(1) } // 0: Ví điện tử, 1: Ngân hàng
-    var accountNumber by remember { mutableStateOf("") }
-
-    val calculatedMoney = remember(pointsToWithdraw) {
-        val points = pointsToWithdraw.toLongOrNull() ?: 0L
-        val amount = points * 50
-        "%,dđ".format(amount).replace(",", ".")
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = CardWhite,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp)
-        ) {
-            Text(
-                text = "Rút tiền",
-                fontSize = 22.sp,
+                text = "Tài khoản liên kết",
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            Text(
-                text = "Số điểm muốn quy đổi",
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-
-            OutlinedTextField(
-                value = pointsToWithdraw,
-                onValueChange = { pointsToWithdraw = it.filter { ch -> ch.isDigit() } },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Outlined.AutoAwesome,
-                        contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                },
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Primary,
-                    unfocusedBorderColor = BorderLight,
-                    focusedContainerColor = CardWhite,
-                    unfocusedContainerColor = CardWhite
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Thẻ số tiền tương ứng (Figma Frame 25)
-            Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = InfoBlueBg),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            if (tiktokAccounts.isEmpty() && facebookAccounts.isEmpty()) {
+                // Empty State chuẩn Swiss
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardWhite),
+                    border = BorderStroke(1.dp, BorderLight),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = "Số tiền tương ứng",
-                        fontSize = 14.sp,
-                        color = TextSecondary
-                    )
-                    Text(
-                        text = calculatedMoney,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Primary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            Text(
-                text = "Chọn phương thức nhận",
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Tùy chọn 1: Ví điện tử
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = CardWhite,
-                border = BorderStroke(1.dp, if (selectedMethod == 0) Primary else BorderLight),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { selectedMethod = 0 }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(10.dp))
+                                .size(48.dp)
+                                .clip(CircleShape)
                                 .background(InfoBlueBg),
                             contentAlignment = Alignment.Center
                         ) {
@@ -434,127 +304,245 @@ private fun WithdrawBottomSheet(onDismiss: () -> Unit) {
                                 imageVector = Icons.Outlined.AccountBalanceWallet,
                                 contentDescription = null,
                                 tint = Primary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text("Ví điện tử", fontSize = 14.5.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Text("MoMo · ZaloPay", fontSize = 12.sp, color = TextSecondary)
-                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "Chưa có tài khoản liên kết",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Thêm tài khoản TikTok hoặc Facebook để bắt đầu cày điểm thưởng.",
+                            fontSize = 13.sp,
+                            color = TextSecondary,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
                     }
-                    RadioButton(
-                        selected = selectedMethod == 0,
-                        onClick = { selectedMethod = 0 },
-                        colors = RadioButtonDefaults.colors(selectedColor = Primary)
-                    )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Tùy chọn 2: Ngân hàng
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = CardWhite,
-                border = BorderStroke(1.5.dp, if (selectedMethod == 1) Primary else BorderLight),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { selectedMethod = 1 }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(InfoBlueBg),
-                            contentAlignment = Alignment.Center
+                    tiktokAccounts.take(3).forEach { acc ->
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = CardWhite),
+                            border = BorderStroke(1.dp, BorderLight),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.AccountBalance,
-                                contentDescription = null,
-                                tint = Primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text("Ngân hàng", fontSize = 14.5.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Text("Chuyển khoản nội địa", fontSize = 12.sp, color = TextSecondary)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(Color(0xFFF1F5F9)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.PlayCircle,
+                                            contentDescription = null,
+                                            tint = Color(0xFF0F172A),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = "@${acc.handle.ifBlank { acc.displayName.ifBlank { "TikTok" } }}",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary
+                                        )
+                                        Text(
+                                            text = "Tài khoản TikTok",
+                                            fontSize = 12.sp,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    text = "Đang kết nối",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Primary
+                                )
+                            }
                         }
                     }
-                    RadioButton(
-                        selected = selectedMethod == 1,
-                        onClick = { selectedMethod = 1 },
-                        colors = RadioButtonDefaults.colors(selectedColor = Primary)
-                    )
+
+                    facebookAccounts.take(2).forEach { acc ->
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = CardWhite),
+                            border = BorderStroke(1.dp, BorderLight),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(Color(0xFFEFF6FF)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ThumbUp,
+                                            contentDescription = null,
+                                            tint = Color(0xFF1877F2),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = acc.name.ifBlank { acc.uid },
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary
+                                        )
+                                        Text(
+                                            text = "Tài khoản Facebook",
+                                            fontSize = 12.sp,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    text = if (acc.isLive) "Hoạt động" else "Cần kiểm tra",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (acc.isLive) Primary else DangerRed
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(30.dp))
+        }
+
+        // Dialog hướng dẫn rút tiền
+        if (showWithdrawDialog) {
+            AlertDialog(
+                onDismissRequest = { showWithdrawDialog = false },
+                title = {
+                    Text(
+                        text = "Rút điểm / Xu",
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Số dư được tích lũy trực tiếp tại các nền tảng XSMM, GoLike và Tuongtaccheo. Vui lòng bấm vào từng nền tảng tương ứng để thực hiện rút tiền về MoMo hoặc Ngân hàng của bạn.",
+                        fontSize = 14.sp,
+                        color = TextSecondary,
+                        lineHeight = 20.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { showWithdrawDialog = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Đã hiểu", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlatformBalanceCard(
+    title: String,
+    subtitle: String,
+    balanceText: String,
+    icon: ImageVector,
+    iconBg: Color,
+    iconTint: Color,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, BorderLight),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(iconBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        tint = iconTint,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column {
+                    Text(
+                        text = title,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
 
             Text(
-                text = "Số tài khoản",
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary
+                text = balanceText,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Primary
             )
-            Spacer(modifier = Modifier.height(6.dp))
-
-            OutlinedTextField(
-                value = accountNumber,
-                onValueChange = { accountNumber = it },
-                placeholder = { Text("0123 4567 8928", color = TextSecondary) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Outlined.CreditCard,
-                        contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                },
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Primary,
-                    unfocusedBorderColor = BorderLight,
-                    focusedContainerColor = CardWhite,
-                    unfocusedContainerColor = CardWhite
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Button(
-                onClick = {
-                    if (accountNumber.isBlank()) {
-                        Toast.makeText(context, "Vui lòng nhập số tài khoản", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "Đã gửi yêu cầu rút điểm thành công", Toast.LENGTH_SHORT).show()
-                        onDismiss()
-                    }
-                },
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-            ) {
-                Text(
-                    text = "Xác nhận rút",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
         }
     }
 }
