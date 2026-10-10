@@ -42,9 +42,9 @@ import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.ui.navigation.Routes
+import com.cayxu.app.data.local.XsmmAccountStore
 import com.cayxu.app.ui.screens.golike.GolikeAccountsStore
 import com.cayxu.app.ui.screens.golike.GolikeSession
-import com.cayxu.app.ui.screens.xsmm.XsmmAccountStore
 import com.cayxu.app.ui.screens.xsmm.XsmmSession
 import com.cayxu.app.ui.theme.*
 import java.text.NumberFormat
@@ -354,7 +354,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
         RealServiceSpotlightCard(
             title = "XSMM Tự động",
             subtitle = if (isXsmmLogged) "Đã kết nối tài khoản" else "Chưa đăng nhập",
-            badgeText = "${NumberFormat.getInstance(Locale.US).format(xsmmPoints)} điểm",
+            badgeText = "${NumberFormat.getInstance(Locale.US).format(xsmmPoints.toLong())} điểm",
             icon = Icons.Outlined.CheckCircle,
             iconBg = Color(0xFFEFF6FF),
             iconTint = Color(0xFF2563EB),
@@ -373,7 +373,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
         RealServiceSpotlightCard(
             title = "GoLike Tự động",
             subtitle = if (isGolikeLogged) "Đã kết nối tài khoản" else "Chưa đăng nhập",
-            badgeText = "${NumberFormat.getInstance(Locale.US).format(golikeBalance)} đ",
+            badgeText = "${NumberFormat.getInstance(Locale.US).format(golikeBalance.toLong())} đ",
             icon = Icons.Outlined.Star,
             iconBg = Color(0xFFFEF3C7),
             iconTint = Color(0xFFD97706),

@@ -31,7 +31,7 @@ import com.cayxu.app.data.local.TtcAccountsStore
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.screens.golike.GolikeAccountsStore
 import com.cayxu.app.ui.screens.golike.GolikeSession
-import com.cayxu.app.ui.screens.xsmm.XsmmAccountStore
+import com.cayxu.app.data.local.XsmmAccountStore
 import com.cayxu.app.ui.screens.xsmm.XsmmSession
 import com.cayxu.app.ui.theme.*
 import java.text.NumberFormat
@@ -60,8 +60,8 @@ fun WalletScreen(navController: NavController) {
     val ttcAccounts = remember { TtcAccountsStore.getAccounts(context) }
     val ttcCoins = remember(ttcAccounts) { ttcAccounts.sumOf { it.coins } }
 
-    val totalPoints = xsmmPoints + golikeBalance + ttcCoins
-    val formattedTotal = remember(totalPoints) {
+    val totalPoints: Long = xsmmPoints + golikeBalance + ttcCoins
+    val formattedTotal: String = remember(totalPoints) {
         NumberFormat.getInstance(Locale.US).format(totalPoints)
     }
 
@@ -225,7 +225,7 @@ fun WalletScreen(navController: NavController) {
                 PlatformBalanceCard(
                     title = "XSMM",
                     subtitle = if (isXsmmLogged) "@$xsmmUsername (Đã kết nối)" else "Chưa đăng nhập tài khoản",
-                    balanceText = "${NumberFormat.getInstance(Locale.US).format(xsmmPoints)} điểm",
+                    balanceText = "${NumberFormat.getInstance(Locale.US).format(xsmmPoints.toLong())} điểm",
                     icon = Icons.Outlined.CheckCircle,
                     iconBg = Color(0xFFEFF6FF),
                     iconTint = Color(0xFF2563EB),
@@ -243,7 +243,7 @@ fun WalletScreen(navController: NavController) {
                 PlatformBalanceCard(
                     title = "GoLike",
                     subtitle = if (isGolikeLogged) "@$golikeUsername (Đã kết nối)" else "Chưa đăng nhập tài khoản",
-                    balanceText = "${NumberFormat.getInstance(Locale.US).format(golikeBalance)} đ",
+                    balanceText = "${NumberFormat.getInstance(Locale.US).format(golikeBalance.toLong())} đ",
                     icon = Icons.Outlined.Star,
                     iconBg = Color(0xFFFEF3C7),
                     iconTint = Color(0xFFD97706),
@@ -257,7 +257,7 @@ fun WalletScreen(navController: NavController) {
                 PlatformBalanceCard(
                     title = "Tuongtaccheo",
                     subtitle = "${ttcAccounts.size} tài khoản đã thêm",
-                    balanceText = "${NumberFormat.getInstance(Locale.US).format(ttcCoins)} xu",
+                    balanceText = "${NumberFormat.getInstance(Locale.US).format(ttcCoins.toLong())} xu",
                     icon = Icons.Outlined.FavoriteBorder,
                     iconBg = Color(0xFFFDF2F8),
                     iconTint = Color(0xFFDB2777),

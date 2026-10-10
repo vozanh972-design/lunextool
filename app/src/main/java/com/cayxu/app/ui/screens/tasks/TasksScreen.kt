@@ -33,7 +33,7 @@ import com.cayxu.app.data.local.TtcAccountsStore
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.screens.golike.GolikeAccountsStore
 import com.cayxu.app.ui.screens.golike.GolikeSession
-import com.cayxu.app.ui.screens.xsmm.XsmmAccountStore
+import com.cayxu.app.data.local.XsmmAccountStore
 import com.cayxu.app.ui.screens.xsmm.XsmmSession
 import com.cayxu.app.ui.theme.*
 import java.text.NumberFormat
@@ -58,7 +58,7 @@ private val realPlatforms = listOf(
         badgeProducer = { ctx ->
             if (XsmmAccountStore.isLoggedIn(ctx)) {
                 val pts = XsmmAccountStore.getPoints(ctx)
-                "${NumberFormat.getInstance(Locale.US).format(pts)} điểm"
+                "${NumberFormat.getInstance(Locale.US).format(pts.toLong())} điểm"
             } else {
                 "Chưa kết nối"
             }
@@ -82,7 +82,7 @@ private val realPlatforms = listOf(
         badgeProducer = { ctx ->
             if (GolikeAccountsStore.isLoggedIn(ctx)) {
                 val bal = GolikeAccountsStore.getBalance(ctx)
-                "${NumberFormat.getInstance(Locale.US).format(bal)} đ"
+                "${NumberFormat.getInstance(Locale.US).format(bal.toLong())} đ"
             } else {
                 "Chưa kết nối"
             }
