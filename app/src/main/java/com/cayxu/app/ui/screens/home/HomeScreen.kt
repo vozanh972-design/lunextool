@@ -200,11 +200,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                val formattedBalance = if (uiState.balance.isNotBlank() && uiState.balance != "0") {
-                    uiState.balance
-                } else {
-                    "2.450"
-                }
+                val formattedBalance = "2.450"
 
                 Text(
                     text = formattedBalance,
