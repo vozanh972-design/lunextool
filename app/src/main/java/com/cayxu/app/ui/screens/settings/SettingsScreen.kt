@@ -185,13 +185,11 @@ fun SettingsScreen(navController: NavController) {
                     }
                 )
                 HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.DarkMode,
-                    title = "Chế độ tối",
-                    checked = com.cayxu.app.ui.theme.ThemeState.isDarkMode,
-                    onCheckedChange = { checked ->
-                        com.cayxu.app.ui.theme.ThemeState.setDarkMode(context, checked)
-                    }
+                SettingsRow(
+                    icon = Icons.Outlined.LightMode,
+                    title = "Giao diện",
+                    trailingText = "Sáng cao cấp (Swiss Light)",
+                    onClick = { Toast.makeText(context, "Ứng dụng hoạt động ở chuẩn giao diện sáng tối giản", Toast.LENGTH_SHORT).show() }
                 )
                 HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
                 SettingsRow(

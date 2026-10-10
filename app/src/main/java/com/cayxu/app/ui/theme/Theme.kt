@@ -27,32 +27,21 @@ data class CayXuColorPalette(
 )
 
 private val LightPalette = CayXuColorPalette(
-    primary = Color(0xFF2F6BFF),
-    primaryDark = Color(0xFF1D55E0),
-    appBackground = Color(0xFFF5F6FA),
-    cardWhite = Color(0xFFFFFFFF),
-    textPrimary = Color(0xFF191C29),
-    textSecondary = Color(0xFF767B90),
-    successGreen = Color(0xFF10B981),
-    warningOrange = Color(0xFFF59E0B),
-    dangerRed = Color(0xFFEF4444),
-    infoBlueBg = Color(0xFFEAF0FF),
-    borderLight = Color(0xFFE7EAF2)
+    primary = Color(0xFF2563EB), // Precision Sapphire Blue (Stripe / Linear)
+    primaryDark = Color(0xFF1D4ED8),
+    appBackground = Color(0xFFF8FAFC), // Slate 50 (Immaculate light background)
+    cardWhite = Color(0xFFFFFFFF), // Pure white
+    textPrimary = Color(0xFF0F172A), // Slate 900 (High-contrast charcoal)
+    textSecondary = Color(0xFF64748B), // Slate 500 (Clean neutral)
+    successGreen = Color(0xFF2563EB), // Precision Blue (0% cash green)
+    warningOrange = Color(0xFFEA580C), // Clean orange (0% coin gold)
+    dangerRed = Color(0xFFEF4444), // Clean crimson
+    infoBlueBg = Color(0xFFEFF6FF), // Blue 50 (Subtle tint)
+    borderLight = Color(0xFFE2E8F0) // Slate 200 (Hairline border)
 )
 
-private val DarkPalette = CayXuColorPalette(
-    primary = Color(0xFF4D82FF),
-    primaryDark = Color(0xFF2F6BFF),
-    appBackground = Color(0xFF0F121C),
-    cardWhite = Color(0xFF1B202E),
-    textPrimary = Color(0xFFF1F5F9),
-    textSecondary = Color(0xFF94A3B8),
-    successGreen = Color(0xFF34D399),
-    warningOrange = Color(0xFFFBBF24),
-    dangerRed = Color(0xFFF87171),
-    infoBlueBg = Color(0xFF202A42),
-    borderLight = Color(0xFF2D3548)
-)
+// Toàn bộ app chuẩn hoá 100% Light Mode cao cấp (Swiss Clean Minimalist), loại bỏ Dark Mode
+private val DarkPalette = LightPalette
 
 val LocalCayXuColors = staticCompositionLocalOf { LightPalette }
 
@@ -61,7 +50,8 @@ fun CayXuTheme(
     darkTheme: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val palette = if (darkTheme) DarkPalette else LightPalette
+    // Luôn áp dụng Light Mode cao cấp, không dùng Dark Mode theo chuẩn thẩm mỹ Swiss Minimalist
+    val palette = LightPalette
 
     val colorScheme = if (darkTheme) {
         darkColorScheme(

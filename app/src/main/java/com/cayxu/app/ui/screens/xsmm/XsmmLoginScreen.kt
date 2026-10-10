@@ -27,7 +27,7 @@ import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.launch
 
-private val XsmmAccent = Color(0xFF16A34A)
+private val XsmmAccent: Color @Composable get() = Primary
 
 /**
  * Màn đăng nhập XSMM - dán access token (lấy từ web xsmm.net) vào 1 ô nhập, bấm "Đăng nhập"

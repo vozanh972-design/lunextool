@@ -31,7 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.Add
 
-private val XsmmAccent = Color(0xFF16A34A)
+private val XsmmAccent: Color @Composable get() = Primary
 
 /**
  * Màn "Cấu hình chạy" cho XSMM.

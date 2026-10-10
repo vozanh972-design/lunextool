@@ -69,8 +69,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val XsmmAccentStart = Color(0xFF34D399)
-private val XsmmAccentEnd = Color(0xFF16A34A)
+private val XsmmAccentStart = Color(0xFF3B82F6)
+private val XsmmAccentEnd = Color(0xFF1D4ED8)
 private val TikTokBrandBlack = Color(0xFF0F172A)
 private val TikTokDarkSurface = Color(0xFF1E293B)
 

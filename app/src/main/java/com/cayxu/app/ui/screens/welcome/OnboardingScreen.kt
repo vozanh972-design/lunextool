@@ -1,5 +1,8 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.cayxu.app.ui.screens.welcome
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -32,6 +35,7 @@ import kotlinx.coroutines.launch
  * - Trang 2: "Một nơi. Mọi nền tảng." (Figma Screen 03)
  * - Trang 3: "Tích điểm mỗi ngày. Nhận quà thật." (Figma Screen 04)
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingScreen(
     onFinished: () -> Unit
