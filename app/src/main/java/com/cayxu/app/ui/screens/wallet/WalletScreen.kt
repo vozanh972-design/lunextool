@@ -107,9 +107,9 @@ fun WalletScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // 2. THẺ TỔNG ĐIỂM HIỆN CÓ (ROYAL BLUE)
+            // 2. THẺ TỔNG ĐIỂM HIỆN CÓ (SAPPHIRE COBALT)
             Card(
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = Primary),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -117,7 +117,7 @@ fun WalletScreen(navController: NavController) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 22.dp, vertical = 22.dp)
+                        .padding(horizontal = 20.dp, vertical = 20.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),

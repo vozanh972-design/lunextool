@@ -34,12 +34,14 @@ import com.cayxu.app.ui.screens.login.LoginScreen
 import com.cayxu.app.ui.screens.settings.SettingsScreen
 import com.cayxu.app.ui.screens.tasks.TasksScreen
 import com.cayxu.app.ui.screens.wallet.WalletScreen
+import com.cayxu.app.ui.screens.welcome.LanguageSelectionScreen
 import com.cayxu.app.ui.screens.welcome.OnboardingScreen
 import com.cayxu.app.ui.screens.welcome.WelcomeScreen
 import com.cayxu.app.ui.theme.AppBackground
 
 object Routes {
     const val ONBOARDING = "onboarding"
+    const val LANGUAGE_SELECTION = "language_selection"
     const val WELCOME = "welcome"
     const val LOGIN = "login"
     const val BLOCKED = "blocked"
@@ -193,18 +195,29 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             popExitTransition = { fadeOut(animationSpec = tween(FADE_DURATION_MS)) }
         ) {
 
-            // Bộ 3 màn hình Onboarding (Figma Screen 02, 03, 04)
+            // 1. Bộ 3 màn hình Onboarding
             composable(Routes.ONBOARDING) {
                 OnboardingScreen(
                     onFinished = {
-                        navController.navigate(Routes.WELCOME) {
+                        navController.navigate(Routes.LANGUAGE_SELECTION) {
                             popUpTo(Routes.ONBOARDING) { inclusive = true }
                         }
                     }
                 )
             }
 
-            // Màn hình Chào mừng (Figma Screen 06)
+            // 2. Màn hình Chọn Ngôn ngữ (LanguageSelectionScreen)
+            composable(Routes.LANGUAGE_SELECTION) {
+                LanguageSelectionScreen(
+                    onFinished = {
+                        navController.navigate(Routes.WELCOME) {
+                            popUpTo(Routes.LANGUAGE_SELECTION) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            // 3. Màn hình Chào mừng (WelcomeScreen)
             composable(
                 Routes.WELCOME,
                 exitTransition = {
@@ -215,12 +228,6 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
                 val currentContext = androidx.compose.ui.platform.LocalContext.current
                 WelcomeScreen(
                     onLoginClick = {
-                        com.cayxu.app.data.local.SecurePrefs(currentContext).setSeenWelcome()
-                        navController.navigate(Routes.LOGIN) {
-                            popUpTo(Routes.WELCOME) { inclusive = true }
-                        }
-                    },
-                    onRegisterClick = {
                         com.cayxu.app.data.local.SecurePrefs(currentContext).setSeenWelcome()
                         navController.navigate(Routes.LOGIN) {
                             popUpTo(Routes.WELCOME) { inclusive = true }

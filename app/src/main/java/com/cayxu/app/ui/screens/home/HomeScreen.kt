@@ -158,9 +158,9 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // 📌 2. THẺ ĐIỂM XANH HOÀNG GIA CHUẨN FIGMA FRAME 13 (ROYAL BLUE)
+        // 📌 2. THẺ ĐIỂM SAPPHIRE COBALT CHUẨN SWISS CLEAN MINIMALIST
         Card(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = Primary),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             modifier = Modifier.fillMaxWidth()
@@ -168,7 +168,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 22.dp, vertical = 22.dp)
+                    .padding(horizontal = 20.dp, vertical = 20.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -185,7 +185,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                     // Pill Badge: "↗ 18% tuần này"
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(8.dp))
                             .background(Color.White.copy(alpha = 0.22f))
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
@@ -204,7 +204,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
                 Text(
                     text = formattedBalance,
-                    fontSize = 40.sp,
+                    fontSize = 38.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
                     letterSpacing = (-1).sp
@@ -214,7 +214,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // 📌 3. THẺ TIẾN ĐỘ NHIỆM VỤ HÔM NAY (FIGMA FRAME 13)
+        // 📌 3. THẺ TIẾN ĐỘ NHIỆM VỤ HÔM NAY
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -237,7 +237,12 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Thanh tiến độ chuẩn Figma
+        // Thanh tiến độ có Animation mượt mà
+        val animatedProgress by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = 0.6f,
+            animationSpec = androidx.compose.animation.core.tween(durationMillis = 800, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            label = "homeProgress"
+        )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -247,7 +252,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.6f)
+                    .fillMaxWidth(animatedProgress)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(4.dp))
                     .background(Primary)
