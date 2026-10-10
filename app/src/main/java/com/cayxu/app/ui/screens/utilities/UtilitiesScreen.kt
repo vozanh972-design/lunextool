@@ -1,210 +1,308 @@
 package com.cayxu.app.ui.screens.utilities
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import coil.compose.SubcomposeAsyncImage
 import com.cayxu.app.ui.navigation.Routes
-import com.cayxu.app.ui.navigation.goHome
-
 import com.cayxu.app.ui.theme.*
 
-private val ScreenBg: Color @Composable get() = AppBackground
-private val CardBorder: Color @Composable get() = BorderLight
-private val TextPrimaryColor: Color @Composable get() = TextPrimary
-private val TextSecondaryColor: Color @Composable get() = TextSecondary
-private val TextTertiaryColor: Color @Composable get() = TextSecondary
-
-private val Cobalt500: Color @Composable get() = Primary
-private val Cobalt600: Color @Composable get() = PrimaryDark
-
+/**
+ * MÀN HÌNH TIỆN ÍCH (UTILITIES SCREEN) - BENTO PASTEL
+ * - Nối đầy đủ các chức năng Nuôi tài khoản, Reg & Chuyển Page, Cấu hình nuôi FB
+ * - Thiết kế chuẩn Bento đồng bộ với màn Nhiệm vụ
+ */
 @Composable
 fun UtilitiesScreen(navController: NavController) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(ScreenBg)
+            .background(Color(0xFFF7F8FA))
+            .statusBarsPadding()
     ) {
-        // Sticky Header chuẩn HTML
-        Surface(
-            color = ScreenBg.copy(alpha = 0.95f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(width = 1.dp, color = CardBorder)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 14.dp)
-            ) {
-                Text(
-                    text = "Tiện ích",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimaryColor
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "Mọi công cụ hữu ích, gói gọn trong một nơi",
-                    fontSize = 12.sp,
-                    color = TextSecondaryColor
-                )
-            }
-        }
-
-        // Body list chuẩn HTML
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 95.dp)
         ) {
-            // Tool Card 1: Nuôi tài khoản (Featured)
-            HtmlToolCard(
-                title = "Nuôi tài khoản",
-                subtitle = "Tự động chăm sóc tài khoản mỗi ngày",
-                icon = Icons.Outlined.Person,
-                iconGradient = listOf(Color(0xFFE3FBFD), Color(0xFFC7F5FC)),
-                iconTint = Cobalt500,
-                isFeatured = true,
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 1. TIÊU ĐỀ TRANG
+            Text(
+                text = "Tiện ích mở rộng",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF0F172A),
+                letterSpacing = (-0.5).sp
+            )
+            Spacer(modifier = Modifier.height(3.dp))
+            Text(
+                text = "Tối ưu hóa và tự động hóa quy trình nuôi tài khoản mạng xã hội",
+                fontSize = 13.sp,
+                color = Color(0xFF64748B)
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // 2. HERO FEATURED CARD: NUÔI TÀI KHOẢN (BENTO VỚI ẢNH THẬT)
+            Card(
+                shape = RoundedCornerShape(26.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { navController.navigate(Routes.NURTURE_SETUP) { launchSingleTop = true } }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFFEFF6FF))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "NỔI BẬT",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Primary
+                            )
+                        }
+
+                        Text(
+                            text = "Đa luồng →",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Primary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Nuôi tài khoản tổng hợp",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0F172A)
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = "Tự động lướt feed, thả cảm xúc, xem story chăm sóc nick FB & TikTok",
+                        fontSize = 12.5.sp,
+                        color = Color(0xFF64748B),
+                        lineHeight = 18.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Ảnh minh họa lớn
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                    ) {
+                        SubcomposeAsyncImage(
+                            model = "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=500&auto=format&fit=crop&q=80",
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.15f))
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = Color.White.copy(alpha = 0.95f),
+                            shadowElevation = 2.dp,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(10.dp)
+                        ) {
+                            Text(
+                                text = "Cấu hình ngay",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A),
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 3. BENTO HÀNG 2: REG PAGE & NUÔI FACEBOOK
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Thẻ Reg Page & Chuyển Page (Soft Sky Pastel)
+                UtilityBentoCard(
+                    badge = "FANPAGE",
+                    title = "Reg & Chuyển Page",
+                    subtitle = "Tạo trang fanpage và chuyển quyền quản trị",
+                    bgColor = Color(0xFFEBF5FF),
+                    accentColor = Color(0xFF0284C7),
+                    borderColor = Color(0xFFCCE4FF),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(175.dp),
+                    onClick = {
+                        navController.navigate(Routes.REG_AND_TRANSFER_PAGE) { launchSingleTop = true }
+                    }
+                )
+
+                // Thẻ Nuôi FB chuyên sâu (Soft Rose Pastel)
+                UtilityBentoCard(
+                    badge = "FACEBOOK",
+                    title = "Nuôi nick FB",
+                    subtitle = "Lướt feed, kết bạn và tương tác nick chính",
+                    bgColor = Color(0xFFFFEDF2),
+                    accentColor = Color(0xFFE11D48),
+                    borderColor = Color(0xFFFFD1DC),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(175.dp),
+                    onClick = {
+                        navController.navigate(Routes.FB_NURTURE) { launchSingleTop = true }
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 4. BENTO HÀNG 3: CẤU HÌNH NUÔI CHUYÊN SÂU
+            UtilityBentoCard(
+                badge = "CẤU HÌNH",
+                title = "Thiết lập kịch bản nuôi",
+                subtitle = "Tùy chỉnh thời gian delay, số lượng hành động và kịch bản tương tác",
+                bgColor = Color(0xFFF3F0FA),
+                accentColor = Color(0xFF7C3AED),
+                borderColor = Color(0xFFE4DBF5),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp),
                 onClick = {
-                    navController.navigate(Routes.NURTURE_SETUP) { launchSingleTop = true }
+                    navController.navigate(Routes.FB_NUOI_CONFIG) { launchSingleTop = true }
                 }
             )
 
-            // Tool Card 2: Reg page & Chuyển page (Blue theme)
-            HtmlToolCard(
-                title = "Reg page & Chuyển page",
-                subtitle = "Tự động đăng ký và chuyển trang",
-                icon = Icons.Outlined.SwapHoriz,
-                iconGradient = listOf(Color(0xFFDBEAFE), Color(0xFFBFDBFE)),
-                iconTint = Cobalt600,
-                isFeatured = false,
-                onClick = {
-                    navController.navigate(Routes.REG_AND_TRANSFER_PAGE) { launchSingleTop = true }
-                }
-            )
-
-            // Tool Card 3: Nuôi tài khoản Facebook
-            HtmlToolCard(
-                title = "Nuôi tài khoản Facebook",
-                subtitle = "Tự động tương tác, lướt feed và chăm sóc tài khoản Facebook",
-                icon = Icons.Outlined.Person,
-                iconGradient = listOf(Color(0xFFE0E7FF), Color(0xFFC7D2FE)),
-                iconTint = Cobalt600,
-                isFeatured = false,
-                onClick = {
-                    navController.navigate(Routes.FB_NURTURE) { launchSingleTop = true }
-                }
-            )
-
-            Spacer(Modifier.height(80.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
 
 @Composable
-private fun HtmlToolCard(
+private fun UtilityBentoCard(
+    badge: String,
     title: String,
     subtitle: String,
-    icon: ImageVector,
-    iconGradient: List<Color>,
-    iconTint: Color,
-    isFeatured: Boolean,
+    bgColor: Color,
+    accentColor: Color,
+    borderColor: Color,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isFeatured) 2.dp else 1.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = androidx.compose.material.ripple.rememberRipple(bounded = true),
-                onClick = onClick
-            )
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = bgColor),
+        border = BorderStroke(1.dp, borderColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = modifier.clickable(onClick = onClick)
     ) {
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Tool Icon Wrap (48x48 dp with radius 14dp)
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Brush.linearGradient(iconGradient)),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = iconTint,
-                    modifier = Modifier.size(24.dp)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.White.copy(alpha = 0.85f))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = badge,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = accentColor
+                    )
+                }
+
+                Text(
+                    text = "→",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor
                 )
             }
 
-            Spacer(Modifier.width(14.dp))
-
-            // Tool Text (Title + Subtitle)
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
+            Column {
                 Text(
                     text = title,
-                    fontSize = 15.sp,
+                    fontSize = 14.5.sp,
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimaryColor,
-                    letterSpacing = (-0.1).sp
+                    color = Color(0xFF0F172A),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.height(3.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = subtitle,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = TextSecondaryColor,
-                    lineHeight = 17.sp
+                    fontSize = 11.5.sp,
+                    color = Color(0xFF64748B),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 16.sp
                 )
             }
 
-            Spacer(Modifier.width(8.dp))
-
-            // Chevron right icon
-            Icon(
-                imageVector = Icons.Filled.ChevronRight,
-                contentDescription = null,
-                tint = TextTertiaryColor,
-                modifier = Modifier.size(18.dp)
+            Text(
+                text = "Mở tiện ích",
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF334155)
             )
         }
     }

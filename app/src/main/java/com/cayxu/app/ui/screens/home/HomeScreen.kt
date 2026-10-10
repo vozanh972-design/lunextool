@@ -147,7 +147,8 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
             .background(AppBackground)
             .verticalScroll(rememberScrollState())
             .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .padding(horizontal = 20.dp)
+            .padding(top = 12.dp, bottom = 90.dp)
     ) {
         // 📌 1. HEADER: LỜI CHÀO & TÊN NGƯỜI DÙNG THẬT
         Row(
