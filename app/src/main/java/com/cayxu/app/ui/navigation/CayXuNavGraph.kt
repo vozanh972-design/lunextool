@@ -34,10 +34,12 @@ import com.cayxu.app.ui.screens.login.LoginScreen
 import com.cayxu.app.ui.screens.settings.SettingsScreen
 import com.cayxu.app.ui.screens.tasks.TasksScreen
 import com.cayxu.app.ui.screens.wallet.WalletScreen
+import com.cayxu.app.ui.screens.welcome.OnboardingScreen
 import com.cayxu.app.ui.screens.welcome.WelcomeScreen
 import com.cayxu.app.ui.theme.AppBackground
 
 object Routes {
+    const val ONBOARDING = "onboarding"
     const val WELCOME = "welcome"
     const val LOGIN = "login"
     const val BLOCKED = "blocked"
@@ -180,7 +182,7 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             navController = navController,
             startDestination = when {
                 securePrefs.isPermanentlyBlocked() -> Routes.BLOCKED
-                !securePrefs.hasSeenWelcome() -> Routes.WELCOME
+                !securePrefs.hasSeenWelcome() -> Routes.ONBOARDING
                 else -> Routes.LOGIN
             },
             modifier = Modifier.padding(innerPadding),
@@ -191,9 +193,18 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             popExitTransition = { fadeOut(animationSpec = tween(FADE_DURATION_MS)) }
         ) {
 
-            // CHỈ hiện đúng 1 lần ở lần mở app đầu tiên (xem SecurePrefs.hasSeenWelcome).
-            // Những lần sau (kể cả khi key hết hạn/đổi máy) vào thẳng Routes.LOGIN, không
-            // hiện lại màn này nữa - đúng yêu cầu.
+            // Bộ 3 màn hình Onboarding (Figma Screen 02, 03, 04)
+            composable(Routes.ONBOARDING) {
+                OnboardingScreen(
+                    onFinished = {
+                        navController.navigate(Routes.WELCOME) {
+                            popUpTo(Routes.ONBOARDING) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            // Màn hình Chào mừng (Figma Screen 06)
             composable(
                 Routes.WELCOME,
                 exitTransition = {
@@ -201,10 +212,16 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
                     else fadeOut(animationSpec = tween(FADE_DURATION_MS))
                 }
             ) {
-                val context = androidx.compose.ui.platform.LocalContext.current
+                val currentContext = androidx.compose.ui.platform.LocalContext.current
                 WelcomeScreen(
-                    onGetStarted = {
-                        com.cayxu.app.data.local.SecurePrefs(context).setSeenWelcome()
+                    onLoginClick = {
+                        com.cayxu.app.data.local.SecurePrefs(currentContext).setSeenWelcome()
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(Routes.WELCOME) { inclusive = true }
+                        }
+                    },
+                    onRegisterClick = {
+                        com.cayxu.app.data.local.SecurePrefs(currentContext).setSeenWelcome()
                         navController.navigate(Routes.LOGIN) {
                             popUpTo(Routes.WELCOME) { inclusive = true }
                         }

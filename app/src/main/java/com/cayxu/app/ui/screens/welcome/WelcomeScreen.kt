@@ -23,7 +23,10 @@ import androidx.compose.ui.unit.sp
 import com.cayxu.app.ui.theme.*
 
 @Composable
-fun WelcomeScreen(onGetStarted: () -> Unit) {
+fun WelcomeScreen(
+    onLoginClick: () -> Unit = {},
+    onRegisterClick: () -> Unit = {}
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -136,7 +139,7 @@ fun WelcomeScreen(onGetStarted: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 OutlinedButton(
-                    onClick = onGetStarted,
+                    onClick = onLoginClick,
                     shape = RoundedCornerShape(14.dp),
                     border = BorderStroke(1.dp, BorderLight),
                     colors = ButtonDefaults.outlinedButtonColors(containerColor = CardWhite),
@@ -153,7 +156,7 @@ fun WelcomeScreen(onGetStarted: () -> Unit) {
                 }
 
                 Button(
-                    onClick = onGetStarted,
+                    onClick = onRegisterClick,
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Primary),
                     modifier = Modifier
