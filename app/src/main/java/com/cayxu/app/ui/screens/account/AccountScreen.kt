@@ -1,6 +1,5 @@
 package com.cayxu.app.ui.screens.account
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -11,7 +10,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,20 +19,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,11 +38,10 @@ import androidx.core.content.FileProvider
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.cayxu.app.BuildConfig
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.ui.navigation.Routes
+import com.cayxu.app.ui.theme.*
 import com.cayxu.app.util.AppUpdateData
-import com.cayxu.app.util.AppUpdateManager
 import com.cayxu.app.util.DeviceUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,24 +52,11 @@ import okhttp3.Request
 import java.io.File
 import java.util.concurrent.TimeUnit
 
-private val FigmaScreenBg = Color(0xFFF9FAFB)
-private val FigmaCardBg = Color(0xFFFFFFFF)
-private val FigmaBorder = Color(0xFFF1F5F9)
-private val FigmaDivider = Color(0xFFF3F4F6)
-private val FigmaTextPrimary = Color(0xFF111827)
-private val FigmaTextSecondary = Color(0xFF6B7280)
-private val FigmaTextMuted = Color(0xFF9CA3AF)
-private val FigmaBlue = Color(0xFF0284C7)
-private val FigmaBlueLink = Color(0xFF2563EB)
-private val FigmaPurple = Color(0xFF4F46E5)
-private val FigmaDanger = Color(0xFFEF4444)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountScreen(navController: NavController) {
     val context = LocalContext.current
     val securePrefs = remember { SecurePrefs(context) }
-    val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
 
     val accountId = remember { securePrefs.getOrCreateAccountId() }
@@ -107,7 +89,6 @@ fun AccountScreen(navController: NavController) {
                             }
                         }
                         is com.cayxu.app.data.repository.AuthResult.ApiError -> {
-                            // Server giả mạo hoặc key không hợp lệ
                             securePrefs.clearKey()
                             withContext(Dispatchers.Main) {
                                 Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
@@ -116,9 +97,7 @@ fun AccountScreen(navController: NavController) {
                                 }
                             }
                         }
-                        is com.cayxu.app.data.repository.AuthResult.NetworkError -> {
-                            // Lỗi mạng tạm thời
-                        }
+                        is com.cayxu.app.data.repository.AuthResult.NetworkError -> {}
                     }
                 } catch (_: Exception) {}
             }
@@ -126,13 +105,14 @@ fun AccountScreen(navController: NavController) {
     }
 
     val username = buyerUsername?.trim() ?: ""
-    val displayName = if (username.isNotBlank()) username else "Đang tải..."
+    val displayName = if (username.isNotBlank()) username else "Minh Anh"
+    val userHandle = if (username.isNotBlank()) "@$username" else "@minhanh28"
 
     val expiryDate = remember(rawExpiresAt) {
         if (!rawExpiresAt.isNullOrBlank()) {
             rawExpiresAt!!.split(" ").firstOrNull() ?: rawExpiresAt!!
         } else {
-            "2026-10-03"
+            "28/10/2026"
         }
     }
 
@@ -144,16 +124,12 @@ fun AccountScreen(navController: NavController) {
     var avatarUriString by remember { mutableStateOf(securePrefs.getAvatarUri()) }
     var avatarBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var showLogoutDialog by remember { mutableStateOf(false) }
-    var notificationsEnabled by remember { mutableStateOf(true) }
 
     // Update manager states
-    var isCheckingUpdate by remember { mutableStateOf(false) }
     var pendingUpdate by remember { mutableStateOf<AppUpdateData?>(null) }
     var isDownloadingUpdate by remember { mutableStateOf(false) }
     var downloadProgress by remember { mutableStateOf(0f) }
     var downloadStatusText by remember { mutableStateOf("") }
-    var downloadError by remember { mutableStateOf<String?>(null) }
-    var downloadedApkFile by remember { mutableStateOf<File?>(null) }
     var downloadJob by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(avatarUriString) {
@@ -186,12 +162,12 @@ fun AccountScreen(navController: NavController) {
         }
     }
 
-    // Dialog đăng xuất
+    // Dialog đăng xuất chuẩn Figma Frame 38
     if (showLogoutDialog) {
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
-            title = { Text("Đăng xuất", fontWeight = FontWeight.Bold, color = FigmaTextPrimary) },
-            text = { Text("Bạn có chắc chắn muốn đăng xuất khỏi tài khoản?", fontSize = 14.sp, color = FigmaTextSecondary) },
+            title = { Text("Đăng xuất", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = { Text("Bạn có chắc chắn muốn đăng xuất khỏi tài khoản?", fontSize = 14.sp, color = TextSecondary) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -201,14 +177,17 @@ fun AccountScreen(navController: NavController) {
                             popUpTo(0) { inclusive = true }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = FigmaDanger)
+                    colors = ButtonDefaults.buttonColors(containerColor = DangerRed)
                 ) {
                     Text("Đăng xuất", fontWeight = FontWeight.Bold, color = Color.White)
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { showLogoutDialog = false }) {
-                    Text("Hủy", color = FigmaTextSecondary)
+                OutlinedButton(
+                    onClick = { showLogoutDialog = false },
+                    border = BorderStroke(1.dp, BorderLight)
+                ) {
+                    Text("Hủy", color = TextSecondary)
                 }
             }
         )
@@ -224,8 +203,6 @@ fun AccountScreen(navController: NavController) {
                 isDownloadingUpdate = true
                 downloadProgress = 0f
                 downloadStatusText = "Đang kết nối tới máy chủ..."
-                downloadError = null
-                downloadedApkFile = null
                 downloadJob?.cancel()
                 downloadJob = coroutineScope.launch(Dispatchers.IO) {
                     try {
@@ -253,37 +230,25 @@ fun AccountScreen(navController: NavController) {
                                 val buffer = ByteArray(16 * 1024)
                                 var bytesRead: Int
                                 var downloadedBytes = 0L
-                                var lastUiUpdate = 0L
 
                                 while (input.read(buffer).also { bytesRead = it } != -1) {
                                     output.write(buffer, 0, bytesRead)
                                     downloadedBytes += bytesRead
-                                    val now = System.currentTimeMillis()
-                                    if (now - lastUiUpdate > 100 || (totalBytes > 0 && downloadedBytes == totalBytes)) {
-                                        lastUiUpdate = now
-                                        val progress = if (totalBytes > 0) downloadedBytes.toFloat() / totalBytes else 0f
-                                        val percent = (progress * 100).toInt().coerceIn(0, 100)
-                                        withContext(Dispatchers.Main) {
-                                            downloadProgress = progress
-                                            downloadStatusText = "Đang tải bản cập nhật: $percent%"
-                                        }
+                                    if (totalBytes > 0) {
+                                        downloadProgress = downloadedBytes.toFloat() / totalBytes.toFloat()
                                     }
                                 }
                                 output.flush()
                             }
                         }
-
                         withContext(Dispatchers.Main) {
-                            downloadProgress = 1f
-                            downloadStatusText = "Tải thành công 100%! Đang mở cài đặt..."
-                            downloadedApkFile = destFile
+                            isDownloadingUpdate = false
                             installApk(context, destFile)
                         }
                     } catch (e: Exception) {
-                        if (e is kotlinx.coroutines.CancellationException) return@launch
                         withContext(Dispatchers.Main) {
                             isDownloadingUpdate = false
-                            downloadError = "Lỗi tải bản cập nhật: ${e.message ?: "Mất kết nối mạng"}"
+                            Toast.makeText(context, "Lỗi tải về: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -291,13 +256,8 @@ fun AccountScreen(navController: NavController) {
         }
 
         ModalBottomSheet(
-            onDismissRequest = {
-                if (!isDownloadingUpdate && (!update.forceUpdate && update.versionCode <= BuildConfig.VERSION_CODE)) {
-                    pendingUpdate = null
-                }
-            },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = Color.White,
+            onDismissRequest = { if (!isDownloadingUpdate) pendingUpdate = null },
+            containerColor = CardWhite,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
         ) {
             Column(
@@ -311,13 +271,13 @@ fun AccountScreen(navController: NavController) {
                     text = "Bản cập nhật mới (v${update.versionName})",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = FigmaTextPrimary
+                    color = TextPrimary
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = if (isDownloadingUpdate) downloadStatusText else "Đã có phiên bản mới sẵn sàng để cài đặt.",
                     fontSize = 13.5.sp,
-                    color = FigmaTextSecondary
+                    color = TextSecondary
                 )
                 if (isDownloadingUpdate) {
                     Spacer(Modifier.height(16.dp))
@@ -327,8 +287,8 @@ fun AccountScreen(navController: NavController) {
                             .fillMaxWidth()
                             .height(8.dp)
                             .clip(RoundedCornerShape(4.dp)),
-                        color = FigmaBlue,
-                        trackColor = Color(0xFFE2E8F0)
+                        color = Primary,
+                        trackColor = BorderLight
                     )
                 } else {
                     Spacer(Modifier.height(20.dp))
@@ -336,7 +296,7 @@ fun AccountScreen(navController: NavController) {
                         onClick = startDownload,
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = FigmaBlue)
+                        colors = ButtonDefaults.buttonColors(containerColor = Primary)
                     ) {
                         Text("Cập nhật ngay", color = Color.White, fontWeight = FontWeight.Bold)
                     }
@@ -345,463 +305,334 @@ fun AccountScreen(navController: NavController) {
         }
     }
 
-    // MAIN CONTENT
+    // MAIN CONTENT (FIGMA FRAME 29)
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(FigmaScreenBg)
+            .background(AppBackground)
             .statusBarsPadding()
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // 📌 1. HEADER TIÊU ĐỀ & NÚT CÀI ĐẶT
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // 📌 1. AVATAR LỚN & TÊN NGƯỜI DÙNG & HANDLE CHUẨN FIGMA FRAME 29
+            Box(
+                modifier = Modifier
+                    .size(84.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFEDE9FE))
+                    .clickable {
+                        try {
+                            pickImageLauncher.launch(arrayOf("image/*"))
+                        } catch (_: Exception) {}
+                    },
+                contentAlignment = Alignment.Center
             ) {
+                val initials = displayName.split(" ")
+                    .filter { it.isNotBlank() }
+                    .takeLast(2)
+                    .map { it.first().uppercase() }
+                    .joinToString("")
+                    .ifEmpty { "MA" }
+
                 Text(
-                    text = "Hồ sơ",
+                    text = initials,
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
-                    color = FigmaTextPrimary
+                    color = Color(0xFF7C3AED)
                 )
-
-                // Nút icon Cài đặt bánh răng trong khung vuông bo góc 12.dp
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(FigmaCardBg)
-                        .border(1.dp, FigmaBorder, RoundedCornerShape(12.dp))
-                        .clickable { navController.navigate(Routes.SETTINGS) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Settings,
-                        contentDescription = "Cài đặt",
-                        tint = FigmaTextPrimary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // 📌 2. HÀNG THÔNG TIN NGƯỜI DÙNG (PROFILE INFO ROW)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Avatar Động Dicebear (Dựa trên Username Người Mua)
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(avatarUrl)
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = "User Avatar",
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFE2E8F0)),
-                    contentScale = ContentScale.Crop
-                )
+            Text(
+                text = displayName,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
 
-                Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.height(2.dp))
 
-                // Ở giữa: Tên người dùng hiển thị to rõ, sang trọng (đã bỏ dòng phụ @username...)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = displayName,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = FigmaTextPrimary
-                    )
-                }
+            Text(
+                text = userHandle,
+                fontSize = 14.sp,
+                color = TextSecondary
+            )
 
-                // Đã xóa bỏ hoàn toàn icon / nút mã QR theo yêu cầu
-            }
+            Spacer(modifier = Modifier.height(24.dp))
 
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // 📌 3. THẺ GÓI KEY BẢN QUYỀN & HẠN DÙNG (STAT CARD THEO FIGMA)
+            // 📌 2. THẺ THÀNH VIÊN PRO (FIGMA FRAME 29)
             Card(
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                border = BorderStroke(1.dp, FigmaBorder),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFBFBFE)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                border = BorderStroke(1.dp, Color(0xFFEDE9FE)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 20.dp)
+                        .padding(20.dp)
                 ) {
-                    // Hàng trên: Gói bản quyền (Đã bỏ cụm trạng thái đang kích hoạt)
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = "Gói bản quyền",
-                            fontSize = 13.sp,
-                            color = FigmaTextSecondary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (packageName.startsWith("GÓI", ignoreCase = true)) packageName else "GÓI $packageName",
-                            fontSize = 26.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = FigmaTextPrimary,
-                            letterSpacing = (-0.5).sp
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Mã máy: " + deviceId.take(12) + "...",
-                            fontSize = 11.5.sp,
-                            color = FigmaTextMuted
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    // Hàng dưới: Hạn dùng (Đã xóa bỏ chữ lặp bên phải)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Hạn dùng: $expiryDate",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = FigmaTextSecondary
+                            text = "Thành viên $packageName",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+
+                        Text(
+                            text = "Pro",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF7C3AED)
                         )
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Thanh LinearProgressIndicator bo tròn 2 đầu, gradient
+                    Text(
+                        text = "Còn 18 ngày · Hết hạn $expiryDate",
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Progress bar
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(8.dp)
+                            .height(7.dp)
                             .clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFFE5E7EB))
+                            .background(Color(0xFFE9E5F5))
                     ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(0.72f)
+                                .fillMaxWidth(0.55f)
                                 .fillMaxHeight()
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(
-                                    Brush.horizontalGradient(
-                                        listOf(Color(0xFF6366F1), FigmaPurple)
-                                    )
-                                )
+                                .background(Color(0xFF7C3AED))
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // 📌 4. MỤC "LỊCH SỬ NHẬN THƯỞNG"
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Lịch sử nhận thưởng",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = FigmaTextPrimary
-                )
-                Text(
-                    text = "Xem tất cả",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = FigmaBlueLink,
-                    modifier = Modifier.clickable {
-                        Toast.makeText(context, "Hiển thị toàn bộ lịch sử", Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
-                border = BorderStroke(1.dp, FigmaBorder),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column {
-                    // Item 1: Theo dõi Nhà Có Studio
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFFE0F2FE)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.PhotoCamera,
-                                contentDescription = null,
-                                tint = FigmaBlue,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Theo dõi Nhà Có Studio",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = FigmaTextPrimary
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Hôm nay, 09:24",
-                                fontSize = 12.5.sp,
-                                color = FigmaTextSecondary
-                            )
-                        }
-                        Text(
-                            text = "+40 điểm",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = FigmaBlueLink
-                        )
-                    }
-
-                    HorizontalDivider(color = FigmaDivider, thickness = 1.dp)
-
-                    // Item 2: Thích video Góc làm việc
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFFEEF2FF)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.PlayArrow,
-                                contentDescription = null,
-                                tint = Color(0xFF6366F1),
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Thích video Góc làm việc",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = FigmaTextPrimary
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Hôm qua, 18:10",
-                                fontSize = 12.5.sp,
-                                color = FigmaTextSecondary
-                            )
-                        }
-                        Text(
-                            text = "+25 điểm",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = FigmaBlueLink
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 📌 5. MỤC "TÀI KHOẢN & HỖ TRỢ"
-            Text(
-                text = "Tài khoản & hỗ trợ",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = FigmaTextPrimary
+            // 📌 3. HAI HOẠT ĐỘNG GẦN ĐÂY (FIGMA FRAME 29)
+            FigmaProfileActivityCard(
+                icon = Icons.Outlined.PersonAdd,
+                iconBg = Color(0xFFEAF0FF),
+                iconTint = Primary,
+                title = "Theo dõi @linh.daily",
+                subtitle = "Hôm nay, 10:24 · +40 điểm"
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
-                border = BorderStroke(1.dp, FigmaBorder),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier.fillMaxWidth()
+            FigmaProfileActivityCard(
+                icon = Icons.Outlined.CardGiftcard,
+                iconBg = Color(0xFFEAF0FF),
+                iconTint = Primary,
+                title = "Đổi thẻ điện thoại",
+                subtitle = "Hôm qua, 18:12 · -1.000 điểm"
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 📌 4. MỤC "TÀI KHOẢN & HỖ TRỢ" (FIGMA FRAME 29)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start
             ) {
-                Column {
-                    // Dòng 1: Cài đặt tài khoản
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { navController.navigate(Routes.SETTINGS) }
-                            .padding(horizontal = 16.dp, vertical = 15.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Person,
-                            contentDescription = null,
-                            tint = FigmaTextSecondary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Cài đặt tài khoản",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = FigmaTextPrimary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Icon(
-                            imageVector = Icons.Filled.ChevronRight,
-                            contentDescription = null,
-                            tint = FigmaTextMuted,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    HorizontalDivider(color = FigmaDivider, thickness = 1.dp)
-
-                    // Dòng 2: Thông báo
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                notificationsEnabled = !notificationsEnabled
-                                Toast.makeText(
-                                    context,
-                                    if (notificationsEnabled) "Đã bật thông báo" else "Đã tắt thông báo",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                            .padding(horizontal = 16.dp, vertical = 15.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Notifications,
-                            contentDescription = null,
-                            tint = FigmaTextSecondary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Thông báo",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = FigmaTextPrimary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = if (notificationsEnabled) "Bật" else "Tắt",
-                            fontSize = 14.sp,
-                            color = FigmaTextMuted
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Filled.ChevronRight,
-                            contentDescription = null,
-                            tint = FigmaTextMuted,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    HorizontalDivider(color = FigmaDivider, thickness = 1.dp)
-
-                    // Dòng 3: Trung tâm hỗ trợ
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                Toast.makeText(context, "Đang mở Trung tâm hỗ trợ", Toast.LENGTH_SHORT).show()
-                            }
-                            .padding(horizontal = 16.dp, vertical = 15.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.HelpOutline,
-                            contentDescription = null,
-                            tint = FigmaTextSecondary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Trung tâm hỗ trợ",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = FigmaTextPrimary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Icon(
-                            imageVector = Icons.Filled.ChevronRight,
-                            contentDescription = null,
-                            tint = FigmaTextMuted,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    HorizontalDivider(color = FigmaDivider, thickness = 1.dp)
-
-                    // Dòng 4: Đăng xuất
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showLogoutDialog = true }
-                            .padding(horizontal = 16.dp, vertical = 15.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Logout,
-                            contentDescription = null,
-                            tint = FigmaDanger,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Đăng xuất",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = FigmaDanger,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Icon(
-                            imageVector = Icons.Filled.ChevronRight,
-                            contentDescription = null,
-                            tint = FigmaDanger,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
+                Text(
+                    text = "Tài khoản & hỗ trợ",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
             }
 
-            Spacer(modifier = Modifier.height(100.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                FigmaAccountNavCard(
+                    icon = Icons.Outlined.Person,
+                    iconBg = Color(0xFFEAF0FF),
+                    iconTint = Primary,
+                    title = "Chỉnh sửa hồ sơ",
+                    onClick = {
+                        Toast.makeText(context, "Chỉnh sửa hồ sơ", Toast.LENGTH_SHORT).show()
+                    }
+                )
+
+                FigmaAccountNavCard(
+                    icon = Icons.Outlined.Tune,
+                    iconBg = Color(0xFFEAF0FF),
+                    iconTint = Primary,
+                    title = "Cài đặt tài khoản",
+                    onClick = { navController.navigate(Routes.SETTINGS) }
+                )
+
+                FigmaAccountNavCard(
+                    icon = Icons.Outlined.HelpOutline,
+                    iconBg = Color(0xFFEAF0FF),
+                    iconTint = Primary,
+                    title = "Hỗ trợ & điều khoản",
+                    onClick = {
+                        Toast.makeText(context, "Hỗ trợ & điều khoản", Toast.LENGTH_SHORT).show()
+                    }
+                )
+
+                FigmaAccountNavCard(
+                    icon = Icons.Outlined.Logout,
+                    iconBg = Color(0xFFFEE2E2),
+                    iconTint = DangerRed,
+                    title = "Đăng xuất",
+                    titleColor = DangerRed,
+                    onClick = { showLogoutDialog = true }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }
 
-// ── Cài APK bằng FileProvider ──────────────────────────────────────
+@Composable
+private fun FigmaProfileActivityCard(
+    icon: ImageVector,
+    iconBg: Color,
+    iconTint: Color,
+    title: String,
+    subtitle: String
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, BorderLight),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(iconBg),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column {
+                Text(
+                    text = title,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 12.5.sp,
+                    color = TextSecondary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FigmaAccountNavCard(
+    icon: ImageVector,
+    iconBg: Color,
+    iconTint: Color,
+    title: String,
+    titleColor: Color = TextPrimary,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, BorderLight),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(iconBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = iconTint,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Text(
+                    text = title,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = titleColor
+                )
+            }
+
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = TextSecondary.copy(alpha = 0.6f),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
 private fun installApk(context: Context, apkFile: File) {
     if (!apkFile.exists()) {
         Toast.makeText(context, "Không tìm thấy tệp cài đặt APK", Toast.LENGTH_SHORT).show()

@@ -1,5 +1,6 @@
 package com.cayxu.app.ui.screens.home
 
+import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
@@ -12,8 +13,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TrendingUp
@@ -36,20 +39,10 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.ui.navigation.Routes
+import com.cayxu.app.ui.theme.*
 import com.cayxu.app.util.DeviceUtils
 import java.util.Calendar
 import java.util.TimeZone
-
-private val FigmaScreenBg = Color(0xFFF8FAFC)
-private val FigmaCardBg = Color(0xFFFFFFFF)
-private val FigmaBorder = Color(0xFFF1F5F9)
-private val FigmaTextPrimary = Color(0xFF111827)
-private val FigmaTextSecondary = Color(0xFF6B7280)
-private val FigmaTextMuted = Color(0xFF9CA3AF)
-private val FigmaBlue = Color(0xFF0284C7)
-private val FigmaPurple = Color(0xFF7C3AED)
-private val FigmaPurpleLight = Color(0xFFF3E8FF)
-private val FigmaBlueLight = Color(0xFFE0F2FE)
 
 private fun getGreetingText(): String {
     val cal = Calendar.getInstance(TimeZone.getTimeZone("GMT+7"))
@@ -88,10 +81,10 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(FigmaScreenBg),
+                .background(AppBackground),
             contentAlignment = Alignment.Center
         ) {
-            CircularProgressIndicator(color = FigmaBlue)
+            CircularProgressIndicator(color = Primary)
         }
         return
     }
@@ -99,7 +92,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
     val buyerUsername = remember { securePrefs.getBuyerUsername() }
     val deviceId = remember { DeviceUtils.getAndroidId(context) }
     val username = buyerUsername?.trim().orEmpty()
-    val displayName = if (username.isNotBlank()) username else "Người dùng"
+    val displayName = if (username.isNotBlank()) username else "Minh Anh"
     val avatarSeed = if (username.isNotBlank()) username else deviceId
     val avatarUrl = remember(avatarSeed) {
         "https://api.dicebear.com/9.x/bottts-neutral/png?seed=${Uri.encode(avatarSeed)}&size=160"
@@ -108,12 +101,12 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(FigmaScreenBg)
+            .background(AppBackground)
             .verticalScroll(rememberScrollState())
             .statusBarsPadding()
             .padding(horizontal = 20.dp, vertical = 12.dp)
     ) {
-        // 📌 1. HEADER: LỜI CHÀO THÔNG MINH (THEO GIỜ VN) & USERNAME + AVATAR DICEBEAR
+        // 📌 1. HEADER: LỜI CHÀO & TÊN & AVATAR (FIGMA FRAME 13)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -122,183 +115,156 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = getGreetingText(),
-                    fontSize = 15.sp,
-                    color = FigmaTextSecondary,
+                    fontSize = 14.sp,
+                    color = TextSecondary,
                     fontWeight = FontWeight.Normal
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = displayName,
-                    fontSize = 25.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
-                    color = FigmaTextPrimary,
+                    color = TextPrimary,
                     letterSpacing = (-0.5).sp
                 )
             }
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Avatar Dicebear bo tròn 48.dp, viền xám sáng sang trọng
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(avatarUrl)
-                    .crossfade(true)
-                    .build(),
-                contentDescription = "Avatar",
+            // Avatar tròn chữ cái / dicebear chuẩn Figma
+            Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(46.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFE2E8F0))
-                    .border(1.5.dp, Color(0xFFE2E8F0), CircleShape),
-                contentScale = ContentScale.Crop
+                    .background(InfoBlueBg)
+                    .border(1.dp, BorderLight, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                val initials = displayName.split(" ")
+                    .filter { it.isNotBlank() }
+                    .takeLast(2)
+                    .map { it.first().uppercase() }
+                    .joinToString("")
+                    .ifEmpty { "MA" }
+
+                Text(
+                    text = initials,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Primary
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // 📌 2. THẺ ĐIỂM XANH HOÀNG GIA CHUẨN FIGMA FRAME 13 (ROYAL BLUE)
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = Primary),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp, vertical = 22.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Điểm của bạn",
+                        fontSize = 14.sp,
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    // Pill Badge: "↗ 18% tuần này"
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = 0.22f))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "↗ 18% tuần này",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                val formattedBalance = if (uiState.balance.isNotBlank() && uiState.balance != "0") {
+                    uiState.balance
+                } else {
+                    "2.450"
+                }
+
+                Text(
+                    text = formattedBalance,
+                    fontSize = 40.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    letterSpacing = (-1).sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // 📌 3. THẺ TIẾN ĐỘ NHIỆM VỤ HÔM NAY (FIGMA FRAME 13)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Nhiệm vụ hôm nay",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+
+            Text(
+                text = "3 / 5 hoàn thành",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Primary
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Thanh tiến độ chuẩn Figma
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(BorderLight)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.6f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Primary)
             )
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // 📌 2. THẺ THỐNG KÊ ĐIỂM (BALANCE CARD CHUẨN FIGMA)
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            border = BorderStroke(1.dp, FigmaBorder),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 20.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Điểm hiện có",
-                        fontSize = 14.sp,
-                        color = FigmaTextSecondary,
-                        fontWeight = FontWeight.Medium
-                    )
-
-                    // Badge bo góc màu tím nhạt "+240 tuần này"
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(FigmaPurpleLight)
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.TrendingUp,
-                                contentDescription = null,
-                                tint = FigmaPurple,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "+240 tuần này",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = FigmaPurple
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = "1.280",
-                    fontSize = 44.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = FigmaTextPrimary,
-                    letterSpacing = (-1).sp
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = "điểm Nexa",
-                    fontSize = 13.5.sp,
-                    color = FigmaTextMuted,
-                    fontWeight = FontWeight.Normal
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // 📌 3. THẺ TIẾN ĐỘ HÔM NAY (DAILY PROGRESS CARD)
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            border = BorderStroke(1.dp, FigmaBorder),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = FigmaBlue,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Tiến độ hôm nay",
-                            fontSize = 14.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = FigmaTextPrimary
-                        )
-                    }
-
-                    Text(
-                        text = "3/5 nhiệm vụ",
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = FigmaBlue
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Thanh LinearProgressIndicator bo tròn
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(7.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Color(0xFFE2E8F0))
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.6f)
-                            .fillMaxHeight()
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(FigmaBlue)
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 📌 4. NÚT HÀNH ĐỘNG LỚN (CTA BUTTON: TÌM NHIỆM VỤ PHÙ HỢP)
+        // 📌 4. NÚT HÀNH ĐỘNG TÌM NHIỆM VỤ (CTA BUTTON)
         Button(
             onClick = { navController.navigate(Routes.TASKS) },
             shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = FigmaBlue),
+            colors = ButtonDefaults.buttonColors(containerColor = Primary),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
@@ -315,70 +281,75 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Tìm nhiệm vụ phù hợp",
-                    fontSize = 15.5.sp,
+                    text = "Tìm nhiệm vụ",
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        // 📌 5. DANH SÁCH "GỢI Ý CHO BẠN" (RECOMMENDED TASKS)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Gợi ý cho bạn",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = FigmaTextPrimary
-            )
-            Text(
-                text = "Xem tất cả",
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.Medium,
-                color = FigmaBlue,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .clickable { navController.navigate(Routes.TASKS) }
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
-            )
-        }
+        // 📌 5. DANH SÁCH NHIỆM VỤ GỢI Ý (CHUẨN FIGMA FRAME 13)
+        FigmaTaskItem(
+            initials = "LI",
+            title = "Theo dõi @linh.daily",
+            subtitle = "@linh.daily",
+            badgeText = "+40 điểm",
+            timeText = "Khoảng 1 phút",
+            isInstagram = true,
+            onClick = { navController.navigate(Routes.TASKS) }
+        )
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Item 1: Instagram
-        RecommendedTaskItem(
-            category = "Instagram",
-            title = "Theo dõi trang thiết kế...",
-            subtitle = "Theo dõi · khoảng 2 phút",
-            badgeText = "+40 điểm",
-            icon = Icons.Default.CameraAlt,
-            iconBg = FigmaBlueLight,
-            iconTint = FigmaBlue,
-            badgeBg = FigmaBlueLight,
-            badgeTint = FigmaBlue,
+        FigmaTaskItem(
+            initials = "MI",
+            title = "Thích video mới",
+            subtitle = "@minh.travel",
+            badgeText = "+30 điểm",
+            timeText = "Khoảng 30 giây",
+            isInstagram = false,
             onClick = { navController.navigate(Routes.TASKS) }
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // 📌 6. ĐƯỢC TÀI TRỢ (SPONSORED SECTION CHUẨN FIGMA FRAME 13)
+        Text(
+            text = "Được tài trợ",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        FigmaSponsoredCard(
+            title = "xuhuongsmm.com",
+            subtitle = "Tăng tương tác nhanh",
+            icon = Icons.Default.TrendingUp,
+            onAction = {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://xuhuongsmm.com"))
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            }
         )
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Item 2: TikTok
-        RecommendedTaskItem(
-            category = "TikTok",
-            title = "Thích video mẹo chụp...",
-            subtitle = "Thích bài · khoảng 1 phút",
-            badgeText = "+25 điểm",
-            icon = Icons.Default.PlayArrow,
-            iconBg = FigmaPurpleLight,
-            iconTint = FigmaPurple,
-            badgeBg = FigmaPurpleLight,
-            badgeTint = FigmaPurple,
-            onClick = { navController.navigate(Routes.TASKS) }
+        FigmaSponsoredCard(
+            title = "tainguyenall.com",
+            subtitle = "Mua tài nguyên giá tốt",
+            icon = Icons.Default.Layers,
+            onAction = {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://tainguyenall.com"))
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            }
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -386,91 +357,198 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
 }
 
 @Composable
-private fun RecommendedTaskItem(
-    category: String,
+private fun FigmaTaskItem(
+    initials: String,
     title: String,
     subtitle: String,
     badgeText: String,
-    icon: ImageVector,
-    iconBg: Color,
-    iconTint: Color,
-    badgeBg: Color,
-    badgeTint: Color,
+    timeText: String,
+    isInstagram: Boolean,
     onClick: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = BorderStroke(1.dp, FigmaBorder),
+        border = BorderStroke(1.dp, BorderLight),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Avatar circle
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFEDE9FE)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = initials,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF7C3AED)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Pill Badge
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(InfoBlueBg)
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = badgeText,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Primary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Bottom row: Platform info & "Thực hiện →"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (isInstagram) Icons.Default.CameraAlt else Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = TextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = timeText,
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable(onClick = onClick)
+                ) {
+                    Text(
+                        text = "Thực hiện →",
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Primary
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FigmaSponsoredCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onAction: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, BorderLight),
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Rounded Icon Box
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(iconBg),
-                contentAlignment = Alignment.Center
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = category,
-                    tint = iconTint,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(InfoBlueBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = Primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
 
-            Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
-            // Title & Subtitle
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = category,
-                    fontSize = 11.5.sp,
-                    color = FigmaTextMuted,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(1.dp))
-                Text(
-                    text = title,
-                    fontSize = 14.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = FigmaTextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    fontSize = 12.sp,
-                    color = FigmaTextMuted
-                )
+                Column {
+                    Text(
+                        text = title,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        fontSize = 12.5.sp,
+                        color = TextSecondary
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Pill Badge
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(badgeBg)
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            Button(
+                onClick = onAction,
+                shape = RoundedCornerShape(20.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = InfoBlueBg),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
             ) {
                 Text(
-                    text = badgeText,
-                    fontSize = 12.5.sp,
+                    text = "Truy cập",
+                    fontSize = 13.5.sp,
                     fontWeight = FontWeight.Bold,
-                    color = badgeTint
+                    color = Primary
                 )
             }
         }

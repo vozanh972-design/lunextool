@@ -23,7 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.HeadsetMic
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,16 +44,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cayxu.app.R
 import com.cayxu.app.ui.locale.AppLanguage
 import com.cayxu.app.ui.locale.LanguageState
+import com.cayxu.app.ui.theme.*
 
-/**
- * GIAO DIỆN ĐĂNG NHẬP BẰNG KEY (LOGIN SCREEN)
- * Chuẩn phong cách thiết kế Figma Nexa Minimalist:
- * - Nền trắng tinh khôi #FFFFFF
- * - Màu chủ đạo Apple Blue #0A84FF & Chữ than đậm #1C1C1E
- * - Thay thế hoàn toàn form tài khoản/mật khẩu bằng Ô NHẬP KEY KÍCH HOẠT duy nhất
- * - Hỗ trợ nút dán nhanh từ clipboard và nút xóa nhanh
- * - Giữ nguyên 100% chức năng xác thực key, ghi nhớ, đổi ngôn ngữ và hỗ trợ CSKH
- */
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
@@ -66,13 +58,6 @@ fun LoginScreen(
     var rememberKey by remember { mutableStateOf(true) }
     var languageMenuExpanded by remember { mutableStateOf(false) }
 
-    val bgWhite = Color(0xFFFFFFFF)
-    val brandBlue = Color(0xFF0A84FF)
-    val textPrimary = Color(0xFF1C1C1E)
-    val textSecondary = Color(0xFF8E8E93)
-    val borderColor = Color(0xFFE5E5EA)
-    val inputBg = Color(0xFFFFFFFF)
-
     val currentLang = LanguageState.language
     val isEnglish = currentLang == AppLanguage.EN
 
@@ -83,13 +68,10 @@ fun LoginScreen(
         }
     }
 
-
-
-
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgWhite)
+            .background(CardWhite)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -103,29 +85,26 @@ fun LoginScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.Start
         ) {
-            // TOP BAR: Logo & Tên thương hiệu phong cách Figma Nexa
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // TOP LOGO CHUẨN FIGMA FRAME 7
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .padding(horizontal = 24.dp)
+                    .size(54.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Primary),
+                contentAlignment = Alignment.Center
             ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_app_logo),
-                    contentDescription = "LunexTool Logo",
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                )
-                Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "LUNEXTOOL",
-                    fontSize = 19.sp,
+                    text = "A",
+                    fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.5.sp,
-                    color = textPrimary
+                    color = Color.White
                 )
             }
+
+            Spacer(modifier = Modifier.height(28.dp))
 
             // NỘI DUNG FORM ĐĂNG NHẬP
             Column(
@@ -134,23 +113,20 @@ fun LoginScreen(
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.Start
             ) {
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // TIÊU ĐỀ CHÍNH VÀ MÔ TẢ PHỤ (CHUẨN FIGMA)
+                // TIÊU ĐỀ CHÍNH VÀ MÔ TẢ PHỤ (CHUẨN FIGMA FRAME 7)
                 Text(
-                    text = if (isEnglish) "Welcome back" else "Chào mừng trở lại",
+                    text = if (isEnglish) "Sign in" else "Đăng nhập",
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
-                    color = textPrimary
+                    color = TextPrimary
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
-                    text = if (isEnglish) "Enter your activation key to continue your tasks." else "Đăng nhập bằng key để tiếp tục nhiệm vụ và theo dõi điểm của bạn.",
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    color = textSecondary
+                    text = if (isEnglish) "Glad to see you again." else "Rất vui được gặp lại bạn.",
+                    fontSize = 15.sp,
+                    color = TextSecondary
                 )
 
                 Spacer(modifier = Modifier.height(28.dp))
@@ -158,9 +134,9 @@ fun LoginScreen(
                 // NHÃN TRƯỜNG VÀ Ô NHẬP KEY (CHUẨN FIGMA INPUT)
                 Text(
                     text = if (isEnglish) "Activation key" else "Key kích hoạt",
-                    fontSize = 13.sp,
+                    fontSize = 13.5.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = textPrimary,
+                    color = TextPrimary,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
@@ -169,10 +145,10 @@ fun LoginScreen(
                         .fillMaxWidth()
                         .height(52.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(inputBg)
+                        .background(CardWhite)
                         .border(
                             width = 1.2.dp,
-                            color = if (uiState.keyInput.isNotEmpty()) brandBlue else borderColor,
+                            color = if (uiState.keyInput.isNotEmpty()) Primary else BorderLight,
                             shape = RoundedCornerShape(14.dp)
                         )
                         .padding(horizontal = 14.dp),
@@ -183,9 +159,9 @@ fun LoginScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.Lock,
+                            imageVector = Icons.Outlined.VpnKey,
                             contentDescription = null,
-                            tint = if (uiState.keyInput.isNotEmpty()) brandBlue else textSecondary,
+                            tint = if (uiState.keyInput.isNotEmpty()) Primary else TextSecondary,
                             modifier = Modifier.size(20.dp)
                         )
 
@@ -194,8 +170,8 @@ fun LoginScreen(
                         Box(modifier = Modifier.weight(1f)) {
                             if (uiState.keyInput.isEmpty()) {
                                 Text(
-                                    text = if (isEnglish) "Enter your key" else "Nhập mã key kích hoạt",
-                                    color = textSecondary,
+                                    text = if (isEnglish) "Enter your activation key" else "Dán mã key kích hoạt tại đây...",
+                                    color = TextSecondary,
                                     fontSize = 14.5.sp
                                 )
                             }
@@ -204,11 +180,11 @@ fun LoginScreen(
                                 onValueChange = viewModel::onKeyInputChange,
                                 singleLine = true,
                                 textStyle = TextStyle(
-                                    color = textPrimary,
+                                    color = TextPrimary,
                                     fontSize = 14.5.sp,
                                     fontWeight = FontWeight.Medium
                                 ),
-                                cursorBrush = SolidColor(brandBlue),
+                                cursorBrush = SolidColor(Primary),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                 keyboardActions = KeyboardActions(onDone = {
                                     focusManager.clearFocus()
@@ -225,7 +201,7 @@ fun LoginScreen(
                             Icon(
                                 imageVector = Icons.Filled.Close,
                                 contentDescription = "Clear",
-                                tint = textSecondary,
+                                tint = TextSecondary,
                                 modifier = Modifier
                                     .size(20.dp)
                                     .clickable { viewModel.onKeyInputChange("") }
@@ -234,7 +210,7 @@ fun LoginScreen(
                             Icon(
                                 imageVector = Icons.Filled.ContentPaste,
                                 contentDescription = "Paste",
-                                tint = brandBlue,
+                                tint = Primary,
                                 modifier = Modifier
                                     .size(20.dp)
                                     .clickable {
@@ -271,8 +247,8 @@ fun LoginScreen(
                             checked = rememberKey,
                             onCheckedChange = { rememberKey = it },
                             colors = CheckboxDefaults.colors(
-                                checkedColor = brandBlue,
-                                uncheckedColor = borderColor,
+                                checkedColor = Primary,
+                                uncheckedColor = BorderLight,
                                 checkmarkColor = Color.White
                             ),
                             modifier = Modifier.size(20.dp)
@@ -281,7 +257,7 @@ fun LoginScreen(
                         Text(
                             text = if (isEnglish) "Remember login" else "Ghi nhớ đăng nhập",
                             fontSize = 13.sp,
-                            color = textPrimary,
+                            color = TextPrimary,
                             fontWeight = FontWeight.Normal
                         )
                     }
@@ -289,7 +265,7 @@ fun LoginScreen(
                     Text(
                         text = if (isEnglish) "Get key now?" else "Mua key ngay?",
                         fontSize = 13.sp,
-                        color = brandBlue,
+                        color = Primary,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.clickable {
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://lunex.io.vn/"))
@@ -314,8 +290,8 @@ fun LoginScreen(
                     enabled = !uiState.isLoading,
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = brandBlue,
-                        disabledContainerColor = brandBlue.copy(alpha = 0.6f)
+                        containerColor = Primary,
+                        disabledContainerColor = Primary.copy(alpha = 0.6f)
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -326,7 +302,7 @@ fun LoginScreen(
                     } else {
                         Text(
                             text = if (isEnglish) "Sign in" else "Đăng nhập",
-                            fontSize = 15.5.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
@@ -340,14 +316,14 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    HorizontalDivider(modifier = Modifier.weight(1f), color = borderColor, thickness = 0.8.dp)
+                    HorizontalDivider(modifier = Modifier.weight(1f), color = BorderLight, thickness = 1.dp)
                     Text(
-                        text = if (isEnglish) "or utilities" else "hoặc",
-                        fontSize = 12.5.sp,
-                        color = textSecondary,
+                        text = if (isEnglish) "or" else "hoặc",
+                        fontSize = 13.sp,
+                        color = TextSecondary,
                         modifier = Modifier.padding(horizontal = 14.dp)
                     )
-                    HorizontalDivider(modifier = Modifier.weight(1f), color = borderColor, thickness = 0.8.dp)
+                    HorizontalDivider(modifier = Modifier.weight(1f), color = BorderLight, thickness = 1.dp)
                 }
 
                 Spacer(modifier = Modifier.height(22.dp))
@@ -363,8 +339,8 @@ fun LoginScreen(
                         OutlinedButton(
                             onClick = { languageMenuExpanded = true },
                             shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = textPrimary),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(brush = SolidColor(borderColor)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                            border = BorderStroke(1.dp, BorderLight),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -373,7 +349,7 @@ fun LoginScreen(
                             Icon(
                                 imageVector = Icons.Outlined.Language,
                                 contentDescription = "Language",
-                                tint = brandBlue,
+                                tint = Primary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
@@ -387,7 +363,7 @@ fun LoginScreen(
                             Icon(
                                 imageVector = Icons.Filled.ArrowDropDown,
                                 contentDescription = null,
-                                tint = textSecondary,
+                                tint = TextSecondary,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -420,8 +396,8 @@ fun LoginScreen(
                             runCatching { context.startActivity(intent) }
                         },
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = textPrimary),
-                        border = ButtonDefaults.outlinedButtonBorder.copy(brush = SolidColor(borderColor)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                        border = BorderStroke(1.dp, BorderLight),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                         modifier = Modifier
                             .weight(1f)
@@ -430,7 +406,7 @@ fun LoginScreen(
                         Icon(
                             imageVector = Icons.Outlined.HeadsetMic,
                             contentDescription = null,
-                            tint = brandBlue,
+                            tint = Primary,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -456,13 +432,13 @@ fun LoginScreen(
                     Text(
                         text = if (isEnglish) "Don't have a key? " else "Chưa có key? ",
                         fontSize = 13.5.sp,
-                        color = textSecondary
+                        color = TextSecondary
                     )
                     Text(
                         text = if (isEnglish) "Get key now" else "Mua key ngay",
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
-                        color = brandBlue,
+                        color = Primary,
                         modifier = Modifier.clickable {
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://lunex.io.vn/"))
                             runCatching { context.startActivity(intent) }
@@ -478,9 +454,9 @@ fun LoginScreen(
                 status = uiState.autoVerifyStatus,
                 errorMessage = uiState.errorMessage,
                 isEnglish = isEnglish,
-                brandBlue = brandBlue,
-                textPrimary = textPrimary,
-                textSecondary = textSecondary,
+                brandBlue = Primary,
+                textPrimary = TextPrimary,
+                textSecondary = TextSecondary,
                 onDismiss = {
                     viewModel.dismissAutoVerify()
                 }

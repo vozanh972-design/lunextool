@@ -35,17 +35,19 @@ import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.worker.AppAlertNotifier
 import com.cayxu.app.worker.AppBackgroundService
 
-private val FigmaBg = Color(0xFFF9FAFB)
-private val FigmaCardBg = Color(0xFFFFFFFF)
-private val FigmaBorder = Color(0xFFF1F5F9)
-private val FigmaDivider = Color(0xFFF8FAFC)
-private val FigmaTextPrimary = Color(0xFF1E293B)
-private val FigmaTextHeader = Color(0xFF111827)
-private val FigmaTextSection = Color(0xFF64748B)
-private val FigmaTextMuted = Color(0xFF94A3B8)
-private val FigmaBlue = Color(0xFF0284C7)
-private val FigmaIconBg = Color(0xFFF0F7FF)
-private val FigmaDanger = Color(0xFFEF4444)
+import com.cayxu.app.ui.theme.*
+
+private val FigmaBg: Color @Composable get() = AppBackground
+private val FigmaCardBg: Color @Composable get() = CardWhite
+private val FigmaBorder: Color @Composable get() = BorderLight
+private val FigmaDivider: Color @Composable get() = BorderLight
+private val FigmaTextPrimary: Color @Composable get() = TextPrimary
+private val FigmaTextHeader: Color @Composable get() = TextPrimary
+private val FigmaTextSection: Color @Composable get() = TextSecondary
+private val FigmaTextMuted: Color @Composable get() = TextSecondary
+private val FigmaBlue: Color @Composable get() = Primary
+private val FigmaIconBg: Color @Composable get() = InfoBlueBg
+private val FigmaDanger: Color @Composable get() = DangerRed
 
 @Composable
 fun SettingsScreen(navController: NavController) {

@@ -22,33 +22,36 @@ data class CayXuColorPalette(
     val successGreen: Color,
     val warningOrange: Color,
     val dangerRed: Color,
-    val infoBlueBg: Color
+    val infoBlueBg: Color,
+    val borderLight: Color = Color(0xFFE7EAF2)
 )
 
 private val LightPalette = CayXuColorPalette(
-    primary = Color(0xFF2563EB),
-    primaryDark = Color(0xFF1D4ED8),
-    appBackground = Color(0xFFF6F8FC),
+    primary = Color(0xFF2F6BFF),
+    primaryDark = Color(0xFF1D55E0),
+    appBackground = Color(0xFFF5F6FA),
     cardWhite = Color(0xFFFFFFFF),
-    textPrimary = Color(0xFF0F172A),
-    textSecondary = Color(0xFF64748B),
-    successGreen = Color(0xFF16A34A),
-    warningOrange = Color(0xFFD97706),
-    dangerRed = Color(0xFFDC2626),
-    infoBlueBg = Color(0xFFEFF4FF)
+    textPrimary = Color(0xFF191C29),
+    textSecondary = Color(0xFF767B90),
+    successGreen = Color(0xFF10B981),
+    warningOrange = Color(0xFFF59E0B),
+    dangerRed = Color(0xFFEF4444),
+    infoBlueBg = Color(0xFFEAF0FF),
+    borderLight = Color(0xFFE7EAF2)
 )
 
 private val DarkPalette = CayXuColorPalette(
-    primary = Color(0xFF60A5FA),
-    primaryDark = Color(0xFF3B82F6),
-    appBackground = Color(0xFF0B1220),
-    cardWhite = Color(0xFF1B2536),
+    primary = Color(0xFF4D82FF),
+    primaryDark = Color(0xFF2F6BFF),
+    appBackground = Color(0xFF0F121C),
+    cardWhite = Color(0xFF1B202E),
     textPrimary = Color(0xFFF1F5F9),
     textSecondary = Color(0xFF94A3B8),
-    successGreen = Color(0xFF4ADE80),
+    successGreen = Color(0xFF34D399),
     warningOrange = Color(0xFFFBBF24),
     dangerRed = Color(0xFFF87171),
-    infoBlueBg = Color(0xFF23324A)
+    infoBlueBg = Color(0xFF202A42),
+    borderLight = Color(0xFF2D3548)
 )
 
 val LocalCayXuColors = staticCompositionLocalOf { LightPalette }

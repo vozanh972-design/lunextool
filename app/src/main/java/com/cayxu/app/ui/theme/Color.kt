@@ -18,3 +18,4 @@ val SuccessGreen: Color @Composable get() = LocalCayXuColors.current.successGree
 val WarningOrange: Color @Composable get() = LocalCayXuColors.current.warningOrange
 val DangerRed: Color @Composable get() = LocalCayXuColors.current.dangerRed
 val InfoBlueBg: Color @Composable get() = LocalCayXuColors.current.infoBlueBg
+val BorderLight: Color @Composable get() = LocalCayXuColors.current.borderLight

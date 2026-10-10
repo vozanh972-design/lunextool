@@ -31,14 +31,16 @@ import androidx.navigation.NavController
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.navigation.goHome
 
-private val ScreenBg = Color(0xFFF3F5F8)
-private val CardBorder = Color(0x140F1E37) // rgba(15, 30, 55, 0.08)
-private val TextPrimaryColor = Color(0xFF0B1730)
-private val TextSecondaryColor = Color(0xFF5B6B85)
-private val TextTertiaryColor = Color(0xFF8E9BB0)
+import com.cayxu.app.ui.theme.*
 
-private val Cobalt500 = Color(0xFF2E6BF2)
-private val Cobalt600 = Color(0xFF1D4ED8)
+private val ScreenBg: Color @Composable get() = AppBackground
+private val CardBorder: Color @Composable get() = BorderLight
+private val TextPrimaryColor: Color @Composable get() = TextPrimary
+private val TextSecondaryColor: Color @Composable get() = TextSecondary
+private val TextTertiaryColor: Color @Composable get() = TextSecondary
+
+private val Cobalt500: Color @Composable get() = Primary
+private val Cobalt600: Color @Composable get() = PrimaryDark
 
 @Composable
 fun UtilitiesScreen(navController: NavController) {

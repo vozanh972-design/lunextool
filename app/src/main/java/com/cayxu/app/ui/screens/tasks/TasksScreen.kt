@@ -1,7 +1,7 @@
 package com.cayxu.app.ui.screens.tasks
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -9,34 +9,26 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.cayxu.app.ui.navigation.Routes
-
-private val FigmaBg = Color(0xFFF9FAFB)
-private val FigmaCardBg = Color(0xFFFFFFFF)
-private val FigmaBorder = Color(0xFFEEF1F5)
-private val FigmaTextPrimary = Color(0xFF1C1C1E)
-private val FigmaTextSecondary = Color(0xFF6B7280)
+import com.cayxu.app.ui.theme.*
 
 private data class TaskPlatformItem(
     val id: String,
@@ -50,45 +42,12 @@ private data class TaskPlatformItem(
 
 private val platformItems = listOf(
     TaskPlatformItem(
-        id = "nhiemvucheo",
-        name = "Nhiemvucheo",
-        subtitle = "Nhiệm vụ tăng sub, view, tương tác đa kênh",
-        icon = Icons.Filled.SwapHoriz,
-        iconBg = Color(0xFFEAF4FF),
-        iconTint = Color(0xFF2563EB),
-        onClick = { navController, _ ->
-            navController.navigate(Routes.simpleTaskPlatform("Nhiemvucheo")) { launchSingleTop = true }
-        }
-    ),
-    TaskPlatformItem(
-        id = "tuongtaccheo",
-        name = "Tuongtaccheo",
-        subtitle = "Nhiệm vụ tương tác chéo giữa các nền tảng",
-        icon = Icons.Filled.Favorite,
-        iconBg = Color(0xFFFDF2F8),
-        iconTint = Color(0xFFEC4899),
-        onClick = { navController, _ ->
-            navController.navigate(Routes.simpleTaskPlatform("Tuongtaccheo")) { launchSingleTop = true }
-        }
-    ),
-    TaskPlatformItem(
-        id = "tuongtaccheo_tiktok",
-        name = "Tuongtaccheo TikTok",
-        subtitle = "Nhiệm vụ tương tác chéo TikTok kiếm xu",
-        icon = Icons.Filled.MusicNote,
-        iconBg = Color(0xFFF1F5F9),
-        iconTint = Color(0xFF0F172A),
-        onClick = { navController, _ ->
-            navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK) { launchSingleTop = true }
-        }
-    ),
-    TaskPlatformItem(
         id = "xsmm",
         name = "XSMM",
-        subtitle = "Nhiệm vụ tăng tương tác Facebook, TikTok",
-        icon = Icons.Filled.CheckCircle,
-        iconBg = Color(0xFFF0FDF4),
-        iconTint = Color(0xFF16A34A),
+        subtitle = "Tăng tương tác Facebook, TikTok đa kênh chuyên nghiệp.",
+        icon = Icons.Outlined.CheckCircle,
+        iconBg = Color(0xFFEFF6FF),
+        iconTint = Color(0xFF2563EB),
         onClick = { navController, context ->
             val isXsmmLoggedIn = com.cayxu.app.data.local.XsmmAccountStore.isLoggedIn(context)
             if (isXsmmLoggedIn) {
@@ -105,26 +64,50 @@ private val platformItems = listOf(
     TaskPlatformItem(
         id = "golike",
         name = "Golike",
-        subtitle = "Nhiệm vụ tương tác kiếm tiền mạng xã hội đa kênh",
-        icon = Icons.Filled.Star,
+        subtitle = "Nhiệm vụ tương tác kiếm tiền mạng xã hội đa kênh.",
+        icon = Icons.Outlined.Star,
         iconBg = Color(0xFFFEF3C7),
-        iconTint = Color(0xFFF59E0B),
+        iconTint = Color(0xFFD97706),
         onClick = { navController, context ->
             com.cayxu.app.ui.screens.golike.GolikeSession.restore(context)
             navController.navigate(Routes.GOLIKE_ACCOUNT) { launchSingleTop = true }
         }
+    ),
+    TaskPlatformItem(
+        id = "tuongtaccheo_tiktok",
+        name = "TikTok TTC",
+        subtitle = "Xem và tương tác với video yêu thích nhận thưởng.",
+        icon = Icons.Outlined.PlayCircle,
+        iconBg = Color(0xFFF1F5F9),
+        iconTint = Color(0xFF0F172A),
+        onClick = { navController, _ ->
+            navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK) { launchSingleTop = true }
+        }
+    ),
+    TaskPlatformItem(
+        id = "tuongtaccheo",
+        name = "Tuongtaccheo",
+        subtitle = "Tương tác chéo giữa các nền tảng mạng xã hội.",
+        icon = Icons.Outlined.FavoriteBorder,
+        iconBg = Color(0xFFFDF2F8),
+        iconTint = Color(0xFFDB2777),
+        onClick = { navController, _ ->
+            navController.navigate(Routes.simpleTaskPlatform("Tuongtaccheo")) { launchSingleTop = true }
+        }
+    ),
+    TaskPlatformItem(
+        id = "nhiemvucheo",
+        name = "Nhiemvucheo",
+        subtitle = "Tăng sub, view, tương tác đa kênh tự động.",
+        icon = Icons.Outlined.Sync,
+        iconBg = Color(0xFFE0E7FF),
+        iconTint = Color(0xFF4F46E5),
+        onClick = { navController, _ ->
+            navController.navigate(Routes.simpleTaskPlatform("Nhiemvucheo")) { launchSingleTop = true }
+        }
     )
 )
 
-/**
- * MÀN HÌNH NHIỆM VỤ (TASKS SCREEN)
- * Chuẩn hóa tinh gọn theo chuẩn Figma:
- * - Header tiêu đề "Nhiệm vụ" (30.sp), Subtitle "Chọn việc phù hợp với bạn" (Đã bỏ nút bộ lọc)
- * - Ô tìm kiếm nền tảng & nhiệm vụ
- * - Tiêu đề nhóm "Dành cho bạn"
- * - Card nền tảng tinh gọn: Icon bo tròn 12.dp + Tên + Phụ đề + Mũi tên điều hướng >
- * - Đã xóa sạch 5 thành phần thừa theo yêu cầu
- */
 @Composable
 fun TasksScreen(navController: NavController) {
     val context = LocalContext.current
@@ -141,7 +124,7 @@ fun TasksScreen(navController: NavController) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(FigmaBg)
+            .background(AppBackground)
             .statusBarsPadding()
     ) {
         Column(
@@ -152,53 +135,34 @@ fun TasksScreen(navController: NavController) {
         ) {
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 1. PAGE HEADING (ĐÃ BỎ NÚT BỘ LỌC 3 GẠCH)
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Nhiệm vụ",
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = FigmaTextPrimary,
-                    letterSpacing = (-0.5).sp
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Chọn việc phù hợp với bạn",
-                    fontSize = 14.sp,
-                    color = Color(0xFF8E8E93)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 2. SEARCH FIELD
-            Box(
+            // 1. Ô TÌM KIẾM CHUẨN FIGMA FRAME 14
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = CardWhite,
+                border = BorderStroke(1.dp, BorderLight),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(FigmaCardBg)
-                    .border(1.dp, FigmaBorder, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 14.dp),
-                contentAlignment = Alignment.CenterStart
+                    .height(52.dp)
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Search,
+                        imageVector = Icons.Default.Search,
                         contentDescription = "Tìm kiếm",
-                        tint = Color(0xFF8E8E93),
+                        tint = TextSecondary,
                         modifier = Modifier.size(20.dp)
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Box(modifier = Modifier.weight(1f)) {
                         if (searchQuery.isEmpty()) {
                             Text(
-                                text = "Tìm nền tảng hoặc nhiệm vụ",
-                                fontSize = 14.5.sp,
-                                color = Color(0xFF8E8E93)
+                                text = "Tìm nhiệm vụ, nền tảng...",
+                                fontSize = 15.sp,
+                                color = TextSecondary
                             )
                         }
                         BasicTextField(
@@ -206,123 +170,124 @@ fun TasksScreen(navController: NavController) {
                             onValueChange = { searchQuery = it },
                             singleLine = true,
                             textStyle = TextStyle(
-                                fontSize = 14.5.sp,
-                                color = FigmaTextPrimary,
-                                fontWeight = FontWeight.Normal
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium
                             ),
+                            cursorBrush = SolidColor(Primary),
                             modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(
-                            onClick = { searchQuery = "" },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Text("✕", fontSize = 14.sp, color = Color(0xFF8E8E93))
-                        }
-                    } else {
-                        Icon(
-                            imageVector = Icons.Filled.Mic,
-                            contentDescription = "Giọng nói",
-                            tint = Color(0xFF8E8E93),
-                            modifier = Modifier.size(19.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // 3. SECTION HEADER: "Dành cho bạn"
+            // 2. TIÊU ĐỀ: DÀNH CHO BẠN (FIGMA FRAME 14)
+            Text(
+                text = "Dành cho bạn",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 3. GRID 2 CỘT CHUẨN FIGMA
+            val chunkedItems = filteredList.chunked(2)
+            chunkedItems.forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    rowItems.forEach { item ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            FigmaGridPlatformCard(
+                                item = item,
+                                onClick = { item.onClick(navController, context) }
+                            )
+                        }
+                    }
+                    if (rowItems.size == 1) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+
+            Spacer(modifier = Modifier.height(30.dp))
+        }
+    }
+}
+
+@Composable
+private fun FigmaGridPlatformCard(
+    item: TaskPlatformItem,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, BorderLight),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            // Icon & Chevron row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Dành cho bạn",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = FigmaTextPrimary
-                )
-                Text(
-                    text = "${filteredList.size} nền tảng",
-                    fontSize = 13.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF0A84FF)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 4. PLATFORM CARDS (TINH GỌN CHUẨN FIGMA)
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                filteredList.forEach { item ->
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = FigmaCardBg),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, FigmaBorder),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { item.onClick(navController, context) }
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Bên trái: Icon nền tảng bo góc 12.dp
-                            Box(
-                                modifier = Modifier
-                                    .size(46.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(item.iconBg),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = item.icon,
-                                    contentDescription = null,
-                                    tint = item.iconTint,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(14.dp))
-
-                            // Ở giữa: Tên nền tảng + Phụ đề ngắn gọn
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = item.name,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = FigmaTextPrimary
-                                )
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Text(
-                                    text = item.subtitle,
-                                    fontSize = 13.sp,
-                                    color = FigmaTextSecondary,
-                                    lineHeight = 18.sp
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            // Bên phải: Mũi tên điều hướng >
-                            Icon(
-                                imageVector = Icons.Filled.ChevronRight,
-                                contentDescription = null,
-                                tint = Color(0xFF9CA3AF),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(item.iconBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = item.icon,
+                        contentDescription = item.name,
+                        tint = item.iconTint,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
+
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = TextSecondary.copy(alpha = 0.6f),
+                    modifier = Modifier.size(20.dp)
+                )
             }
 
-            Spacer(modifier = Modifier.height(96.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = item.name,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = item.subtitle,
+                fontSize = 12.5.sp,
+                color = TextSecondary,
+                lineHeight = 17.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
