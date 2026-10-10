@@ -150,7 +150,7 @@ fun OnboardingScreen(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 📌 TRANG 1: "Biến tương tác thành cơ hội" (Figma Screen 02)
+// 📌 TRANG 1: "Biến tương tác thành cơ hội" (Seamless Orbital Glow Design)
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun OnboardingPage1() {
@@ -161,139 +161,176 @@ private fun OnboardingPage1() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Minh họa: Khung điện thoại + avatar MA + thẻ tim + thẻ nổi
+        // Minh họa hòa mình vào nền: Lõi trung tâm + Orbital chips nổi
         Box(
             modifier = Modifier
-                .size(280.dp),
+                .size(310.dp),
             contentAlignment = Alignment.Center
         ) {
-            // Nền tròn xanh nhạt mờ
+            // Hào quang tỏa sáng mềm mại (Aura Glow)
             Box(
                 modifier = Modifier
-                    .size(260.dp)
+                    .size(270.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFF0F5FF))
+                    .background(Color(0xFFE8EFFF).copy(alpha = 0.7f))
             )
 
-            // Khung điện thoại trắng trung tâm
-            Surface(
-                shape = RoundedCornerShape(26.dp),
-                color = CardWhite,
-                shadowElevation = 8.dp,
-                modifier = Modifier
-                    .size(width = 140.dp, height = 210.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.SpaceBetween
-                ) {
-                    // Avatar MA
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFEDE9FE)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "MA",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF7C3AED)
-                        )
-                    }
-
-                    // Thanh gạch ngang
-                    Box(
-                        modifier = Modifier
-                            .width(60.dp)
-                            .height(5.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(Color(0xFFE2E8F0))
-                    )
-
-                    // Thẻ tim tím pastel
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(72.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFFF5F3FF)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.FavoriteBorder,
-                            contentDescription = null,
-                            tint = Color(0xFF7C3AED),
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
-                }
-            }
-
-            // Thẻ nổi bên trái (User)
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = CardWhite,
-                shadowElevation = 4.dp,
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .offset(x = 10.dp, y = (-20).dp)
-                    .size(48.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Outlined.Person,
-                        contentDescription = null,
-                        tint = Primary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-
-            // Huy hiệu xanh bên dưới trái (PersonAdd)
+            // Vòng quỹ đạo hairline mờ
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .offset(x = 36.dp, y = (-30).dp)
-                    .size(42.dp)
+                    .size(240.dp)
                     .clip(CircleShape)
-                    .background(Primary),
-                contentAlignment = Alignment.Center
+                    .border(BorderStroke(1.dp, Color(0xFFC7D7FE).copy(alpha = 0.6f)), CircleShape)
+            )
+
+            // Lõi trung tâm Glow
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = Primary,
+                shadowElevation = 10.dp,
+                modifier = Modifier.size(92.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.PersonAdd,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.FlashOn,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
             }
 
-            // Thẻ nổi bên phải (Heart hồng)
+            // Chip 1: Trạng thái tự động (Top-Left)
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
                 color = CardWhite,
                 shadowElevation = 4.dp,
+                border = BorderStroke(1.dp, Color(0xFFF1F5F9)),
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .offset(x = (-10).dp, y = 10.dp)
-                    .size(48.dp)
+                    .align(Alignment.TopStart)
+                    .offset(x = 16.dp, y = 24.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(Success)
+                    )
+                    Text(
+                        text = "100% Tự động",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                }
+            }
+
+            // Chip 2: Nền tảng MXH (Top-Right)
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = CardWhite,
+                shadowElevation = 4.dp,
+                border = BorderStroke(1.dp, Color(0xFFF1F5F9)),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = (-16).dp, y = 36.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(text = "⚡", fontSize = 11.sp)
+                    Text(
+                        text = "TikTok • FB",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                }
+            }
+
+            // Chip 3: Điểm thưởng tích lũy (Bottom-Left)
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = CardWhite,
+                shadowElevation = 5.dp,
+                border = BorderStroke(1.dp, Color(0xFFF1F5F9)),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .offset(x = 18.dp, y = (-28).dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(Color(0xFFFEF3C7)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = "★", fontSize = 12.sp, color = Color(0xFFD97706), fontWeight = FontWeight.Bold)
+                    }
+                    Column {
+                        Text(
+                            text = "Tích lũy",
+                            fontSize = 9.5.sp,
+                            color = TextSecondary,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "+166k Điểm",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = TextPrimary
+                        )
+                    }
+                }
+            }
+
+            // Chip 4: Bảo mật an toàn (Bottom-Right)
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = CardWhite,
+                shadowElevation = 4.dp,
+                border = BorderStroke(1.dp, Color(0xFFF1F5F9)),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = (-20).dp, y = (-32).dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Icon(
-                        imageVector = Icons.Outlined.FavoriteBorder,
+                        imageVector = Icons.Outlined.CheckCircle,
                         contentDescription = null,
-                        tint = Color(0xFFF43F5E),
-                        modifier = Modifier.size(22.dp)
+                        tint = Primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "An toàn & Bảo mật",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(36.dp))
 
         Text(
             text = "Biến tương tác thành\ncơ hội",
@@ -317,7 +354,7 @@ private fun OnboardingPage1() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 📌 TRANG 2: "Một nơi. Mọi nền tảng." (Figma Screen 03)
+// 📌 TRANG 2: "Một nơi. Mọi nền tảng." (Seamless Floating Grid)
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun OnboardingPage2() {
@@ -328,32 +365,37 @@ private fun OnboardingPage2() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Minh họa: Khung xanh bo tròn chứa lưới 4 thẻ nền tảng (Instagram, TikTok, Facebook, YouTube)
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = Color(0xFFF0F5FF),
-            modifier = Modifier
-                .size(width = 300.dp, height = 270.dp)
+        // Minh họa: Khung hài hòa với aura nền thay vì hộp cứng
+        Box(
+            modifier = Modifier.size(width = 310.dp, height = 280.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Column(
+            // Nền hào quang aura mềm mại phía sau
+            Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .size(260.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFE8EFFF).copy(alpha = 0.5f))
+            )
+
+            // Lưới 4 thẻ nền tảng với đổ bóng nhẹ nổi bồng bềnh
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Row(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    OnboardPlatformMiniCard(
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    OnboardPlatformPillCard(
+                        modifier = Modifier.weight(1f),
                         name = "Instagram",
                         icon = Icons.Outlined.PhotoCamera,
                         iconBg = Color(0xFFFDF2F8),
                         iconTint = Color(0xFFE1306C)
                     )
-                    OnboardPlatformMiniCard(
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    OnboardPlatformPillCard(
+                        modifier = Modifier.weight(1f),
                         name = "TikTok",
                         icon = Icons.Outlined.MusicNote,
                         iconBg = Color(0xFF0F172A),
@@ -362,18 +404,18 @@ private fun OnboardingPage2() {
                 }
 
                 Row(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    OnboardPlatformMiniCard(
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    OnboardPlatformPillCard(
+                        modifier = Modifier.weight(1f),
                         name = "Facebook",
                         icon = Icons.Outlined.ThumbUp,
                         iconBg = Color(0xFFEFF6FF),
                         iconTint = Color(0xFF1877F2)
                     )
-                    OnboardPlatformMiniCard(
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    OnboardPlatformPillCard(
+                        modifier = Modifier.weight(1f),
                         name = "YouTube",
                         icon = Icons.Outlined.PlayArrow,
                         iconBg = Color(0xFFFEF2F2),
@@ -383,7 +425,7 @@ private fun OnboardingPage2() {
             }
         }
 
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(36.dp))
 
         Text(
             text = "Một nơi. Mọi nền tảng.",
@@ -407,7 +449,7 @@ private fun OnboardingPage2() {
 }
 
 @Composable
-private fun OnboardPlatformMiniCard(
+private fun OnboardPlatformPillCard(
     modifier: Modifier = Modifier,
     name: String,
     icon: ImageVector,
@@ -415,10 +457,11 @@ private fun OnboardPlatformMiniCard(
     iconTint: Color
 ) {
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(20.dp),
         color = CardWhite,
-        shadowElevation = 2.dp,
-        modifier = modifier
+        shadowElevation = 3.dp,
+        border = BorderStroke(1.dp, Color(0xFFF1F5F9)),
+        modifier = modifier.height(96.dp)
     ) {
         Column(
             modifier = Modifier
@@ -429,7 +472,7 @@ private fun OnboardPlatformMiniCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(38.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(iconBg),
                 contentAlignment = Alignment.Center
@@ -438,15 +481,15 @@ private fun OnboardPlatformMiniCard(
                     imageVector = icon,
                     contentDescription = name,
                     tint = iconTint,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(7.dp))
 
             Text(
                 text = name,
-                fontSize = 13.5.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
@@ -455,7 +498,7 @@ private fun OnboardPlatformMiniCard(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 📌 TRANG 3: "Tích điểm mỗi ngày. Nhận quà thật." (Figma Screen 04)
+// 📌 TRANG 3: "Tích điểm mỗi ngày. Nhận quà thật." (Seamless Minimalist Chart)
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun OnboardingPage3() {
@@ -468,52 +511,53 @@ private fun OnboardingPage3() {
     ) {
         // Minh họa: Thẻ biểu đồ tăng trưởng 5 cột + huy hiệu "+120 điểm"
         Box(
-            modifier = Modifier.size(width = 300.dp, height = 260.dp),
+            modifier = Modifier.size(width = 310.dp, height = 280.dp),
             contentAlignment = Alignment.Center
         ) {
-            // Nền tròn mờ
+            // Nền tròn aura mờ
             Box(
                 modifier = Modifier
-                    .size(250.dp)
+                    .size(260.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFF0F5FF))
+                    .background(Color(0xFFE8EFFF).copy(alpha = 0.5f))
             )
 
-            // Thẻ tăng trưởng
+            // Thẻ tăng trưởng bồng bềnh
             Surface(
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(26.dp),
                 color = CardWhite,
-                shadowElevation = 8.dp,
+                shadowElevation = 6.dp,
+                border = BorderStroke(1.dp, Color(0xFFF1F5F9)),
                 modifier = Modifier
-                    .size(width = 270.dp, height = 190.dp)
+                    .size(width = 280.dp, height = 200.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                        .padding(horizontal = 20.dp, vertical = 18.dp),
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Tăng trưởng của bạn",
+                        text = "Tăng trưởng tương tác",
                         fontSize = 13.sp,
                         color = TextSecondary,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.SemiBold
                     )
 
                     // 5 cột biểu đồ tăng dần
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(110.dp)
+                            .height(115.dp)
                             .padding(horizontal = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.Bottom
                     ) {
-                        ChartBar(height = 32.dp, color = Primary)
-                        ChartBar(height = 48.dp, color = Primary)
-                        ChartBar(height = 68.dp, color = Primary)
-                        ChartBar(height = 92.dp, color = Primary)
-                        ChartBar(height = 110.dp, color = Color(0xFF7C3AED))
+                        ChartBar(height = 36.dp, color = Color(0xFFBFDBFE))
+                        ChartBar(height = 54.dp, color = Color(0xFF93C5FD))
+                        ChartBar(height = 74.dp, color = Color(0xFF60A5FA))
+                        ChartBar(height = 98.dp, color = Primary)
+                        ChartBar(height = 115.dp, color = Color(0xFF0F172A))
                     }
                 }
             }
@@ -522,9 +566,9 @@ private fun OnboardingPage3() {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .offset(x = (-8).dp, y = (-8).dp)
+                    .offset(x = (-10).dp, y = (-10).dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF7C3AED))
+                    .background(Color(0xFF0F172A))
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -537,7 +581,7 @@ private fun OnboardingPage3() {
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "+120 điểm",
-                        fontSize = 14.sp,
+                        fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
@@ -545,7 +589,7 @@ private fun OnboardingPage3() {
             }
         }
 
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(36.dp))
 
         Text(
             text = "Tích điểm mỗi ngày.\nNhận quà thật.",
