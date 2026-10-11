@@ -51,10 +51,10 @@ private val floatingBottomItems = listOf(
 )
 
 /**
- * THANH ĐIỀU HƯỚNG NỔI HIỆU ỨNG TRƯỢT VẬT LÝ LIÊN TỤC (PHYSICAL CONTINUOUS SLIDING INDICATOR DOCK)
- * - 4 tab chia đều đối xứng 100% bằng weight(1f), loại bỏ hoàn toàn hiện tượng xô lệch vị trí.
- * - Viên thuốc màu đen (#0F172A) căn tâm chính xác tuyệt đối với từng tab.
- * - Trượt vật lý spring êm ái, mượt mà, không giật lag do layout reflow.
+ * THANH ĐIỀU HƯỚNG NỔI HIỆU ỨNG ĐÀN HỒI CO GIÃN THÔNG MINH (DYNAMIC ACCORDION SLIDING DOCK)
+ * - Tab Active tự động nở rộng gấp 2.4 lần, tự động đẩy các icon còn lại dạt sang 2 bên.
+ * - Chữ tiếng Việt ("Trang chủ", "Nhiệm vụ", "Tiện ích", "Hồ sơ") hiển thị 100% đầy đủ, không bao giờ bị cắt xén.
+ * - Viên thuốc đen trượt vật lý spring đồng bộ hoàn hảo theo từng frame di chuyển của các icon.
  */
 @Composable
 fun CayXuBottomBar(navController: NavController) {
@@ -73,7 +73,7 @@ fun CayXuBottomBar(navController: NavController) {
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 8.dp),
+            .padding(horizontal = 18.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(
@@ -88,56 +88,52 @@ fun CayXuBottomBar(navController: NavController) {
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 6.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
                 val totalWidth = maxWidth
-                val tabCount = floatingBottomItems.size
-                val tabSlotWidth = totalWidth / tabCount
 
-                // Chiều rộng viên thuốc theo từng tab khi active để ôm trọn chữ đẹp mắt
-                val targetPillWidth = when (activeIndex) {
-                    0 -> 106.dp // Trang chủ
-                    1 -> 104.dp // Nhiệm vụ
-                    2 -> 98.dp  // Tiện ích
-                    3 -> 90.dp  // Hồ sơ
-                    else -> 100.dp
+                // Danh sách animated weights: Tab Active nặng 2.4f, các tab Inactive nặng 1.0f
+                val animatedWeights = floatingBottomItems.indices.map { index ->
+                    val targetWeight = if (index == activeIndex) 2.4f else 1.0f
+                    animateFloatAsState(
+                        targetValue = targetWeight,
+                        animationSpec = spring(
+                            dampingRatio = 0.82f,
+                            stiffness = Spring.StiffnessMediumLow
+                        ),
+                        label = "weight_$index"
+                    ).value
                 }
 
-                // Tọa độ tâm của tab active -> Tọa độ X của viên thuốc luôn căn giữa hoàn hảo
-                val targetCenterX = tabSlotWidth * activeIndex + (tabSlotWidth / 2)
-                val targetPillX = targetCenterX - (targetPillWidth / 2)
+                val totalWeightSum = animatedWeights.sum()
 
-                // Animation trượt vật lý liên tục (X position & Width) mượt như nhung
-                val animatedPillX by animateDpAsState(
-                    targetValue = targetPillX,
-                    animationSpec = spring(
-                        dampingRatio = 0.82f,
-                        stiffness = Spring.StiffnessMediumLow
-                    ),
-                    label = "pillSlideX"
-                )
+                // Tính toán tọa độ X và chiều rộng của từng tab theo animated weight
+                val tabWidths = animatedWeights.map { (it / totalWeightSum) * totalWidth }
+                val tabStartXs = animatedWeights.indices.map { i ->
+                    if (i == 0) 0.dp else {
+                        var sum = 0f
+                        for (k in 0 until i) {
+                            sum += animatedWeights[k]
+                        }
+                        (sum / totalWeightSum) * totalWidth
+                    }
+                }
 
-                val animatedPillWidth by animateDpAsState(
-                    targetValue = targetPillWidth,
-                    animationSpec = spring(
-                        dampingRatio = 0.85f,
-                        stiffness = Spring.StiffnessMediumLow
-                    ),
-                    label = "pillSlideWidth"
-                )
+                val activePillX = tabStartXs[activeIndex] + 3.dp
+                val activePillWidth = (tabWidths[activeIndex] - 6.dp).coerceAtLeast(46.dp)
 
                 // 🚀 KHỐI VIÊN THUỐC TRƯỢT VẬT LÝ DUY NHẤT TRÊN THANH
                 Box(
                     modifier = Modifier
-                        .offset(x = animatedPillX)
-                        .width(animatedPillWidth)
+                        .offset(x = activePillX)
+                        .width(activePillWidth)
                         .height(46.dp)
                         .clip(RoundedCornerShape(23.dp))
                         .background(Color(0xFF0F172A))
                 )
 
-                // CÁC NÚT TAB NẰM ĐỐI XỨNG CÂN BẰNG PHÍA TRÊN KHỐI TRƯỢT
+                // CÁC NÚT TAB TỰ ĐỘNG DỒN DỊCH VÀ CO GIÃN ĐỒNG BỘ
                 Row(
                     modifier = Modifier.fillMaxSize(),
                     verticalAlignment = Alignment.CenterVertically
@@ -148,14 +144,14 @@ fun CayXuBottomBar(navController: NavController) {
                         val animatedIconTint by animateColorAsState(
                             targetValue = if (isSelected) Color.White else Color(0xFF94A3B8),
                             animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                            label = "pillNavTint"
+                            label = "pillNavTint_$index"
                         )
 
                         val interactionSource = remember { MutableInteractionSource() }
 
                         Box(
                             modifier = Modifier
-                                .weight(1f)
+                                .weight(animatedWeights[index])
                                 .fillMaxHeight()
                                 .clickable(
                                     interactionSource = interactionSource,
@@ -174,14 +170,14 @@ fun CayXuBottomBar(navController: NavController) {
                             Row(
                                 modifier = Modifier
                                     .height(46.dp)
-                                    .padding(horizontal = 8.dp),
+                                    .padding(horizontal = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center
                             ) {
                                 Icon(
                                     imageVector = item.icon,
                                     contentDescription = item.label,
-                                    modifier = Modifier.size(21.dp),
+                                    modifier = Modifier.size(20.dp),
                                     tint = animatedIconTint
                                 )
 
