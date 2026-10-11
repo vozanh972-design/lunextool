@@ -38,7 +38,7 @@ import com.cayxu.app.R
 import com.cayxu.app.ui.locale.AppLanguage
 import com.cayxu.app.ui.locale.LanguageState
 
-// ── BỘ FONT MANROPE AN TOÀN TUYỆT ĐỐI (HỖ TRỢ VARIABLE FONT VÀ FALLBACK CHỐNG CRASH) ──
+// ── BỘ FONT MANROPE CHUẨN (HỖ TRỢ VARIABLE FONT WEIGHT VÀ FALLBACK CHỐNG CRASH) ──
 @OptIn(ExperimentalTextApi::class)
 val ManropeFontFamily: FontFamily = try {
     FontFamily(
@@ -79,7 +79,8 @@ val ManropeFontFamily: FontFamily = try {
     }
 }
 
-// ── BẢNG MÀU CHÍNH XÁC 100% TỪ LANGUAGE.DC.HTML ──
+// ── BẢNG MÀU CHÍNH XÁC 100% THEO FILE HTML GỐC LANGUAGE.DC.HTML ──
+// body { background: #F3F5F9; color: #0F172A }
 private val ColorPageBg = Color(0xFFF3F5F9)
 private val ColorPrimaryBlue = Color(0xFF1F4BD8)
 private val ColorTextMain = Color(0xFF0F172A)
@@ -97,12 +98,13 @@ private val ColorRadioUncheckedBorder = Color(0xFFCBD2DF)
 
 /**
  * MÀN HÌNH CHỌN NGÔN NGỮ (LANGUAGE SELECTION SCREEN)
- * Thiết kế chuẩn pixel-perfect theo Language.dc.html:
- * - Font Manrope đậm chuẩn (ExtraBold 800, Bold 700, Medium 500)
- * - Header có icon tia sét xanh + chữ AUTOLUNEX
- * - Khung preview có quả cầu line-art chuyển động, thẻ trắng nổi không vỡ dòng và bong bóng thoại "Bắt đầu thôi!"
- * - 2 thẻ chọn ngôn ngữ (VI / EN) kích hoạt mượt mà
- * - Nút "Tiếp tục" bo góc 18dp với hiệu ứng đổ bóng xanh
+ * Bê nguyên bản 1:1 từ file Language.dc.html:
+ * - Không tự chế thêm icon hay thành phần nào không có trong file HTML mẫu.
+ * - Khung preview kích thước 204dp, chứa quả cầu SVG line-art + chấm vệ tinh chuyển động.
+ * - Thẻ trắng nổi width 236px, padding chuẩn 14px 16px 16px, không bị rớt dòng phụ đề.
+ * - Bong bóng thoại "Bắt đầu thôi!" đặt góc phải dưới chuẩn toạ độ right: 18px, bottom: 20px.
+ * - 2 lựa chọn VI và EN giữ nguyên thông số CSS (border 1.5px, radius 20px, badge 44x44px radius 13px).
+ * - Nút "Tiếp tục" height 56px, radius 18px với đổ bóng xanh chuẩn 1:1.
  */
 @Composable
 fun LanguageSelectionScreen(
@@ -112,7 +114,7 @@ fun LanguageSelectionScreen(
     var selectedLang by remember { mutableStateOf(AppLanguage.VI) }
     val isVi = selectedLang == AppLanguage.VI
 
-    // Hiệu ứng quỹ đạo vệ tinh của quả cầu
+    // Hiệu ứng quỹ đạo vệ tinh của quả cầu SVG (animateMotion dur="10s")
     val infiniteTransition = rememberInfiniteTransition(label = "globeOrbit")
     val orbitAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -124,6 +126,7 @@ fun LanguageSelectionScreen(
         label = "orbitAngle"
     )
 
+    // Khung 390x844px theo HTML: padding 24px 20px 0, background #F3F5F9
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -141,47 +144,23 @@ fun LanguageSelectionScreen(
             Column(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // ── 1. BRAND HEADER (ICON TIA SÉT XANH + CHỮ AUTOLUNEX) ──
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(11.dp))
-                            .background(ColorPrimaryBlue),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Canvas(modifier = Modifier.size(18.dp)) {
-                            val w = size.width
-                            val h = size.height
-                            val path = Path().apply {
-                                moveTo(w * 0.58f, h * 0.10f)
-                                lineTo(w * 0.22f, h * 0.54f)
-                                lineTo(w * 0.50f, h * 0.54f)
-                                lineTo(w * 0.42f, h * 0.90f)
-                                lineTo(w * 0.78f, h * 0.46f)
-                                lineTo(w * 0.50f, h * 0.46f)
-                                close()
-                            }
-                            drawPath(path = path, color = Color.White)
-                        }
-                    }
-
-                    Text(
-                        text = "AUTOLUNEX",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontFamily = ManropeFontFamily,
-                        letterSpacing = 1.6.sp,
-                        color = ColorTextMain
-                    )
-                }
+                // ── 1. BRAND (NGUYÊN MẪU DÒNG 31-34 TRONG HTML: CHỈ DUY NHẤT TEXT AUTOLUNEX, KHÔNG CHẾ THÊM ICON) ──
+                // <div style="display:flex;align-items:center;gap:10px">
+                //   <span style="font-size:16px;font-weight:800;letter-spacing:.1em">AUTOLUNEX</span>
+                // </div>
+                Text(
+                    text = "AUTOLUNEX",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = ManropeFontFamily,
+                    letterSpacing = 1.6.sp,
+                    color = ColorTextMain
+                )
 
                 Spacer(modifier = Modifier.height(22.dp))
 
-                // ── 2. LIVE PREVIEW CONTAINER (KHUNG MINH HỌA QUẢ CẦU + THẺ TRẮNG + BUBBLE) ──
+                // ── 2. LIVE PREVIEW CONTAINER (DÒNG 36-67 TRONG HTML) ──
+                // <div style="margin-top:22px;height:204px;border-radius:26px;background:#E8EEFD;border:1px solid #DCE5FA;position:relative;overflow:hidden">
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -190,7 +169,7 @@ fun LanguageSelectionScreen(
                         .background(ColorPreviewBoxBg)
                         .border(1.dp, ColorPreviewBoxBorder, RoundedCornerShape(26.dp))
                 ) {
-                    // Quả cầu line-art SVG được vẽ chính xác từng nét
+                    // Quả cầu SVG line-art (cx = 292, cy = 108, r = 106)
                     Canvas(
                         modifier = Modifier.fillMaxSize()
                     ) {
@@ -202,7 +181,7 @@ fun LanguageSelectionScreen(
                         val cy = 108f * density
                         val radius = 106f * density
 
-                        // Circle chính r = 106
+                        // Circle cx="292" cy="108" r="106"
                         drawCircle(
                             color = ColorGlobeStroke,
                             radius = radius,
@@ -210,19 +189,21 @@ fun LanguageSelectionScreen(
                             style = stroke
                         )
 
-                        // Các elip kinh tuyến rx = 10, 54, 100
+                        // Ellipse rx="10" ry="106"
                         drawOval(
                             color = ColorGlobeStroke,
                             topLeft = Offset(cx - (10f * density), cy - radius),
                             size = Size(20f * density, radius * 2),
                             style = stroke
                         )
+                        // Ellipse rx="54" ry="106"
                         drawOval(
                             color = ColorGlobeStroke,
                             topLeft = Offset(cx - (54f * density), cy - radius),
                             size = Size(108f * density, radius * 2),
                             style = stroke
                         )
+                        // Ellipse rx="100" ry="106"
                         drawOval(
                             color = ColorGlobeStroke,
                             topLeft = Offset(cx - (100f * density), cy - radius),
@@ -230,7 +211,7 @@ fun LanguageSelectionScreen(
                             style = stroke
                         )
 
-                        // Các vĩ tuyến ngang
+                        // Các vĩ tuyến ngang SVG
                         drawLine(
                             color = ColorGlobeStroke,
                             start = Offset(186f * density, 108f * density),
@@ -262,7 +243,7 @@ fun LanguageSelectionScreen(
                             strokeWidth = strokePx
                         )
 
-                        // Vệ tinh xanh di chuyển theo quỹ đạo
+                        // Vệ tinh quay quanh quỹ đạo
                         val rad = Math.toRadians(orbitAngle.toDouble())
                         val dotX = cx + (radius * Math.cos(rad)).toFloat()
                         val dotY = cy + (radius * Math.sin(rad)).toFloat()
@@ -279,10 +260,11 @@ fun LanguageSelectionScreen(
                         )
                     }
 
-                    // THẺ TRẮNG NỔI (PREVIEW GIAO DIỆN)
+                    // THẺ TRẮNG NỔI (DÒNG 49-60 TRONG HTML):
+                    // <div style="position:absolute;left:16px;top:20px;width:236px;background:#fff;border:1px solid #E4E8F0;border-radius:20px;padding:14px 16px 16px;box-shadow:0 12px 24px -14px rgba(15,23,42,.3)">
                     Box(
                         modifier = Modifier
-                            .padding(start = 16.dp, top = 20.dp)
+                            .padding(start = 16.dp, top = 18.dp)
                             .width(236.dp)
                             .shadow(
                                 elevation = 12.dp,
@@ -292,20 +274,22 @@ fun LanguageSelectionScreen(
                             )
                             .background(Color.White, RoundedCornerShape(20.dp))
                             .border(1.dp, ColorBorderLight, RoundedCornerShape(20.dp))
-                            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 16.dp)
+                            .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)
                     ) {
                         Column {
-                            // Tag label: NGÔN NGỮ GIAO DIỆN / INTERFACE LANGUAGE
+                            // Tag: <div style="font-size:10.5px;font-weight:800;letter-spacing:.1em;color:#1F4BD8">{{ tagLabel }}</div>
                             Text(
                                 text = if (isVi) "NGÔN NGỮ GIAO DIỆN" else "INTERFACE LANGUAGE",
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontFamily = ManropeFontFamily,
                                 letterSpacing = 1.05.sp,
-                                color = ColorPrimaryBlue
+                                color = ColorPrimaryBlue,
+                                maxLines = 1,
+                                softWrap = false
                             )
 
-                            // Greeting: Xin chào / Hello
+                            // Greet: <div style="font-size:30px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-top:6px">{{ greet }}</div>
                             Text(
                                 text = if (isVi) "Xin chào" else "Hello",
                                 fontSize = 30.sp,
@@ -314,23 +298,28 @@ fun LanguageSelectionScreen(
                                 letterSpacing = (-0.9).sp,
                                 lineHeight = 33.sp,
                                 color = ColorTextMain,
-                                modifier = Modifier.padding(top = 6.dp)
+                                modifier = Modifier.padding(top = 4.dp),
+                                maxLines = 1,
+                                softWrap = false
                             )
 
-                            // Welcome subtitle: Chào mừng đến với AUTOLUNEX / Welcome to AUTOLUNEX
+                            // Welcome: <div style="font-size:12.5px;font-weight:500;color:#64748B;margin-top:4px">{{ welcome }}</div>
+                            // Khóa maxLines = 1, không cho ngắt dòng thành 2 dòng làm đội kích thước thẻ
                             Text(
                                 text = if (isVi) "Chào mừng đến với AUTOLUNEX" else "Welcome to AUTOLUNEX",
-                                fontSize = 12.5.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium,
                                 fontFamily = ManropeFontFamily,
                                 color = ColorTextMuted,
-                                modifier = Modifier.padding(top = 4.dp)
+                                modifier = Modifier.padding(top = 2.dp),
+                                maxLines = 1,
+                                softWrap = false
                             )
 
-                            // 3 Tab Pills (Trang chủ, Nhiệm vụ, Tiện ích) - đảm bảo không bao giờ bị rớt dòng
+                            // 3 Tabs: <div style="display:flex;gap:6px;margin-top:12px">
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.padding(top = 12.dp)
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                modifier = Modifier.padding(top = 10.dp)
                             ) {
                                 PreviewPill(text = if (isVi) "Trang chủ" else "Home")
                                 PreviewPill(text = if (isVi) "Nhiệm vụ" else "Tasks")
@@ -339,7 +328,8 @@ fun LanguageSelectionScreen(
                         }
                     }
 
-                    // BONG BÓNG THOẠI XANH NỔI "Bắt đầu thôi!" / "Let's start!"
+                    // BONG BÓNG THOẠI XANH (DÒNG 66 TRONG HTML):
+                    // <div style="position:absolute;right:18px;bottom:20px;background:#1F4BD8;color:#fff;font-size:13px;font-weight:700;padding:10px 14px;border-radius:16px 16px 4px 16px;box-shadow:0 10px 20px -10px rgba(31,75,216,.7)">{{ reply }}</div>
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -370,7 +360,8 @@ fun LanguageSelectionScreen(
 
                 Spacer(modifier = Modifier.height(26.dp))
 
-                // ── 3. TIÊU ĐỀ & MÔ TẢ CHÍNH ──
+                // ── 3. TIÊU ĐỀ & MÔ TẢ (DÒNG 69-70 TRONG HTML) ──
+                // <h1 style="margin:26px 0 0;font-size:30px;line-height:1.1;font-weight:800;letter-spacing:-.03em">Chọn ngôn ngữ</h1>
                 Text(
                     text = "Chọn ngôn ngữ",
                     fontSize = 30.sp,
@@ -381,6 +372,7 @@ fun LanguageSelectionScreen(
                     color = ColorTextMain
                 )
 
+                // <p style="margin:6px 0 0;font-size:14.5px;line-height:1.5;color:#475569">Vui lòng chọn ngôn ngữ hiển thị bạn muốn sử dụng.</p>
                 Text(
                     text = "Vui lòng chọn ngôn ngữ hiển thị bạn muốn sử dụng.",
                     fontSize = 14.5.sp,
@@ -393,7 +385,8 @@ fun LanguageSelectionScreen(
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // ── 4. DANH SÁCH 2 THẺ CHỌN NGÔN NGỮ (VI & EN) ──
+                // ── 4. DANH SÁCH 2 THẺ CHỌN NGÔN NGỮ (DÒNG 72-83 TRONG HTML) ──
+                // <div style="margin-top:18px;display:flex;flex-direction:column;gap:10px">
                 Column(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -423,12 +416,14 @@ fun LanguageSelectionScreen(
                 }
             }
 
-            // ── 5. ĐÁY MÀN HÌNH (GHI CHÚ HỒ SƠ + NÚT TIẾP TỤC) ──
+            // ── 5. ĐÁY MÀN HÌNH (DÒNG 85-88 TRONG HTML) ──
+            // <div style="margin-top:auto;padding-bottom:32px;display:flex;flex-direction:column;gap:12px">
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // <span style="font-size:12.5px;font-weight:500;color:#64748B;text-align:center">Bạn có thể đổi lại trong Hồ sơ › Cài đặt tài khoản</span>
                 Text(
                     text = "Bạn có thể đổi lại trong Hồ sơ › Cài đặt tài khoản",
                     fontSize = 12.5.sp,
@@ -438,7 +433,7 @@ fun LanguageSelectionScreen(
                     textAlign = TextAlign.Center
                 )
 
-                // Nút Tiếp tục (Chuyển sang màn tiếp theo theo luồng ứng dụng)
+                // <a href="License.dc.html" style="display:flex;align-items:center;justify-content:center;height:56px;border-radius:18px;background:#1F4BD8;color:#fff;font-size:16px;font-weight:700;box-shadow:0 12px 24px -12px rgba(31,75,216,.7)">Tiếp tục</a>
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -475,7 +470,7 @@ fun LanguageSelectionScreen(
 
 /**
  * Thẻ Tab nhỏ bên trong thẻ Preview (Trang chủ, Nhiệm vụ, Tiện ích).
- * Khóa maxLines = 1 và softWrap = false để đảm bảo không rớt chữ trên bất kỳ màn hình nào.
+ * Style HTML dòng 55-57: font-size: 11px; font-weight: 700; color: #334155; background: #F1F5F9; padding: 5px 9px; border-radius: 999px;
  */
 @Composable
 private fun PreviewPill(text: String) {
@@ -483,7 +478,7 @@ private fun PreviewPill(text: String) {
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
             .background(ColorPillBg)
-            .padding(horizontal = 8.dp, vertical = 4.5.dp)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Text(
             text = text,
@@ -498,7 +493,10 @@ private fun PreviewPill(text: String) {
 }
 
 /**
- * Thẻ chọn ngôn ngữ (VI hoặc EN) chuẩn số đo theo Language.dc.html.
+ * Thẻ chọn ngôn ngữ (VI hoặc EN) chuẩn 1:1 theo dòng 73-83 và renderVals() trong Language.dc.html.
+ * - base: display:flex; align-items:center; gap:14px; padding:12px 16px; border-radius:20px;
+ * - on:  background:#F5F8FF; border:1.5px solid #1F4BD8;
+ * - off: background:#fff; border:1.5px solid #E4E8F0;
  */
 @Composable
 private fun LanguageSelectionItem(
@@ -539,7 +537,7 @@ private fun LanguageSelectionItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Icon Badge vuông bo góc (VI / EN)
+            // Badge vuông bo góc (VI / EN): width:44px; height:44px; border-radius:13px; font-size:14px; font-weight:800; letter-spacing:.02em
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -557,10 +555,11 @@ private fun LanguageSelectionItem(
                 )
             }
 
-            // Tên ngôn ngữ & Mô tả
+            // Tiêu đề & phụ đề: gap: 1px
             Column(
                 modifier = Modifier.weight(1f)
             ) {
+                // <span style="font-size:16px;font-weight:700;color:#0F172A">Tiếng Việt</span>
                 Text(
                     text = title,
                     fontSize = 16.sp,
@@ -569,6 +568,7 @@ private fun LanguageSelectionItem(
                     color = ColorTextMain
                 )
                 Spacer(modifier = Modifier.height(1.dp))
+                // <span style="font-size:12.5px;font-weight:500;color:#64748B">Giao diện Tiếng Việt</span>
                 Text(
                     text = subtitle,
                     fontSize = 12.5.sp,
@@ -578,7 +578,9 @@ private fun LanguageSelectionItem(
                 )
             }
 
-            // Radio Button Indicator (Dấu check tròn xanh hoặc vòng tròn viền xám)
+            // Radio Button / Checkmark: width:24px; height:24px; border-radius:50%
+            // cOn: background:#1F4BD8
+            // cOff: background:#fff; border:1.5px solid #CBD2DF
             Box(
                 modifier = Modifier
                     .size(24.dp)
@@ -592,8 +594,9 @@ private fun LanguageSelectionItem(
                 contentAlignment = Alignment.Center
             ) {
                 if (isSelected) {
+                    // SVG Checkmark: viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"
+                    // d="M5 12.5l4.5 4.5L19 7.5"
                     Canvas(modifier = Modifier.size(14.dp)) {
-                        // SVG check: M5 12.5l4.5 4.5L19 7.5 (ViewBox 24x24)
                         val scaleX = size.width / 24f
                         val scaleY = size.height / 24f
                         val checkPath = Path().apply {
