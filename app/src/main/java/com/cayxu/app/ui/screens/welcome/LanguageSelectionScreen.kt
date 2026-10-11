@@ -26,8 +26,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -36,15 +38,46 @@ import com.cayxu.app.R
 import com.cayxu.app.ui.locale.AppLanguage
 import com.cayxu.app.ui.locale.LanguageState
 
-// ── BỘ FONT MANROPE CHUẨN (TỪ CÁC FILE STATIC TTF TRONG RES/FONT) ──
-val ManropeFontFamily = FontFamily(
-    Font(R.font.manrope_regular, FontWeight.Normal),
-    Font(R.font.manrope_medium, FontWeight.Medium),
-    Font(R.font.manrope_semibold, FontWeight.SemiBold),
-    Font(R.font.manrope_bold, FontWeight.Bold),
-    Font(R.font.manrope_extrabold, FontWeight.ExtraBold),
-    Font(R.font.manrope_extrabold, FontWeight.Black)
-)
+// ── BỘ FONT MANROPE AN TOÀN TUYỆT ĐỐI (HỖ TRỢ VARIABLE FONT VÀ FALLBACK CHỐNG CRASH) ──
+@OptIn(ExperimentalTextApi::class)
+val ManropeFontFamily: FontFamily = try {
+    FontFamily(
+        Font(
+            resId = R.font.manrope,
+            weight = FontWeight.Normal,
+            variationSettings = FontVariation.Settings(FontVariation.weight(400))
+        ),
+        Font(
+            resId = R.font.manrope,
+            weight = FontWeight.Medium,
+            variationSettings = FontVariation.Settings(FontVariation.weight(500))
+        ),
+        Font(
+            resId = R.font.manrope,
+            weight = FontWeight.SemiBold,
+            variationSettings = FontVariation.Settings(FontVariation.weight(600))
+        ),
+        Font(
+            resId = R.font.manrope,
+            weight = FontWeight.Bold,
+            variationSettings = FontVariation.Settings(FontVariation.weight(700))
+        ),
+        Font(
+            resId = R.font.manrope,
+            weight = FontWeight.ExtraBold,
+            variationSettings = FontVariation.Settings(FontVariation.weight(800))
+        )
+    )
+} catch (_: Throwable) {
+    try {
+        FontFamily(
+            Font(R.font.manrope, FontWeight.Normal),
+            Font(R.font.manrope, FontWeight.Bold)
+        )
+    } catch (_: Throwable) {
+        FontFamily.Default
+    }
+}
 
 // ── BẢNG MÀU CHÍNH XÁC 100% TỪ LANGUAGE.DC.HTML ──
 private val ColorPageBg = Color(0xFFF3F5F9)
@@ -64,7 +97,7 @@ private val ColorRadioUncheckedBorder = Color(0xFFCBD2DF)
 
 /**
  * MÀN HÌNH CHỌN NGÔN NGỮ (LANGUAGE SELECTION SCREEN)
- * Khớp 100% từng pixel với file Language.dc.html và ảnh thiết kế mẫu:
+ * Thiết kế chuẩn pixel-perfect theo Language.dc.html:
  * - Font Manrope đậm chuẩn (ExtraBold 800, Bold 700, Medium 500)
  * - Header có icon tia sét xanh + chữ AUTOLUNEX
  * - Khung preview có quả cầu line-art chuyển động, thẻ trắng nổi không vỡ dòng và bong bóng thoại "Bắt đầu thôi!"
