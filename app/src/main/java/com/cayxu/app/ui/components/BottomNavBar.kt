@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -108,20 +109,23 @@ fun CayXuBottomBar(navController: NavController) {
 
                 val totalWeightSum = animatedWeights.sum()
 
-                // Tính toán tọa độ X và chiều rộng của từng tab theo animated weight
-                val tabWidths = animatedWeights.map { (it / totalWeightSum) * totalWidth }
+                // Tính toán tọa độ X và chiều rộng của từng tab theo animated weight (toán tử Dp * Float)
+                val tabWidths = animatedWeights.map { weight ->
+                    totalWidth * (weight / totalWeightSum)
+                }
                 val tabStartXs = animatedWeights.indices.map { i ->
                     if (i == 0) 0.dp else {
                         var sum = 0f
                         for (k in 0 until i) {
                             sum += animatedWeights[k]
                         }
-                        (sum / totalWeightSum) * totalWidth
+                        totalWidth * (sum / totalWeightSum)
                     }
                 }
 
                 val activePillX = tabStartXs[activeIndex] + 3.dp
-                val activePillWidth = (tabWidths[activeIndex] - 6.dp).coerceAtLeast(46.dp)
+                val calculatedWidth = tabWidths[activeIndex] - 6.dp
+                val activePillWidth = if (calculatedWidth < 46.dp) 46.dp else calculatedWidth
 
                 // 🚀 KHỐI VIÊN THUỐC TRƯỢT VẬT LÝ DUY NHẤT TRÊN THANH
                 Box(
