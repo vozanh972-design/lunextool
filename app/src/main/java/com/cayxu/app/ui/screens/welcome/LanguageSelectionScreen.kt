@@ -1,7 +1,7 @@
 package com.cayxu.app.ui.screens.welcome
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -26,7 +26,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -66,7 +65,7 @@ private val ColorRadioUncheckedBorder = Color(0xFFCBD2DF)
 
 /**
  * MÀN HÌNH CHỌN NGÔN NGỮ (LANGUAGE SELECTION SCREEN)
- * Chuẩn từng pixel khớp 100% với file Language.dc.html và ảnh mẫu thiết kế.
+ * Khớp từng pixel với file Language.dc.html mới và ảnh mẫu thiết kế.
  */
 @Composable
 fun LanguageSelectionScreen(
@@ -76,6 +75,18 @@ fun LanguageSelectionScreen(
     // Mặc định chọn Tiếng Việt (VI)
     var selectedLang by remember { mutableStateOf(AppLanguage.VI) }
     val isVi = selectedLang == AppLanguage.VI
+
+    // Hiệu ứng quỹ đạo vệ tinh của quả cầu
+    val infiniteTransition = rememberInfiniteTransition(label = "globeOrbit")
+    val orbitAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 10000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "orbitAngle"
+    )
 
     Box(
         modifier = Modifier
@@ -94,48 +105,19 @@ fun LanguageSelectionScreen(
             Column(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // ── 1. BRAND HEADER (LOGO SẤM SÉT + AUTOLUNEX) ──
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(11.dp))
-                            .background(ColorPrimaryBlue),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Canvas(modifier = Modifier.size(19.dp)) {
-                            // SVG: M13 2L4 14h7l-1 8 9-12h-7z (ViewBox 24x24)
-                            val scaleX = size.width / 24f
-                            val scaleY = size.height / 24f
-                            val boltPath = Path().apply {
-                                moveTo(13f * scaleX, 2f * scaleY)
-                                lineTo(4f * scaleX, 14f * scaleY)
-                                lineTo(11f * scaleX, 14f * scaleY)
-                                lineTo(10f * scaleX, 22f * scaleY)
-                                lineTo(19f * scaleX, 10f * scaleY)
-                                lineTo(12f * scaleX, 10f * scaleY)
-                                close()
-                            }
-                            drawPath(boltPath, color = Color.White)
-                        }
-                    }
-
-                    Text(
-                        text = "AUTOLUNEX",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontFamily = ManropeFontFamily,
-                        letterSpacing = 1.6.sp,
-                        color = ColorTextMain
-                    )
-                }
+                // ── 1. BRAND HEADER (KHỚP 100% ẢNH MẪU: DUY NHẤT TEXT AUTOLUNEX) ──
+                Text(
+                    text = "AUTOLUNEX",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = ManropeFontFamily,
+                    letterSpacing = 1.6.sp,
+                    color = ColorTextMain
+                )
 
                 Spacer(modifier = Modifier.height(22.dp))
 
-                // ── 2. LIVE PREVIEW CONTAINER (KHUNG MINH HỌA QUẢ CẦU + 2 THẺ NỔI) ──
+                // ── 2. LIVE PREVIEW CONTAINER (KHUNG MINH HỌA QUẢ CẦU + THẺ TRẮNG NỔI) ──
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -152,35 +134,44 @@ fun LanguageSelectionScreen(
                         val strokePx = 1.4f * density
                         val stroke = Stroke(width = strokePx)
 
-                        // cx = 292, cy = 108
+                        // Tâm quả cầu: cx = 292, cy = 108
                         val cx = 292f * density
                         val cy = 108f * density
+                        val radius = 106f * density
 
                         // Circle r = 106
                         drawCircle(
                             color = ColorGlobeStroke,
-                            radius = 106f * density,
+                            radius = radius,
                             center = Offset(cx, cy),
                             style = stroke
                         )
 
-                        // Ellipse rx = 46, ry = 106
+                        // Ellipse rx = 10, ry = 106
                         drawOval(
                             color = ColorGlobeStroke,
-                            topLeft = Offset(cx - (46f * density), cy - (106f * density)),
-                            size = Size(92f * density, 212f * density),
+                            topLeft = Offset(cx - (10f * density), cy - radius),
+                            size = Size(20f * density, radius * 2),
                             style = stroke
                         )
 
-                        // Ellipse rx = 84, ry = 106
+                        // Ellipse rx = 54, ry = 106
                         drawOval(
                             color = ColorGlobeStroke,
-                            topLeft = Offset(cx - (84f * density), cy - (106f * density)),
-                            size = Size(168f * density, 212f * density),
+                            topLeft = Offset(cx - (54f * density), cy - radius),
+                            size = Size(108f * density, radius * 2),
                             style = stroke
                         )
 
-                        // Đường ngang: M186 108h212
+                        // Ellipse rx = 100, ry = 106
+                        drawOval(
+                            color = ColorGlobeStroke,
+                            topLeft = Offset(cx - (100f * density), cy - radius),
+                            size = Size(200f * density, radius * 2),
+                            style = stroke
+                        )
+
+                        // Đường ngang vĩ tuyến: M186 108h212
                         drawLine(
                             color = ColorGlobeStroke,
                             start = Offset(186f * density, 108f * density),
@@ -214,6 +205,22 @@ fun LanguageSelectionScreen(
                             start = Offset(226f * density, 190f * density),
                             end = Offset((226f + 132f) * density, 190f * density),
                             strokeWidth = strokePx
+                        )
+
+                        // Vệ tinh xanh quỹ đạo (Orbiting Satellite Dot)
+                        val rad = Math.toRadians(orbitAngle.toDouble())
+                        val dotX = cx + (radius * Math.cos(rad)).toFloat()
+                        val dotY = cy + (radius * Math.sin(rad)).toFloat()
+
+                        drawCircle(
+                            color = ColorPrimaryBlue.copy(alpha = 0.15f),
+                            radius = 9f * density,
+                            center = Offset(dotX, dotY)
+                        )
+                        drawCircle(
+                            color = ColorPrimaryBlue,
+                            radius = 4.5f * density,
+                            center = Offset(dotX, dotY)
                         )
                     }
 
@@ -275,32 +282,6 @@ fun LanguageSelectionScreen(
                                 PreviewPill(text = if (isVi) "Tiện ích" else "Tools")
                             }
                         }
-                    }
-
-                    // BONG BÓNG CHAT BÊN PHẢI (SPEECH BUBBLE)
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 18.dp, bottom = 20.dp)
-                            .shadow(
-                                elevation = 10.dp,
-                                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 4.dp, bottomStart = 16.dp),
-                                ambientColor = Color(0x661F4BD8),
-                                spotColor = Color(0xB21F4BD8)
-                            )
-                            .background(
-                                color = ColorPrimaryBlue,
-                                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 4.dp, bottomStart = 16.dp)
-                            )
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
-                    ) {
-                        Text(
-                            text = if (isVi) "Bắt đầu thôi!" else "Let's start!",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = ManropeFontFamily
-                        )
                     }
                 }
 
