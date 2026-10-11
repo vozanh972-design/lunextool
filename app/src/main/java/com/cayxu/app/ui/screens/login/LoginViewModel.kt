@@ -112,11 +112,16 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            _uiState.value = _uiState.value.copy(
+                isLoading = true,
+                errorMessage = null,
+                autoVerifyStatus = AutoVerifyStatus.CHECKING
+            )
 
             if (com.cayxu.app.util.AppUpdateManager.isUpdateRequired()) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
+                    autoVerifyStatus = AutoVerifyStatus.ERROR,
                     errorMessage = "Phiên bản ứng dụng đã cũ và bị vô hiệu hóa! Vui lòng cập nhật."
                 )
                 return@launch
@@ -131,7 +136,11 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     "Ứng dụng đã bị can thiệp hoặc gắn debugger!"
                 }
-                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = msg)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    autoVerifyStatus = AutoVerifyStatus.ERROR,
+                    errorMessage = msg
+                )
                 return@launch
             }
 
@@ -143,18 +152,26 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                     result.data.effectiveUsername?.let { if (it.isNotBlank()) securePrefs.saveBuyerUsername(it) }
                     result.data.packageName?.let { securePrefs.savePackageName(it) }
                     result.data.expiresAt?.let { securePrefs.saveExpiresAt(it) }
-                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    
+                    _uiState.value = _uiState.value.copy(
+                        autoVerifyStatus = AutoVerifyStatus.SUCCESS,
+                        isLoading = false
+                    )
+                    kotlinx.coroutines.delay(1000L) // Hiển thị tích xanh Apple NFC mượt mà
+                    _uiState.value = _uiState.value.copy(autoVerifyStatus = AutoVerifyStatus.IDLE)
                     onSuccess()
                 }
                 is AuthResult.ApiError -> {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
+                        autoVerifyStatus = AutoVerifyStatus.ERROR,
                         errorMessage = result.message
                     )
                 }
                 is AuthResult.NetworkError -> {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
+                        autoVerifyStatus = AutoVerifyStatus.ERROR,
                         errorMessage = "Không thể kết nối tới máy chủ, vui lòng thử lại"
                     )
                 }

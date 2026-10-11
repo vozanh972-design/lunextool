@@ -1,10 +1,13 @@
 package com.cayxu.app.ui.navigation
 
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
@@ -184,7 +187,7 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             navController = navController,
             startDestination = when {
                 securePrefs.isPermanentlyBlocked() -> Routes.BLOCKED
-                !securePrefs.hasSeenWelcome() -> Routes.ONBOARDING
+                !securePrefs.hasSeenWelcome() -> Routes.LANGUAGE_SELECTION
                 else -> Routes.LOGIN
             },
             modifier = Modifier.padding(innerPadding),
@@ -195,58 +198,60 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             popExitTransition = { fadeOut(animationSpec = tween(FADE_DURATION_MS)) }
         ) {
 
-            // 1. Bộ 3 màn hình Onboarding
-            composable(Routes.ONBOARDING) {
-                OnboardingScreen(
-                    onFinished = {
-                        navController.navigate(Routes.LANGUAGE_SELECTION) {
-                            popUpTo(Routes.ONBOARDING) { inclusive = true }
-                        }
-                    }
-                )
-            }
-
-            // 2. Màn hình Chọn Ngôn ngữ (LanguageSelectionScreen)
+            // 1. Màn hình Chọn Ngôn ngữ (LanguageSelectionScreen)
             composable(Routes.LANGUAGE_SELECTION) {
                 LanguageSelectionScreen(
                     onFinished = {
-                        navController.navigate(Routes.WELCOME) {
+                        navController.navigate(Routes.LOGIN) {
                             popUpTo(Routes.LANGUAGE_SELECTION) { inclusive = true }
                         }
                     }
                 )
             }
 
-            // 3. Màn hình Chào mừng (WelcomeScreen)
+            // 2. Màn hình Đăng nhập Bản quyền (LoginScreen - Phong cách Facebook Design)
+            composable(
+                Routes.LOGIN,
+                enterTransition = { fadeIn(animationSpec = tween(FADE_DURATION_MS)) }
+            ) {
+                LoginScreen(
+                    onLoginSuccess = {
+                        val currentPrefs = SecurePrefs(context)
+                        if (!currentPrefs.hasSeenWelcome()) {
+                            navController.navigate(Routes.WELCOME) {
+                                popUpTo(Routes.LOGIN) { inclusive = true }
+                            }
+                        } else {
+                            navController.navigate(Routes.HOME) {
+                                popUpTo(Routes.LOGIN) { inclusive = true }
+                            }
+                        }
+                    }
+                )
+            }
+
+            // 3. Màn hình Chào mừng (WelcomeScreen - Sau khi xác thực key thành công)
             composable(
                 Routes.WELCOME,
-                exitTransition = {
-                    if (targetState.destination.route == Routes.LOGIN) welcomeToLoginExit()
-                    else fadeOut(animationSpec = tween(FADE_DURATION_MS))
-                }
+                exitTransition = { fadeOut(animationSpec = tween(FADE_DURATION_MS)) }
             ) {
-                val currentContext = androidx.compose.ui.platform.LocalContext.current
+                val currentContext = LocalContext.current
                 WelcomeScreen(
                     onLoginClick = {
-                        com.cayxu.app.data.local.SecurePrefs(currentContext).setSeenWelcome()
-                        navController.navigate(Routes.LOGIN) {
+                        SecurePrefs(currentContext).setSeenWelcome()
+                        navController.navigate(Routes.HOME) {
                             popUpTo(Routes.WELCOME) { inclusive = true }
                         }
                     }
                 )
             }
 
-            composable(
-                Routes.LOGIN,
-                enterTransition = {
-                    if (initialState.destination.route == Routes.WELCOME) welcomeToLoginEnter()
-                    else fadeIn(animationSpec = tween(FADE_DURATION_MS))
-                }
-            ) {
-                LoginScreen(
-                    onLoginSuccess = {
-                        navController.navigate(Routes.HOME) {
-                            popUpTo(Routes.LOGIN) { inclusive = true }
+            // Onboarding dự phòng (giữ định nghĩa route để tránh breaking change)
+            composable(Routes.ONBOARDING) {
+                OnboardingScreen(
+                    onFinished = {
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(Routes.ONBOARDING) { inclusive = true }
                         }
                     }
                 )

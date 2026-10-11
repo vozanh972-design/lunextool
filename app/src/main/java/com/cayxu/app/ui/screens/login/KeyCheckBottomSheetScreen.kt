@@ -55,6 +55,14 @@ fun KeyCheckBottomSheetScreen(
         label = "progressValue"
     )
 
+    // Tự động đóng modal sau 1.6s nếu lỗi để người dùng nhập lại key (Zero-click UX)
+    LaunchedEffect(status) {
+        if (status == AutoVerifyStatus.ERROR) {
+            kotlinx.coroutines.delay(1600L)
+            onDismiss()
+        }
+    }
+
     val progressFraction = when (status) {
         AutoVerifyStatus.CHECKING -> animatedProgress
         AutoVerifyStatus.SUCCESS  -> 1f

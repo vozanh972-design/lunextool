@@ -30,11 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -56,18 +52,14 @@ private val floatingBottomItems = listOf(
 
 /**
  * THANH ĐIỀU HƯỚNG NỔI HIỆU ỨNG TRƯỢT VẬT LÝ LIÊN TỤC (PHYSICAL CONTINUOUS SLIDING INDICATOR DOCK)
- * - Một khối viên thuốc màu đá than đen (#0F172A) trượt mượt mà xuyên suốt giữa các tab theo tọa độ offset
- * - Tự động co giãn bề ngang (width) và dịch chuyển tọa độ x theo tab được bấm
- * - Tên chức năng xuất hiện êm ái khi tab active, tab khác giữ icon thanh lịch
+ * - 4 tab chia đều đối xứng 100% bằng weight(1f), loại bỏ hoàn toàn hiện tượng xô lệch vị trí.
+ * - Viên thuốc màu đen (#0F172A) căn tâm chính xác tuyệt đối với từng tab.
+ * - Trượt vật lý spring êm ái, mượt mà, không giật lag do layout reflow.
  */
 @Composable
 fun CayXuBottomBar(navController: NavController) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val density = LocalDensity.current
-
-    // Lưu trữ tọa độ X và chiều rộng của từng tab
-    val tabPositions = remember { mutableStateMapOf<Int, Pair<Dp, Dp>>() }
 
     // Tìm index của tab đang active
     val activeIndex = remember(currentRoute) {
@@ -76,29 +68,6 @@ fun CayXuBottomBar(navController: NavController) {
         }
         if (idx >= 0) idx else 0
     }
-
-    val currentTabPos = tabPositions[activeIndex]
-    val targetOffsetX = currentTabPos?.first ?: 0.dp
-    val targetWidth = currentTabPos?.second ?: 46.dp
-
-    // Animation trượt vật lý liên tục (X position & Width)
-    val animatedOffsetX by animateDpAsState(
-        targetValue = targetOffsetX,
-        animationSpec = spring(
-            dampingRatio = 0.8f,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "pillSlideX"
-    )
-
-    val animatedPillWidth by animateDpAsState(
-        targetValue = targetWidth,
-        animationSpec = spring(
-            dampingRatio = 0.8f,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "pillSlideWidth"
-    )
 
     Box(
         modifier = Modifier
@@ -116,28 +85,61 @@ fun CayXuBottomBar(navController: NavController) {
                 .fillMaxWidth()
                 .height(62.dp)
         ) {
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
-                // 🚀 KHỐI VIÊN THUỐC TRƯỢT VẬT LÝ DUY NHẤT TRÊN THANH
-                if (tabPositions.isNotEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .offset(x = animatedOffsetX)
-                            .width(animatedPillWidth)
-                            .height(46.dp)
-                            .clip(RoundedCornerShape(23.dp))
-                            .background(Color(0xFF0F172A))
-                    )
+                val totalWidth = maxWidth
+                val tabCount = floatingBottomItems.size
+                val tabSlotWidth = totalWidth / tabCount
+
+                // Chiều rộng viên thuốc theo từng tab khi active để ôm trọn chữ đẹp mắt
+                val targetPillWidth = when (activeIndex) {
+                    0 -> 106.dp // Trang chủ
+                    1 -> 104.dp // Nhiệm vụ
+                    2 -> 98.dp  // Tiện ích
+                    3 -> 90.dp  // Hồ sơ
+                    else -> 100.dp
                 }
 
-                // CÁC NÚT TAB NẰM PHÍA TRÊN KHỐI TRƯỢT
+                // Tọa độ tâm của tab active -> Tọa độ X của viên thuốc luôn căn giữa hoàn hảo
+                val targetCenterX = tabSlotWidth * activeIndex + (tabSlotWidth / 2)
+                val targetPillX = targetCenterX - (targetPillWidth / 2)
+
+                // Animation trượt vật lý liên tục (X position & Width) mượt như nhung
+                val animatedPillX by animateDpAsState(
+                    targetValue = targetPillX,
+                    animationSpec = spring(
+                        dampingRatio = 0.82f,
+                        stiffness = Spring.StiffnessMediumLow
+                    ),
+                    label = "pillSlideX"
+                )
+
+                val animatedPillWidth by animateDpAsState(
+                    targetValue = targetPillWidth,
+                    animationSpec = spring(
+                        dampingRatio = 0.85f,
+                        stiffness = Spring.StiffnessMediumLow
+                    ),
+                    label = "pillSlideWidth"
+                )
+
+                // 🚀 KHỐI VIÊN THUỐC TRƯỢT VẬT LÝ DUY NHẤT TRÊN THANH
+                Box(
+                    modifier = Modifier
+                        .offset(x = animatedPillX)
+                        .width(animatedPillWidth)
+                        .height(46.dp)
+                        .clip(RoundedCornerShape(23.dp))
+                        .background(Color(0xFF0F172A))
+                )
+
+                // CÁC NÚT TAB NẰM ĐỐI XỨNG CÂN BẰNG PHÍA TRÊN KHỐI TRƯỢT
                 Row(
                     modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.SpaceAround,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     floatingBottomItems.forEachIndexed { index, item ->
@@ -153,13 +155,8 @@ fun CayXuBottomBar(navController: NavController) {
 
                         Box(
                             modifier = Modifier
-                                .height(46.dp)
-                                .clip(RoundedCornerShape(23.dp))
-                                .onGloballyPositioned { coordinates ->
-                                    val xInParent = with(density) { coordinates.positionInParent().x.toDp() }
-                                    val widthInParent = with(density) { coordinates.size.width.toDp() }
-                                    tabPositions[index] = Pair(xInParent, widthInParent)
-                                }
+                                .weight(1f)
+                                .fillMaxHeight()
                                 .clickable(
                                     interactionSource = interactionSource,
                                     indication = null
@@ -171,11 +168,13 @@ fun CayXuBottomBar(navController: NavController) {
                                             restoreState = true
                                         }
                                     }
-                                }
-                                .padding(horizontal = if (isSelected) 16.dp else 12.dp),
+                                },
                             contentAlignment = Alignment.Center
                         ) {
                             Row(
+                                modifier = Modifier
+                                    .height(46.dp)
+                                    .padding(horizontal = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center
                             ) {

@@ -116,11 +116,6 @@ fun AccountScreen(navController: NavController) {
         }
     }
 
-    val avatarUrl = remember(username, deviceId) {
-        val seed = if (username.isNotBlank()) username else deviceId
-        "https://api.dicebear.com/9.x/bottts-neutral/png?seed=${Uri.encode(seed)}&size=160"
-    }
-
     var avatarUriString by remember { mutableStateOf(securePrefs.getAvatarUri()) }
     var avatarBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var showLogoutDialog by remember { mutableStateOf(false) }
