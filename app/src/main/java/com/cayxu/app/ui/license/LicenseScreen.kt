@@ -54,7 +54,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
@@ -86,22 +85,18 @@ import kotlin.math.roundToInt
 
 /* ───────────────────────────── Icon path (khung 24×24, lấy từ SVG thiết kế) ───────────────────────────── */
 
-private val ClipboardPaths = listOf(
-    "M9 3h6a1 1 0 011 1v2a1 1 0 01-1 1H9a1 1 0 01-1-1V4a1 1 0 011-1z",
-    "M16 5h2a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2h2",
-)
 private val KeyPaths = listOf(
-    "M4 15a4 4 0 108 0a4 4 0 10-8 0",
+    "M4 15 A4 4 0 1 0 12 15 A4 4 0 1 0 4 15 Z",
     "M10.8 12.2L20 3M16 7l3 3",
 )
 private val ErrorPaths = listOf(
-    "M3 12a9 9 0 1018 0a9 9 0 10-18 0",
+    "M3 12 A9 9 0 1 0 21 12 A9 9 0 1 0 3 12 Z",
     "M12 7.5v5M12 16h.01",
 )
 private val HeadsetPaths = listOf(
-    "M4 14v-2a8 8 0 0116 0v2",
-    "M4 14H5A1.5 1.5 0 016.5 15.5V18.5A1.5 1.5 0 015 20H4A1.5 1.5 0 012.5 18.5V15.5A1.5 1.5 0 014 14Z",
-    "M19 14H20A1.5 1.5 0 0121.5 15.5V18.5A1.5 1.5 0 0120 20H19A1.5 1.5 0 0117.5 18.5V15.5A1.5 1.5 0 0119 14Z",
+    "M4 14 L4 12 A8 8 0 0 1 20 12 L20 14",
+    "M4 14 L5 14 A1.5 1.5 0 0 1 6.5 15.5 L6.5 18.5 A1.5 1.5 0 0 1 5 20 L4 20 A1.5 1.5 0 0 1 2.5 18.5 L2.5 15.5 A1.5 1.5 0 0 1 4 14 Z",
+    "M19 14 L20 14 A1.5 1.5 0 0 1 21.5 15.5 L21.5 18.5 A1.5 1.5 0 0 1 20 20 L19 20 A1.5 1.5 0 0 1 17.5 18.5 L17.5 15.5 A1.5 1.5 0 0 1 19 14 Z",
 )
 
 /* ───────────────────────────── Màn hình ───────────────────────────── */
@@ -227,7 +222,6 @@ private fun KeyField(
     errorVersion: Int,
     modifier: Modifier = Modifier,
 ) {
-    val clipboard = LocalClipboardManager.current
     val focus = LocalFocusManager.current
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
@@ -252,19 +246,7 @@ private fun KeyField(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BasicText("Mã kích hoạt (License Key)", style = type(14f, FontWeight.Bold, Alx.Ink))
-            Row(
-                Modifier
-                    .clickable(role = Role.Button) {
-                        clipboard.getText()?.text?.trim()?.takeIf { it.isNotEmpty() }?.let(onValueChange)
-                    }
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                SvgIcon(ClipboardPaths, 15.dp, Alx.Blue, 2f)
-                BasicText("Dán key", style = type(13f, FontWeight.Bold, Alx.Blue))
-            }
+            BasicText("Mã kích hoạt (License Key)", Modifier.padding(vertical = 8.dp), style = type(14f, FontWeight.Bold, Alx.Ink))
         }
 
         val borderColor = when {
@@ -303,20 +285,25 @@ private fun KeyField(
                 .background(if (hasError && !focused) Alx.DangerBg else Alx.White, shape)
                 .border(if (focused) 2.dp else 1.5.dp, borderColor, shape),
             decorationBox = { inner ->
-                Box(Modifier.fillMaxSize().padding(start = 44.dp, end = 16.dp), contentAlignment = Alignment.CenterStart) {
-                    if (value.isEmpty()) {
-                        BasicText(
-                            "Dán hoặc nhập mã key tại đây...",
-                            style = type(14.5f, FontWeight.Medium, Alx.Placeholder),
-                            maxLines = 1,
-                        )
+                Box(Modifier.fillMaxSize()) {
+                    Box(
+                        Modifier.fillMaxSize().padding(start = 44.dp, end = 16.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (value.isEmpty()) {
+                            BasicText(
+                                "Dán hoặc nhập mã key tại đây...",
+                                style = type(14.5f, FontWeight.Medium, Alx.Placeholder),
+                                maxLines = 1,
+                            )
+                        }
+                        inner()
                     }
-                    inner()
+                    SvgIcon(
+                        KeyPaths, 18.dp, if (hasError && !focused) Alx.Danger else Alx.Muted, 1.8f,
+                        Modifier.align(Alignment.CenterStart).padding(start = 16.dp),
+                    )
                 }
-                SvgIcon(
-                    KeyPaths, 18.dp, if (hasError && !focused) Alx.Danger else Alx.Muted, 1.8f,
-                    Modifier.padding(start = 16.dp, top = 19.dp),
-                )
             },
         )
 

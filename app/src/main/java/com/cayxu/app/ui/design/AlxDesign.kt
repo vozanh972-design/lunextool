@@ -24,8 +24,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -152,16 +154,23 @@ internal val EaseOutSoft = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
 internal val EaseInOutCss = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 internal val EaseScroll = CubicBezierEasing(0.45f, 0f, 0.25f, 1f)
 
-/** Vòng lặp 0..1. Khi người dùng tắt animation hệ thống thì trả về [rest] cố định. */
+/**
+ * Vòng lặp 0..1 chạy theo đồng hồ khung hình, lặp mãi mãi. Khi người dùng tắt animation hệ thống
+ * thì trả về [rest] cố định.
+ */
 @Composable
 internal fun rememberLoop(durationMs: Int, enabled: Boolean, rest: Float = 0f): State<Float> {
-    if (!enabled) return remember { mutableStateOf(rest) }
-    return rememberInfiniteTransition(label = "loop").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(durationMs, easing = LinearEasing)),
-        label = "loop$durationMs",
-    )
+    val state = remember { mutableFloatStateOf(rest) }
+    LaunchedEffect(enabled, durationMs) {
+        if (!enabled) { state.floatValue = rest; return@LaunchedEffect }
+        val start = withFrameNanos { it }
+        while (true) {
+            withFrameNanos { now ->
+                state.floatValue = (((now - start) / 1_000_000L) % durationMs).toFloat() / durationMs
+            }
+        }
+    }
+    return state
 }
 
 @Composable
