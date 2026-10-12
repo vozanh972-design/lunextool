@@ -1,6 +1,8 @@
 package com.cayxu.app.ui.design
 
+import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
@@ -27,7 +29,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -155,19 +156,41 @@ internal val EaseInOutCss = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 internal val EaseScroll = CubicBezierEasing(0.45f, 0f, 0.25f, 1f)
 
 /**
- * Vòng lặp 0..1 chạy theo đồng hồ khung hình, lặp mãi mãi. Khi người dùng tắt animation hệ thống
- * thì trả về [rest] cố định.
+ * Vòng lặp 0..1 chạy theo đồng hồ thực tế (uptimeMillis) kết hợp delay coroutine (~60 FPS),
+ * không phụ thuộc vào Choreographer frame callback (tránh bị hệ thống Android / Xiaomi / Oppo
+ * treo khi bật Tiết kiệm pin hoặc đứng hình giữa chừng).
+ * Khi người dùng tắt animation hệ thống (Animator duration scale = 0) thì trả về [rest] cố định.
  */
 @Composable
 internal fun rememberLoop(durationMs: Int, enabled: Boolean, rest: Float = 0f): State<Float> {
     val state = remember { mutableFloatStateOf(rest) }
     LaunchedEffect(enabled, durationMs) {
-        if (!enabled) { state.floatValue = rest; return@LaunchedEffect }
-        val start = withFrameNanos { it }
+        if (!enabled) {
+            state.floatValue = rest
+            Log.d("AlxAnimation", "Animation disabled (scale = 0), rest=$rest")
+            return@LaunchedEffect
+        }
+        val startTime = SystemClock.uptimeMillis()
+        var lastLogSec = -1L
         while (true) {
-            withFrameNanos { now ->
-                state.floatValue = (((now - start) / 1_000_000L) % durationMs).toFloat() / durationMs
+            val now = SystemClock.uptimeMillis()
+            val elapsed = now - startTime
+            val p = (elapsed % durationMs).toFloat() / durationMs
+            state.floatValue = p
+
+            // Log mỗi giây (p, cycle, elapsed, thread) để theo dõi vòng lặp liên tục
+            val currentSec = elapsed / 1000L
+            if (currentSec != lastLogSec) {
+                lastLogSec = currentSec
+                val cycle = elapsed / durationMs
+                Log.d(
+                    "AlxAnimation",
+                    "Loop tick: p=%.3f, cycle=%d, elapsed=%dms, thread=%s".format(
+                        p, cycle, elapsed, Thread.currentThread().name
+                    )
+                )
             }
+            delay(16L) // ~60 FPS độc lập với Choreographer VSYNC throttling
         }
     }
     return state
@@ -177,7 +200,13 @@ internal fun rememberLoop(durationMs: Int, enabled: Boolean, rest: Float = 0f): 
 internal fun animationsEnabled(): Boolean {
     val ctx = LocalContext.current
     return remember {
-        Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
+        val scale = try {
+            Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+        } catch (_: Throwable) {
+            1f
+        }
+        Log.d("AlxAnimation", "animationsEnabled check: ANIMATOR_DURATION_SCALE = $scale")
+        scale != 0f
     }
 }
 

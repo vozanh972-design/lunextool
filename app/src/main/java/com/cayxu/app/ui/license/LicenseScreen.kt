@@ -2,6 +2,7 @@ package com.cayxu.app.ui.license
 
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -36,11 +38,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,6 +87,7 @@ import com.cayxu.app.ui.design.rise
 import com.cayxu.app.ui.design.type
 import com.cayxu.app.ui.screens.login.LoginViewModel
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 /* ───────────────────────────── Icon path (khung 24×24, lấy từ SVG thiết kế) ───────────────────────────── */
 
@@ -329,10 +335,25 @@ private fun KeyField(
 private fun PhonePreview(modifier: Modifier = Modifier) {
     val on = animationsEnabled()
     // Vòng 10s: điện thoại trồi lên → màn hình cuộn xuống → thanh 95% chạy → hạ xuống → lặp
-    val p by rememberLoop(10_000, on, rest = 0.5f)
-    val phoneY = keys(p, 0f to 250f, 0.10f to 0f, 0.88f to 0f, 0.94f to 250f, 1f to 250f, ease = EaseOutSoft::transform)
-    val scrollY = keys(p, 0f to 0f, 0.17f to 0f, 0.52f to -100f, 0.94f to -100f, 0.941f to 0f, 1f to 0f, ease = EaseScroll::transform)
-    val bar = keys(p, 0f to 0f, 0.12f to 0f, 0.30f to 1f, 0.94f to 1f, 0.941f to 0f, 1f to 0f, ease = EaseInOutCss::transform)
+    val loop = rememberLoop(10_000, on, rest = 0.5f)
+    // Đọc state ở pha vẽ (trong graphicsLayer) để mỗi khung hình tự cập nhật, không phụ thuộc recomposition.
+    val phoneY = { keys(loop.value, 0f to 250f, 0.10f to 0f, 0.88f to 0f, 0.94f to 250f, 1f to 250f, ease = EaseOutSoft::transform) }
+    val scrollY = { keys(loop.value, 0f to 0f, 0.17f to 0f, 0.52f to -100f, 0.94f to -100f, 0.941f to 0f, 1f to 0f, ease = EaseScroll::transform) }
+    val bar = { keys(loop.value, 0f to 0f, 0.12f to 0f, 0.30f to 1f, 0.94f to 1f, 0.941f to 0f, 1f to 0f, ease = EaseInOutCss::transform) }
+
+    // Mỗi vòng lặp (10s) đổi bộ số mới: các ô đếm từ 0 lên vài trăm nghìn đến vài triệu.
+    var cycle by remember { mutableIntStateOf(0) }
+    LaunchedEffect(on) {
+        var prev = 0f
+        snapshotFlow { loop.value }.collect {
+            if (it < prev - 0.5f) {
+                cycle++
+                Log.d("AlxAnimation", "Cycle looped in PhonePreview: new cycle=$cycle")
+            }
+            prev = it
+        }
+    }
+    val amounts = remember(cycle) { randomAmounts(cycle) }
 
     Box(
         modifier
@@ -346,8 +367,8 @@ private fun PhonePreview(modifier: Modifier = Modifier) {
             Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 14.dp)
-                .graphicsLayer { translationY = phoneY.dp.toPx() }
-                .size(252.dp, 340.dp)
+                .graphicsLayer { translationY = phoneY().dp.toPx() }
+                .requiredSize(252.dp, 340.dp)
                 .shadow(
                     16.dp, RoundedCornerShape(36.dp),
                     ambientColor = Color(0x330F172A), spotColor = Color(0x800F172A),
@@ -357,9 +378,10 @@ private fun PhonePreview(modifier: Modifier = Modifier) {
                 .clip(RoundedCornerShape(30.dp))
                 .background(Alx.Bg),
         ) {
-            Box(Modifier.graphicsLayer { translationY = scrollY.dp.toPx() }) {
+            Box(Modifier.graphicsLayer { translationY = scrollY().dp.toPx() }) {
                 MiniHome(
-                    barFraction = bar,
+                    bar = bar,
+                    amounts = amounts,
                     modifier = Modifier
                         .wrapContentSize(Alignment.TopStart, unbounded = true)
                         .size(390.dp, 700.dp)
@@ -389,7 +411,10 @@ private fun PhonePreview(modifier: Modifier = Modifier) {
 
 /** Trang chủ ở kích thước thiết kế 390dp (sau đó được thu 61.54% để nằm trong điện thoại mini). */
 @Composable
-private fun MiniHome(barFraction: Float, modifier: Modifier = Modifier) {
+private fun MiniHome(bar: () -> Float, amounts: List<Long>, modifier: Modifier = Modifier) {
+    // Chữ chỉ cần cập nhật theo từng 1% để đỡ tốn recomposition; thanh chạy mượt ở pha vẽ.
+    val step by remember(bar) { derivedStateOf { (bar() * 100).toInt() } }
+    val barFraction = step / 100f
     val card = RoundedCornerShape(22.dp)
     Column(
         modifier.padding(start = 20.dp, end = 20.dp, top = 34.dp),
@@ -421,7 +446,7 @@ private fun MiniHome(barFraction: Float, modifier: Modifier = Modifier) {
         // Thẻ thống kê
         Column(Modifier.fillMaxWidth().background(Alx.White, card).border(1.dp, Alx.Line, card)) {
             Row(Modifier.padding(vertical = 16.dp)) {
-                Stat("Tổng xu", "0", false, Modifier.weight(1f))
+                Stat("Tổng xu", money((amounts.sum() * barFraction).toLong()), false, Modifier.weight(1f))
                 Stat("Dịch vụ", "5/5", true, Modifier.weight(1f))
                 Stat("Còn lại", "25 ngày", true, Modifier.weight(1f))
             }
@@ -436,7 +461,7 @@ private fun MiniHome(barFraction: Float, modifier: Modifier = Modifier) {
                         Modifier
                             .fillMaxWidth(0.95f)
                             .height(6.dp)
-                            .graphicsLayer { scaleX = barFraction; transformOrigin = TransformOrigin(0f, 0.5f) }
+                            .graphicsLayer { scaleX = bar(); transformOrigin = TransformOrigin(0f, 0.5f) }
                             .background(Alx.Blue, RoundedCornerShape(3.dp)),
                     )
                 }
@@ -450,15 +475,15 @@ private fun MiniHome(barFraction: Float, modifier: Modifier = Modifier) {
         )
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Tile("XS", 12f, Color(0xFFC9363B), Color(0xFFFDECEC), "0 đ", "XSMM", "Tăng tương tác", Modifier.weight(1f))
-                Tile("GL", 13f, Alx.Blue, Alx.BlueSoft, "0 đ", "GoLike", "Kiếm tiền MXH", Modifier.weight(1f))
+                Tile("XS", 12f, Color(0xFFC9363B), Color(0xFFFDECEC), "${money((amounts[0] * barFraction).toLong())} đ", "XSMM", "Tăng tương tác", Modifier.weight(1f))
+                Tile("GL", 13f, Alx.Blue, Alx.BlueSoft, "${money((amounts[1] * barFraction).toLong())} đ", "GoLike", "Kiếm tiền MXH", Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Tile("TTC", 12f, Color(0xFFC2255C), Color(0xFFFDEAF2), "0 xu", "Tuongtaccheo", "Trao đổi like sub", Modifier.weight(1f))
-                Tile("TK", 12f, Alx.ChipText, Color(0xFFEDF0F5), "0 xu", "TikTok TTC", "Tương tác TikTok", Modifier.weight(1f))
+                Tile("TTC", 12f, Color(0xFFC2255C), Color(0xFFFDEAF2), "${money((amounts[2] * barFraction).toLong())} xu", "Tuongtaccheo", "Trao đổi like sub", Modifier.weight(1f))
+                Tile("TK", 12f, Alx.ChipText, Color(0xFFEDF0F5), "${money((amounts[3] * barFraction).toLong())} xu", "TikTok TTC", "Tương tác TikTok", Modifier.weight(1f))
             }
         }
-        WideTile()
+        WideTile("${money((amounts[4] * barFraction).toLong())} đ")
     }
 }
 
@@ -514,7 +539,7 @@ private fun Tile(
 }
 
 @Composable
-private fun WideTile() {
+private fun WideTile(value: String) {
     val shape = RoundedCornerShape(22.dp)
     Row(
         Modifier
@@ -535,8 +560,24 @@ private fun WideTile() {
             BasicText("Nhiemvucheo", style = type(15f, FontWeight.ExtraBold, Alx.Ink))
             BasicText("Làm nhiệm vụ nhận thưởng", Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Medium, Alx.Muted))
         }
-        BasicText("0 đ", style = type(19f, FontWeight.ExtraBold, Alx.Ink))
+        BasicText(value, style = type(19f, FontWeight.ExtraBold, Alx.Ink))
     }
+}
+
+/** 485000 → "485k", 1250000 → "1,25tr". */
+private fun money(v: Long): String = when {
+    v >= 1_000_000L ->
+        java.lang.String.format(java.util.Locale.US, "%.2f", v / 10_000L / 100.0)
+            .trimEnd('0').trimEnd('.').replace('.', ',') + "tr"
+    v >= 1_000L -> "${v / 1_000L}k"
+    else -> "$v"
+}
+
+/** Bộ số giả cho 5 ô (XSMM, GoLike, TTC, TikTok TTC, Nhiemvucheo), đổi theo từng vòng lặp. */
+private fun randomAmounts(seed: Int): List<Long> {
+    val r = Random(seed * 7919 + 13)
+    fun pick(lo: Int, hi: Int) = (r.nextInt(lo, hi) / 5 * 5) * 1_000L
+    return listOf(pick(180, 900), pick(600, 2400), pick(120, 700), pick(90, 500), pick(150, 800))
 }
 
 /* ───────────────────────────── Route mẫu + Preview ───────────────────────────── */
@@ -549,7 +590,7 @@ private fun WideTile() {
 fun LicenseRoute(
     onActivated: (String) -> Unit,
     onBuy: () -> Unit = {},
-    viewModel: LoginViewModel = viewModel()
+    viewModel: LoginViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -583,7 +624,7 @@ fun LicenseRoute(
         onBuy = buyAction,
         errorMessage = uiState.errorMessage,
         errorVersion = errorVersion,
-        loading = uiState.isLoading
+        loading = uiState.isLoading,
     )
 }
 
