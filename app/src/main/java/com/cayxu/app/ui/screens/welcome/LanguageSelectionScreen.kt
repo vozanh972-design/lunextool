@@ -65,6 +65,12 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
+import kotlin.math.roundToInt
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -105,12 +111,24 @@ private object Alx {
     val White = Color.White
 }
 
-/** Manrope: copy 4 file TTF vào res/font: manrope_medium, manrope_semibold, manrope_bold, manrope_extrabold. */
+/**
+ * Manrope dạng VARIABLE FONT: chỉ cần 1 file `res/font/manrope.ttf`
+ * (tải "Manrope[wght].ttf" từ Google Fonts rồi đổi tên thành manrope.ttf).
+ * Mỗi độ đậm được chọn bằng trục wght, nên Medium/Bold/ExtraBold hiển thị đúng thay vì cùng một nét mảnh.
+ * (Android 8.0 / API 26 trở lên. Máy cũ hơn sẽ dùng độ đậm mặc định của file.)
+ */
+@OptIn(ExperimentalTextApi::class)
+private fun manropeWeight(w: FontWeight) = Font(
+    resId = R.font.manrope,
+    weight = w,
+    variationSettings = FontVariation.Settings(FontVariation.weight(w.weight)),
+)
+
 private val Manrope = FontFamily(
-    Font(R.font.manrope_medium, FontWeight.Medium),
-    Font(R.font.manrope_semibold, FontWeight.SemiBold),
-    Font(R.font.manrope_bold, FontWeight.Bold),
-    Font(R.font.manrope_extrabold, FontWeight.ExtraBold),
+    manropeWeight(FontWeight.Medium),
+    manropeWeight(FontWeight.SemiBold),
+    manropeWeight(FontWeight.Bold),
+    manropeWeight(FontWeight.ExtraBold),
 )
 
 private fun type(
@@ -334,7 +352,7 @@ private fun PreviewPanel(copy: PreviewCopy, modifier: Modifier = Modifier) {
                         c.welcome, Modifier.padding(top = 4.dp),
                         style = type(12.5f, FontWeight.Medium, Alx.Muted),
                     )
-                    Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FitRow(gap = 6.dp, modifier = Modifier.padding(top = 12.dp)) {
                         c.tabs.forEach { tab ->
                             BasicText(
                                 tab,
@@ -342,6 +360,8 @@ private fun PreviewPanel(copy: PreviewCopy, modifier: Modifier = Modifier) {
                                     .background(Alx.Chip, CircleShape)
                                     .padding(horizontal = 9.dp, vertical = 5.dp),
                                 style = type(11f, FontWeight.Bold, Alx.ChipText),
+                                maxLines = 1,
+                                softWrap = false,
                             )
                         }
                     }
@@ -357,6 +377,31 @@ private fun PreviewPanel(copy: PreviewCopy, modifier: Modifier = Modifier) {
         ) {
             TypingBubble(bubbles)
             ReplyBubble(copy.reply, bubbles)
+        }
+    }
+}
+
+/**
+ * Hàng chip luôn nằm trên MỘT dòng: mỗi chip đo theo kích thước tự nhiên (không xuống dòng chữ).
+ * Nếu tổng bề rộng vượt chỗ trống thì thu nhỏ đều cả hàng một chút cho vừa, nên "Tiện ích" không bao giờ bị cắt.
+ */
+@Composable
+private fun FitRow(gap: Dp, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Layout(content = content, modifier = modifier) { measurables, constraints ->
+        val g = gap.roundToPx()
+        val ps = measurables.map { it.measure(Constraints()) }
+        val natural = ps.sumOf { it.width } + g * (ps.size - 1)
+        val k = if (natural > constraints.maxWidth) constraints.maxWidth.toFloat() / natural else 1f
+        val h = ps.maxOf { it.height }
+        layout((natural * k).roundToInt(), (h * k).roundToInt()) {
+            var x = 0
+            ps.forEach { p ->
+                p.placeRelativeWithLayer((x * k).roundToInt(), 0) {
+                    scaleX = k; scaleY = k
+                    transformOrigin = TransformOrigin(0f, 0f)
+                }
+                x += p.width + g
+            }
         }
     }
 }
