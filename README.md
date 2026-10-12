@@ -1,97 +1,80 @@
-# Cày Xu – Android App (Kotlin + Jetpack Compose)
+# AUTOLUNEX – Jetpack Compose (Chọn ngôn ngữ + Nhập key + Chào mừng)
 
-## Mở project
-1. Mở **Android Studio** (bản mới nhất, hỗ trợ AGP 8.5+ / Kotlin 1.9+).
-2. `File > Open` → chọn thư mục `CayXu` (thư mục chứa `settings.gradle.kts`).
-3. Android Studio sẽ tự tạo Gradle Wrapper khi Sync lần đầu (repo này không kèm sẵn
-   `gradlew`/`gradle-wrapper.jar` để giữ dung lượng nhỏ). Nếu Studio không tự hỏi,
-   vào `File > Sync Project with Gradle Files`.
-4. Build APK Release: `Build > Generate Signed Bundle / APK... > APK`, tạo hoặc chọn
-   keystore, chọn build type `release`.
+## Cài đặt
+1. Cấu trúc các file UI mới:
+   - `AlxDesign.kt` → `com.cayxu.app.ui.design` (màu, font Manrope DÙNG CHUNG, animation helper, SvgIcon, PrimaryButton)
+   - `LanguageSelectionScreen.kt` → `com.cayxu.app.ui.screens.welcome` (hoặc `ui/language`)
+   - `LicenseScreen.kt` → `com.cayxu.app.ui.license`
+   - `VerifyingScreen.kt` → `com.cayxu.app.ui.verify` (màn chờ kiểm tra key, ổ khóa + chìa)
+   - `ActivationSuccessScreen.kt` → `com.cayxu.app.ui.success` (chào mừng + chuyển cảnh vào Trang chủ)
+   Mọi màn đều lấy font từ `Manrope` trong `AlxDesign.kt`, màn mới chỉ cần dùng `type(...)`.
+2. Tải font **Manrope** từ Google Fonts. Lấy file variable `Manrope[wght].ttf`, đổi tên thành `manrope.ttf` và đặt vào `app/src/main/res/font/`.
+   Chỉ cần đúng 1 file này; code tự chọn độ đậm Medium/SemiBold/Bold/ExtraBold bằng trục wght. Đừng chép cùng một file variable thành 4 tên khác nhau, chữ sẽ bị mảnh.
+3. Dependencies (BOM Compose 2024.06 trở lên):
+   ```kotlin
+   implementation(platform("androidx.compose:compose-bom:2024.09.00"))
+   implementation("androidx.compose.ui:ui")
+   implementation("androidx.compose.foundation:foundation")
+   implementation("androidx.compose.animation:animation")
+   implementation("androidx.compose.ui:ui-tooling-preview")
+   debugImplementation("androidx.compose.ui:ui-tooling")
+   ```
+   Không cần Material. `minSdk 24` trở lên.
+4. Trong `MainActivity`: gọi `enableEdgeToEdge()` trước `setContent { ... }`.
+5. Màn luôn sáng: không đọc theme hệ thống, không có dark mode.
 
-## Cấu trúc chính
-- `data/api/ApiService.kt` – định nghĩa **duy nhất 1 endpoint** `POST api/verify_key.php`.
-- `data/api/RetrofitClient.kt` – base URL `https://lunex.io.vn/` (không hardcode nơi khác).
-- `data/model/VerifyKeyResponse.kt` – map đầy đủ toàn bộ field JSON server trả về.
-- `data/local/SecurePrefs.kt` – lưu key bằng `EncryptedSharedPreferences`.
-- `util/DeviceUtils.kt` – lấy `device_id` bằng `Settings.Secure.ANDROID_ID`.
-- `ui/screens/login` – màn hình Login (giống ảnh mẫu 1).
-- `ui/screens/home` – màn hình Home (giống ảnh mẫu 2). Menu, "Nhiệm vụ nổi bật",
-  biểu đồ thu nhập và "Lịch sử gần đây" đang dùng **dữ liệu demo tĩnh** vì đề bài
-  không cung cấp endpoint tương ứng — chỉ phần đăng nhập/xác thực key mới gọi API thật.
-- `ui/screens/tasks|wallet|friends|account` – các tab còn lại trong Bottom Navigation
-  hiện là màn hình khung (placeholder), sẵn sàng để nối API thật khi bạn cung cấp.
-- Status bar dùng thanh trạng thái thật của hệ điều hành, không có icon giờ/pin/wifi/sóng
-  giả trong layout, đúng yêu cầu.
+## Số đo lấy từ thiết kế (khung 390 × 844 dp)
+Nền `#F3F5F9`, xanh chính `#1F4BD8`, chữ `#0F172A`. Padding ngang 20dp. Panel minh họa cao 204dp, bo 26dp.
+Thẻ chọn bo 20dp, viền 1.5dp. Nút "Tiếp tục" cao 56dp, bo 18dp.
+
+## Animation
+Quả cầu quay 9s, chấm chạy quanh 10s, thẻ chào nổi 5s, ba chấm đang gõ + bong bóng trả lời lặp 7s,
+đổi ngôn ngữ thì chữ trong thẻ chào mờ vào + trượt lên 6dp (350ms), thẻ bấm nhún 0.985 (120ms).
+Người dùng tắt animation hệ thống (Animator duration scale = 0) thì mọi chuyển động dừng ở trạng thái tĩnh.
+
+## Màn nhập key (LicenseScreen.kt)
+`LicenseRoute` kết nối `LoginViewModel` xác thực key với server.
+Sai key: ô đỏ + rung + thông báo lỗi. Đúng key: gọi `onSuccess`.
+Ô key cao 56dp bo 16dp, viền 1.5dp; focus có viền xanh 2dp + quầng. Điện thoại mini trượt lên, cuộn, thanh 95% chạy.
+Khung viền trên điện thoại đứng yên, hiển thị rõ ràng, chân máy mờ dần vào nền. Chạy 1 lần (6s) rồi dừng ở trạng thái cuối, tự chạy lại khi người dùng gõ key hoặc bấm xác thực.
+Khi bàn phím bật, nội dung cuộn được (`imePadding`).
+
+## Màn chờ kiểm tra key (VerifyingScreen.kt)
+`VerifyingRoute(key, validate, onSuccess, onFailure)` chạy 3 bước (định dạng → máy chủ → kích hoạt PRO), mỗi bước hiện tối thiểu ~0,9 s.
+Ổ khóa ở giữa: khi máy chủ xác nhận, chìa trượt vào ổ, xoay, quai khóa bật mở rồi gọi `onSuccess` (sau ~1,3 s).
+`validate` là hàm suspend gọi server của bạn; `onFailure` đưa người dùng về màn nhập key để hiện lỗi.
+
+## Màn chào mừng + chuyển vào Trang chủ (ActivationSuccessScreen.kt)
+```kotlin
+ActivationSuccessScreen(
+    username = "username",
+    daysLeft = 25,
+    onFinished = { /* Trang chủ đã hiện đủ, có thể nhận chạm */ },
+    home = { HomeScreen() },   // Trang chủ THẬT của app, màn này không vẽ lại bản sao
+)
+```
+Chạy MỘT lần, không lặp (tổng 5,8 s):
+- 0 → 3,8 s: lời chào. Avatar bật lên, tick vẽ dần, 5 phần tử trang trí to dần 0,2 → 1 rồi đứng yên (không lơ lửng).
+  Bố cục bất đối xứng: trên 2 (TH, like), giữa 1 (+25 xu), dưới 2 (+ Follow, MK).
+- 3,4 → 4,3 s: điện thoại mini (chính `home()` thu 61,54%, cắt đáy) trồi từ dưới lên.
+- 4,5 → 5,8 s: phóng to đồng thời scale, dịch chuyển, bỏ cắt đáy và bỏ bo góc thành Trang chủ toàn màn hình, rồi gọi `onFinished`.
+Trong lúc chạy, chạm bị chặn. Tắt animation hệ thống thì chỉ hiện lời chào ~0,5 s rồi vào thẳng Trang chủ.
+`home()` được tải sẵn từ đầu (ẩn) để không giật khi trồi lên. Nếu Trang chủ nặng, thử bọc nó bằng
+`CompositingStrategy.Offscreen` hoặc chụp thành ảnh tĩnh cho riêng đoạn chuyển cảnh.
+Bố cục co theo bề rộng màn hình thật so với khung thiết kế 390dp.
 
 ## Build APK tự động bằng GitHub Actions (không cần cài Android Studio)
 
 Repo đã có sẵn workflow `.github/workflows/build-apk.yml`. Chỉ cần đẩy code lên
 GitHub là Actions tự build APK cho bạn tải về.
 
-### Bước 1 – Tạo repo và đẩy code lên GitHub
+### Bước 1 – Đẩy code lên GitHub
 ```bash
-cd CayXu
-git init
 git add .
-git commit -m "Init CayXu app"
-git branch -M main
-git remote add origin https://github.com/<username>/<ten-repo>.git
-git push -u origin main
+git commit -m "Update AUTOLUNEX UI & ActivationSuccessScreen"
+git push origin main
 ```
-(Tạo repo trống trước trên github.com, rồi thay `<username>/<ten-repo>` cho đúng.)
 
 ### Bước 2 – Xem kết quả build
-1. Vào tab **Actions** trên repo GitHub → chọn workflow **Build APK** vừa chạy
-   (tự chạy mỗi khi push lên `main`, hoặc bấm **Run workflow** để chạy tay).
-2. Đợi build xong (vài phút) → kéo xuống mục **Artifacts** → tải file
-   `CayXu-debug-apk` về, giải nén ra sẽ có file `.apk` cài thử được ngay.
-
-### Bước 3 (tuỳ chọn) – Build APK Release đã ký để phát hành thật
-Debug APK ở Bước 2 dùng để cài thử, không nên phát hành. Toàn bộ bước này làm
-**hoàn toàn trên GitHub**, không cần cài keytool/Android Studio ở máy bạn:
-
-1. Vào tab **Actions** → chọn workflow **"1 - Generate Release Keystore (chỉ
-   chạy 1 lần)"** → bấm **Run workflow** → chờ chạy xong (khoảng 30 giây).
-   ⚠️ Chỉ chạy workflow này **đúng 1 lần**. Chạy lại sẽ tạo ra keystore khác,
-   làm hỏng chữ ký của các bản release cũ.
-2. Vào run vừa chạy → mục **Artifacts** → tải file
-   `release-keystore-DELETE-AFTER-DOWNLOAD` về, giải nén ra sẽ có 2 file:
-   `release.keystore` và `release.keystore.base64`.
-3. Vào repo GitHub → **Settings > Secrets and variables > Actions** → **New
-   repository secret**, tạo đủ 4 secret:
-   - `KEYSTORE_BASE64` = mở file `release.keystore.base64` bằng Notepad, copy
-     **toàn bộ nội dung** (1 dòng dài) dán vào.
-   - `KEYSTORE_PASSWORD` = `CayXu@2026Secure!`
-   - `KEY_ALIAS` = `cayxu`
-   - `KEY_PASSWORD` = `CayXu@2026Secure!`
-4. **Quan trọng:** quay lại Actions, mở run vừa tạo keystore, bấm nút **"..."**
-   góc phải mục Artifacts → **Delete artifact** để xoá file
-   `release-keystore-DELETE-AFTER-DOWNLOAD` khỏi GitHub (nó chứa keystore gốc,
-   không nên để trên mạng lâu). Bạn tự giữ 1 bản `release.keystore` đã tải về
-   ở nơi riêng, an toàn (không đăng lên đâu cả) — mất file này là mất luôn khả
-   năng phát hành bản cập nhật hợp lệ sau này.
-5. Push code (hoặc **Run workflow** lại trên workflow **Build APK**) → Actions
-   sẽ tự build thêm artifact `CayXu-release-apk` đã ký sẵn.
-6. Trong log của bước **"Print release APK signature SHA-256"** sẽ có dòng
-   `Signer #1 certificate SHA-256 digest: ...` — copy đúng chuỗi hash đó (bỏ
-   dấu `:`), dán vào biến `EXPECTED_SIGNATURE_SHA256` trong file
-   `IntegrityGuard.kt`, rồi commit + push lại lần cuối để bật kiểm tra chữ ký.
-
-⚠️ Không commit file keystore hay mật khẩu vào Git — luôn dùng GitHub Secrets
-như trên (`.gitignore` đã loại trừ sẵn `*.keystore`, `*.jks`).
-
-⚠️ Từ giờ về sau, **mọi bản cập nhật** phải build qua đúng workflow này với
-đúng 4 secret trên (không đổi keystore) — nếu bạn generate keystore mới, chữ
-ký APK sẽ đổi, và `IntegrityGuard` sẽ coi bản mới là "bị giả mạo", tự khoá app
-với chính người dùng hợp lệ. Nâng cấp tính năng, sửa code bình thường (không
-đổi keystore) thì hoàn toàn không ảnh hưởng gì đến cơ chế này.
-
-## Một lưu ý quan trọng
-Mô hình app (mua key kích hoạt → "cày" ra Xu quy đổi tiền → mời bạn bè nhận thưởng)
-khá giống mô-tip của nhiều app "kiếm tiền online" từng bị phản ánh là lừa đảo tại
-Việt Nam, đặc biệt khi phần thu nhập/nhiệm vụ hiện vẫn là dữ liệu demo chứ chưa có
-cơ chế trả thưởng thật. Phần khung ứng dụng và luồng đăng nhập bằng key mình đã build
-đầy đủ theo đúng yêu cầu kỹ thuật; nhưng nếu bạn định phát hành app "trả tiền/quy đổi
-Xu ra tiền thật" cho người dùng, bạn nên đảm bảo cơ chế trả thưởng minh bạch và tuân
-thủ quy định pháp luật hiện hành, để tránh rủi ro pháp lý cho chính bạn.
+1. Vào tab **Actions** trên repo GitHub → chọn workflow **Build APK** vừa chạy.
+2. Đợi build xong → kéo xuống mục **Artifacts** → tải file `CayXu-debug-apk` về để cài thử.
