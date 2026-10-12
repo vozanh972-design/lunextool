@@ -209,13 +209,13 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
                 )
             }
 
-            // 2. Màn hình Đăng nhập Bản quyền (LoginScreen - Phong cách Facebook Design)
+            // 2. Màn hình Đăng nhập Bản quyền (LicenseScreen - Thiết kế AUTOLUNEX chuẩn License.dc.html)
             composable(
                 Routes.LOGIN,
                 enterTransition = { fadeIn(animationSpec = tween(FADE_DURATION_MS)) }
             ) {
-                LoginScreen(
-                    onLoginSuccess = {
+                com.cayxu.app.ui.license.LicenseRoute(
+                    onActivated = {
                         val currentPrefs = SecurePrefs(context)
                         if (!currentPrefs.hasSeenWelcome()) {
                             navController.navigate(Routes.WELCOME) {
