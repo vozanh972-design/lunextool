@@ -44,7 +44,7 @@ Khi bàn phím bật, nội dung cuộn được (`imePadding`).
 Ổ khóa ở giữa: khi máy chủ xác nhận, chìa trượt vào ổ, xoay, quai khóa bật mở rồi gọi `onSuccess` (sau ~1,3 s).
 `validate` là hàm suspend gọi server của bạn; `onFailure` đưa người dùng về màn nhập key để hiện lỗi.
 
-## Màn chào mừng + chuyển vào Trang chủ (ActivationSuccessScreen.kt)
+## Màn chào mừng + vào Trang chủ (ActivationSuccessScreen.kt)
 ```kotlin
 ActivationSuccessScreen(
     username = "username",
@@ -53,15 +53,17 @@ ActivationSuccessScreen(
     home = { HomeScreen() },   // Trang chủ THẬT của app, màn này không vẽ lại bản sao
 )
 ```
-Chạy MỘT lần, không lặp (tổng 5,8 s):
-- 0 → 3,8 s: lời chào. Avatar bật lên, tick vẽ dần, 5 phần tử trang trí to dần 0,2 → 1 rồi đứng yên (không lơ lửng).
+Chạy MỘT lần, không lặp (tổng 3,45 s):
+- 0 → 3,0 s: lời chào. Avatar bật lên, tick vẽ dần, 5 phần tử trang trí to dần 0,2 → 1 rồi đứng yên (không lơ lửng).
   Bố cục bất đối xứng: trên 2 (TH, like), giữa 1 (+25 xu), dưới 2 (+ Follow, MK).
-- 3,4 → 4,3 s: điện thoại mini (chính `home()` thu 61,54%, cắt đáy) trồi từ dưới lên.
-- 4,5 → 5,8 s: phóng to đồng thời scale, dịch chuyển, bỏ cắt đáy và bỏ bo góc thành Trang chủ toàn màn hình, rồi gọi `onFinished`.
+- 3,0 → 3,45 s: lời chào mờ đi, Trang chủ thật mờ vào và trồi lên 12dp, rồi gọi `onFinished`.
+(Đã bỏ cú điện thoại mini phóng to thành Trang chủ vì thừa sau màn chào mừng và nặng máy.)
 Trong lúc chạy, chạm bị chặn. Tắt animation hệ thống thì chỉ hiện lời chào ~0,5 s rồi vào thẳng Trang chủ.
-`home()` được tải sẵn từ đầu (ẩn) để không giật khi trồi lên. Nếu Trang chủ nặng, thử bọc nó bằng
-`CompositingStrategy.Offscreen` hoặc chụp thành ảnh tĩnh cho riêng đoạn chuyển cảnh.
-Bố cục co theo bề rộng màn hình thật so với khung thiết kế 390dp.
+`home()` được tải sẵn từ đầu (ẩn) để không giật khi hiện. Bố cục co theo bề rộng màn hình thật so với khung thiết kế 390dp.
+
+## Lưu ý quan trọng
+Các file chưa được biên dịch hay chạy trên máy. Nếu Android Studio báo lỗi, gửi dòng lỗi hoặc ảnh chụp để sửa đúng chỗ.
+Bóng đổ và độ cao dòng chữ có thể lệch nhẹ so với bản HTML.
 
 ## Build APK tự động bằng GitHub Actions (không cần cài Android Studio)
 

@@ -36,15 +36,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.RoundRect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
@@ -61,9 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.cayxu.app.ui.design.Alx
 import com.cayxu.app.ui.design.EaseOutSoft
@@ -75,11 +68,10 @@ import kotlinx.coroutines.delay
 
 /* ───────────────────────────── Lịch chuyển động (ms) – khớp KeySuccess.dc.html ───────────────────────────── */
 
-private const val T_END = 5_800f
+private const val T_END = 3_450f
 
 private val EaseText = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
 private val EasePop = CubicBezierEasing(0.22f, 0.8f, 0.3f, 1f)
-private val EaseZoom = CubicBezierEasing(0.65f, 0f, 0.2f, 1f)
 
 /** Tiến độ 0..1 của đoạn [a, b] ms tại thời điểm [t], có easing. */
 private fun prog(t: Float, a: Float, b: Float, e: Easing = LinearEasing): Float =
@@ -121,9 +113,8 @@ private fun FilledIcon(path: String, size: Dp, color: Color) {
 
 /**
  * Màn "Kích hoạt thành công / Chào mừng", chạy MỘT lần rồi vào Trang chủ.
- *   0 → 3,8 s    lời chào + 5 phần tử trang trí
- *   3,4 → 4,3 s  điện thoại mini (= Trang chủ thật) trồi lên
- *   4,5 → 5,8 s  phóng to thành Trang chủ toàn màn hình, rồi gọi [onFinished]
+ *   0 → 3,0 s    lời chào + 5 phần tử trang trí (to dần rồi đứng yên)
+ *   3,0 → 3,45 s lời chào mờ đi, Trang chủ thật hiện lên (mờ vào + trồi 12dp), rồi gọi [onFinished]
  *
  * @param home Trang chủ thật của app (HomeScreen). Màn này không vẽ lại bản sao.
  * @param username tên hiển thị; avatar lấy 2 chữ cái đầu viết hoa.
@@ -165,14 +156,13 @@ fun ActivationSuccessScreen(
                 .graphicsLayer { scaleX = u; scaleY = u; transformOrigin = TransformOrigin(0f, 0f) },
         ) {
             Welcome(username, daysLeft, t)
-            PhoneBezel(t)
         }
 
-        // Trang chủ thật: tải sẵn từ đầu, ẩn cho đến 3,3 s; thu 61,54% rồi phóng to.
+        // Trang chủ thật: tải sẵn từ đầu (ẩn), đến 3,0 s thì mờ vào + trồi lên 12dp.
         Box(
             Modifier
                 .fillMaxSize()
-                .then(if (done) Modifier else Modifier.graphicsLayer { applyHomeTransform(t(), u) }),
+                .then(if (done) Modifier else Modifier.graphicsLayer { applyHomeTransform(t()) }),
         ) { home() }
 
         // Chặn chạm trong lúc đang chuyển cảnh.
@@ -186,48 +176,10 @@ fun ActivationSuccessScreen(
     }
 }
 
-/** Cắt đáy + bo góc theo tiến độ phóng to (inset(0 0 cut 0 round r) của bản HTML). */
-private class HomeClip(private val cutPx: Float, private val radiusPx: Float) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
-        Outline.Rounded(
-            RoundRect(0f, 0f, size.width, (size.height - cutPx).coerceAtLeast(1f), CornerRadius(radiusPx)),
-        )
-}
-
-private fun androidx.compose.ui.graphics.GraphicsLayerScope.applyHomeTransform(t: Float, u: Float) {
-    if (t < 3_300f) { alpha = 0f; return }
-    val rise = prog(t, 3_400f, 4_300f, EaseOutSoft)
-    val zoom = prog(t, 4_500f, 5_800f, EaseZoom)
-    val k = lerp(0.6154f, 1f, zoom)
-    scaleX = k; scaleY = k
-    transformOrigin = TransformOrigin(0f, 0f)
-    translationX = lerp(75.dp.toPx() * u, 0f, zoom)
-    translationY = lerp(150.dp.toPx() * u, 0f, zoom) + (1f - rise) * 760.dp.toPx() * u
-    // Cửa sổ nhìn thấy cao 533dp (cố định); phần còn lại của Home bị cắt ở đáy.
-    val cut = (size.height - 533.dp.toPx()).coerceAtLeast(0f) * (1f - zoom)
-    shape = HomeClip(cut, lerp(49.dp.toPx(), 0f, zoom))
-    clip = true
-}
-
-/** Khung đen của điện thoại mini: trồi lên cùng Trang chủ, mờ đi lúc phóng to. */
-@Composable
-private fun PhoneBezel(t: () -> Float) {
-    Box(
-        Modifier
-            .offset(69.dp, 144.dp)
-            .size(252.dp, 340.dp)
-            .graphicsLayer {
-                val now = t()
-                if (now < 3_300f) { alpha = 0f; return@graphicsLayer }
-                translationY = (1f - prog(now, 3_400f, 4_300f, EaseOutSoft)) * 760.dp.toPx()
-                alpha = 1f - prog(now, 4_500f, 5_100f)
-            }
-            .shadow(
-                16.dp, RoundedCornerShape(36.dp),
-                ambientColor = Color(0x330F172A), spotColor = Color(0x800F172A),
-            )
-            .background(Alx.Ink, RoundedCornerShape(36.dp)),
-    )
+private fun androidx.compose.ui.graphics.GraphicsLayerScope.applyHomeTransform(t: Float) {
+    val p = prog(t, 3_000f, 3_450f, EaseText)
+    alpha = p
+    translationY = 12.dp.toPx() * (1f - p)
 }
 
 /* ───────────────────────────── Pha 1: lời chào ───────────────────────────── */
@@ -241,11 +193,11 @@ private fun Welcome(username: String, daysLeft: Int, t: () -> Float) {
             .graphicsLayer {
                 val now = t()
                 val inP = prog(now, 0f, 400f, EaseText)
-                val outP = prog(now, 3_240f, 3_840f, EaseText)
+                val outP = prog(now, 3_000f, 3_400f, EaseText)
                 alpha = inP * (1f - outP)
-                val s = lerp(0.92f, 1f, inP) * lerp(1f, 0.98f, outP)
+                val s = lerp(0.92f, 1f, inP) * lerp(1f, 0.985f, outP)
                 scaleX = s; scaleY = s
-                translationY = -24.dp.toPx() * outP
+                translationY = -12.dp.toPx() * outP
             },
     ) {
         Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 24.dp)) {
