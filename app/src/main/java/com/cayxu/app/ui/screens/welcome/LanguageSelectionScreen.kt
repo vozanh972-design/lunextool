@@ -1,621 +1,643 @@
 package com.cayxu.app.ui.screens.welcome
 
+import android.provider.Settings
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.cayxu.app.R
-import com.cayxu.app.ui.locale.AppLanguage
 import com.cayxu.app.ui.locale.LanguageState
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
-// ── BỘ FONT MANROPE CHUẨN (HỖ TRỢ VARIABLE FONT WEIGHT VÀ FALLBACK CHỐNG CRASH) ──
-@OptIn(ExperimentalTextApi::class)
-val ManropeFontFamily: FontFamily = try {
-    FontFamily(
-        Font(
-            resId = R.font.manrope,
-            weight = FontWeight.Normal,
-            variationSettings = FontVariation.Settings(FontVariation.weight(400))
-        ),
-        Font(
-            resId = R.font.manrope,
-            weight = FontWeight.Medium,
-            variationSettings = FontVariation.Settings(FontVariation.weight(500))
-        ),
-        Font(
-            resId = R.font.manrope,
-            weight = FontWeight.SemiBold,
-            variationSettings = FontVariation.Settings(FontVariation.weight(600))
-        ),
-        Font(
-            resId = R.font.manrope,
-            weight = FontWeight.Bold,
-            variationSettings = FontVariation.Settings(FontVariation.weight(700))
-        ),
-        Font(
-            resId = R.font.manrope,
-            weight = FontWeight.ExtraBold,
-            variationSettings = FontVariation.Settings(FontVariation.weight(800))
-        )
+/* ───────────────────────────── Design tokens ───────────────────────────── */
+
+private object Alx {
+    val Bg = Color(0xFFF3F5F9)
+    val Ink = Color(0xFF0F172A)
+    val Ink2 = Color(0xFF475569)
+    val Muted = Color(0xFF64748B)
+    val Blue = Color(0xFF1F4BD8)
+    val BlueSoft = Color(0xFFE8EEFD)
+    val BlueSelected = Color(0xFFF5F8FF)
+    val PanelBorder = Color(0xFFDCE5FA)
+    val Globe = Color(0xFFB9CBF3)
+    val Line = Color(0xFFE4E8F0)
+    val RadioOff = Color(0xFFCBD2DF)
+    val Chip = Color(0xFFF1F5F9)
+    val ChipText = Color(0xFF334155)
+    val White = Color.White
+}
+
+/** Manrope: copy 4 file TTF vào res/font: manrope_medium, manrope_semibold, manrope_bold, manrope_extrabold. */
+private val Manrope = FontFamily(
+    Font(R.font.manrope_medium, FontWeight.Medium),
+    Font(R.font.manrope_semibold, FontWeight.SemiBold),
+    Font(R.font.manrope_bold, FontWeight.Bold),
+    Font(R.font.manrope_extrabold, FontWeight.ExtraBold),
+)
+
+private fun type(
+    size: Float,
+    weight: FontWeight,
+    color: Color,
+    spacing: Float = 0f,
+    lineHeight: Float? = null,
+    align: TextAlign = TextAlign.Unspecified,
+) = TextStyle(
+    fontFamily = Manrope,
+    fontSize = size.sp,
+    fontWeight = weight,
+    color = color,
+    letterSpacing = spacing.em,
+    lineHeight = if (lineHeight != null) lineHeight.em else TextStyle.Default.lineHeight,
+    textAlign = align,
+    platformStyle = PlatformTextStyle(includeFontPadding = false),
+    lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+)
+
+/* ───────────────────────────── Model ───────────────────────────── */
+
+enum class AppLanguage(val tag: String) { VI("vi"), EN("en") }
+
+private data class PreviewCopy(
+    val tag: String,
+    val greet: String,
+    val welcome: String,
+    val tabs: List<String>,
+    val reply: String,
+)
+
+private fun AppLanguage.preview() = when (this) {
+    AppLanguage.VI -> PreviewCopy(
+        "NGÔN NGỮ GIAO DIỆN", "Xin chào", "Chào mừng đến với AUTOLUNEX",
+        listOf("Trang chủ", "Nhiệm vụ", "Tiện ích"), "Bắt đầu thôi!",
     )
-} catch (_: Throwable) {
-    try {
-        FontFamily(
-            Font(R.font.manrope, FontWeight.Normal),
-            Font(R.font.manrope, FontWeight.Bold)
-        )
-    } catch (_: Throwable) {
-        FontFamily.Default
+    AppLanguage.EN -> PreviewCopy(
+        "INTERFACE LANGUAGE", "Hello", "Welcome to AUTOLUNEX",
+        listOf("Home", "Tasks", "Tools"), "Let's start!",
+    )
+}
+
+/* ───────────────────────────── Animation helpers ───────────────────────────── */
+
+private fun smooth(x: Float) = x * x * (3f - 2f * x)
+
+/** Nội suy theo các mốc (giống @keyframes), mỗi đoạn làm mượt kiểu ease. */
+private fun keys(t: Float, vararg p: Pair<Float, Float>): Float {
+    if (t <= p.first().first) return p.first().second
+    for (i in 0 until p.size - 1) {
+        val (t0, v0) = p[i]
+        val (t1, v1) = p[i + 1]
+        if (t <= t1) {
+            val f = if (t1 == t0) 1f else (t - t0) / (t1 - t0)
+            return v0 + (v1 - v0) * smooth(f)
+        }
+    }
+    return p.last().second
+}
+
+/** Vòng lặp 0..1. Khi người dùng tắt animation hệ thống thì trả về [rest] cố định. */
+@Composable
+private fun rememberLoop(durationMs: Int, enabled: Boolean, rest: Float = 0f): State<Float> {
+    if (!enabled) return remember { mutableStateOf(rest) }
+    return rememberInfiniteTransition(label = "loop").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(durationMs, easing = LinearEasing)),
+        label = "loop$durationMs",
+    )
+}
+
+@Composable
+private fun animationsEnabled(): Boolean {
+    val ctx = LocalContext.current
+    return remember {
+        Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
     }
 }
 
-// ── BẢNG MÀU CHÍNH XÁC 100% THEO FILE HTML GỐC LANGUAGE.DC.HTML ──
-// body { background: #F3F5F9; color: #0F172A }
-private val ColorPageBg = Color(0xFFF3F5F9)
-private val ColorPrimaryBlue = Color(0xFF1F4BD8)
-private val ColorTextMain = Color(0xFF0F172A)
-private val ColorTextMuted = Color(0xFF64748B)
-private val ColorTextDesc = Color(0xFF475569)
-private val ColorTextDarkSlate = Color(0xFF334155)
-private val ColorBorderLight = Color(0xFFE4E8F0)
-private val ColorBorderActive = Color(0xFF1F4BD8)
-private val ColorCardActiveBg = Color(0xFFF5F8FF)
-private val ColorGlobeStroke = Color(0xFFB9CBF3)
-private val ColorPreviewBoxBg = Color(0xFFE8EEFD)
-private val ColorPreviewBoxBorder = Color(0xFFDCE5FA)
-private val ColorPillBg = Color(0xFFF1F5F9)
-private val ColorRadioUncheckedBorder = Color(0xFFCBD2DF)
+/* ───────────────────────────── Screen ───────────────────────────── */
 
-/**
- * MÀN HÌNH CHỌN NGÔN NGỮ (LANGUAGE SELECTION SCREEN)
- * Bê nguyên bản 1:1 từ file Language.dc.html:
- * - Không tự chế thêm icon hay thành phần nào không có trong file HTML mẫu.
- * - Khung preview kích thước 204dp, chứa quả cầu SVG line-art + chấm vệ tinh chuyển động.
- * - Thẻ trắng nổi width 236px, padding chuẩn 14px 16px 16px, không bị rớt dòng phụ đề.
- * - Bong bóng thoại "Bắt đầu thôi!" đặt góc phải dưới chuẩn toạ độ right: 18px, bottom: 20px.
- * - 2 lựa chọn VI và EN giữ nguyên thông số CSS (border 1.5px, radius 20px, badge 44x44px radius 13px).
- * - Nút "Tiếp tục" height 56px, radius 18px với đổ bóng xanh chuẩn 1:1.
- */
 @Composable
-fun LanguageSelectionScreen(
-    onFinished: () -> Unit
+fun LanguageScreen(
+    selected: AppLanguage,
+    onSelect: (AppLanguage) -> Unit,
+    onContinue: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    var selectedLang by remember { mutableStateOf(AppLanguage.VI) }
-    val isVi = selectedLang == AppLanguage.VI
-
-    // Hiệu ứng quỹ đạo vệ tinh của quả cầu SVG (animateMotion dur="10s")
-    val infiniteTransition = rememberInfiniteTransition(label = "globeOrbit")
-    val orbitAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 10000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "orbitAngle"
-    )
-
-    // Khung 390x844px theo HTML: padding 24px 20px 0, background #F3F5F9
-    Box(
-        modifier = Modifier
+    Column(
+        modifier
             .fillMaxSize()
-            .background(ColorPageBg)
+            .background(Alx.Bg)
             .statusBarsPadding()
-            .navigationBarsPadding()
+            .navigationBarsPadding(),
     ) {
+        // Phần nội dung cuộn được (máy màn hình nhỏ), nút "Tiếp tục" luôn ghim phía dưới.
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp)
-                .padding(top = 24.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, end = 20.dp, top = 24.dp),
         ) {
+            BasicText(
+                "AUTOLUNEX",
+                style = type(16f, FontWeight.ExtraBold, Alx.Ink, spacing = 0.1f),
+            )
+
+            PreviewPanel(selected.preview(), Modifier.padding(top = 22.dp))
+
+            BasicText(
+                "Chọn ngôn ngữ",
+                Modifier.padding(top = 26.dp),
+                style = type(30f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f, lineHeight = 1.1f),
+            )
+            BasicText(
+                "Vui lòng chọn ngôn ngữ hiển thị bạn muốn sử dụng.",
+                Modifier.padding(top = 6.dp),
+                style = type(14.5f, FontWeight.Medium, Alx.Ink2, lineHeight = 1.5f),
+            )
+
             Column(
-                modifier = Modifier.fillMaxWidth()
+                Modifier
+                    .padding(top = 18.dp, bottom = 16.dp)
+                    .selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // ── 1. BRAND (NGUYÊN MẪU DÒNG 31-34 TRONG HTML: CHỈ DUY NHẤT TEXT AUTOLUNEX, KHÔNG CHẾ THÊM ICON) ──
-                // <div style="display:flex;align-items:center;gap:10px">
-                //   <span style="font-size:16px;font-weight:800;letter-spacing:.1em">AUTOLUNEX</span>
-                // </div>
-                Text(
-                    text = "AUTOLUNEX",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = ManropeFontFamily,
-                    letterSpacing = 1.6.sp,
-                    color = ColorTextMain
+                LanguageOption(
+                    badge = "VI", title = "Tiếng Việt", subtitle = "Giao diện Tiếng Việt",
+                    solidBadge = true,
+                    selected = selected == AppLanguage.VI,
+                    onClick = { onSelect(AppLanguage.VI) },
                 )
-
-                Spacer(modifier = Modifier.height(22.dp))
-
-                // ── 2. LIVE PREVIEW CONTAINER (DÒNG 36-67 TRONG HTML) ──
-                // <div style="margin-top:22px;height:204px;border-radius:26px;background:#E8EEFD;border:1px solid #DCE5FA;position:relative;overflow:hidden">
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(204.dp)
-                        .clip(RoundedCornerShape(26.dp))
-                        .background(ColorPreviewBoxBg)
-                        .border(1.dp, ColorPreviewBoxBorder, RoundedCornerShape(26.dp))
-                ) {
-                    // Quả cầu SVG line-art (cx = 292, cy = 108, r = 106)
-                    Canvas(
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        val density = this.density
-                        val strokePx = 1.4f * density
-                        val stroke = Stroke(width = strokePx)
-
-                        val cx = 292f * density
-                        val cy = 108f * density
-                        val radius = 106f * density
-
-                        // Circle cx="292" cy="108" r="106"
-                        drawCircle(
-                            color = ColorGlobeStroke,
-                            radius = radius,
-                            center = Offset(cx, cy),
-                            style = stroke
-                        )
-
-                        // Ellipse rx="10" ry="106"
-                        drawOval(
-                            color = ColorGlobeStroke,
-                            topLeft = Offset(cx - (10f * density), cy - radius),
-                            size = Size(20f * density, radius * 2),
-                            style = stroke
-                        )
-                        // Ellipse rx="54" ry="106"
-                        drawOval(
-                            color = ColorGlobeStroke,
-                            topLeft = Offset(cx - (54f * density), cy - radius),
-                            size = Size(108f * density, radius * 2),
-                            style = stroke
-                        )
-                        // Ellipse rx="100" ry="106"
-                        drawOval(
-                            color = ColorGlobeStroke,
-                            topLeft = Offset(cx - (100f * density), cy - radius),
-                            size = Size(200f * density, radius * 2),
-                            style = stroke
-                        )
-
-                        // Các vĩ tuyến ngang SVG
-                        drawLine(
-                            color = ColorGlobeStroke,
-                            start = Offset(186f * density, 108f * density),
-                            end = Offset((186f + 212f) * density, 108f * density),
-                            strokeWidth = strokePx
-                        )
-                        drawLine(
-                            color = ColorGlobeStroke,
-                            start = Offset(204f * density, 60f * density),
-                            end = Offset((204f + 176f) * density, 60f * density),
-                            strokeWidth = strokePx
-                        )
-                        drawLine(
-                            color = ColorGlobeStroke,
-                            start = Offset(204f * density, 156f * density),
-                            end = Offset((204f + 176f) * density, 156f * density),
-                            strokeWidth = strokePx
-                        )
-                        drawLine(
-                            color = ColorGlobeStroke,
-                            start = Offset(226f * density, 26f * density),
-                            end = Offset((226f + 132f) * density, 26f * density),
-                            strokeWidth = strokePx
-                        )
-                        drawLine(
-                            color = ColorGlobeStroke,
-                            start = Offset(226f * density, 190f * density),
-                            end = Offset((226f + 132f) * density, 190f * density),
-                            strokeWidth = strokePx
-                        )
-
-                        // Vệ tinh quay quanh quỹ đạo
-                        val rad = Math.toRadians(orbitAngle.toDouble())
-                        val dotX = cx + (radius * Math.cos(rad)).toFloat()
-                        val dotY = cy + (radius * Math.sin(rad)).toFloat()
-
-                        drawCircle(
-                            color = ColorPrimaryBlue.copy(alpha = 0.15f),
-                            radius = 9f * density,
-                            center = Offset(dotX, dotY)
-                        )
-                        drawCircle(
-                            color = ColorPrimaryBlue,
-                            radius = 4.5f * density,
-                            center = Offset(dotX, dotY)
-                        )
-                    }
-
-                    // THẺ TRẮNG NỔI (DÒNG 49-60 TRONG HTML):
-                    // <div style="position:absolute;left:16px;top:20px;width:236px;background:#fff;border:1px solid #E4E8F0;border-radius:20px;padding:14px 16px 16px;box-shadow:0 12px 24px -14px rgba(15,23,42,.3)">
-                    Box(
-                        modifier = Modifier
-                            .padding(start = 16.dp, top = 18.dp)
-                            .width(236.dp)
-                            .shadow(
-                                elevation = 12.dp,
-                                shape = RoundedCornerShape(20.dp),
-                                ambientColor = Color(0x330F172A),
-                                spotColor = Color(0x4D0F172A)
-                            )
-                            .background(Color.White, RoundedCornerShape(20.dp))
-                            .border(1.dp, ColorBorderLight, RoundedCornerShape(20.dp))
-                            .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)
-                    ) {
-                        Column {
-                            // Tag: <div style="font-size:10.5px;font-weight:800;letter-spacing:.1em;color:#1F4BD8">{{ tagLabel }}</div>
-                            Text(
-                                text = if (isVi) "NGÔN NGỮ GIAO DIỆN" else "INTERFACE LANGUAGE",
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontFamily = ManropeFontFamily,
-                                letterSpacing = 1.05.sp,
-                                color = ColorPrimaryBlue,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-
-                            // Greet: <div style="font-size:30px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-top:6px">{{ greet }}</div>
-                            Text(
-                                text = if (isVi) "Xin chào" else "Hello",
-                                fontSize = 30.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontFamily = ManropeFontFamily,
-                                letterSpacing = (-0.9).sp,
-                                lineHeight = 33.sp,
-                                color = ColorTextMain,
-                                modifier = Modifier.padding(top = 4.dp),
-                                maxLines = 1,
-                                softWrap = false
-                            )
-
-                            // Welcome: <div style="font-size:12.5px;font-weight:500;color:#64748B;margin-top:4px">{{ welcome }}</div>
-                            // Khóa maxLines = 1, không cho ngắt dòng thành 2 dòng làm đội kích thước thẻ
-                            Text(
-                                text = if (isVi) "Chào mừng đến với AUTOLUNEX" else "Welcome to AUTOLUNEX",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                fontFamily = ManropeFontFamily,
-                                color = ColorTextMuted,
-                                modifier = Modifier.padding(top = 2.dp),
-                                maxLines = 1,
-                                softWrap = false
-                            )
-
-                            // 3 Tabs: <div style="display:flex;gap:6px;margin-top:12px">
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                                modifier = Modifier.padding(top = 10.dp)
-                            ) {
-                                PreviewPill(text = if (isVi) "Trang chủ" else "Home")
-                                PreviewPill(text = if (isVi) "Nhiệm vụ" else "Tasks")
-                                PreviewPill(text = if (isVi) "Tiện ích" else "Tools")
-                            }
-                        }
-                    }
-
-                    // BONG BÓNG THOẠI XANH (DÒNG 66 TRONG HTML):
-                    // <div style="position:absolute;right:18px;bottom:20px;background:#1F4BD8;color:#fff;font-size:13px;font-weight:700;padding:10px 14px;border-radius:16px 16px 4px 16px;box-shadow:0 10px 20px -10px rgba(31,75,216,.7)">{{ reply }}</div>
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 18.dp, bottom = 20.dp)
-                            .shadow(
-                                elevation = 10.dp,
-                                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 4.dp, bottomStart = 16.dp),
-                                ambientColor = Color(0x661F4BD8),
-                                spotColor = Color(0xB21F4BD8)
-                            )
-                            .background(
-                                color = ColorPrimaryBlue,
-                                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 4.dp, bottomStart = 16.dp)
-                            )
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
-                    ) {
-                        Text(
-                            text = if (isVi) "Bắt đầu thôi!" else "Let's start!",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = ManropeFontFamily,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(26.dp))
-
-                // ── 3. TIÊU ĐỀ & MÔ TẢ (DÒNG 69-70 TRONG HTML) ──
-                // <h1 style="margin:26px 0 0;font-size:30px;line-height:1.1;font-weight:800;letter-spacing:-.03em">Chọn ngôn ngữ</h1>
-                Text(
-                    text = "Chọn ngôn ngữ",
-                    fontSize = 30.sp,
-                    lineHeight = 33.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = ManropeFontFamily,
-                    letterSpacing = (-0.9).sp,
-                    color = ColorTextMain
+                LanguageOption(
+                    badge = "EN", title = "English", subtitle = "English interface",
+                    solidBadge = false,
+                    selected = selected == AppLanguage.EN,
+                    onClick = { onSelect(AppLanguage.EN) },
                 )
-
-                // <p style="margin:6px 0 0;font-size:14.5px;line-height:1.5;color:#475569">Vui lòng chọn ngôn ngữ hiển thị bạn muốn sử dụng.</p>
-                Text(
-                    text = "Vui lòng chọn ngôn ngữ hiển thị bạn muốn sử dụng.",
-                    fontSize = 14.5.sp,
-                    lineHeight = 21.sp,
-                    fontWeight = FontWeight.Normal,
-                    fontFamily = ManropeFontFamily,
-                    color = ColorTextDesc,
-                    modifier = Modifier.padding(top = 6.dp)
-                )
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // ── 4. DANH SÁCH 2 THẺ CHỌN NGÔN NGỮ (DÒNG 72-83 TRONG HTML) ──
-                // <div style="margin-top:18px;display:flex;flex-direction:column;gap:10px">
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Thẻ Tiếng Việt
-                    LanguageSelectionItem(
-                        code = "VI",
-                        title = "Tiếng Việt",
-                        subtitle = "Giao diện Tiếng Việt",
-                        isSelected = isVi,
-                        onClick = {
-                            selectedLang = AppLanguage.VI
-                            LanguageState.setLanguage(context, AppLanguage.VI)
-                        }
-                    )
-
-                    // Thẻ English
-                    LanguageSelectionItem(
-                        code = "EN",
-                        title = "English",
-                        subtitle = "English interface",
-                        isSelected = !isVi,
-                        onClick = {
-                            selectedLang = AppLanguage.EN
-                            LanguageState.setLanguage(context, AppLanguage.EN)
-                        }
-                    )
-                }
             }
+        }
 
-            // ── 5. ĐÁY MÀN HÌNH (DÒNG 85-88 TRONG HTML) ──
-            // <div style="margin-top:auto;padding-bottom:32px;display:flex;flex-direction:column;gap:12px">
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // <span style="font-size:12.5px;font-weight:500;color:#64748B;text-align:center">Bạn có thể đổi lại trong Hồ sơ › Cài đặt tài khoản</span>
-                Text(
-                    text = "Bạn có thể đổi lại trong Hồ sơ › Cài đặt tài khoản",
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = ManropeFontFamily,
-                    color = ColorTextMuted,
-                    textAlign = TextAlign.Center
-                )
-
-                // <a href="License.dc.html" style="display:flex;align-items:center;justify-content:center;height:56px;border-radius:18px;background:#1F4BD8;color:#fff;font-size:16px;font-weight:700;box-shadow:0 12px 24px -12px rgba(31,75,216,.7)">Tiếp tục</a>
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .shadow(
-                            elevation = 12.dp,
-                            shape = RoundedCornerShape(18.dp),
-                            ambientColor = Color(0x661F4BD8),
-                            spotColor = Color(0xB21F4BD8)
-                        )
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(ColorPrimaryBlue)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            LanguageState.setLanguage(context, selectedLang)
-                            onFinished()
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Tiếp tục",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = ManropeFontFamily
-                    )
-                }
-            }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            BasicText(
+                "Bạn có thể đổi lại trong Hồ sơ › Cài đặt tài khoản",
+                style = type(12.5f, FontWeight.Medium, Alx.Muted, align = TextAlign.Center),
+            )
+            PrimaryButton("Tiếp tục", onContinue)
         }
     }
 }
 
-/**
- * Thẻ Tab nhỏ bên trong thẻ Preview (Trang chủ, Nhiệm vụ, Tiện ích).
- * Style HTML dòng 55-57: font-size: 11px; font-weight: 700; color: #334155; background: #F1F5F9; padding: 5px 9px; border-radius: 999px;
- */
+/* ───────────────────────────── Preview panel ───────────────────────────── */
+
 @Composable
-private fun PreviewPill(text: String) {
+private fun PreviewPanel(copy: PreviewCopy, modifier: Modifier = Modifier) {
+    val on = animationsEnabled()
+    val shape = RoundedCornerShape(26.dp)
+
+    val globe by rememberLoop(9000, on, rest = 0.1f)
+    val orbit by rememberLoop(10000, on, rest = 0.62f)
+    val bubbles by rememberLoop(7000, on, rest = 0.6f)
+    val floatT by rememberInfiniteTransition(label = "float").animateFloat(
+        initialValue = 0f,
+        targetValue = if (on) 1f else 0f,
+        animationSpec = infiniteRepeatable(
+            tween(2500, easing = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)),
+            RepeatMode.Reverse,
+        ),
+        label = "floatT",
+    )
+
     Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(ColorPillBg)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+        modifier
+            .fillMaxWidth()
+            .height(204.dp)
+            .clip(shape)
+            .background(Alx.BlueSoft)
+            .border(1.dp, Alx.PanelBorder, shape),
     ) {
-        Text(
-            text = text,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = ManropeFontFamily,
-            color = ColorTextDarkSlate,
-            maxLines = 1,
-            softWrap = false
-        )
+        Globe(Modifier.fillMaxSize(), globe, orbit)
+
+        // Thẻ chào nổi lên xuống 5dp
+        val cardShape = RoundedCornerShape(20.dp)
+        Column(
+            Modifier
+                .padding(start = 16.dp, top = 20.dp)
+                .width(236.dp)
+                .graphicsLayer { translationY = -5.dp.toPx() * floatT }
+                .shadow(
+                    10.dp, cardShape,
+                    ambientColor = Color(0x1A0F172A), spotColor = Color(0x4D0F172A),
+                )
+                .background(Alx.White, cardShape)
+                .border(1.dp, Alx.Line, cardShape)
+                .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 16.dp),
+        ) {
+            val six = with(LocalDensity.current) { 6.dp.roundToPx() }
+            AnimatedContent(
+                targetState = copy,
+                transitionSpec = {
+                    (fadeIn(tween(350)) + slideInVertically(tween(350)) { six }) togetherWith fadeOut(tween(1))
+                },
+                label = "previewCopy",
+            ) { c ->
+                Column {
+                    BasicText(c.tag, style = type(10.5f, FontWeight.ExtraBold, Alx.Blue, spacing = 0.1f))
+                    BasicText(
+                        c.greet, Modifier.padding(top = 6.dp),
+                        style = type(30f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f, lineHeight = 1.1f),
+                    )
+                    BasicText(
+                        c.welcome, Modifier.padding(top = 4.dp),
+                        style = type(12.5f, FontWeight.Medium, Alx.Muted),
+                    )
+                    Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        c.tabs.forEach { tab ->
+                            BasicText(
+                                tab,
+                                Modifier
+                                    .background(Alx.Chip, CircleShape)
+                                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                                style = type(11f, FontWeight.Bold, Alx.ChipText),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Ba chấm "đang gõ" rồi bong bóng trả lời bật ra (chu kỳ 7s)
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 18.dp, bottom = 20.dp),
+        ) {
+            TypingBubble(bubbles)
+            ReplyBubble(copy.reply, bubbles)
+        }
     }
 }
 
-/**
- * Thẻ chọn ngôn ngữ (VI hoặc EN) chuẩn 1:1 theo dòng 73-83 và renderVals() trong Language.dc.html.
- * - base: display:flex; align-items:center; gap:14px; padding:12px 16px; border-radius:20px;
- * - on:  background:#F5F8FF; border:1.5px solid #1F4BD8;
- * - off: background:#fff; border:1.5px solid #E4E8F0;
- */
+private val BubbleShape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 4.dp, bottomStart = 16.dp)
+
 @Composable
-private fun LanguageSelectionItem(
-    code: String,
+private fun TypingBubble(p: Float) {
+    val alpha = keys(p, 0f to 0f, 0.02f to 0f, 0.08f to 1f, 0.26f to 1f, 0.32f to 0f, 1f to 0f)
+    val y = keys(p, 0f to 8f, 0.02f to 8f, 0.08f to 0f, 0.26f to 0f, 0.32f to -4f, 1f to -4f)
+    val s = keys(p, 0f to 0.9f, 0.02f to 0.9f, 0.08f to 1f, 0.26f to 1f, 0.32f to 0.96f, 1f to 0.96f)
+    Row(
+        Modifier
+            .clearAndSetSemantics { }
+            .graphicsLayer {
+                this.alpha = alpha
+                translationY = y.dp.toPx()
+                scaleX = s; scaleY = s
+                transformOrigin = TransformOrigin(1f, 1f)
+            }
+            .background(Alx.White, BubbleShape)
+            .border(1.dp, Alx.Line, BubbleShape)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        val dots by rememberLoop(1000, animationsEnabled(), rest = 0.3f)
+        listOf(0f, 0.15f, 0.3f).forEach { delay ->
+            val ph = ((dots - delay) % 1f + 1f) % 1f
+            val dy = keys(ph, 0f to 0f, 0.3f to -3f, 0.6f to 0f, 1f to 0f)
+            val da = keys(ph, 0f to 0.45f, 0.3f to 1f, 0.6f to 0.45f, 1f to 0.45f)
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .graphicsLayer { translationY = dy.dp.toPx(); this.alpha = da }
+                    .background(Alx.Blue, CircleShape),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReplyBubble(text: String, p: Float) {
+    val alpha = keys(p, 0f to 0f, 0.30f to 0f, 0.38f to 1f, 0.88f to 1f, 0.96f to 0f, 1f to 0f)
+    val y = keys(p, 0f to 10f, 0.30f to 10f, 0.38f to 0f, 0.88f to 0f, 0.96f to -4f, 1f to -4f)
+    val s = keys(p, 0f to 0.88f, 0.30f to 0.88f, 0.38f to 1.04f, 0.42f to 1f, 0.88f to 1f, 0.96f to 0.96f, 1f to 0.96f)
+    BasicText(
+        text,
+        Modifier
+            .graphicsLayer {
+                this.alpha = alpha
+                translationY = y.dp.toPx()
+                scaleX = s; scaleY = s
+                transformOrigin = TransformOrigin(1f, 1f)
+            }
+            .shadow(
+                8.dp, BubbleShape,
+                ambientColor = Color(0x4D1F4BD8), spotColor = Color(0xB31F4BD8),
+            )
+            .background(Alx.Blue, BubbleShape)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        style = type(13f, FontWeight.Bold, Alx.White),
+    )
+}
+
+/* ───────────────────────────── Globe (quay chậm + chấm chạy quanh) ───────────────────────────── */
+
+@Composable
+private fun Globe(modifier: Modifier, phase: Float, orbit: Float) {
+    Canvas(modifier.clearAndSetSemantics { }) {
+        val cx = size.width - 58.dp.toPx()   // 292dp trên khung 350dp
+        val cy = 108.dp.toPx()
+        val r = 106.dp.toPx()
+        val stroke = Stroke(width = 1.4.dp.toPx())
+
+        drawCircle(Alx.Globe, r, Offset(cx, cy), style = stroke)
+
+        // Kinh tuyến: 3 elip đổi bán kính ngang để tạo cảm giác quay
+        val ease = CubicBezierEasing(0.45f, 0f, 0.55f, 1f)
+        val tri = if (phase < 0.5f) phase * 2f else (1f - phase) * 2f
+        val k = ease.transform(tri)
+        val rxA = 8f + 92f * k
+        val rxB = 100f - 92f * k
+        val rxC = when {
+            phase < 0.25f -> 54f + 46f * (phase / 0.25f)
+            phase < 0.75f -> 100f - 92f * ((phase - 0.25f) / 0.5f)
+            else -> 8f + 46f * ((phase - 0.75f) / 0.25f)
+        }
+        for (rxDp in floatArrayOf(rxA, rxB, rxC)) {
+            val rx = rxDp.dp.toPx()
+            drawOval(Alx.Globe, Offset(cx - rx, cy - r), Size(rx * 2, r * 2), style = stroke)
+        }
+
+        // Vĩ tuyến
+        fun parallel(yDp: Float, halfDp: Float) {
+            val y = yDp.dp.toPx(); val h = halfDp.dp.toPx()
+            drawLine(Alx.Globe, Offset(cx - h, y), Offset(cx + h, y), strokeWidth = 1.4.dp.toPx())
+        }
+        parallel(108f, 106f)
+        parallel(60f, 88f); parallel(156f, 88f)
+        parallel(26f, 66f); parallel(190f, 66f)
+
+        // Chấm xanh chạy quanh quả cầu (xuất phát bên trái, đi xuống dưới rồi sang phải)
+        val a = (PI - 2.0 * PI * orbit).toFloat()
+        val p = Offset(cx + r * cos(a), cy + r * sin(a))
+        drawCircle(Alx.Blue.copy(alpha = 0.15f), 9.dp.toPx(), p)
+        drawCircle(Alx.Blue, 4.5.dp.toPx(), p)
+    }
+}
+
+/* ───────────────────────────── Language option card ───────────────────────────── */
+
+@Composable
+private fun LanguageOption(
+    badge: String,
     title: String,
     subtitle: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
+    solidBadge: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
 ) {
-    val borderColor by animateColorAsState(
-        targetValue = if (isSelected) ColorBorderActive else ColorBorderLight,
-        animationSpec = tween(durationMillis = 200),
-        label = "borderColor"
-    )
-    val bgColor by animateColorAsState(
-        targetValue = if (isSelected) ColorCardActiveBg else Color.White,
-        animationSpec = tween(durationMillis = 200),
-        label = "bgColor"
-    )
+    val shape = RoundedCornerShape(20.dp)
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "press")
+    val ring by animateFloatAsState(if (selected) 1f else 0f, tween(150), label = "ring")
+    val bg by animateColorAsState(if (selected) Alx.BlueSelected else Alx.White, tween(150), label = "bg")
+    val border by animateColorAsState(if (selected) Alx.Blue else Alx.Line, tween(150), label = "border")
 
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = bgColor,
-        border = BorderStroke(1.5.dp, borderColor),
-        modifier = Modifier
+    Row(
+        Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // Badge vuông bo góc (VI / EN): width:44px; height:44px; border-radius:13px; font-size:14px; font-weight:800; letter-spacing:.02em
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(13.dp))
-                    .background(if (isSelected) ColorPrimaryBlue else ColorPreviewBoxBg),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = code,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = ManropeFontFamily,
-                    letterSpacing = 0.3.sp,
-                    color = if (isSelected) Color.White else ColorPrimaryBlue
-                )
-            }
-
-            // Tiêu đề & phụ đề: gap: 1px
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                // <span style="font-size:16px;font-weight:700;color:#0F172A">Tiếng Việt</span>
-                Text(
-                    text = title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = ManropeFontFamily,
-                    color = ColorTextMain
-                )
-                Spacer(modifier = Modifier.height(1.dp))
-                // <span style="font-size:12.5px;font-weight:500;color:#64748B">Giao diện Tiếng Việt</span>
-                Text(
-                    text = subtitle,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = ManropeFontFamily,
-                    color = ColorTextMuted
-                )
-            }
-
-            // Radio Button / Checkmark: width:24px; height:24px; border-radius:50%
-            // cOn: background:#1F4BD8
-            // cOff: background:#fff; border:1.5px solid #CBD2DF
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .background(if (isSelected) ColorPrimaryBlue else Color.White)
-                    .border(
-                        width = if (isSelected) 0.dp else 1.5.dp,
-                        color = if (isSelected) Color.Transparent else ColorRadioUncheckedBorder,
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isSelected) {
-                    // SVG Checkmark: viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"
-                    // d="M5 12.5l4.5 4.5L19 7.5"
-                    Canvas(modifier = Modifier.size(14.dp)) {
-                        val scaleX = size.width / 24f
-                        val scaleY = size.height / 24f
-                        val checkPath = Path().apply {
-                            moveTo(5f * scaleX, 12.5f * scaleY)
-                            lineTo(9.5f * scaleX, 17f * scaleY)
-                            lineTo(19f * scaleX, 7.5f * scaleY)
-                        }
-                        drawPath(
-                            path = checkPath,
-                            color = Color.White,
-                            style = Stroke(
-                                width = 3.2f * scaleX,
-                                cap = StrokeCap.Round,
-                                join = StrokeJoin.Round
-                            )
-                        )
-                    }
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .drawBehind {
+                if (ring > 0f) {
+                    val g = 4.dp.toPx()
+                    drawRoundRect(
+                        Alx.Blue.copy(alpha = 0.08f * ring),
+                        topLeft = Offset(-g, -g),
+                        size = Size(size.width + 2 * g, size.height + 2 * g),
+                        cornerRadius = CornerRadius(20.dp.toPx() + g),
+                    )
                 }
             }
+            .background(bg, shape)
+            .border(1.5.dp, border, shape)
+            .clip(shape)
+            .selectable(
+                selected = selected,
+                interactionSource = source,
+                indication = null,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
+            Modifier
+                .size(44.dp)
+                .background(if (solidBadge) Alx.Blue else Alx.BlueSoft, RoundedCornerShape(13.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            BasicText(
+                badge,
+                style = type(14f, FontWeight.ExtraBold, if (solidBadge) Alx.White else Alx.Blue, spacing = 0.02f),
+            )
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            BasicText(title, style = type(16f, FontWeight.Bold, Alx.Ink))
+            BasicText(subtitle, style = type(12.5f, FontWeight.Medium, Alx.Muted))
+        }
+        RadioCheck(selected)
+    }
+}
+
+@Composable
+private fun RadioCheck(selected: Boolean) {
+    val fill by animateColorAsState(if (selected) Alx.Blue else Alx.White, tween(150), label = "fill")
+    val edge by animateColorAsState(if (selected) Alx.Blue else Alx.RadioOff, tween(150), label = "edge")
+    val tick by animateFloatAsState(
+        if (selected) 1f else 0f,
+        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "tick",
+    )
+    Box(
+        Modifier
+            .size(24.dp)
+            .background(fill, CircleShape)
+            .border(1.5.dp, edge, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(
+            Modifier
+                .size(14.dp)
+                .graphicsLayer { scaleX = tick; scaleY = tick; alpha = tick.coerceIn(0f, 1f) },
+        ) {
+            val s = size.width / 24f
+            val path = Path().apply {
+                moveTo(5f * s, 12.5f * s); lineTo(9.5f * s, 17f * s); lineTo(19f * s, 7.5f * s)
+            }
+            drawPath(
+                path, Alx.White,
+                style = Stroke(width = 3.2f * s, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
         }
     }
+}
+
+/* ───────────────────────────── Primary button ───────────────────────────── */
+
+@Composable
+private fun PrimaryButton(label: String, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(18.dp)
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "btn")
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .shadow(
+                12.dp, shape,
+                ambientColor = Color(0x4D1F4BD8), spotColor = Color(0xB31F4BD8),
+            )
+            .background(Alx.Blue, shape)
+            .clip(shape)
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        BasicText(label, style = type(16f, FontWeight.Bold, Alx.White))
+    }
+}
+
+/* ───────────────────────────── Route + Preview ───────────────────────────── */
+
+/**
+ * Màn hình Chọn ngôn ngữ chính được gọi từ CayXuNavGraph.
+ * Đồng bộ với LanguageState và chuyển màn khi bấm Tiếp tục.
+ */
+@Composable
+fun LanguageSelectionScreen(onFinished: () -> Unit) {
+    val context = LocalContext.current
+    var lang by rememberSaveable { 
+        mutableStateOf(
+            if (LanguageState.language == com.cayxu.app.ui.locale.AppLanguage.EN) AppLanguage.EN else AppLanguage.VI
+        ) 
+    }
+    LanguageScreen(
+        selected = lang,
+        onSelect = {
+            lang = it
+            LanguageState.setLanguage(
+                context,
+                if (it == AppLanguage.EN) com.cayxu.app.ui.locale.AppLanguage.EN else com.cayxu.app.ui.locale.AppLanguage.VI
+            )
+        },
+        onContinue = {
+            LanguageState.setLanguage(
+                context,
+                if (lang == AppLanguage.EN) com.cayxu.app.ui.locale.AppLanguage.EN else com.cayxu.app.ui.locale.AppLanguage.VI
+            )
+            onFinished()
+        }
+    )
+}
+
+/**
+ * Ví dụ nối vào app. Khi bấm "Tiếp tục", lưu ngôn ngữ rồi sang màn nhập key:
+ *   AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(lang.tag))
+ */
+@Composable
+fun LanguageRoute(onDone: (AppLanguage) -> Unit) {
+    var lang by rememberSaveable { mutableStateOf(AppLanguage.VI) }
+    LanguageScreen(selected = lang, onSelect = { lang = it }, onContinue = { onDone(lang) })
+}
+
+@Preview(widthDp = 390, heightDp = 844, showBackground = true)
+@Composable
+private fun LanguageScreenPreview() {
+    var lang by remember { mutableStateOf(AppLanguage.VI) }
+    LanguageScreen(selected = lang, onSelect = { lang = it }, onContinue = {})
 }
