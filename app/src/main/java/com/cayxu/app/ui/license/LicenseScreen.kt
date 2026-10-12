@@ -2,8 +2,8 @@ package com.cayxu.app.ui.license
 
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -40,12 +39,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,7 +79,6 @@ import com.cayxu.app.ui.design.PrimaryButton
 import com.cayxu.app.ui.design.SvgIcon
 import com.cayxu.app.ui.design.animationsEnabled
 import com.cayxu.app.ui.design.keys
-import com.cayxu.app.ui.design.rememberLoop
 import com.cayxu.app.ui.design.rise
 import com.cayxu.app.ui.design.type
 import com.cayxu.app.ui.screens.login.LoginViewModel
@@ -171,7 +167,7 @@ fun LicenseScreen(
                 style = type(14.5f, FontWeight.Medium, Alx.Ink2, lineHeight = 1.55f),
             )
 
-            PhonePreview(Modifier.padding(top = 12.dp))
+            PhonePreview(replay = errorVersion * 2 + (if (keyValue.isEmpty()) 0 else 1), modifier = Modifier.padding(top = 12.dp))
 
             KeyField(
                 value = keyValue,
@@ -332,28 +328,28 @@ private fun KeyField(
 /* ───────────────────────────── Điện thoại mini = Trang chủ thật, trượt lên + tự cuộn ───────────────────────────── */
 
 @Composable
-private fun PhonePreview(modifier: Modifier = Modifier) {
+private fun PhonePreview(replay: Int, modifier: Modifier = Modifier) {
     val on = animationsEnabled()
-    // Vòng 10s: điện thoại trồi lên → màn hình cuộn xuống → thanh 95% chạy → hạ xuống → lặp
-    val loop = rememberLoop(10_000, on, rest = 0.5f)
-    // Đọc state ở pha vẽ (trong graphicsLayer) để mỗi khung hình tự cập nhật, không phụ thuộc recomposition.
-    val phoneY = { keys(loop.value, 0f to 250f, 0.10f to 0f, 0.88f to 0f, 0.94f to 250f, 1f to 250f, ease = EaseOutSoft::transform) }
-    val scrollY = { keys(loop.value, 0f to 0f, 0.17f to 0f, 0.52f to -100f, 0.94f to -100f, 0.941f to 0f, 1f to 0f, ease = EaseScroll::transform) }
-    val bar = { keys(loop.value, 0f to 0f, 0.12f to 0f, 0.30f to 1f, 0.94f to 1f, 0.941f to 0f, 1f to 0f, ease = EaseInOutCss::transform) }
-
-    // Mỗi vòng lặp (10s) đổi bộ số mới: các ô đếm từ 0 lên vài trăm nghìn đến vài triệu.
-    var cycle by remember { mutableIntStateOf(0) }
-    LaunchedEffect(on) {
-        var prev = 0f
-        snapshotFlow { loop.value }.collect {
-            if (it < prev - 0.5f) {
-                cycle++
-                Log.d("AlxAnimation", "Cycle looped in PhonePreview: new cycle=$cycle")
-            }
-            prev = it
+    // CHỈ CHẠY 1 LẦN (6s) rồi dừng ở trạng thái cuối. Chạy lại khi vào màn hoặc khi `replay` đổi
+    // (người dùng nhập key / bấm xác thực).
+    //   0 → 1s    nội dung trượt từ dưới lên trong khung (khung điện thoại đứng yên)
+    //   1.7 → 5.1s nội dung cuộn xuống 100dp
+    //   1.2 → 3s   thanh 95% chạy, các số đếm từ 0 lên
+    val t = remember { Animatable(if (on) 0f else 1f) }
+    LaunchedEffect(replay, on) {
+        if (on) {
+            t.snapTo(0f)
+            t.animateTo(1f, tween(6_000, easing = LinearEasing))
+        } else {
+            t.snapTo(1f)
         }
     }
-    val amounts = remember(cycle) { randomAmounts(cycle) }
+    val slideY = { keys(t.value, 0f to 330f, 0.17f to 0f, ease = EaseOutSoft::transform) }
+    val scrollY = { keys(t.value, 0f to 0f, 0.28f to 0f, 0.85f to -100f, ease = EaseScroll::transform) }
+    val bar = { keys(t.value, 0f to 0f, 0.20f to 0f, 0.50f to 1f, ease = EaseInOutCss::transform) }
+
+    // Mỗi lần chạy lại là một bộ số mới: các ô đếm từ 0 lên vài trăm nghìn đến vài triệu.
+    val amounts = remember(replay) { randomAmounts((System.nanoTime() % 100_000L).toInt() + replay) }
 
     Box(
         modifier
@@ -362,13 +358,13 @@ private fun PhonePreview(modifier: Modifier = Modifier) {
             .clip(RoundedCornerShape(0.dp))
             .clearAndSetSemantics { },
     ) {
-        // Khung điện thoại 252×340, bo 36, viền đen 6dp
+        // Khung điện thoại 252×340, bo 36, viền đen 6dp. Đứng yên; đáy bị panel cắt thẳng.
         Box(
             Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 14.dp)
-                .graphicsLayer { translationY = phoneY().dp.toPx() }
-                .requiredSize(252.dp, 340.dp)
+                .wrapContentSize(Alignment.TopCenter, unbounded = true)
+                .size(252.dp, 340.dp)
                 .shadow(
                     16.dp, RoundedCornerShape(36.dp),
                     ambientColor = Color(0x330F172A), spotColor = Color(0x800F172A),
@@ -378,7 +374,7 @@ private fun PhonePreview(modifier: Modifier = Modifier) {
                 .clip(RoundedCornerShape(30.dp))
                 .background(Alx.Bg),
         ) {
-            Box(Modifier.graphicsLayer { translationY = scrollY().dp.toPx() }) {
+            Box(Modifier.graphicsLayer { translationY = (slideY() + scrollY()).dp.toPx() }) {
                 MiniHome(
                     bar = bar,
                     amounts = amounts,
