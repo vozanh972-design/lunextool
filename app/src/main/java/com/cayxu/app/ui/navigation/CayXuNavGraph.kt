@@ -40,6 +40,7 @@ import com.cayxu.app.ui.screens.wallet.WalletScreen
 import com.cayxu.app.ui.screens.welcome.LanguageSelectionScreen
 import com.cayxu.app.ui.screens.welcome.OnboardingScreen
 import com.cayxu.app.ui.screens.welcome.WelcomeScreen
+import com.cayxu.app.ui.success.ActivationSuccessScreen
 import com.cayxu.app.ui.theme.AppBackground
 
 object Routes {
@@ -216,32 +217,58 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
             ) {
                 com.cayxu.app.ui.license.LicenseRoute(
                     onActivated = {
-                        val currentPrefs = SecurePrefs(context)
-                        if (!currentPrefs.hasSeenWelcome()) {
-                            navController.navigate(Routes.WELCOME) {
-                                popUpTo(Routes.LOGIN) { inclusive = true }
-                            }
-                        } else {
-                            navController.navigate(Routes.HOME) {
-                                popUpTo(Routes.LOGIN) { inclusive = true }
-                            }
+                        navController.navigate(Routes.WELCOME) {
+                            popUpTo(Routes.LOGIN) { inclusive = true }
                         }
                     }
                 )
             }
 
-            // 3. Màn hình Chào mừng (WelcomeScreen - Sau khi xác thực key thành công)
+            // 3. Màn hình Chào mừng (ActivationSuccessScreen - Chuẩn AUTOLUNEX mới)
             composable(
                 Routes.WELCOME,
                 exitTransition = { fadeOut(animationSpec = tween(FADE_DURATION_MS)) }
             ) {
                 val currentContext = LocalContext.current
-                WelcomeScreen(
-                    onLoginClick = {
-                        SecurePrefs(currentContext).setSeenWelcome()
+                val prefs = remember { SecurePrefs(currentContext) }
+                val buyerName = remember { prefs.getBuyerUsername() }
+                val username = remember(buyerName) {
+                    if (!buyerName.isNullOrBlank()) buyerName else "benbenteo10"
+                }
+                val daysLeft = remember {
+                    val expires = prefs.getExpiresAt()
+                    if (!expires.isNullOrBlank()) {
+                        try {
+                            val format = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                            val date = format.parse(expires)
+                            if (date != null) {
+                                val diff = date.time - System.currentTimeMillis()
+                                (diff / (1000L * 60 * 60 * 24)).toInt().coerceAtLeast(1)
+                            } else 30
+                        } catch (_: Exception) {
+                            try {
+                                val format = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                                val date = format.parse(expires)
+                                if (date != null) {
+                                    val diff = date.time - System.currentTimeMillis()
+                                    (diff / (1000L * 60 * 60 * 24)).toInt().coerceAtLeast(1)
+                                } else 30
+                            } catch (_: Exception) { 30 }
+                        }
+                    } else 30
+                }
+
+                ActivationSuccessScreen(
+                    username = username,
+                    daysLeft = daysLeft,
+                    onFinished = {
+                        prefs.setSeenWelcome()
                         navController.navigate(Routes.HOME) {
                             popUpTo(Routes.WELCOME) { inclusive = true }
                         }
+                    },
+                    home = {
+                        HomeScreen(navController)
                     }
                 )
             }
