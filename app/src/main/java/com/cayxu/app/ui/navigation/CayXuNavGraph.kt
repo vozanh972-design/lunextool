@@ -131,7 +131,10 @@ private fun welcomeToLoginExit() =
         scaleOut(targetScale = 1.06f, animationSpec = tween(WELCOME_TO_LOGIN_DURATION_MS))
 
 @Composable
-fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
+fun CayXuNavGraph(
+    navController: NavHostController = rememberNavController(),
+    startDestination: String? = null,
+) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val context = LocalContext.current
@@ -185,13 +188,14 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
         }
     ) { innerPadding ->
         val securePrefs = SecurePrefs(context)
+        val defaultStart = when {
+            securePrefs.isPermanentlyBlocked() -> Routes.BLOCKED
+            !securePrefs.hasSeenWelcome() -> Routes.LANGUAGE_SELECTION
+            else -> Routes.LOGIN
+        }
         NavHost(
             navController = navController,
-            startDestination = when {
-                securePrefs.isPermanentlyBlocked() -> Routes.BLOCKED
-                !securePrefs.hasSeenWelcome() -> Routes.LANGUAGE_SELECTION
-                else -> Routes.LOGIN
-            },
+            startDestination = startDestination ?: defaultStart,
             modifier = Modifier.padding(innerPadding),
             // Chỉ mờ dần nội dung cũ -> hiện nội dung mới, KHÔNG trượt ngang trái/phải.
             enterTransition = { fadeIn(animationSpec = tween(FADE_DURATION_MS)) },
@@ -217,10 +221,17 @@ fun CayXuNavGraph(navController: NavHostController = rememberNavController()) {
                 enterTransition = { fadeIn(animationSpec = tween(FADE_DURATION_MS)) }
             ) {
                 com.cayxu.app.ui.license.LicenseRoute(
-                    onActivated = {
+                    onActivated = { _ ->
                         navController.navigate(Routes.WELCOME) {
                             popUpTo(Routes.LOGIN) { inclusive = true }
                         }
+                    },
+                    onBuy = {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://t.me/cayxu_admin")
+                        ).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
+                        context.startActivity(intent)
                     }
                 )
             }

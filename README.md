@@ -1,17 +1,18 @@
-# AUTOLUNEX – Jetpack Compose (Chọn ngôn ngữ + Nhập key + Chào mừng)
+# AUTOLUNEX – Jetpack Compose (Chọn ngôn ngữ + Nhập key)
 
 ## Cài đặt
-1. Cấu trúc các file UI mới:
-   - `AlxDesign.kt` → `com.cayxu.app.ui.design` (màu, font Manrope DÙNG CHUNG, animation helper, SvgIcon, PrimaryButton)
-   - `LanguageSelectionScreen.kt` → `com.cayxu.app.ui.screens.welcome` (hoặc `ui/language`)
-   - `LicenseScreen.kt` → `com.cayxu.app.ui.license`
-   - `VerifyingScreen.kt` → `com.cayxu.app.ui.verify` (màn chờ kiểm tra key, ổ khóa + chìa)
-   - `ActivationSuccessScreen.kt` → `com.cayxu.app.ui.success` (chào mừng + chuyển cảnh vào Trang chủ)
+1. Chép các file UI:
+   - `AlxDesign.kt` → `.../ui/design/` (màu, font Manrope DÙNG CHUNG, animation helper, SvgIcon, PrimaryButton)
+   - `LanguageSelectionScreen.kt` → `.../ui/screens/welcome/`
+   - `LicenseScreen.kt` → `.../ui/license/`
+   - `VerifyingScreen.kt` → `.../ui/verify/` (một màn kiểm tra key: ổ khóa → tích xanh hoặc X đỏ)
+   - `AppFlow.kt` → `.../app/` (luồng điều hướng toàn app, xem mục "Luồng mở app")
+   - `ActivationSuccessScreen.kt` → `.../ui/success/` (chào mừng + chuyển cảnh vào Trang chủ)
    Mọi màn đều lấy font từ `Manrope` trong `AlxDesign.kt`, màn mới chỉ cần dùng `type(...)`.
 2. Tải font **Manrope** từ Google Fonts. Lấy file variable `Manrope[wght].ttf`, đổi tên thành `manrope.ttf` và đặt vào `app/src/main/res/font/`.
    Chỉ cần đúng 1 file này; code tự chọn độ đậm Medium/SemiBold/Bold/ExtraBold bằng trục wght. Đừng chép cùng một file variable thành 4 tên khác nhau, chữ sẽ bị mảnh.
 3. Dependencies (BOM Compose 2024.06 trở lên):
-   ```kotlin
+   ```
    implementation(platform("androidx.compose:compose-bom:2024.09.00"))
    implementation("androidx.compose.ui:ui")
    implementation("androidx.compose.foundation:foundation")
@@ -20,8 +21,7 @@
    debugImplementation("androidx.compose.ui:ui-tooling")
    ```
    Không cần Material. `minSdk 24` trở lên.
-4. Trong `MainActivity`: gọi `enableEdgeToEdge()` trước `setContent { ... }`.
-5. Màn luôn sáng: không đọc theme hệ thống, không có dark mode.
+4. Màn luôn sáng: không đọc theme hệ thống, không có dark mode.
 
 ## Số đo lấy từ thiết kế (khung 390 × 844 dp)
 Nền `#F3F5F9`, xanh chính `#1F4BD8`, chữ `#0F172A`. Padding ngang 20dp. Panel minh họa cao 204dp, bo 26dp.
@@ -32,17 +32,19 @@ Quả cầu quay 9s, chấm chạy quanh 10s, thẻ chào nổi 5s, ba chấm đ
 đổi ngôn ngữ thì chữ trong thẻ chào mờ vào + trượt lên 6dp (350ms), thẻ bấm nhún 0.985 (120ms).
 Người dùng tắt animation hệ thống (Animator duration scale = 0) thì mọi chuyển động dừng ở trạng thái tĩnh.
 
-## Màn nhập key (LicenseScreen.kt)
-`LicenseRoute` kết nối `LoginViewModel` xác thực key với server.
+## Màn nhập key (LicenseScreen)
+`LicenseRoute` có validate demo (≥ 8 ký tự); thay bằng gọi API thật.
 Sai key: ô đỏ + rung + thông báo lỗi. Đúng key: gọi `onSuccess`.
-Ô key cao 56dp bo 16dp, viền 1.5dp; focus có viền xanh 2dp + quầng. Điện thoại mini trượt lên, cuộn, thanh 95% chạy.
-Khung viền trên điện thoại đứng yên, hiển thị rõ ràng, chân máy mờ dần vào nền. Chạy 1 lần (6s) rồi dừng ở trạng thái cuối, tự chạy lại khi người dùng gõ key hoặc bấm xác thực.
+Ô key cao 56dp bo 16dp, viền 1.5dp; focus có viền xanh 2dp + quầng. Điện thoại mini trượt lên, cuộn, thanh 95% chạy, chạy 1 lần 6s rồi dừng.
 Khi bàn phím bật, nội dung cuộn được (`imePadding`).
 
-## Màn chờ kiểm tra key (VerifyingScreen.kt)
-`VerifyingRoute(key, validate, onSuccess, onFailure)` chạy 3 bước (định dạng → máy chủ → kích hoạt PRO), mỗi bước hiện tối thiểu ~0,9 s.
-Ổ khóa ở giữa: khi máy chủ xác nhận, chìa trượt vào ổ, xoay, quai khóa bật mở rồi gọi `onSuccess` (sau ~1,3 s).
-`validate` là hàm suspend gọi server của bạn; `onFailure` đưa người dùng về màn nhập key để hiện lỗi.
+## Màn kiểm tra key (VerifyingScreen.kt) – MỘT màn, 3 trạng thái
+Chỉ có ổ khóa (144dp, căn giữa) và một dòng chữ. Không có mô tả, bước, key hay chú thích.
+- `Checking`: ổ khóa trắng trong lõi xanh, cung xanh xoay; chữ "Đang kiểm tra…".
+- `Success`: quai khóa mở, ổ khóa thu nhỏ rồi biến mất, dấu tích trắng vẽ ra; chữ xanh "Xác thực thành công". Sau ~1,9 s gọi `onSuccess` (sang `ActivationSuccessScreen` rồi Trang chủ).
+- `Error`: ổ khóa rung, nền và lõi chuyển đỏ, dấu X vẽ ra; chữ đỏ "Key không hợp lệ". Sau ~1,7 s gọi `onFailure` (quay về màn nhập key để hiện lỗi).
+Dùng `VerifyingRoute(key, validate, onSuccess, onFailure)`; `validate` là hàm suspend gọi server. Hiện tối thiểu ~1,2 s cho trạng thái kiểm tra.
+Mỗi chuyển trạng thái chạy đúng một lần. Tắt animation hệ thống thì nhảy thẳng tới hình cuối.
 
 ## Màn chào mừng + vào Trang chủ (ActivationSuccessScreen.kt)
 ```kotlin
@@ -61,8 +63,24 @@ Chạy MỘT lần, không lặp (tổng 3,45 s):
 Trong lúc chạy, chạm bị chặn. Tắt animation hệ thống thì chỉ hiện lời chào ~0,5 s rồi vào thẳng Trang chủ.
 `home()` được tải sẵn từ đầu (ẩn) để không giật khi hiện. Bố cục co theo bề rộng màn hình thật so với khung thiết kế 390dp.
 
+## Luồng mở app (AppFlow.kt)
+```
+LẦN ĐẦU : Chọn ngôn ngữ → Nhập key → Kiểm tra → Chào mừng → Trang chủ
+MỞ LẠI   : Kiểm tra → Trang chủ          (không ngôn ngữ, không nhập key, không chào mừng)
+KEY SAI  : Kiểm tra → X đỏ → Nhập key (ô đỏ + rung + thông báo)
+```
+Cách hoạt động:
+1. `AppFlow` đọc `SessionStore` ngay khi mở app: có `licenseKey` thì vào thẳng `VerifyingRoute` với `firstTime = false`;
+   chưa có `language` thì vào Chọn ngôn ngữ; còn lại vào Nhập key.
+2. Nhập key xong, `LicenseRoute` gọi `onActivated(key)` rồi sang `VerifyingRoute(firstTime = true)`. `LicenseRoute` KHÔNG tự gọi server nữa.
+3. Kiểm tra đúng: lưu `licenseKey`. Nếu `firstTime` thì sang `ActivationSuccessScreen` (chào mừng + vào Trang chủ), nếu mở lại thì vào Trang chủ luôn.
+4. Kiểm tra sai: nếu là key vừa nhập, giữ lại key trong ô; nếu là key cũ đã lưu (hết hạn/bị khóa), xóa key đã lưu rồi cho nhập lại.
+   Cả hai trường hợp đều quay về `LicenseRoute(initialError = …)` để hiện lỗi.
+5. Cài sẵn `SecurePrefsSessionStore` (dùng `EncryptedSharedPreferences` AES-256 mã hóa an toàn) và truyền `validate` gọi `AuthRepository.verifyKey()`.
+6. Gọi trong `MainActivity`: `setContent { AppFlow(store, validate = { ... }, onBuy = { ... }, home = { CayXuNavGraph(startDestination = Routes.HOME) }) }`.
+Lưu ý: nếu mở lại app mà mất mạng, `validate` sẽ nhận biết lỗi mạng và giữ lại key, cho người dùng vào Trang chủ (chống xóa nhầm key khi offline).
+
 ## Lưu ý quan trọng
-Các file chưa được biên dịch hay chạy trên máy. Nếu Android Studio báo lỗi, gửi dòng lỗi hoặc ảnh chụp để sửa đúng chỗ.
 Bóng đổ và độ cao dòng chữ có thể lệch nhẹ so với bản HTML.
 
 ## Build APK tự động bằng GitHub Actions (không cần cài Android Studio)
@@ -73,7 +91,7 @@ GitHub là Actions tự build APK cho bạn tải về.
 ### Bước 1 – Đẩy code lên GitHub
 ```bash
 git add .
-git commit -m "Update AUTOLUNEX UI & ActivationSuccessScreen"
+git commit -m "Update AUTOLUNEX AppFlow & VerifyingScreen"
 git push origin main
 ```
 

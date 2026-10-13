@@ -1,7 +1,5 @@
 package com.cayxu.app.ui.license
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -36,7 +34,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,7 +53,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -70,7 +66,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cayxu.app.ui.design.Alx
 import com.cayxu.app.ui.design.EaseInOutCss
 import com.cayxu.app.ui.design.EaseOutSoft
@@ -81,7 +76,6 @@ import com.cayxu.app.ui.design.animationsEnabled
 import com.cayxu.app.ui.design.keys
 import com.cayxu.app.ui.design.rise
 import com.cayxu.app.ui.design.type
-import com.cayxu.app.ui.screens.login.LoginViewModel
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -579,52 +573,36 @@ private fun randomAmounts(seed: Int): List<Long> {
 /* ───────────────────────────── Route mẫu + Preview ───────────────────────────── */
 
 /**
- * LicenseRoute kết nối API xác thực key qua LoginViewModel.
- * Khi xác thực thành công -> gọi onActivated.
+ * Nối vào app. Màn này KHÔNG tự kiểm tra key với server: bấm "Xác thực" thì gọi [onActivated],
+ * rồi AppFlow chuyển sang màn kiểm tra (VerifyingRoute). Key sai thì VerifyingRoute quay về đây,
+ * truyền lại [initialKey] và [initialError] để ô key hiện đỏ + rung + thông báo.
  */
 @Composable
 fun LicenseRoute(
     onActivated: (String) -> Unit,
-    onBuy: () -> Unit = {},
-    viewModel: LoginViewModel = viewModel(),
+    onBuy: () -> Unit,
+    initialKey: String = "",
+    initialError: String? = null,
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
-    var errorVersion by rememberSaveable { mutableStateOf(0) }
-
-    // Rung khi có lỗi từ server
-    LaunchedEffect(uiState.errorMessage) {
-        if (uiState.errorMessage != null) {
-            errorVersion++
-        }
-    }
-
-    // Tự động chuyển tiếp nếu key đã lưu hợp lệ
-    LaunchedEffect(uiState.isCheckingSavedKey) {
-        if (!uiState.isCheckingSavedKey && viewModel.consumeAutoLoginSuccess()) {
-            onActivated(uiState.keyInput)
-        }
-    }
-
-    val buyAction = onBuy.takeIf { onBuy != {} } ?: {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/theanh39_bot"))
-        context.startActivity(intent)
-    }
-
+    var key by rememberSaveable { mutableStateOf(initialKey) }
+    var error by rememberSaveable { mutableStateOf(initialError) }
+    var errorVersion by rememberSaveable { mutableStateOf(if (initialError != null) 1 else 0) }
     LicenseScreen(
-        keyValue = uiState.keyInput,
-        onKeyChange = { viewModel.onKeyInputChange(it) },
+        keyValue = key,
+        onKeyChange = { key = it; error = null },
         onVerify = {
-            viewModel.login(onSuccess = { onActivated(uiState.keyInput.trim()) })
+            val k = key.trim()
+            if (k.length >= 8) onActivated(k)
+            else {
+                error = "Mã key chưa đúng định dạng. Vui lòng kiểm tra lại."
+                errorVersion++
+            }
         },
-        onBuy = buyAction,
-        errorMessage = uiState.errorMessage,
+        onBuy = onBuy,
+        errorMessage = error,
         errorVersion = errorVersion,
-        loading = uiState.isLoading,
     )
 }
-
-private fun isKeyValid(key: String) = key.trim().length >= 8 && !key.trim().endsWith("0000")
 
 @Preview(widthDp = 390, heightDp = 844, showBackground = true)
 @Composable
