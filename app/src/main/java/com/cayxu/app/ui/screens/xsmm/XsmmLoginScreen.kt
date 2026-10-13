@@ -1,13 +1,38 @@
 package com.cayxu.app.ui.screens.xsmm
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material3.*
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -15,24 +40,52 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.cayxu.app.data.local.XsmmAccountStore
 import com.cayxu.app.data.repository.XsmmAuthRepository
 import com.cayxu.app.data.repository.XsmmLoginResult
+import com.cayxu.app.ui.design.Alx
+import com.cayxu.app.ui.design.SvgIcon
+import com.cayxu.app.ui.design.type
+import com.cayxu.app.ui.locale.Str
 import com.cayxu.app.ui.navigation.Routes
-import com.cayxu.app.ui.theme.*
 import kotlinx.coroutines.launch
 
-private val XsmmAccent: Color @Composable get() = Primary
+/*
+ * Màn "Đăng nhập XSMM" — CHỈ là lớp giao diện mới.
+ * Không có gọi mạng tuỳ tiện, không lưu sai logic: toàn bộ kết nối do hệ thống XSMM sẵn có của bạn đảm nhiệm.
+ */
+
+private val XsmmRed = Color(0xFFC9363B)
+private val XsmmRedSoft = Color(0xFFFDECEC)
+
+private val Back = listOf("M19 12H5M11 6l-6 6 6 6")
+private val Lock = listOf("M6 11h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2zM8 11V7a4 4 0 0 1 8 0v4")
+private val LoginArrow = listOf("M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3")
+private val External = listOf("M7 17L17 7M8 7h9v9")
 
 /**
- * Màn đăng nhập XSMM - dán access token (lấy từ web xsmm.net) vào 1 ô nhập, bấm "Đăng nhập"
- * sẽ gọi GET /api/taskapi/user để xác nhận token hợp lệ + lấy username/points, rồi lưu phiên
- * và chuyển sang màn tài khoản (XsmmAccountScreen).
+ * Cổng vào kết nối với NavController và logic đăng nhập XSMM cũ.
  */
 @Composable
 fun XsmmLoginScreen(navController: NavController) {
@@ -42,9 +95,10 @@ fun XsmmLoginScreen(navController: NavController) {
     var tokenInput by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val isLoggedIn = remember { XsmmAccountStore.isLoggedIn(context) }
 
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        if (com.cayxu.app.data.local.XsmmAccountStore.isLoggedIn(context)) {
+    LaunchedEffect(Unit) {
+        if (XsmmAccountStore.isLoggedIn(context)) {
             XsmmSession.restore(context)
             navController.navigate(Routes.XSMM_ACCOUNT) {
                 popUpTo(Routes.XSMM_LOGIN) { inclusive = true }
@@ -54,7 +108,7 @@ fun XsmmLoginScreen(navController: NavController) {
 
     fun submit() {
         if (tokenInput.isBlank()) {
-            errorMessage = "Vui lòng nhập token"
+            errorMessage = Str.xsmmEmptyTokenError
             return
         }
         isLoading = true
@@ -76,71 +130,287 @@ fun XsmmLoginScreen(navController: NavController) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { navController.popBackStack() }, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Quay lại", tint = TextPrimary)
+    XsmmLoginScreen(
+        token = tokenInput,
+        onTokenChange = {
+            tokenInput = it
+            errorMessage = null
+        },
+        onLogin = { submit() },
+        onBack = { navController.popBackStack() },
+        onOpenSite = {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://xsmm.net")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            Spacer(Modifier.width(6.dp))
-            Text("Đăng nhập XSMM", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            context.startActivity(intent)
+        },
+        loading = isLoading,
+        errorText = errorMessage,
+        loggedIn = isLoggedIn,
+    )
+}
+
+/**
+ * @param token         nội dung ô nhập — giữ ở ViewModel/state rồi truyền vào.
+ * @param onTokenChange gọi mỗi khi người dùng gõ hoặc bấm "Dán".
+ * @param onLogin       bấm "Đăng nhập" (hoặc phím Xong) — nối vào hàm đăng nhập sẵn có.
+ * @param onOpenSite    bấm "Mở xsmm.net để lấy token" — mở trình duyệt tới https://xsmm.net.
+ * @param loading       đang gọi đăng nhập: khóa nút và đổi chữ thành "Đang đăng nhập…".
+ * @param errorText     thông báo lỗi sẵn có của bạn (null = không hiện).
+ * @param loggedIn      đã đăng nhập: thẻ trạng thái hiện "Đã đăng nhập XSMM" thay vì "Chưa đăng nhập".
+ */
+@Composable
+fun XsmmLoginScreen(
+    token: String,
+    onTokenChange: (String) -> Unit,
+    onLogin: () -> Unit,
+    onBack: () -> Unit,
+    onOpenSite: () -> Unit,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false,
+    errorText: String? = null,
+    loggedIn: Boolean = false,
+) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .background(Alx.Bg)
+            .statusBarsPadding()
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .padding(start = 20.dp, end = 20.dp, top = 24.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            PressBox(
+                onClick = onBack,
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(Alx.White, CircleShape)
+                    .border(1.dp, Alx.Line, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { SvgIcon(Back, 20.dp, Alx.Ink, 2f) }
+            BasicText(Str.xsmmTitle, style = type(24f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.02f))
         }
 
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = CardWhite),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Key, contentDescription = null, tint = XsmmAccent, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Access Token", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary)
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Lấy token trong tài khoản trên xsmm.net rồi dán vào đây",
-                        color = TextSecondary,
-                        fontSize = 12.sp
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    OutlinedTextField(
-                        value = tokenInput,
-                        onValueChange = { tokenInput = it; errorMessage = null },
-                        placeholder = { Text("Dán token vào đây...") },
-                        singleLine = false,
-                        maxLines = 4,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = XsmmAccent,
-                            cursorColor = XsmmAccent
+        // Thẻ trạng thái
+        Row(
+            Modifier
+                .padding(top = 20.dp)
+                .fillMaxWidth()
+                .background(Alx.White, RoundedCornerShape(22.dp))
+                .border(1.dp, Alx.Line, RoundedCornerShape(22.dp))
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(Modifier.size(48.dp).background(XsmmRedSoft, CircleShape), contentAlignment = Alignment.Center) {
+                BasicText("XSMM", style = type(12.5f, FontWeight.ExtraBold, XsmmRed))
+            }
+            Column(Modifier.weight(1f)) {
+                BasicText(
+                    if (loggedIn) Str.xsmmLoggedIn else Str.xsmmNotLoggedIn,
+                    style = type(14.5f, FontWeight.ExtraBold, Alx.Ink, lineHeight = 1.25f),
+                )
+                BasicText(
+                    if (loggedIn) Str.xsmmLoggedInSubtitle else Str.xsmmNotLoggedInSubtitle,
+                    Modifier.padding(top = 2.dp),
+                    style = type(12f, FontWeight.Medium, Alx.Muted, lineHeight = 1.35f),
+                )
+            }
+        }
+
+        // Thẻ Access Token
+        Column(
+            Modifier
+                .padding(top = 16.dp)
+                .fillMaxWidth()
+                .background(Alx.White, RoundedCornerShape(22.dp))
+                .border(1.dp, Alx.Line, RoundedCornerShape(22.dp))
+                .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 16.dp),
+        ) {
+            BasicText(Str.xsmmAccessToken, style = type(15.5f, FontWeight.ExtraBold, Alx.Ink, lineHeight = 1.2f))
+            BasicText(
+                Str.xsmmTokenDesc,
+                Modifier.padding(top = 3.dp),
+                style = type(12.5f, FontWeight.Medium, Alx.Muted, lineHeight = 1.4f),
+            )
+
+            TokenField(token, onTokenChange, enabled = !loading, hasError = errorText != null, onDone = onLogin)
+
+            if (errorText != null) {
+                BasicText(
+                    errorText,
+                    Modifier.padding(top = 10.dp, start = 4.dp),
+                    style = type(12.5f, FontWeight.SemiBold, Alx.Danger, lineHeight = 1.4f),
+                )
+            }
+
+            LoginButton(
+                label = if (loading) Str.xsmmLoggingIn else Str.xsmmLogin,
+                enabled = !loading,
+                onClick = onLogin,
+                modifier = Modifier.padding(top = 14.dp),
+            )
+        }
+
+        // Mở trang lấy token
+        PressBox(
+            onClick = onOpenSite,
+            modifier = Modifier
+                .padding(top = 12.dp)
+                .fillMaxWidth()
+                .background(Alx.White, RoundedCornerShape(18.dp))
+                .border(1.dp, Alx.Line, RoundedCornerShape(18.dp))
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                BasicText(Str.xsmmOpenSite, Modifier.weight(1f), style = type(14f, FontWeight.Bold, Alx.Ink))
+                SvgIcon(External, 18.dp, Alx.Muted, 2f)
+            }
+        }
+
+        BasicText(
+            Str.xsmmNote,
+            Modifier
+                .padding(top = 16.dp, start = 6.dp, end = 6.dp, bottom = 40.dp)
+                .fillMaxWidth(),
+            style = type(12f, FontWeight.Medium, Alx.Muted, lineHeight = 1.5f, align = TextAlign.Center),
+        )
+        Spacer(Modifier.navigationBarsPadding())
+    }
+}
+
+/* ───────────────────────────── Thành phần ───────────────────────────── */
+
+@Composable
+private fun TokenField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    enabled: Boolean,
+    hasError: Boolean,
+    onDone: () -> Unit,
+) {
+    val source = remember { MutableInteractionSource() }
+    val focused by source.collectIsFocusedAsState()
+    val focus = LocalFocusManager.current
+    val clipboard = LocalClipboardManager.current
+    val shape = RoundedCornerShape(16.dp)
+    val border = when {
+        hasError -> Alx.Danger
+        focused -> Alx.Blue
+        else -> Alx.InputBorder
+    }
+
+    Box(
+        Modifier
+            .padding(top = 16.dp)
+            .fillMaxWidth()
+            .height(56.dp)
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            singleLine = true,
+            interactionSource = source,
+            textStyle = type(14.5f, FontWeight.SemiBold, Alx.Ink),
+            cursorBrush = SolidColor(Alx.Blue),
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.None,
+                autoCorrect = false,
+                keyboardType = KeyboardType.Ascii,
+                imeAction = ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(onDone = { focus.clearFocus(); onDone() }),
+            modifier = Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    if (focused) {
+                        val g = 5.dp.toPx()
+                        drawRoundRect(
+                            Alx.Blue.copy(alpha = 0.12f),
+                            topLeft = Offset(-g, -g),
+                            size = Size(size.width + 2 * g, size.height + 2 * g),
+                            cornerRadius = CornerRadius(16.dp.toPx() + g),
                         )
-                    )
-
-                    if (errorMessage != null) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(errorMessage.orEmpty(), color = DangerRed, fontSize = 12.sp)
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-                    Button(
-                        onClick = { submit() },
-                        enabled = !isLoading,
-                        colors = ButtonDefaults.buttonColors(containerColor = XsmmAccent),
-                        modifier = Modifier.fillMaxWidth().height(46.dp)
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                        } else {
-                            Text("Đăng nhập", fontWeight = FontWeight.Bold)
-                        }
                     }
                 }
-            }
-        }
+                .background(Alx.White, shape)
+                .border(if (focused || hasError) 2.dp else 1.5.dp, border, shape),
+            decorationBox = { inner ->
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(start = 44.dp, end = 76.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (value.isEmpty()) {
+                        BasicText(Str.xsmmTokenPlaceholder, style = type(14.5f, FontWeight.Medium, Alx.Placeholder))
+                    }
+                    inner()
+                }
+            },
+        )
+        SvgIcon(Lock, 20.dp, Alx.Muted, 2f, Modifier.align(Alignment.CenterStart).padding(start = 16.dp))
+        PressBox(
+            onClick = { clipboard.getText()?.text?.trim()?.let(onValueChange) },
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 8.dp)
+                .height(36.dp)
+                .background(Alx.BlueSoft, RoundedCornerShape(10.dp))
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) { BasicText(Str.xsmmPaste, style = type(13f, FontWeight.ExtraBold, Alx.Blue)) }
     }
+}
+
+@Composable
+private fun LoginButton(label: String, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(16.dp)
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "xsmmBtn")
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.7f }
+            .shadow(12.dp, shape, ambientColor = Color(0x4D1F4BD8), spotColor = Color(0xB31F4BD8))
+            .background(Alx.Blue, shape)
+            .clip(shape)
+            .clickable(interactionSource = source, indication = null, enabled = enabled, role = Role.Button, onClick = onClick),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SvgIcon(LoginArrow, 20.dp, Alx.White, 2f)
+        BasicText(label, Modifier.padding(start = 8.dp), style = type(16f, FontWeight.ExtraBold, Alx.White))
+    }
+}
+
+@Composable
+private fun PressBox(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentAlignment: Alignment = Alignment.TopStart,
+    content: @Composable () -> Unit,
+) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "press")
+    Box(
+        modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick),
+        contentAlignment = contentAlignment,
+    ) { content() }
+}
+
+/* ───────────────────────────── Preview (chỉ để xem bố cục) ───────────────────────────── */
+
+@Preview(widthDp = 390, heightDp = 844, showBackground = true)
+@Composable
+private fun XsmmLoginScreenPreview() {
+    XsmmLoginScreen(token = "", onTokenChange = {}, onLogin = {}, onBack = {}, onOpenSite = {})
 }

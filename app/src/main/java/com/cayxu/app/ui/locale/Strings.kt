@@ -181,4 +181,23 @@ object Str {
     )
 
     val dialogCloseButton: String get() = pick("Đã hiểu", "Got it")
+
+    // ---- Màn Đăng nhập XSMM (XsmmLoginScreen.kt) ----
+    val xsmmTitle: String get() = pick("Đăng nhập XSMM", "XSMM Login")
+    val xsmmLoggedIn: String get() = pick("Đã đăng nhập XSMM", "XSMM Logged In")
+    val xsmmNotLoggedIn: String get() = pick("Chưa đăng nhập XSMM", "Not Logged In to XSMM")
+    val xsmmLoggedInSubtitle: String get() = pick("Bạn có thể dán token mới để đổi tài khoản", "You can paste a new token to switch accounts")
+    val xsmmNotLoggedInSubtitle: String get() = pick("Dán Access Token để bắt đầu", "Paste Access Token to get started")
+    val xsmmAccessToken: String get() = pick("Access Token", "Access Token")
+    val xsmmTokenDesc: String get() = pick("Lấy token trong tài khoản trên xsmm.net rồi dán vào đây", "Get token from your account on xsmm.net and paste here")
+    val xsmmTokenPlaceholder: String get() = pick("Dán token vào đây…", "Paste token here…")
+    val xsmmPaste: String get() = pick("Dán", "Paste")
+    val xsmmLoggingIn: String get() = pick("Đang đăng nhập…", "Logging in…")
+    val xsmmLogin: String get() = pick("Đăng nhập", "Log In")
+    val xsmmOpenSite: String get() = pick("Mở xsmm.net để lấy token", "Open xsmm.net to get token")
+    val xsmmNote: String get() = pick(
+        "Token chỉ được lưu trên thiết bị này và dùng để kết nối tài khoản XSMM của bạn.",
+        "Token is only stored on this device and used to connect your XSMM account."
+    )
+    val xsmmEmptyTokenError: String get() = pick("Vui lòng nhập token", "Please enter token")
 }
