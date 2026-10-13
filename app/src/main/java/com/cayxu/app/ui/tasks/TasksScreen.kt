@@ -73,7 +73,7 @@ enum class Platform(val label: String, @DrawableRes val icon: Int) {
     TikTok("TikTok", R.drawable.ic_platform_tiktok),
 }
 
-/** Một nền tảng kiếm xu. [color] là màu chữ logo, [tint] là nền ô logo, [platforms] là các mạng nó hỗ trợ. */
+/** Một nền tảng kiếm xu. [color] là màu chữ logo, [tint] là nền ô logo, [platforms] là các mạng nó hỗ trợ. [isSupported] xác định nền tảng đã sẵn sàng hay chưa. */
 data class TaskService(
     val id: String,
     val badge: String,
@@ -82,6 +82,7 @@ data class TaskService(
     val name: String,
     val platforms: List<Platform>,
     val badgeSizeSp: Float = 13f,
+    val isSupported: Boolean = true,
 )
 
 data class TasksUiState(
@@ -96,7 +97,7 @@ val DefaultServices = listOf(
     TaskService("golike", "GL", Alx.Blue, Alx.BlueSoft, "GoLike", listOf(Platform.Facebook, Platform.Instagram, Platform.TikTok)),
     TaskService("ttc", "TTC", Color(0xFFC2255C), Color(0xFFFDEAF2), "Tuongtaccheo", listOf(Platform.Facebook)),
     TaskService("tiktok", "TikT", Color(0xFF334155), Color(0xFFEDF0F5), "TikTok TTC", listOf(Platform.TikTok), 12.5f),
-    TaskService("nvc", "NV", Color(0xFF0E7490), Color(0xFFE3F4F8), "Nhiemvucheo", listOf(Platform.Facebook)),
+    TaskService("nvc", "NV", Color(0xFF94A3B8), Color(0xFFF1F5F9), "Nhiemvucheo", listOf(Platform.Facebook), isSupported = false),
 )
 
 /* ───────────────────────────── Màn hình ───────────────────────────── */
@@ -159,12 +160,13 @@ fun TasksScreen(
     TasksScreen(
         state = state,
         onService = onService ?: { svc ->
+            if (!svc.isSupported) return@onService
             when (svc.id) {
                 "xsmm" -> navController.navigate(Routes.XSMM_LOGIN)
                 "golike" -> navController.navigate(Routes.GOLIKE_ACCOUNT)
                 "ttc" -> navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK)
                 "tiktok" -> navController.navigate(Routes.LINK_ACCOUNT_TIKTOK)
-                "nvc" -> navController.navigate(Routes.simpleTaskPlatform("Nhiemvucheo"))
+                "nvc" -> Unit
             }
         }
     )
@@ -200,38 +202,93 @@ private fun ServiceRow(s: TaskService, onClick: () -> Unit) {
     val shape = RoundedCornerShape(20.dp)
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "press")
+    val scale by animateFloatAsState(
+        if (s.isSupported && pressed) 0.985f else 1f,
+        tween(120),
+        label = "press",
+    )
+
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .graphicsLayer { scaleX = scale; scaleY = scale }
+        .background(if (s.isSupported) Alx.White else Color(0xFFF8FAFC), shape)
+        .border(1.dp, if (s.isSupported) Alx.Line else Color(0xFFE2E8F0), shape)
+        .clip(shape)
+        .then(
+            if (s.isSupported) {
+                Modifier.clickable(
+                    interactionSource = source,
+                    indication = null,
+                    role = Role.Button,
+                    onClick = onClick,
+                )
+            } else {
+                Modifier
+            }
+        )
+        .padding(14.dp)
+
     Row(
-        Modifier
-            .fillMaxWidth()
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .background(Alx.White, shape)
-            .border(1.dp, Alx.Line, shape)
-            .clip(shape)
-            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
-            .padding(14.dp),
+        rowModifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.size(46.dp).background(s.tint, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
-            BasicText(s.badge, style = type(s.badgeSizeSp, FontWeight.ExtraBold, s.color))
+        Box(
+            Modifier.size(46.dp).background(
+                if (s.isSupported) s.tint else Color(0xFFF1F5F9),
+                RoundedCornerShape(14.dp),
+            ),
+            contentAlignment = Alignment.Center,
+        ) {
+            BasicText(
+                s.badge,
+                style = type(
+                    s.badgeSizeSp,
+                    FontWeight.ExtraBold,
+                    if (s.isSupported) s.color else Color(0xFF94A3B8),
+                ),
+            )
         }
         Column(Modifier.weight(1f)) {
-            BasicText(s.name, style = type(15f, FontWeight.Bold, Alx.Ink), maxLines = 1)
+            BasicText(
+                s.name,
+                style = type(
+                    15f,
+                    FontWeight.Bold,
+                    if (s.isSupported) Alx.Ink else Color(0xFF64748B),
+                ),
+                maxLines = 1,
+            )
             Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                s.platforms.forEach { PlatformChip(it) }
+                s.platforms.forEach { PlatformChip(it, isSupported = s.isSupported) }
+            }
+        }
+        if (!s.isSupported) {
+            Box(
+                Modifier
+                    .background(Color(0xFFF1F5F9), RoundedCornerShape(8.dp))
+                    .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+            ) {
+                BasicText(
+                    "Chưa hỗ trợ",
+                    style = type(11.5f, FontWeight.SemiBold, Color(0xFF94A3B8)),
+                )
             }
         }
     }
 }
 
-/** Logo mạng xã hội 22dp, đã cắt tròn sẵn trong file, giữ nguyên màu (không nhuộm, không vẽ lại). */
+/** Logo mạng xã hội 22dp, đã cắt tròn sẵn trong file; làm mờ khi nền tảng chưa hỗ trợ. */
 @Composable
-private fun PlatformChip(p: Platform) {
+private fun PlatformChip(p: Platform, isSupported: Boolean = true) {
     Image(
         painter = painterResource(p.icon),
         contentDescription = p.label,
-        modifier = Modifier.size(22.dp).clip(CircleShape),
+        modifier = Modifier
+            .size(22.dp)
+            .clip(CircleShape)
+            .then(if (!isSupported) Modifier.graphicsLayer { alpha = 0.35f } else Modifier),
     )
 }
 

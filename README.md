@@ -149,12 +149,13 @@ TasksScreen(
 - Thẻ tóm tắt bo 20dp, 2 cột: Tổng xu (có icon xu) và Hiệu suất hôm nay (cùng hàm `computePerformance` với Trang chủ).
 - KHÔNG có chip lọc (Tất cả / Đang chạy / Sẵn sàng đã bỏ), vẫn hiện đủ mọi nền tảng.
 - Mỗi hàng bo 20dp, chỉ có: ô logo 46dp (nền nhạt, chữ màu dịch vụ), tên nền tảng, và bên dưới tên là hàng icon các mạng xã hội nó hỗ trợ. Không có số tiền/xu, không có "Check ›", không có chữ "Sẵn sàng", không có mô tả chữ.
+- Trạng thái chưa hỗ trợ (`isSupported = false`, ví dụ **Nhiemvucheo**): Hàng chuyển sang tông xám, logo và tên màu xám, icon mạng làm mờ, hiển thị nhãn chip "Chưa hỗ trợ" ở góc phải và khóa hoàn toàn thao tác bấm (không có hiệu ứng nhún, không gọi onService). Ở Trang chủ, ô Nhiemvucheo cũng hiển thị nhãn "Chưa hỗ trợ" và bị khóa tương tự.
 - Icon mạng: LOGO CHÍNH THỨC bạn cung cấp, đã cắt tròn và thu nhỏ đều nhau 128×128 (hiện ở 22dp, giữ nguyên màu, không vẽ lại). 3 file này đã nằm sẵn trong `res/drawable/` của gói:
   `ic_platform_facebook.png`, `ic_platform_instagram.png`, `ic_platform_tiktok.png`. Mỗi nền tảng khai báo `platforms = listOf(Platform.TikTok, Platform.Facebook, Platform.Instagram)`, thứ tự khai báo là thứ tự hiện.
   Tuongtaccheo và Nhiemvucheo hiện chỉ có Facebook. Thêm mạng mới (YouTube…): đưa logo vào cùng quy cách (vuông, cắt tròn, 128×128) rồi thêm một giá trị vào enum `Platform`. Nhớ đổi `import com.autolunex.app.R` cho đúng app.
-- Danh sách mạng trong `DefaultServices` khớp bản thiết kế hiện tại (XSMM: TikTok, Facebook, Instagram; GoLike: Facebook, Instagram, TikTok; Tuongtaccheo: Facebook; TikTok TTC: TikTok; Nhiemvucheo: Facebook). Sửa theo thực tế.
+- Danh sách mạng trong `DefaultServices` khớp bản thiết kế hiện tại (XSMM: TikTok, Facebook, Instagram; GoLike: Facebook, Instagram, TikTok; Tuongtaccheo: Facebook; TikTok TTC: TikTok; Nhiemvucheo: Facebook - Chưa hỗ trợ). Sửa theo thực tế.
 - Số "95%" trên bản thiết kế chỉ là số minh họa. Trong app, hiệu suất tính thật từ `today` (xem mục "Hiệu suất hôm nay").
-- Không có animation riêng; chạm hàng nhún 0.985 trong 120ms.
+- Không có animation riêng; chạm hàng nhún 0.985 trong 120ms (chỉ áp dụng cho nền tảng đã hỗ trợ).
 
 ## Animation thanh dock (MainShell.kt)
 Một viên thuốc nền mực #0F172A TRƯỢT giữa các tab như dock của Apple, không nhảy:

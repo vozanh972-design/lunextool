@@ -84,12 +84,13 @@ data class HomeTile(
     val name: String,
     val subtitle: String,
     val badgeSizeSp: Float = 12f,
+    val isSupported: Boolean = true,
 )
 
 data class HomeUiState(
     val username: String,
     val coins: String = "0",
-    val servicesActive: Int = 5,
+    val servicesActive: Int = 4,
     val servicesTotal: Int = 5,
     val daysLeft: Int = 25,
     val today: DayEarnings = DayEarnings(0, 0),          // xu + tiền (đ) kiếm được hôm nay
@@ -97,7 +98,7 @@ data class HomeUiState(
     val hasUnread: Boolean = true,
     val tiles: List<HomeTile> = DefaultTiles,
     val wideTile: HomeTile? = DefaultWideTile,
-    val wideStatus: String = "Sẵn sàng",
+    val wideStatus: String = "Chưa hỗ trợ",
 )
 
 /** Thu nhập của một ngày: [coins] là số xu, [money] là số tiền (đồng). */
@@ -130,7 +131,7 @@ val DefaultTiles = listOf(
     HomeTile("ttc", "TTC", Color(0xFFC2255C), Color(0xFFFDEAF2), "0 xu", "Tuongtaccheo", "Trao đổi like sub"),
     HomeTile("tiktok", "TikT", Color(0xFF334155), Color(0xFFEDF0F5), "0 acc", "TikTok TTC", "Nhận job tự động", 11f),
 )
-val DefaultWideTile = HomeTile("nvc", "NV", Color(0xFF0E7490), Color(0xFFE3F4F8), "", "Nhiemvucheo", "Tăng view, sub")
+val DefaultWideTile = HomeTile("nvc", "NV", Color(0xFF94A3B8), Color(0xFFF1F5F9), "", "Nhiemvucheo", "Chưa hỗ trợ", 12f, isSupported = false)
 
 /** "Chào buổi sáng / trưa / chiều / tối" theo giờ máy. */
 fun greetingNow(): String {
@@ -275,7 +276,7 @@ fun HomeScreen(
             hasUnread = true,
             tiles = tiles,
             wideTile = DefaultWideTile,
-            wideStatus = "Sẵn sàng",
+            wideStatus = "Chưa hỗ trợ",
         )
     }
 
@@ -286,12 +287,13 @@ fun HomeScreen(
         onExplore = onExplore ?: { navController.navigate(Routes.TASKS) },
         onSeeAll = onSeeAll ?: { navController.navigate(Routes.TASKS) },
         onTile = { tile ->
+            if (!tile.isSupported) return@HomeScreen
             when (tile.id) {
                 "xsmm" -> navController.navigate(Routes.XSMM_LOGIN)
                 "golike" -> navController.navigate(Routes.GOLIKE_ACCOUNT)
                 "ttc" -> navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK)
                 "tiktok" -> navController.navigate(Routes.LINK_ACCOUNT_TIKTOK)
-                "nvc" -> navController.navigate(Routes.simpleTaskPlatform("Nhiemvucheo"))
+                "nvc" -> Unit
             }
         }
     )
@@ -458,21 +460,71 @@ private fun QuickTile(tile: HomeTile, onClick: () -> Unit, modifier: Modifier = 
 
 @Composable
 private fun WideTile(tile: HomeTile, status: String, onClick: () -> Unit) {
-    PressBox(
-        onClick,
-        Modifier.fillMaxWidth().tileShadow().background(Alx.White, TileShape).border(1.dp, Alx.Line, TileShape).clip(TileShape),
-    ) {
+    val shape = TileShape
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        if (tile.isSupported && pressed) 0.985f else 1f,
+        tween(120),
+        label = "press",
+    )
+    val boxModifier = Modifier
+        .fillMaxWidth()
+        .tileShadow()
+        .graphicsLayer { scaleX = scale; scaleY = scale }
+        .background(if (tile.isSupported) Alx.White else Color(0xFFF8FAFC), shape)
+        .border(1.dp, if (tile.isSupported) Alx.Line else Color(0xFFE2E8F0), shape)
+        .clip(shape)
+        .then(
+            if (tile.isSupported) {
+                Modifier.clickable(
+                    interactionSource = source,
+                    indication = null,
+                    role = Role.Button,
+                    onClick = onClick,
+                )
+            } else {
+                Modifier
+            }
+        )
+
+    Box(boxModifier) {
         Box(Modifier.align(Alignment.TopEnd).offset(x = 34.dp, y = (-40).dp).size(110.dp).background(tile.blobColor, CircleShape))
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Badge(tile)
             Column(Modifier.weight(1f)) {
-                BasicText(tile.name, style = type(15f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f), maxLines = 1)
-                BasicText(tile.subtitle, Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Medium, Alx.Muted), maxLines = 1)
+                BasicText(
+                    tile.name,
+                    style = type(
+                        15f,
+                        FontWeight.ExtraBold,
+                        if (tile.isSupported) Alx.Ink else Color(0xFF64748B),
+                        spacing = -0.01f,
+                    ),
+                    maxLines = 1,
+                )
+                BasicText(
+                    tile.subtitle,
+                    Modifier.padding(top = 1.dp),
+                    style = type(12f, FontWeight.Medium, Alx.Muted),
+                    maxLines = 1,
+                )
             }
             BasicText(
                 status,
-                Modifier.background(Alx.White, CircleShape).border(1.dp, Color(0xFFBFE3EC), CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),
-                style = type(12f, FontWeight.ExtraBold, tile.badgeColor),
+                Modifier
+                    .background(Alx.White, CircleShape)
+                    .border(
+                        1.dp,
+                        if (tile.isSupported) Color(0xFFBFE3EC) else Color(0xFFE2E8F0),
+                        CircleShape,
+                    )
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                style = type(
+                    12f,
+                    FontWeight.ExtraBold,
+                    if (tile.isSupported) tile.badgeColor else Color(0xFF94A3B8),
+                ),
             )
         }
     }
