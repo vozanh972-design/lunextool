@@ -160,13 +160,14 @@ fun TasksScreen(
     TasksScreen(
         state = state,
         onService = onService ?: { svc ->
-            if (!svc.isSupported) return@onService
-            when (svc.id) {
-                "xsmm" -> navController.navigate(Routes.XSMM_LOGIN)
-                "golike" -> navController.navigate(Routes.GOLIKE_ACCOUNT)
-                "ttc" -> navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK)
-                "tiktok" -> navController.navigate(Routes.LINK_ACCOUNT_TIKTOK)
-                "nvc" -> Unit
+            if (svc.isSupported) {
+                when (svc.id) {
+                    "xsmm" -> navController.navigate(Routes.XSMM_LOGIN)
+                    "golike" -> navController.navigate(Routes.GOLIKE_ACCOUNT)
+                    "ttc" -> navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK)
+                    "tiktok" -> navController.navigate(Routes.LINK_ACCOUNT_TIKTOK)
+                    "nvc" -> Unit
+                }
             }
         }
     )
