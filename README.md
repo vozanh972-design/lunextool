@@ -85,8 +85,11 @@ Lưu ý: nếu mở lại app mà mất mạng, `validate` sẽ nhận biết l�
 HomeScreen(
     state = HomeUiState(
         username = "username", coins = "0", servicesActive = 5, servicesTotal = 5,
-        daysLeft = 25, performance = 0.95f, expiryText = "Hạn dùng 05/11/2026 · 11:51",
+        daysLeft = 25, expiryText = "Hạn dùng 05/11/2026 · 11:51",
         hasUnread = true,
+        today = DayEarnings(coins = 900, money = 140_000),       // kiếm được hôm nay
+        recentDays = last7Days,                                  // List<DayEarnings> 7 ngày trước
+        dailyGoal = null,                                        // hoặc DayEarnings(…) nếu người dùng đặt mục tiêu
         // tiles / wideTile có mặc định đúng như thiết kế (XSMM, GoLike, Tuongtaccheo, TikTok TTC, Nhiemvucheo)
     ),
     onTile = { tile -> /* tile.id: "xsmm", "golike", "ttc", "tiktok", "nvc" */ },
@@ -107,6 +110,16 @@ Số đo từ thiết kế (khung 390 × 844 dp):
 - Thanh điều hướng: viên thuốc nổi cao 66dp, cách 2 bên 16dp và đáy 14dp, tab đang chọn nền #0F172A chiếm 2,5 phần có chữ, ba tab còn lại chỉ icon.
 Không có animation riêng. Chạm vào ô, hàng, nút thì nhún 0.985 trong 120ms. Bóng của ô và thanh điều hướng chỉ gần đúng bản HTML (Compose không có bóng "spread" âm).
 Màu riêng của từng dịch vụ (đỏ XSMM, hồng TTC, xám TikTok, xanh ngọc Nhiemvucheo) nằm trong `DefaultTiles`; thêm dịch vụ mới chỉ cần thêm một `HomeTile`.
+
+### Hiệu suất hôm nay (tính thật, không hardcode)
+`computePerformance(today, recent, goal)` trong `HomeScreen.kt`; `HomeUiState.performance` gọi nó sẵn.
+- So sánh số xu và số tiền (đ) kiếm được HÔM NAY với mức một ngày bình thường của chính người dùng.
+- Mốc so sánh: mục tiêu ngày người dùng tự đặt (`dailyGoal`) nếu có; không thì trung bình các ngày CÓ kiếm được trong 7 ngày gần nhất (ngày nghỉ không kéo mốc xuống).
+- Mỗi loại: hôm nay / mốc, tối đa 100%. Hiệu suất = trung bình các tỉ lệ đó. Chỉ có xu hoặc chỉ có tiền thì tính theo loại có.
+- Người dùng mới, chưa có lịch sử và chưa đặt mục tiêu: trả `null`, màn hiện "Chưa có dữ liệu" và thanh trống (không bịa số).
+- Ví dụ: hôm nay 900 xu + 140.000đ; trung bình ngày có kiếm 1.100 xu và 175.000đ → (82% + 80%) / 2 = 81%.
+Bạn cần ghi lại thu nhập theo ngày (xu + tiền) để truyền `today` và `recentDays`; màn không tự lưu.
+Icon xu đổi thành đồng xu tròn xanh (vòng trắng mờ + hình thoi trắng), trùng với bản thiết kế trên Trang chủ, Nhiệm vụ và Chào mừng.
 
 ## Lưu ý quan trọng
 Bóng đổ và độ cao dòng chữ có thể lệch nhẹ so với bản HTML.

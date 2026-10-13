@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -94,13 +95,40 @@ data class HomeUiState(
     val servicesActive: Int = 5,
     val servicesTotal: Int = 5,
     val daysLeft: Int = 25,
-    val performance: Float = 0.95f,        // 0..1
+    val today: DayEarnings = DayEarnings(0, 0),          // xu + tiền (đ) kiếm được hôm nay
+    val recentDays: List<DayEarnings> = emptyList(),     // các ngày gần đây (nên truyền 7 ngày trước hôm nay)
+    val dailyGoal: DayEarnings? = null,                  // mục tiêu ngày do người dùng đặt (nếu có)
     val expiryText: String = "Hạn dùng 05/11/2026 · 11:51",
     val hasUnread: Boolean = true,
     val tiles: List<HomeTile> = DefaultTiles,
     val wideTile: HomeTile? = DefaultWideTile,
     val wideStatus: String = "Sẵn sàng",
 )
+
+/** Thu nhập của một ngày: [coins] là số xu, [money] là số tiền (đồng). */
+data class DayEarnings(val coins: Long, val money: Long)
+
+/**
+ * Hiệu suất hôm nay (0..1) = hôm nay kiếm được bao nhiêu so với mức "một ngày bình thường" của chính người dùng.
+ *  - Mốc so sánh mỗi loại (xu / tiền): [goal] nếu người dùng có đặt, không thì trung bình các ngày CÓ kiếm được
+ *    trong [recent] (ngày nghỉ không kéo mốc xuống).
+ *  - Mỗi loại có mốc thì tính tỉ lệ = hôm nay / mốc, tối đa 100%. Kết quả là trung bình các tỉ lệ đó.
+ *  - Chưa có mốc nào (người dùng mới, chưa có lịch sử, chưa đặt mục tiêu): trả null, màn hình hiện "Chưa có dữ liệu".
+ */
+fun computePerformance(today: DayEarnings, recent: List<DayEarnings>, goal: DayEarnings? = null): Float? {
+    fun target(goalValue: Long?, history: List<Long>): Double? {
+        if (goalValue != null && goalValue > 0) return goalValue.toDouble()
+        val active = history.filter { it > 0 }
+        return if (active.isEmpty()) null else active.average()
+    }
+    val ratios = listOfNotNull(
+        target(goal?.coins, recent.map { it.coins })?.let { (today.coins / it).coerceIn(0.0, 1.0) },
+        target(goal?.money, recent.map { it.money })?.let { (today.money / it).coerceIn(0.0, 1.0) },
+    )
+    return if (ratios.isEmpty()) null else ratios.average().toFloat()
+}
+
+val HomeUiState.performance: Float? get() = computePerformance(today, recentDays, dailyGoal)
 
 val DefaultTiles = listOf(
     HomeTile("xsmm", "XS", Color(0xFFC9363B), Color(0xFFFDECEC), "0 đ", "XSMM", "Tăng tương tác"),
@@ -277,7 +305,6 @@ fun HomeScreen(
             servicesActive = 5,
             servicesTotal = 5,
             daysLeft = daysLeft,
-            performance = 0.95f,
             expiryText = expiryText,
             hasUnread = true,
             tiles = tiles,
@@ -401,10 +428,14 @@ private fun StatsCard(state: HomeUiState, modifier: Modifier = Modifier) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
                 BasicText("Hiệu suất hôm nay", style = type(12f, FontWeight.SemiBold, Alx.Ink2))
-                BasicText("${(state.performance * 100).toInt()}%", style = type(13f, FontWeight.ExtraBold, Alx.Blue))
+                val perf = state.performance
+                BasicText(
+                    if (perf == null) "Chưa có dữ liệu" else "${(perf * 100).toInt()}%",
+                    style = if (perf == null) type(12f, FontWeight.Medium, Alx.Muted) else type(13f, FontWeight.ExtraBold, Alx.Blue),
+                )
             }
             Box(Modifier.fillMaxWidth().height(6.dp).background(Alx.BlueSoft, RoundedCornerShape(3.dp))) {
-                Box(Modifier.fillMaxWidth(state.performance.coerceIn(0f, 1f)).height(6.dp).background(Alx.Blue, RoundedCornerShape(3.dp)))
+                Box(Modifier.fillMaxWidth(state.performance ?: 0f).height(6.dp).background(Alx.Blue, RoundedCornerShape(3.dp)))
             }
             BasicText(state.expiryText, style = type(11.5f, FontWeight.Medium, Alx.Muted))
         }
@@ -421,16 +452,14 @@ private fun StatCell(label: String, modifier: Modifier, value: @Composable () ->
     }
 }
 
-/** Xu: lục giác đặc màu mực + hình thoi trắng ở giữa. */
+/** Xu: đồng xu tròn xanh, vòng trắng mờ bên trong, hình thoi trắng ở giữa (khớp thiết kế). */
 @Composable
 private fun CoinIcon(size: Dp) {
     Canvas(Modifier.size(size)) {
         scale(this.size.width / 24f, Offset.Zero) {
-            val hex = Path().apply {
-                moveTo(12f, 1.5f); lineTo(21f, 6.8f); lineTo(21f, 17.2f); lineTo(12f, 22.5f); lineTo(3f, 17.2f); lineTo(3f, 6.8f); close()
-            }
-            drawPath(hex, Alx.Ink)
-            val gem = Path().apply { moveTo(12f, 7.5f); lineTo(15.5f, 12f); lineTo(12f, 16.5f); lineTo(8.5f, 12f); close() }
+            drawCircle(Alx.Blue, 11f, Offset(12f, 12f))
+            drawCircle(Color.White.copy(alpha = 0.55f), 7f, Offset(12f, 12f), style = Stroke(1.5f))
+            val gem = Path().apply { moveTo(12f, 8.2f); lineTo(15f, 12f); lineTo(12f, 15.8f); lineTo(9f, 12f); close() }
             drawPath(gem, Color.White)
         }
     }
@@ -568,5 +597,9 @@ private fun NavBar(selected: HomeTab, onSelect: (HomeTab) -> Unit, modifier: Mod
 @Preview(widthDp = 390, heightDp = 844, showBackground = true)
 @Composable
 private fun HomeScreenPreview() {
-    HomeScreen(HomeUiState(username = "username"), greeting = "Chào buổi trưa,")
+    HomeScreen(HomeUiState(
+        username = "username", coins = "1.250",
+        today = DayEarnings(900, 140_000),
+        recentDays = listOf(DayEarnings(1000, 150_000), DayEarnings(1200, 200_000), DayEarnings(0, 0)),
+    ), greeting = "Chào buổi trưa,")
 }
