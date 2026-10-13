@@ -334,13 +334,24 @@ private fun ToggleRow(
     icon: List<String>, color: Color, tint: Color,
     title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit, divider: Boolean,
 ) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "togglePress")
+
     Column {
         if (divider) Divider()
         Row(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = 64.dp)
-                .toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
+                .graphicsLayer { scaleX = scale; scaleY = scale }
+                .toggleable(
+                    value = checked,
+                    interactionSource = source,
+                    indication = null,
+                    role = Role.Switch,
+                    onValueChange = onChange
+                ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
