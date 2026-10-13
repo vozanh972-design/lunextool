@@ -8,15 +8,19 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.cayxu.app.data.AppSettingsStore
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.data.repository.AuthRepository
 import com.cayxu.app.data.repository.AuthResult
 import com.cayxu.app.ui.locale.LanguageState
 import com.cayxu.app.ui.navigation.CayXuNavGraph
 import com.cayxu.app.ui.navigation.Routes
+import com.cayxu.app.ui.screens.settings.KeepScreenOn
 import com.cayxu.app.ui.theme.CayXuTheme
 import com.cayxu.app.ui.theme.ThemeState
 import com.cayxu.app.util.DeviceUtils
@@ -42,6 +46,10 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         val context = LocalContext.current
+                        val appSettingsStore = remember { AppSettingsStore(context) }
+                        val appSettings by appSettingsStore.settings.collectAsState()
+                        KeepScreenOn(appSettings.keepAwake)
+
                         val store = remember { SecurePrefsSessionStore(context) }
                         val authRepo = remember { AuthRepository() }
                         val deviceId = remember { DeviceUtils.getAndroidId(context) }

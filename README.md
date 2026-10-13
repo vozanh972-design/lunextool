@@ -252,6 +252,16 @@ ledger.record(CoinEntry(
 ### 3. Điều hướng màn Lịch sử xu
 Màn Lịch sử xu nằm ngoài `MainRoute` (không có dock), được đăng ký qua `Routes.COIN_HISTORY` trong `CayXuNavGraph.kt`. Có nút Back trên góc trái và hỗ trợ BackHandler của Android để quay lại Hồ sơ.
 
+## Cài đặt (SettingsScreen.kt) — lưu và đọc thật
+Màn con toàn màn hình mở từ dòng "Cài đặt" ở Hồ sơ, không có dock, hiển thị NGOÀI `MainRoute` (qua `Routes.SETTINGS`):
+- Khung: padding ngang 20dp, đỉnh 24dp. Đầu màn: nút quay lại tròn 44dp (viền, nền trắng) bên trái, tiêu đề "Cài đặt" 20sp ExtraBold căn giữa.
+- 3 nhóm thiết kế Alx bo 22dp:
+  1. **THÔNG BÁO**: Thông báo đẩy (`push`, xin quyền `POST_NOTIFICATIONS` trên Android 13+), Chạy ngầm (`background`, điều khiển `AppBackgroundService`).
+  2. **GIAO DIỆN**: Giữ màn hình sáng (`keepAwake`, gọi `KeepScreenOn` ở gốc `MainActivity`), Giao diện ("Sáng cao cấp").
+  3. **HỖ TRỢ & HỆ THỐNG**: Trung tâm hỗ trợ (Telegram `t.me/thanhgmn`), Điều khoản sử dụng, Chính sách bảo mật, và Phiên bản ứng dụng (đọc `versionName` thật của app).
+- Công tắc 52×32dp bo 16dp: bật nền xanh chính, tắt nền #CBD2DF, nút tròn trắng 26dp trượt 150ms.
+- Dữ liệu lưu thật qua `AppSettingsStore` (SharedPreferences `autolunex_settings`) và đồng bộ trực tiếp với `AppBackgroundService` & `AppAlertNotifier`.
+
 ## Animation thanh dock (MainShell.kt)
 Một viên thuốc nền mực #0F172A TRƯỢT giữa các tab như dock của Apple, không nhảy:
 - Viên thuốc chạy bằng lò xo (dampingRatio 0,85, stiffness 300, khoảng 0,6 s, chậm dần ở cuối, hơi nảy nhẹ).
