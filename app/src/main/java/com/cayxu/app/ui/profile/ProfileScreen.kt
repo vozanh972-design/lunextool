@@ -123,14 +123,23 @@ fun ProfileScreen(
         Identity(state)
         Membership(state, Modifier.padding(top = 20.dp))
 
+        Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicText("Lịch sử xu", Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
+            SeeAll(onSeeAllHistory)
+        }
         if (state.recent.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText("Lịch sử xu", Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
-                SeeAll(onSeeAllHistory)
-            }
             CoinEntryCard(Modifier.padding(top = 12.dp)) {
                 val today = remember { java.time.LocalDate.now() }
                 state.recent.forEachIndexed { i, e -> CoinEntryRow(e, relativeTime(e.atMillis, today), divider = i > 0) }
+            }
+        } else {
+            Card(Modifier.padding(top = 12.dp)) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BasicText("Chưa có lịch sử nhận xu", style = type(13.5f, FontWeight.Medium, Alx.Muted))
+                }
             }
         }
 

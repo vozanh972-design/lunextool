@@ -208,7 +208,7 @@ MainRoute(
 - `ProfileUiState` không có giá trị mặc định: tên, gói, số ngày, ngày hết hạn đều lấy từ dữ liệu thật (`SecurePrefs`).
 - Danh tính: avatar tròn 68dp nền xanh nhạt, chữ cái đầu của `username`; tên 22sp ExtraBold kèm nhãn gói; dưới là `handle`. `planBadge = ""` thì ẩn nhãn.
 - Thẻ thành viên: icon khiên 40dp, tên gói, "Còn N ngày · Hết hạn …", thanh tiến độ cao 5dp (`membershipProgress` 0..1).
-- Mục "Lịch sử xu": tiêu đề 17sp, bên phải "Xem tất cả ›" xanh (vùng chạm 44dp) gọi `onSeeAllHistory`. Dưới là 2 dòng mới nhất (`recent`), mỗi dòng giống hệt dòng ở màn Lịch sử (dùng chung `CoinEntryRow`), hiện dạng "Hôm nay, 10:24" / "Hôm qua, 18:12" / "11/10, 20:16". `recent` rỗng thì ẩn cả mục.
+- Mục "Lịch sử xu": tiêu đề 17sp, bên phải "Xem tất cả ›" xanh (vùng chạm 44dp) gọi `onSeeAllHistory` (luôn hiển thị để người dùng có thể bấm xem bất cứ lúc nào). Dưới là 2 dòng mới nhất (`recent`), mỗi dòng giống hệt dòng ở màn Lịch sử (dùng chung `CoinEntryRow`), hiện dạng "Hôm nay, 10:24" / "Hôm qua, 18:12" / "11/10, 20:16". Khi `recent` rỗng thì hiện thẻ "Chưa có lịch sử nhận xu".
 - "Tài khoản & hỗ trợ": 4 dòng cao 54dp. "Đăng xuất" chữ + icon đỏ, không mũi tên; xóa key (`SecurePrefs.clearKey()`) rồi đưa về màn Login.
 - Chạm nhún 0.985 trong 120ms; không animation riêng.
 
