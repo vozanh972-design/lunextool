@@ -52,6 +52,8 @@ import com.cayxu.app.ui.design.EaseOutSoft
 import com.cayxu.app.ui.design.animationsEnabled
 import com.cayxu.app.ui.design.rememberLoop
 import com.cayxu.app.ui.design.type
+import com.cayxu.app.ui.locale.AppLanguage
+import com.cayxu.app.ui.locale.LanguageState
 import kotlinx.coroutines.delay
 
 /** Một màn, 3 trạng thái. */
@@ -81,7 +83,7 @@ fun VerifyingScreen(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             BasicText("AUTOLUNEX", style = type(16f, FontWeight.ExtraBold, Alx.Ink, spacing = 0.1f))
             BasicText(
-                "Bản quyền 2026",
+                if (LanguageState.language == AppLanguage.EN) "Copyright 2026" else "Bản quyền 2026",
                 Modifier.background(Alx.BlueSoft, RoundedCornerShape(999.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
                 style = type(12f, FontWeight.Bold, Alx.Blue),
             )
@@ -98,9 +100,9 @@ fun VerifyingScreen(
             Box(Modifier.padding(top = 26.dp).width(260.dp).height(26.dp), contentAlignment = Alignment.Center) {
                 Crossfade(state, animationSpec = tween(250), label = "label") { s ->
                     val (text, color) = when (s) {
-                        VerifyState.Checking -> "Đang kiểm tra…" to Alx.Ink
-                        VerifyState.Success -> "Xác thực thành công" to Alx.Blue
-                        VerifyState.Error -> "Key không hợp lệ" to Alx.Danger
+                        VerifyState.Checking -> (if (LanguageState.language == AppLanguage.EN) "Checking key…" else "Đang kiểm tra…") to Alx.Ink
+                        VerifyState.Success -> (if (LanguageState.language == AppLanguage.EN) "Verification successful" else "Xác thực thành công") to Alx.Blue
+                        VerifyState.Error -> (if (LanguageState.language == AppLanguage.EN) "Invalid license key" else "Key không hợp lệ") to Alx.Danger
                     }
                     BasicText(text, style = type(18f, FontWeight.Bold, color, spacing = -0.01f, align = TextAlign.Center))
                 }

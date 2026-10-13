@@ -543,13 +543,34 @@ fun LanguageSelectionScreen(onFinished: () -> Unit) {
 }
 
 /**
- * Ví dụ nối vào app. Khi bấm "Tiếp tục", lưu ngôn ngữ rồi sang màn nhập key:
- *   AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(lang.tag))
+ * Cầu nối màn hình Ngôn ngữ vào AppFlow (MainActivity).
+ * Đồng bộ ngay lập tức lựa chọn ngôn ngữ vào LanguageState toàn cục.
  */
 @Composable
 fun LanguageRoute(onDone: (AppLanguage) -> Unit) {
-    var lang by rememberSaveable { mutableStateOf(AppLanguage.VI) }
-    LanguageScreen(selected = lang, onSelect = { lang = it }, onContinue = { onDone(lang) })
+    val context = LocalContext.current
+    var lang by rememberSaveable { 
+        mutableStateOf(
+            if (LanguageState.language == com.cayxu.app.ui.locale.AppLanguage.EN) AppLanguage.EN else AppLanguage.VI
+        ) 
+    }
+    LanguageScreen(
+        selected = lang,
+        onSelect = {
+            lang = it
+            LanguageState.setLanguage(
+                context,
+                if (it == AppLanguage.EN) com.cayxu.app.ui.locale.AppLanguage.EN else com.cayxu.app.ui.locale.AppLanguage.VI
+            )
+        },
+        onContinue = {
+            LanguageState.setLanguage(
+                context,
+                if (lang == AppLanguage.EN) com.cayxu.app.ui.locale.AppLanguage.EN else com.cayxu.app.ui.locale.AppLanguage.VI
+            )
+            onDone(lang)
+        }
+    )
 }
 
 @Preview(widthDp = 390, heightDp = 844, showBackground = true)

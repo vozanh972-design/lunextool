@@ -106,7 +106,7 @@ fun AppFlow(
                 if (!s.firstTime) store.licenseKey = null // key cũ không còn dùng được
                 step = Step.License(
                     key = if (s.firstTime) s.key else "",
-                    error = "Mã key không đúng hoặc đã bị khóa. Vui lòng kiểm tra lại.",
+                    error = if (LanguageState.language == com.cayxu.app.ui.locale.AppLanguage.EN) "Invalid or blocked license key. Please check again." else "Mã key không đúng hoặc đã bị khóa. Vui lòng kiểm tra lại.",
                 )
             },
         )
