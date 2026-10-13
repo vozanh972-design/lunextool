@@ -2,6 +2,8 @@ package com.cayxu.app.ui.tasks
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,22 +31,21 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.cayxu.app.R
+import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.TtcAccountsStore
 import com.cayxu.app.data.local.XsmmAccountStore
@@ -61,18 +62,25 @@ import com.cayxu.app.ui.screens.golike.GolikeAccountsStore
 
 /* ───────────────────────────── Dữ liệu ───────────────────────────── */
 
-enum class TaskStatus { Running, Ready }
+/**
+ * Mạng xã hội mà một nền tảng hỗ trợ. [icon] là logo đã cắt tròn 128×128 đặt trong res/drawable
+ * (ic_platform_facebook.png, ic_platform_instagram.png, ic_platform_tiktok.png).
+ * Thêm mạng mới: thêm một file logo cùng quy cách (vuông, cắt tròn, 128×128) và một giá trị ở đây.
+ */
+enum class Platform(val label: String, @DrawableRes val icon: Int) {
+    Facebook("Facebook", R.drawable.ic_platform_facebook),
+    Instagram("Instagram", R.drawable.ic_platform_instagram),
+    TikTok("TikTok", R.drawable.ic_platform_tiktok),
+}
 
-/** Một nền tảng kiếm xu. [color] là màu chữ logo + nhãn "Sẵn sàng", [tint] là nền ô logo. */
+/** Một nền tảng kiếm xu. [color] là màu chữ logo, [tint] là nền ô logo, [platforms] là các mạng nó hỗ trợ. */
 data class TaskService(
     val id: String,
     val badge: String,
     val color: Color,
     val tint: Color,
     val name: String,
-    val subtitle: String,
-    val amount: String,                 // "0 đ", "0 xu", "0 acc"
-    val status: TaskStatus,
+    val platforms: List<Platform>,
     val badgeSizeSp: Float = 13f,
 )
 
@@ -82,20 +90,19 @@ data class TasksUiState(
     val services: List<TaskService> = DefaultServices,
 )
 
+/** Danh sách mạng hỗ trợ ở đây là dữ liệu mẫu: sửa theo đúng từng nền tảng của bạn. */
 val DefaultServices = listOf(
-    TaskService("xsmm", "XSMM", Color(0xFFC9363B), Color(0xFFFDECEC), "XSMM", "Tăng tương tác", "0 đ", TaskStatus.Running, 12.5f),
-    TaskService("golike", "GL", Alx.Blue, Alx.BlueSoft, "GoLike", "Kiếm tiền MXH", "0 đ", TaskStatus.Running),
-    TaskService("ttc", "TTC", Color(0xFFC2255C), Color(0xFFFDEAF2), "Tuongtaccheo", "Trao đổi like sub", "0 xu", TaskStatus.Running),
-    TaskService("tiktok", "TikT", Color(0xFF334155), Color(0xFFEDF0F5), "TikTok TTC", "Nhận job tự động", "0 acc", TaskStatus.Running, 12.5f),
-    TaskService("nvc", "NV", Color(0xFF0E7490), Color(0xFFE3F4F8), "Nhiemvucheo", "Tăng view, sub", "", TaskStatus.Ready),
+    TaskService("xsmm", "XSMM", Color(0xFFC9363B), Color(0xFFFDECEC), "XSMM", listOf(Platform.TikTok, Platform.Facebook, Platform.Instagram), 12.5f),
+    TaskService("golike", "GL", Alx.Blue, Alx.BlueSoft, "GoLike", listOf(Platform.Facebook, Platform.Instagram, Platform.TikTok)),
+    TaskService("ttc", "TTC", Color(0xFFC2255C), Color(0xFFFDEAF2), "Tuongtaccheo", listOf(Platform.Facebook)),
+    TaskService("tiktok", "TikT", Color(0xFF334155), Color(0xFFEDF0F5), "TikTok TTC", listOf(Platform.TikTok), 12.5f),
+    TaskService("nvc", "NV", Color(0xFF0E7490), Color(0xFFE3F4F8), "Nhiemvucheo", listOf(Platform.Facebook)),
 )
-
-private enum class Filter(val label: String) { All("Tất cả"), Running("Đang chạy"), Ready("Sẵn sàng") }
 
 /* ───────────────────────────── Màn hình ───────────────────────────── */
 
 /**
- * Màn Nhiệm vụ. Khung 390 × 844dp, nội dung cuộn. KHÔNG vẽ thanh dock: dock dùng chung nằm ở MainShell,
+ * Màn Nhiệm vụ: tiêu đề, thẻ tóm tắt và danh sách nền tảng (không có chip lọc). Khung 390 × 844dp, nội dung cuộn. KHÔNG vẽ thanh dock: dock dùng chung nằm ở MainShell,
  * màn chỉ chừa [DockClearance] ở đáy. Không có animation riêng.
  */
 @Composable
@@ -104,16 +111,6 @@ fun TasksScreen(
     modifier: Modifier = Modifier,
     onService: (TaskService) -> Unit = {},
 ) {
-    var filter by rememberSaveable { mutableStateOf(Filter.All.name) }
-    val current = Filter.valueOf(filter)
-    val shown = state.services.filter {
-        when (current) {
-            Filter.All -> true
-            Filter.Running -> it.status == TaskStatus.Running
-            Filter.Ready -> it.status == TaskStatus.Ready
-        }
-    }
-
     Column(
         modifier
             .fillMaxSize()
@@ -127,14 +124,8 @@ fun TasksScreen(
 
         Summary(state, Modifier.padding(top = 18.dp))
 
-        Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Filter.values().forEach { f ->
-                FilterChip(f.label, f == current) { filter = f.name }
-            }
-        }
-
-        Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            shown.forEach { ServiceRow(it) { onService(it) } }
+        Column(Modifier.padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            state.services.forEach { ServiceRow(it) { onService(it) } }
         }
 
         Spacer(Modifier.height(DockClearance))
@@ -155,24 +146,13 @@ fun TasksScreen(
     val golikeBalance = remember { GolikeAccountsStore.getBalance(context) }
     val ttcAccounts = remember { TtcAccountsStore.getAccounts(context) }
     val ttcCoins = remember(ttcAccounts) { ttcAccounts.sumOf { it.coins } }
-    val tiktokAccounts = remember { TikTokAccountsStore.getAccounts(context) }
     val totalCoins: Long = xsmmPoints + golikeBalance + ttcCoins
 
-    val services = remember(xsmmPoints, golikeBalance, ttcCoins, tiktokAccounts.size) {
-        listOf(
-            TaskService("xsmm", "XSMM", Color(0xFFC9363B), Color(0xFFFDECEC), "XSMM", "Tăng tương tác", "${xsmmPoints} đ", TaskStatus.Running, 12.5f),
-            TaskService("golike", "GL", Alx.Blue, Alx.BlueSoft, "GoLike", "Kiếm tiền MXH", "${golikeBalance} đ", TaskStatus.Running),
-            TaskService("ttc", "TTC", Color(0xFFC2255C), Color(0xFFFDEAF2), "Tuongtaccheo", "Trao đổi like sub", "${ttcCoins} xu", TaskStatus.Running),
-            TaskService("tiktok", "TikT", Color(0xFF334155), Color(0xFFEDF0F5), "TikTok TTC", "Nhận job tự động", "${tiktokAccounts.size} acc", TaskStatus.Running, 12.5f),
-            TaskService("nvc", "NV", Color(0xFF0E7490), Color(0xFFE3F4F8), "Nhiemvucheo", "Tăng view, sub", "", TaskStatus.Ready),
-        )
-    }
-
-    val state = remember(totalCoins, services) {
+    val state = remember(totalCoins) {
         TasksUiState(
             coins = totalCoins.toString(),
             today = DayEarnings(coins = ttcCoins, money = xsmmPoints + golikeBalance),
-            services = services,
+            services = DefaultServices,
         )
     }
 
@@ -216,25 +196,6 @@ private fun Summary(state: TasksUiState, modifier: Modifier) {
 }
 
 @Composable
-private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val shape = CircleShape
-    Box(
-        Modifier
-            .height(36.dp)
-            .let { if (selected) it.background(Alx.Ink, shape) else it.background(Alx.White, shape).border(1.dp, Alx.Line, shape) }
-            .clip(shape)
-            .clickable(role = Role.Tab, onClick = onClick)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        BasicText(
-            label,
-            style = if (selected) type(13f, FontWeight.Bold, Alx.White) else type(13f, FontWeight.SemiBold, Alx.Ink2),
-        )
-    }
-}
-
-@Composable
 private fun ServiceRow(s: TaskService, onClick: () -> Unit) {
     val shape = RoundedCornerShape(20.dp)
     val source = remember { MutableInteractionSource() }
@@ -257,17 +218,21 @@ private fun ServiceRow(s: TaskService, onClick: () -> Unit) {
         }
         Column(Modifier.weight(1f)) {
             BasicText(s.name, style = type(15f, FontWeight.Bold, Alx.Ink), maxLines = 1)
-            BasicText(s.subtitle, Modifier.padding(top = 1.dp), style = type(12.5f, FontWeight.Normal, Alx.Muted), maxLines = 1)
-        }
-        Column(horizontalAlignment = Alignment.End) {
-            if (s.status == TaskStatus.Ready) {
-                BasicText("Sẵn sàng", style = type(14f, FontWeight.ExtraBold, s.color, align = TextAlign.End))
-            } else {
-                BasicText(s.amount, style = type(16f, FontWeight.ExtraBold, Alx.Ink, align = TextAlign.End), maxLines = 1)
+            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                s.platforms.forEach { PlatformChip(it) }
             }
-            BasicText("Check ›", Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Bold, Alx.Blue))
         }
     }
+}
+
+/** Logo mạng xã hội 22dp, đã cắt tròn sẵn trong file, giữ nguyên màu (không nhuộm, không vẽ lại). */
+@Composable
+private fun PlatformChip(p: Platform) {
+    Image(
+        painter = painterResource(p.icon),
+        contentDescription = p.label,
+        modifier = Modifier.size(22.dp).clip(CircleShape),
+    )
 }
 
 /* ───────────────────────────── Preview ───────────────────────────── */
