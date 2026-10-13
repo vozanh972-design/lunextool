@@ -45,7 +45,6 @@ private data class FloatingNavItem(
     val icon: ImageVector
 )
 
-@Composable
 private fun FloatingNavItem.displayLabel(): String = when (route) {
     Routes.HOME -> Str.tabHome
     Routes.TASKS -> Str.tabTasks

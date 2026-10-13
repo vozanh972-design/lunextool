@@ -63,7 +63,6 @@ import com.cayxu.app.ui.design.type
 enum class MainTab(val label: String) {
     Home("Trang chủ"), Tasks("Nhiệm vụ"), Utilities("Tiện ích"), Profile("Hồ sơ");
 
-    @Composable
     fun displayLabel(): String = when (this) {
         Home -> com.cayxu.app.ui.locale.Str.tabHome
         Tasks -> com.cayxu.app.ui.locale.Str.tabTasks
