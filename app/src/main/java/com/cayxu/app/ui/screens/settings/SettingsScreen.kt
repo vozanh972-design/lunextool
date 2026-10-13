@@ -35,6 +35,9 @@ import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.worker.AppAlertNotifier
 import com.cayxu.app.worker.AppBackgroundService
 
+import com.cayxu.app.ui.locale.AppLanguage
+import com.cayxu.app.ui.locale.LanguageState
+import com.cayxu.app.ui.locale.Str
 import com.cayxu.app.ui.theme.*
 
 private val FigmaBg: Color @Composable get() = AppBackground
@@ -93,14 +96,14 @@ fun SettingsScreen(navController: NavController) {
             ) {
                 Icon(
                     imageVector = Icons.Filled.ArrowBack,
-                    contentDescription = "Quay lại",
+                    contentDescription = Str.settingsBack,
                     tint = FigmaTextHeader,
                     modifier = Modifier.size(20.dp)
                 )
             }
 
             Text(
-                text = "Cài đặt",
+                text = Str.settingsTitle,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = FigmaTextHeader,
@@ -112,11 +115,11 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // 📌 2. NHÓM THÔNG BÁO
-            SettingsSectionLabel("THÔNG BÁO")
+            SettingsSectionLabel(Str.settingsSectionNotifications)
             SettingsGroup {
                 SettingsSwitchRow(
                     icon = Icons.Outlined.Notifications,
-                    title = "Thông báo đẩy",
+                    title = Str.settingsPushNotifications,
                     checked = pushNotifications,
                     onCheckedChange = { checked ->
                         pushNotifications = checked
@@ -132,16 +135,16 @@ fun SettingsScreen(navController: NavController) {
                                 }
                             }
                             AppAlertNotifier.createChannel(context)
-                            Toast.makeText(context, "Đã bật cảnh báo khi tài khoản lỗi", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, Str.settingsPushEnabledToast, Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "Đã tắt cảnh báo khi tài khoản lỗi", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, Str.settingsPushDisabledToast, Toast.LENGTH_SHORT).show()
                         }
                     }
                 )
                 HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
                 SettingsSwitchRow(
                     icon = Icons.Outlined.Sync,
-                    title = "Chạy ngầm",
+                    title = Str.settingsBackgroundService,
                     checked = backgroundServiceEnabled,
                     onCheckedChange = { checked ->
                         backgroundServiceEnabled = checked
@@ -156,10 +159,10 @@ fun SettingsScreen(navController: NavController) {
                                 }
                             }
                             AppBackgroundService.start(context)
-                            Toast.makeText(context, "Đã bật chạy ngầm - app tiếp tục chạy khi đóng", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, Str.settingsBackgroundEnabledToast, Toast.LENGTH_SHORT).show()
                         } else {
                             AppBackgroundService.stop(context)
-                            Toast.makeText(context, "Đã tắt chạy ngầm", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, Str.settingsBackgroundDisabledToast, Toast.LENGTH_SHORT).show()
                         }
                     }
                 )
@@ -168,11 +171,11 @@ fun SettingsScreen(navController: NavController) {
             Spacer(Modifier.height(20.dp))
 
             // 📌 3. NHÓM GIAO DIỆN
-            SettingsSectionLabel("GIAO DIỆN")
+            SettingsSectionLabel(Str.settingsSectionAppearance)
             SettingsGroup {
                 SettingsSwitchRow(
                     icon = Icons.Outlined.LightMode,
-                    title = "Giữ màn hình sáng",
+                    title = Str.settingsKeepScreenOn,
                     checked = keepScreenOn,
                     onCheckedChange = { checked ->
                         keepScreenOn = checked
@@ -187,47 +190,61 @@ fun SettingsScreen(navController: NavController) {
                 HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
                 SettingsRow(
                     icon = Icons.Outlined.LightMode,
-                    title = "Giao diện",
-                    trailingText = "Sáng cao cấp (Swiss Light)",
-                    onClick = { Toast.makeText(context, "Ứng dụng hoạt động ở chuẩn giao diện sáng tối giản", Toast.LENGTH_SHORT).show() }
+                    title = Str.settingsTheme,
+                    trailingText = Str.settingsThemeValue,
+                    onClick = { Toast.makeText(context, Str.settingsThemeToast, Toast.LENGTH_SHORT).show() }
                 )
                 HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
                 SettingsRow(
                     icon = Icons.Outlined.Language,
-                    title = "Ngôn ngữ",
-                    trailingText = "Tiếng Việt",
-                    onClick = { Toast.makeText(context, "Mặc định: Tiếng Việt", Toast.LENGTH_SHORT).show() }
+                    title = Str.settingsLanguage,
+                    trailingText = if (LanguageState.language == AppLanguage.EN) "English" else "Tiếng Việt",
+                    onClick = {
+                        val next = if (LanguageState.language == AppLanguage.EN) AppLanguage.VI else AppLanguage.EN
+                        LanguageState.setLanguage(context, next)
+                        Toast.makeText(
+                            context,
+                            if (next == AppLanguage.EN) "Language changed to English" else "Đã chuyển sang Tiếng Việt",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 )
             }
 
             Spacer(Modifier.height(20.dp))
 
             // 📌 4. NHÓM HỖ TRỢ & HỆ THỐNG
-            SettingsSectionLabel("HỖ TRỢ & HỆ THỐNG")
+            SettingsSectionLabel(Str.settingsSectionSupport)
             SettingsGroup {
                 SettingsRow(
                     icon = Icons.Outlined.HelpOutline,
-                    title = "Trung tâm hỗ trợ",
-                    onClick = { Toast.makeText(context, "Đang mở trung tâm hỗ trợ", Toast.LENGTH_SHORT).show() }
+                    title = Str.settingsSupportCenter,
+                    onClick = {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://t.me/thanhgmn")
+                        ).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
+                        context.startActivity(intent)
+                    }
                 )
                 HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
                 SettingsRow(
                     icon = Icons.Outlined.Description,
-                    title = "Điều khoản sử dụng",
-                    onClick = { Toast.makeText(context, "Đang mở điều khoản sử dụng", Toast.LENGTH_SHORT).show() }
+                    title = Str.settingsTermsOfUse,
+                    onClick = { Toast.makeText(context, Str.profileTermsUpdating, Toast.LENGTH_SHORT).show() }
                 )
                 HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
                 SettingsRow(
                     icon = Icons.Outlined.Shield,
-                    title = "Chính sách bảo mật",
-                    onClick = { Toast.makeText(context, "Đang mở chính sách bảo mật", Toast.LENGTH_SHORT).show() }
+                    title = Str.settingsPrivacyPolicy,
+                    onClick = { Toast.makeText(context, Str.profileTermsUpdating, Toast.LENGTH_SHORT).show() }
                 )
                 HorizontalDivider(color = FigmaDivider, thickness = 0.5.dp)
                 SettingsRow(
                     icon = Icons.Outlined.Info,
-                    title = "Phiên bản ứng dụng",
+                    title = Str.settingsAppVersion,
                     trailingText = BuildConfig.VERSION_NAME,
-                    onClick = { Toast.makeText(context, "Phiên bản v${BuildConfig.VERSION_NAME}", Toast.LENGTH_SHORT).show() }
+                    onClick = { Toast.makeText(context, "v${BuildConfig.VERSION_NAME}", Toast.LENGTH_SHORT).show() }
                 )
             }
 
@@ -258,7 +275,7 @@ fun SettingsScreen(navController: NavController) {
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "Đăng xuất tài khoản",
+                        text = Str.settingsLogout,
                         color = FigmaDanger,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.5.sp
@@ -275,14 +292,14 @@ fun SettingsScreen(navController: NavController) {
             onDismissRequest = { showLogoutConfirm = false },
             title = {
                 Text(
-                    text = "Đăng xuất tài khoản",
+                    text = Str.settingsLogoutConfirmTitle,
                     fontWeight = FontWeight.Bold,
                     color = FigmaTextHeader
                 )
             },
             text = {
                 Text(
-                    text = "Bạn có chắc muốn đăng xuất? Key đã lưu trên máy sẽ bị xoá, bạn cần nhập lại key ở lần mở app sau.",
+                    text = Str.settingsLogoutConfirmMsg,
                     fontSize = 14.sp,
                     color = Color(0xFF6B7280)
                 )
@@ -298,12 +315,12 @@ fun SettingsScreen(navController: NavController) {
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = FigmaDanger)
                 ) {
-                    Text("Đăng xuất", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(Str.settingsLogoutConfirmBtn, color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { showLogoutConfirm = false }) {
-                    Text("Huỷ", color = Color(0xFF6B7280))
+                    Text(Str.settingsCancel, color = Color(0xFF6B7280))
                 }
             }
         )

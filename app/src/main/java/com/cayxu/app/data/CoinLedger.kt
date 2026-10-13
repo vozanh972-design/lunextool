@@ -62,24 +62,35 @@ fun formatCoins(coins: Long): String {
 fun timeOfDay(atMillis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
     Instant.ofEpochMilli(atMillis).atZone(zone).toLocalTime().format(Hm)
 
-/** "Hôm nay, 10:24" / "Hôm qua, 18:12" / "11/10, 20:16": dùng ở Hồ sơ nơi không có tiêu đề ngày. */
-fun relativeTime(atMillis: Long, today: LocalDate = LocalDate.now(), zone: ZoneId = ZoneId.systemDefault()): String {
+private val WeekdayNamesEn = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+/** "Hôm nay, 10:24" / "Today, 10:24": dùng ở Hồ sơ nơi không có tiêu đề ngày. */
+fun relativeTime(
+    atMillis: Long,
+    today: LocalDate = LocalDate.now(),
+    zone: ZoneId = ZoneId.systemDefault(),
+    isEn: Boolean = com.cayxu.app.ui.locale.LanguageState.language == com.cayxu.app.ui.locale.AppLanguage.EN
+): String {
     val at = Instant.ofEpochMilli(atMillis).atZone(zone)
     val day = at.toLocalDate()
     val lead = when (day) {
-        today -> "Hôm nay"
-        today.minusDays(1) -> "Hôm qua"
+        today -> if (isEn) "Today" else "Hôm nay"
+        today.minusDays(1) -> if (isEn) "Yesterday" else "Hôm qua"
         else -> day.format(Dm)
     }
     return "$lead, ${at.toLocalTime().format(Hm)}"
 }
 
-/** "Hôm nay, 13/10" / "Hôm qua, 12/10" / "Chủ nhật, 11/10": nhãn giữa thanh chọn ngày, luôn tính từ ngày thật. */
-fun dayLabel(day: LocalDate, today: LocalDate): String {
+/** "Hôm nay, 13/10" / "Today, 13/10" / "Chủ nhật, 11/10": nhãn giữa thanh chọn ngày, luôn tính từ ngày thật. */
+fun dayLabel(
+    day: LocalDate,
+    today: LocalDate,
+    isEn: Boolean = com.cayxu.app.ui.locale.LanguageState.language == com.cayxu.app.ui.locale.AppLanguage.EN
+): String {
     val lead = when (day) {
-        today -> "Hôm nay"
-        today.minusDays(1) -> "Hôm qua"
-        else -> WeekdayNames[day.dayOfWeek.value - 1]
+        today -> if (isEn) "Today" else "Hôm nay"
+        today.minusDays(1) -> if (isEn) "Yesterday" else "Hôm qua"
+        else -> if (isEn) WeekdayNamesEn[day.dayOfWeek.value - 1] else WeekdayNames[day.dayOfWeek.value - 1]
     }
     return "$lead, ${day.format(Dm)}"
 }

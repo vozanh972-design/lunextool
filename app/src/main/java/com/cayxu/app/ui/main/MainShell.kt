@@ -61,7 +61,15 @@ import com.cayxu.app.ui.design.type
  * KHÔNG tự vẽ dock.
  */
 enum class MainTab(val label: String) {
-    Home("Trang chủ"), Tasks("Nhiệm vụ"), Utilities("Tiện ích"), Profile("Hồ sơ"),
+    Home("Trang chủ"), Tasks("Nhiệm vụ"), Utilities("Tiện ích"), Profile("Hồ sơ");
+
+    @Composable
+    fun displayLabel(): String = when (this) {
+        Home -> com.cayxu.app.ui.locale.Str.tabHome
+        Tasks -> com.cayxu.app.ui.locale.Str.tabTasks
+        Utilities -> com.cayxu.app.ui.locale.Str.tabUtilities
+        Profile -> com.cayxu.app.ui.locale.Str.tabProfile
+    }
 }
 
 /** Chiều cao cần chừa dưới cùng của mỗi màn tab: dock 66 + cách đáy 14 + khoảng thở 24. */
@@ -172,27 +180,28 @@ private fun RowScope.DockItem(tab: MainTab, weight: Float, label: Float, tint: C
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     val press by animateFloatAsState(if (pressed) 0.95f else 1f, tween(120), label = "dockPress")
-    Box(
-        Modifier
-            .weight(weight)
-            .height(52.dp)
-            .graphicsLayer { scaleX = press; scaleY = press }
-            .clip(RoundedCornerShape(26.dp))
-            .semantics { contentDescription = tab.label }
-            .clickable(interactionSource = source, indication = null, role = Role.Tab, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SvgIcon(tab.icon(), (22f - label).dp, tint, 1.9f)
-            BasicText(
-                tab.label,
-                Modifier.padding(start = (8f * label).dp).reveal(label),
-                style = type(14.5f, FontWeight.Bold, Alx.White),
-                maxLines = 1,
-                softWrap = false,
-            )
-        }
-    }
+            val text = tab.displayLabel()
+            Box(
+                Modifier
+                    .weight(weight)
+                    .height(52.dp)
+                    .graphicsLayer { scaleX = press; scaleY = press }
+                    .clip(RoundedCornerShape(26.dp))
+                    .semantics { contentDescription = text }
+                    .clickable(interactionSource = source, indication = null, role = Role.Tab, onClick = onClick),
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SvgIcon(tab.icon(), (22f - label).dp, tint, 1.9f)
+                    BasicText(
+                        text,
+                        Modifier.padding(start = (8f * label).dp).reveal(label),
+                        style = type(14.5f, FontWeight.Bold, Alx.White),
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
+            }
 }
 
 /** Mở chữ theo p: bề rộng = rộng thật × p (cắt phần thừa), đồng thời mờ dần. */

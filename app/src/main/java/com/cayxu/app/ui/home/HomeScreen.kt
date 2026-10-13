@@ -136,11 +136,12 @@ val DefaultWideTile = HomeTile("nvc", "NV", Color(0xFF94A3B8), Color(0xFFF1F5F9)
 /** "Chào buổi sáng / trưa / chiều / tối" theo giờ máy. */
 fun greetingNow(): String {
     val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    val isEn = com.cayxu.app.ui.locale.LanguageState.language == com.cayxu.app.ui.locale.AppLanguage.EN
     return when {
-        h < 11 -> "Chào buổi sáng,"
-        h < 14 -> "Chào buổi trưa,"
-        h < 18 -> "Chào buổi chiều,"
-        else -> "Chào buổi tối,"
+        h < 11 -> if (isEn) "Good morning," else "Chào buổi sáng,"
+        h < 14 -> if (isEn) "Good afternoon," else "Chào buổi trưa,"
+        h < 18 -> if (isEn) "Good afternoon," else "Chào buổi chiều,"
+        else -> if (isEn) "Good evening," else "Chào buổi tối,"
     }
 }
 
@@ -193,9 +194,9 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Bottom,
             ) {
-                BasicText("Truy cập nhanh", style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
+                BasicText(com.cayxu.app.ui.locale.Str.homeQuickAccess, style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
                 BasicText(
-                    "Xem tất cả",
+                    com.cayxu.app.ui.locale.Str.profileSeeAll,
                     Modifier.clickable(role = Role.Button, onClick = onSeeAll),
                     style = type(13f, FontWeight.Bold, Alx.Blue),
                 )
@@ -320,8 +321,8 @@ private fun Header(state: HomeUiState, greeting: String, onSearch: () -> Unit, o
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            RoundButton("Tìm kiếm", onSearch) { SvgIcon(SearchIcon, 20.dp, Alx.Ink, 1.8f) }
-            RoundButton("Thông báo", onNotifications) {
+            RoundButton(com.cayxu.app.ui.locale.Str.search, onSearch) { SvgIcon(SearchIcon, 20.dp, Alx.Ink, 1.8f) }
+            RoundButton(com.cayxu.app.ui.locale.Str.notifications, onNotifications) {
                 SvgIcon(BellIcon, 20.dp, Alx.Ink, 1.8f)
                 if (state.hasUnread) {
                     Box(
@@ -357,14 +358,14 @@ private fun StatsCard(state: HomeUiState, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(22.dp)
     Column(modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape).clip(shape)) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(vertical = 16.dp)) {
-            StatCell("Tổng xu", Modifier.weight(1f)) {
+            StatCell(com.cayxu.app.ui.locale.Str.homeTotalCoins, Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CoinIcon(18.dp)
                     BasicText(state.coins, style = valueStyle())
                 }
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(Alx.Divider))
-            StatCell("Dịch vụ", Modifier.weight(1f)) {
+            StatCell(com.cayxu.app.ui.locale.Str.homeServices, Modifier.weight(1f)) {
                 BasicText(
                     buildAnnotatedString {
                         append("${state.servicesActive}")
@@ -374,11 +375,11 @@ private fun StatsCard(state: HomeUiState, modifier: Modifier = Modifier) {
                 )
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(Alx.Divider))
-            StatCell("Còn lại", Modifier.weight(1f)) {
+            StatCell(com.cayxu.app.ui.locale.Str.homeRemaining, Modifier.weight(1f)) {
                 BasicText(
                     buildAnnotatedString {
                         append("${state.daysLeft}")
-                        withStyle(SpanStyle(color = Alx.Muted, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)) { append(" ngày") }
+                        withStyle(SpanStyle(color = Alx.Muted, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)) { append(com.cayxu.app.ui.locale.Str.homeDaysUnit) }
                     },
                     style = valueStyle(),
                 )
@@ -387,7 +388,7 @@ private fun StatsCard(state: HomeUiState, modifier: Modifier = Modifier) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Alx.Divider))
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-                BasicText("Hiệu suất hôm nay", style = type(12f, FontWeight.SemiBold, Alx.Ink2))
+                BasicText(com.cayxu.app.ui.locale.Str.homeTodayPerformance, style = type(12f, FontWeight.SemiBold, Alx.Ink2))
                 BasicText("${(state.performance * 100).toInt()}%", style = type(13f, FontWeight.ExtraBold, Alx.Blue))
             }
             Box(Modifier.fillMaxWidth().height(6.dp).background(Alx.BlueSoft, RoundedCornerShape(3.dp))) {
@@ -430,8 +431,8 @@ private fun ExploreRow(onClick: () -> Unit, modifier: Modifier = Modifier) {
                 SvgIcon(CompassIcon, 20.dp, Alx.Blue, 1.8f)
             }
             Column(Modifier.weight(1f)) {
-                BasicText("Khám phá nhiệm vụ", style = type(14.5f, FontWeight.Bold, Alx.Ink))
-                BasicText("Chọn nền tảng để bắt đầu kiếm xu", Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Normal, Alx.Muted))
+                BasicText(com.cayxu.app.ui.locale.Str.homeExploreTasks, style = type(14.5f, FontWeight.Bold, Alx.Ink))
+                BasicText(com.cayxu.app.ui.locale.Str.homeExploreDesc, Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Normal, Alx.Muted))
             }
             SvgIcon(ChevronIcon, 18.dp, Alx.Muted, 2f)
         }
@@ -511,8 +512,9 @@ private fun WideTile(tile: HomeTile, status: String, onClick: () -> Unit) {
                     maxLines = 1,
                 )
             }
+            val displayStatus = if (tile.isSupported) com.cayxu.app.ui.locale.Str.homeReady else com.cayxu.app.ui.locale.Str.homeNotSupported
             BasicText(
-                status,
+                displayStatus,
                 Modifier
                     .background(Alx.White, CircleShape)
                     .border(

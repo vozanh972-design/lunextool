@@ -140,12 +140,12 @@ fun LanguageScreen(
             PreviewPanel(selected.preview(), Modifier.padding(top = 22.dp))
 
             BasicText(
-                "Chọn ngôn ngữ",
+                if (selected == AppLanguage.EN) "Select Language" else "Chọn ngôn ngữ",
                 Modifier.padding(top = 26.dp),
                 style = type(30f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f, lineHeight = 1.1f),
             )
             BasicText(
-                "Vui lòng chọn ngôn ngữ hiển thị bạn muốn sử dụng.",
+                if (selected == AppLanguage.EN) "Please select your preferred display language." else "Vui lòng chọn ngôn ngữ hiển thị bạn muốn sử dụng.",
                 Modifier.padding(top = 6.dp),
                 style = type(14.5f, FontWeight.Medium, Alx.Ink2, lineHeight = 1.5f),
             )
@@ -179,10 +179,10 @@ fun LanguageScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             BasicText(
-                "Bạn có thể đổi lại trong Hồ sơ › Cài đặt tài khoản",
+                if (selected == AppLanguage.EN) "You can change this anytime in Profile › Settings" else "Bạn có thể đổi lại trong Hồ sơ › Cài đặt tài khoản",
                 style = type(12.5f, FontWeight.Medium, Alx.Muted, align = TextAlign.Center),
             )
-            PrimaryButton("Tiếp tục", onContinue)
+            PrimaryButton(if (selected == AppLanguage.EN) "Continue" else "Tiếp tục", onContinue)
         }
     }
 }

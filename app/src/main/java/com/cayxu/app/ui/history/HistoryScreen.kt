@@ -120,7 +120,7 @@ fun HistoryScreen(
                     .background(Alx.White, CircleShape).border(1.dp, Alx.Line, CircleShape),
                 contentAlignment = Alignment.Center,
             ) { SvgIcon(Back, 20.dp, Alx.Ink, 2f) }
-            BasicText("Lịch sử xu", style = type(20f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
+            BasicText(com.cayxu.app.ui.locale.Str.historyTitle, style = type(20f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
         }
 
         DateNavigator(
@@ -226,7 +226,7 @@ private fun EmptyDay(modifier: Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         BasicText(
-            "Không có hoạt động nào trong ngày này",
+            com.cayxu.app.ui.locale.Str.historyEmptyDay,
             style = type(13.5f, FontWeight.Medium, Alx.Muted, align = TextAlign.Center),
         )
     }
@@ -299,7 +299,11 @@ private fun DatePickerDialog(selected: LocalDate, today: LocalDate, onPick: (Loc
                 StepButton(ChevronR, enabled = month.isBefore(lastMonth), description = "Tháng sau") { month = month.plusMonths(1) }
             }
             Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                listOf("T2", "T3", "T4", "T5", "T6", "T7", "CN").forEach {
+                val weekdays = if (com.cayxu.app.ui.locale.LanguageState.language == com.cayxu.app.ui.locale.AppLanguage.EN)
+                    listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                else
+                    listOf("T2", "T3", "T4", "T5", "T6", "T7", "CN")
+                weekdays.forEach {
                     BasicText(it, Modifier.weight(1f), style = type(11f, FontWeight.Bold, Alx.Muted, align = TextAlign.Center))
                 }
             }

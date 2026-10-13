@@ -64,6 +64,8 @@ import com.cayxu.app.ui.design.SvgIcon
 import com.cayxu.app.ui.design.animationsEnabled
 import com.cayxu.app.ui.design.keys
 import com.cayxu.app.ui.design.type
+import com.cayxu.app.ui.locale.AppLanguage
+import com.cayxu.app.ui.locale.LanguageState
 import kotlinx.coroutines.delay
 
 /* ───────────────────────────── Lịch chuyển động (ms) – khớp KeySuccess.dc.html ───────────────────────────── */
@@ -213,7 +215,7 @@ private fun Welcome(username: String, daysLeft: Int, t: () -> Float) {
                 ProPill(daysLeft, Modifier.padding(top = 22.dp).textIn(t, 0f))
                 Greeting(username, Modifier.padding(top = 14.dp).textIn(t, 120f))
                 BasicText(
-                    "Mọi nhiệm vụ follow, like và nuôi tài khoản đã sẵn sàng cho bạn.",
+                    if (LanguageState.language == AppLanguage.EN) "All your follow, like, and account nurturing tasks are ready." else "Mọi nhiệm vụ follow, like và nuôi tài khoản đã sẵn sàng cho bạn.",
                     Modifier.padding(top = 8.dp).widthIn(max = 270.dp).textIn(t, 240f),
                     style = type(13.5f, FontWeight.Medium, Alx.Muted, lineHeight = 1.5f, align = TextAlign.Center),
                 )
@@ -235,14 +237,20 @@ private fun Greeting(username: String, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         BasicText(
             buildAnnotatedString {
-                withStyle(SpanStyle(color = Alx.Blue)) { append(username) }
-                append(" ơi,")
+                if (LanguageState.language == AppLanguage.EN) {
+                    append("Hello ")
+                    withStyle(SpanStyle(color = Alx.Blue)) { append(username) }
+                    append(",")
+                } else {
+                    withStyle(SpanStyle(color = Alx.Blue)) { append(username) }
+                    append(" ơi,")
+                }
             },
             style = type(18f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.02f, lineHeight = 1.35f, align = TextAlign.Center),
             maxLines = 1, softWrap = false,
         )
         BasicText(
-            "chào mừng bạn đến với AUTOLUNEX",
+            if (LanguageState.language == AppLanguage.EN) "welcome to AUTOLUNEX" else "chào mừng bạn đến với AUTOLUNEX",
             style = type(18f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.02f, lineHeight = 1.35f, align = TextAlign.Center),
             maxLines = 1, softWrap = false,
         )
@@ -263,7 +271,7 @@ private fun ProPill(daysLeft: Int, modifier: Modifier) {
             SvgIcon(CheckPaths, 11.dp, Color.White, 3.4f)
         }
         BasicText(
-            "Bản quyền PRO đã kích hoạt · còn $daysLeft ngày",
+            if (LanguageState.language == AppLanguage.EN) "PRO License activated · $daysLeft days left" else "Bản quyền PRO đã kích hoạt · còn $daysLeft ngày",
             style = type(12.5f, FontWeight.Bold, Alx.Blue),
             maxLines = 1, softWrap = false,
         )

@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
+import com.cayxu.app.ui.locale.Str
 import com.cayxu.app.ui.navigation.Routes
 
 private data class FloatingNavItem(
@@ -43,6 +44,15 @@ private data class FloatingNavItem(
     val label: String,
     val icon: ImageVector
 )
+
+@Composable
+private fun FloatingNavItem.displayLabel(): String = when (route) {
+    Routes.HOME -> Str.tabHome
+    Routes.TASKS -> Str.tabTasks
+    Routes.UTILITIES -> Str.tabUtilities
+    Routes.ACCOUNT -> Str.tabProfile
+    else -> label
+}
 
 private val floatingBottomItems = listOf(
     FloatingNavItem(Routes.HOME, "Trang chủ", Icons.Outlined.Home),
@@ -178,9 +188,10 @@ fun CayXuBottomBar(navController: NavController) {
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center
                             ) {
+                                val currentLabel = item.displayLabel()
                                 Icon(
                                     imageVector = item.icon,
-                                    contentDescription = item.label,
+                                    contentDescription = currentLabel,
                                     modifier = Modifier.size(20.dp),
                                     tint = animatedIconTint
                                 )
@@ -195,7 +206,7 @@ fun CayXuBottomBar(navController: NavController) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = item.label,
+                                            text = currentLabel,
                                             color = Color.White,
                                             fontSize = 12.5.sp,
                                             fontWeight = FontWeight.Bold,

@@ -125,16 +125,16 @@ fun UtilitiesScreen(
             .statusBarsPadding()
             .padding(start = 20.dp, end = 20.dp, top = 28.dp),
     ) {
-        BasicText("Tiện ích mở rộng", style = type(30f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f))
+        BasicText(com.cayxu.app.ui.locale.Str.utilitiesTitle, style = type(30f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f))
         BasicText(
-            "Tối ưu và tự động hóa quy trình nuôi tài khoản mạng xã hội",
+            com.cayxu.app.ui.locale.Str.utilitiesSubtitle,
             Modifier.padding(top = 4.dp),
             style = type(14f, FontWeight.Medium, Alx.Muted, lineHeight = 1.45f),
         )
 
         FeaturedCard(state.featured, onConfigure, Modifier.padding(top = 20.dp))
 
-        BasicText("Công cụ khác", Modifier.padding(top = 24.dp), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
+        BasicText(com.cayxu.app.ui.locale.Str.utilitiesOtherTools, Modifier.padding(top = 24.dp), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
 
         val listShape = RoundedCornerShape(20.dp)
         Column(
@@ -187,15 +187,15 @@ private fun FeaturedCard(f: FeaturedTool, onConfigure: () -> Unit, modifier: Mod
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BasicText(
-                f.badge,
+                com.cayxu.app.ui.locale.Str.utilitiesFeaturedBadge,
                 Modifier.background(Alx.BlueSoft, CircleShape).padding(horizontal = 10.dp, vertical = 4.dp),
                 style = type(11f, FontWeight.ExtraBold, Alx.Blue, spacing = 0.1f),
             )
-            BasicText(f.meta, style = type(13f, FontWeight.Bold, Alx.Muted))
+            BasicText(com.cayxu.app.ui.locale.Str.utilitiesMultiThread, style = type(13f, FontWeight.Bold, Alx.Muted))
         }
-        BasicText(f.title, Modifier.padding(top = 12.dp), style = type(21f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.02f))
+        BasicText(com.cayxu.app.ui.locale.Str.utilitiesFbCareTitle, Modifier.padding(top = 12.dp), style = type(21f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.02f))
         BasicText(
-            f.description,
+            com.cayxu.app.ui.locale.Str.utilitiesFbCareDesc,
             Modifier.padding(top = 6.dp),
             style = type(13.5f, FontWeight.Medium, Alx.Ink2, lineHeight = 1.55f),
         )
@@ -209,7 +209,7 @@ private fun FeaturedCard(f: FeaturedTool, onConfigure: () -> Unit, modifier: Mod
                 .background(Alx.Blue, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            BasicText(f.cta, style = type(15f, FontWeight.Bold, Color.White))
+            BasicText(com.cayxu.app.ui.locale.Str.utilitiesConfigureNow, style = type(15f, FontWeight.Bold, Color.White))
         }
     }
 }
@@ -223,11 +223,11 @@ private fun FlowStrip(modifier: Modifier) {
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        FlowStep("Lướt feed", ArrowDown, filled = true)
+        FlowStep(com.cayxu.app.ui.locale.Str.utilitiesStepFeed, ArrowDown, filled = true)
         Connector(false, dashed)
-        FlowStep("Cảm xúc", Heart, filled = true)
+        FlowStep(com.cayxu.app.ui.locale.Str.utilitiesStepReactions, Heart, filled = true)
         Connector(true, dashed)
-        FlowStep("Xem story", PlayCircle, filled = false)
+        FlowStep(com.cayxu.app.ui.locale.Str.utilitiesStepStory, PlayCircle, filled = false)
     }
 }
 
@@ -276,10 +276,22 @@ private fun ToolRow(t: UtilityTool, divider: Boolean, onClick: () -> Unit) {
                 Box(Modifier.size(44.dp).background(t.tint, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
                     SvgIcon(t.iconPaths, 21.dp, t.color, 1.8f)
                 }
+                val toolTitle = when (t.id) {
+                    "page_reg" -> com.cayxu.app.ui.locale.Str.utilitiesToolPageRegTitle
+                    "fb_care" -> com.cayxu.app.ui.locale.Str.utilitiesToolFbCareTitle
+                    "scenario" -> com.cayxu.app.ui.locale.Str.utilitiesToolScenarioTitle
+                    else -> t.title
+                }
+                val toolDesc = when (t.id) {
+                    "page_reg" -> com.cayxu.app.ui.locale.Str.utilitiesToolPageRegDesc
+                    "fb_care" -> com.cayxu.app.ui.locale.Str.utilitiesToolFbCareDesc
+                    "scenario" -> com.cayxu.app.ui.locale.Str.utilitiesToolScenarioDesc
+                    else -> t.description
+                }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     BasicText(t.tag, style = type(10.5f, FontWeight.ExtraBold, t.color, spacing = 0.1f))
-                    BasicText(t.title, style = type(15f, FontWeight.Bold, Alx.Ink), maxLines = 1)
-                    BasicText(t.description, style = type(12f, FontWeight.Medium, Alx.Muted), maxLines = 1)
+                    BasicText(toolTitle, style = type(15f, FontWeight.Bold, Alx.Ink), maxLines = 1)
+                    BasicText(toolDesc, style = type(12f, FontWeight.Medium, Alx.Muted), maxLines = 1)
                 }
                 SvgIcon(Chevron, 18.dp, Color(0xFF94A3B8), 2f)
             }

@@ -76,6 +76,8 @@ import com.cayxu.app.ui.design.animationsEnabled
 import com.cayxu.app.ui.design.keys
 import com.cayxu.app.ui.design.rise
 import com.cayxu.app.ui.design.type
+import com.cayxu.app.ui.locale.AppLanguage
+import com.cayxu.app.ui.locale.LanguageState
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -134,7 +136,7 @@ fun LicenseScreen(
             ) {
                 BasicText("AUTOLUNEX", style = type(16f, FontWeight.ExtraBold, Alx.Ink, spacing = 0.1f))
                 BasicText(
-                    "Bản quyền 2026",
+                    if (LanguageState.language == AppLanguage.EN) "Copyright 2026" else "Bản quyền 2026",
                     Modifier
                         .background(Alx.BlueSoft, CircleShape)
                         .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -144,8 +146,13 @@ fun LicenseScreen(
 
             BasicText(
                 buildAnnotatedString {
-                    append("Tự động hóa\n")
-                    withStyle(SpanStyle(color = Alx.Blue)) { append("tác vụ bạn cần.") }
+                    if (LanguageState.language == AppLanguage.EN) {
+                        append("Automate\n")
+                        withStyle(SpanStyle(color = Alx.Blue)) { append("all your tasks.") }
+                    } else {
+                        append("Tự động hóa\n")
+                        withStyle(SpanStyle(color = Alx.Blue)) { append("tác vụ bạn cần.") }
+                    }
                 },
                 Modifier
                     .padding(top = 26.dp)
@@ -153,7 +160,7 @@ fun LicenseScreen(
                 style = type(34f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f, lineHeight = 1.12f),
             )
             BasicText(
-                "Nhập mã License Key để mở khóa toàn bộ tính năng cày xu đa kênh.",
+                if (LanguageState.language == AppLanguage.EN) "Enter your License Key to unlock all automated multi-platform earning features." else "Nhập mã License Key để mở khóa toàn bộ tính năng cày xu đa kênh.",
                 Modifier
                     .padding(top = 10.dp)
                     .widthIn(max = 320.dp)
@@ -173,7 +180,11 @@ fun LicenseScreen(
             )
 
             PrimaryButton(
-                label = if (loading) "Đang xác thực…" else "Xác thực & Kích hoạt",
+                label = if (loading) {
+                    if (LanguageState.language == AppLanguage.EN) "Verifying…" else "Đang xác thực…"
+                } else {
+                    if (LanguageState.language == AppLanguage.EN) "Verify & Activate" else "Xác thực & Kích hoạt"
+                },
                 onClick = onVerify,
                 enabled = !loading,
                 radius = 16.dp,
@@ -192,16 +203,16 @@ fun LicenseScreen(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row {
-                BasicText("Bạn chưa có key? ", style = type(14f, FontWeight.Medium, Alx.Ink2))
+                BasicText(if (LanguageState.language == AppLanguage.EN) "Don't have a key? " else "Bạn chưa có key? ", style = type(14f, FontWeight.Medium, Alx.Ink2))
                 BasicText(
-                    "Mua ngay",
+                    if (LanguageState.language == AppLanguage.EN) "Buy now" else "Mua ngay",
                     Modifier.clickable(role = Role.Button, onClick = onBuy),
                     style = type(14f, FontWeight.ExtraBold, Alx.Blue),
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 SvgIcon(HeadsetPaths, 15.dp, Alx.Muted, 1.8f)
-                BasicText("Hỗ trợ kỹ thuật 24/7", style = type(13f, FontWeight.Medium, Alx.Muted))
+                BasicText(if (LanguageState.language == AppLanguage.EN) "24/7 Technical Support" else "Hỗ trợ kỹ thuật 24/7", style = type(13f, FontWeight.Medium, Alx.Muted))
             }
         }
     }
@@ -242,7 +253,11 @@ private fun KeyField(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BasicText("Mã kích hoạt (License Key)", Modifier.padding(vertical = 8.dp), style = type(14f, FontWeight.Bold, Alx.Ink))
+            BasicText(
+                if (LanguageState.language == AppLanguage.EN) "License Key" else "Mã kích hoạt (License Key)",
+                Modifier.padding(vertical = 8.dp),
+                style = type(14f, FontWeight.Bold, Alx.Ink)
+            )
         }
 
         val borderColor = when {
@@ -288,7 +303,7 @@ private fun KeyField(
                     ) {
                         if (value.isEmpty()) {
                             BasicText(
-                                "Dán hoặc nhập mã key tại đây...",
+                                if (LanguageState.language == AppLanguage.EN) "Paste or enter license key here…" else "Dán hoặc nhập mã key tại đây...",
                                 style = type(14.5f, FontWeight.Medium, Alx.Placeholder),
                                 maxLines = 1,
                             )
@@ -417,7 +432,7 @@ private fun MiniHome(bar: () -> Float, amounts: List<Long>, modifier: Modifier =
                     BasicText("US", style = type(15f, FontWeight.ExtraBold, Alx.Blue))
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    BasicText("Chào buổi trưa,", style = type(12.5f, FontWeight.Medium, Alx.Muted))
+                    BasicText(if (LanguageState.language == AppLanguage.EN) "Good afternoon," else "Chào buổi trưa,", style = type(12.5f, FontWeight.Medium, Alx.Muted))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         BasicText("username", style = type(17f, FontWeight.ExtraBold, Alx.Ink))
                         BasicText(
@@ -436,14 +451,14 @@ private fun MiniHome(bar: () -> Float, amounts: List<Long>, modifier: Modifier =
         // Thẻ thống kê
         Column(Modifier.fillMaxWidth().background(Alx.White, card).border(1.dp, Alx.Line, card)) {
             Row(Modifier.padding(vertical = 16.dp)) {
-                Stat("Tổng xu", money((amounts.sum() * barFraction).toLong()), false, Modifier.weight(1f))
-                Stat("Dịch vụ", "5/5", true, Modifier.weight(1f))
-                Stat("Còn lại", "25 ngày", true, Modifier.weight(1f))
+                Stat(if (LanguageState.language == AppLanguage.EN) "Total Coins" else "Tổng xu", money((amounts.sum() * barFraction).toLong()), false, Modifier.weight(1f))
+                Stat(if (LanguageState.language == AppLanguage.EN) "Services" else "Dịch vụ", "5/5", true, Modifier.weight(1f))
+                Stat(if (LanguageState.language == AppLanguage.EN) "Remaining" else "Còn lại", if (LanguageState.language == AppLanguage.EN) "25 days" else "25 ngày", true, Modifier.weight(1f))
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Alx.Divider))
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    BasicText("Hiệu suất hôm nay", style = type(12f, FontWeight.SemiBold, Alx.Ink2))
+                    BasicText(if (LanguageState.language == AppLanguage.EN) "Today's Performance" else "Hiệu suất hôm nay", style = type(12f, FontWeight.SemiBold, Alx.Ink2))
                     BasicText("${(95 * barFraction).roundToInt()}%", style = type(13f, FontWeight.ExtraBold, Alx.Blue))
                 }
                 Box(Modifier.fillMaxWidth().height(6.dp).background(Alx.BlueSoft, RoundedCornerShape(3.dp))) {
@@ -459,7 +474,7 @@ private fun MiniHome(bar: () -> Float, amounts: List<Long>, modifier: Modifier =
         }
 
         BasicText(
-            "Truy cập nhanh",
+            if (LanguageState.language == AppLanguage.EN) "Quick Access" else "Truy cập nhanh",
             Modifier.padding(top = 6.dp),
             style = type(17f, FontWeight.ExtraBold, Alx.Ink),
         )
@@ -548,7 +563,11 @@ private fun WideTile(value: String) {
         }
         Column(Modifier.weight(1f)) {
             BasicText("Nhiemvucheo", style = type(15f, FontWeight.ExtraBold, Alx.Ink))
-            BasicText("Làm nhiệm vụ nhận thưởng", Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Medium, Alx.Muted))
+            BasicText(
+                if (LanguageState.language == AppLanguage.EN) "Complete tasks to earn rewards" else "Làm nhiệm vụ nhận thưởng",
+                Modifier.padding(top = 1.dp),
+                style = type(12f, FontWeight.Medium, Alx.Muted)
+            )
         }
         BasicText(value, style = type(19f, FontWeight.ExtraBold, Alx.Ink))
     }
@@ -558,7 +577,7 @@ private fun WideTile(value: String) {
 private fun money(v: Long): String = when {
     v >= 1_000_000L ->
         java.lang.String.format(java.util.Locale.US, "%.2f", v / 10_000L / 100.0)
-            .trimEnd('0').trimEnd('.').replace('.', ',') + "tr"
+            .trimEnd('0').trimEnd('.').replace('.', ',') + (if (LanguageState.language == AppLanguage.EN) "M" else "tr")
     v >= 1_000L -> "${v / 1_000L}k"
     else -> "$v"
 }
@@ -594,7 +613,7 @@ fun LicenseRoute(
             val k = key.trim()
             if (k.length >= 8) onActivated(k)
             else {
-                error = "Mã key chưa đúng định dạng. Vui lòng kiểm tra lại."
+                error = if (LanguageState.language == AppLanguage.EN) "Invalid license key format. Please check again." else "Mã key chưa đúng định dạng. Vui lòng kiểm tra lại."
                 errorVersion++
             }
         },

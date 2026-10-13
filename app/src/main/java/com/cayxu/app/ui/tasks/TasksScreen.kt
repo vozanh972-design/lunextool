@@ -120,8 +120,8 @@ fun TasksScreen(
             .statusBarsPadding()
             .padding(start = 20.dp, end = 20.dp, top = 28.dp),
     ) {
-        BasicText("Nhiệm vụ", style = type(30f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f))
-        BasicText("${state.services.size} nền tảng kiếm xu đang kết nối", Modifier.padding(top = 4.dp), style = type(14f, FontWeight.Medium, Alx.Muted))
+        BasicText(com.cayxu.app.ui.locale.Str.tasksTitle, style = type(30f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f))
+        BasicText(com.cayxu.app.ui.locale.Str.tasksSubtitle(state.services.size), Modifier.padding(top = 4.dp), style = type(14f, FontWeight.Medium, Alx.Muted))
 
         Summary(state, Modifier.padding(top = 18.dp))
 
@@ -181,7 +181,7 @@ private fun Summary(state: TasksUiState, modifier: Modifier) {
             .height(IntrinsicSize.Min).padding(vertical = 14.dp),
     ) {
         Column(Modifier.weight(1f).padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            BasicText("Tổng xu", style = type(12f, FontWeight.Medium, Alx.Muted))
+            BasicText(com.cayxu.app.ui.locale.Str.tasksTotalCoins, style = type(12f, FontWeight.Medium, Alx.Muted))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 CoinIcon(20.dp)
                 BasicText(state.coins, style = type(22f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.02f))
@@ -189,7 +189,7 @@ private fun Summary(state: TasksUiState, modifier: Modifier) {
         }
         Box(Modifier.width(1.dp).fillMaxHeight().background(Alx.Divider))
         Column(Modifier.weight(1f).padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            BasicText("Hiệu suất hôm nay", style = type(12f, FontWeight.Medium, Alx.Muted))
+            BasicText(com.cayxu.app.ui.locale.Str.tasksTodayPerformance, style = type(12f, FontWeight.Medium, Alx.Muted))
             BasicText(
                 "${(computePerformance(state.today) * 100).toInt()}%",
                 style = type(22f, FontWeight.ExtraBold, Alx.Blue, spacing = -0.02f),
@@ -272,7 +272,7 @@ private fun ServiceRow(s: TaskService, onClick: () -> Unit) {
                     .padding(horizontal = 9.dp, vertical = 5.dp),
             ) {
                 BasicText(
-                    "Chưa hỗ trợ",
+                    com.cayxu.app.ui.locale.Str.tasksNotSupported,
                     style = type(11.5f, FontWeight.SemiBold, Color(0xFF94A3B8)),
                 )
             }

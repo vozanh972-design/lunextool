@@ -66,6 +66,7 @@ import com.cayxu.app.ui.history.CoinEntryCard
 import com.cayxu.app.ui.history.CoinEntryRow
 import com.cayxu.app.ui.locale.AppLanguage
 import com.cayxu.app.ui.locale.LanguageState
+import com.cayxu.app.ui.locale.Str
 import com.cayxu.app.ui.main.DockClearance
 import com.cayxu.app.ui.main.MainShell
 import com.cayxu.app.ui.main.MainTab
@@ -82,10 +83,11 @@ enum class ProfileAction { Settings, Terms, Logout }
 enum class ContactKind { Telegram, Zalo }
 data class ContactChannel(val kind: ContactKind, val name: String, val subtitle: String, val url: String)
 
-/** Cấu hình thật của kênh hỗ trợ (không phải dữ liệu mẫu). Đổi link/số ở đây là xong. */
-val DefaultSupportContacts = listOf(
-    ContactChannel(ContactKind.Telegram, "Telegram", "Nhắn tin qua Telegram", "https://t.me/thanhgmn"),
-    ContactChannel(ContactKind.Zalo, "Zalo", "Nhắn tin qua Zalo", "https://zalo.me/0931006827"),
+/** Cấu hình kênh hỗ trợ đa ngôn ngữ. */
+@Composable
+fun defaultSupportContacts(): List<ContactChannel> = listOf(
+    ContactChannel(ContactKind.Telegram, "Telegram", Str.profileMsgTelegram, "https://t.me/thanhgmn"),
+    ContactChannel(ContactKind.Zalo, "Zalo", Str.profileMsgZalo, "https://zalo.me/0931006827"),
 )
 
 /**
@@ -131,7 +133,7 @@ private val RowLine = Color(0xFFEEF1F6)
 fun ProfileScreen(
     state: ProfileUiState,
     modifier: Modifier = Modifier,
-    contacts: List<ContactChannel> = DefaultSupportContacts,
+    contacts: List<ContactChannel> = defaultSupportContacts(),
     onAction: (ProfileAction) -> Unit = {},
     onLanguageChange: (AppLanguage) -> Unit = {},
     onSeeAllHistory: () -> Unit = {},
@@ -151,7 +153,7 @@ fun ProfileScreen(
 
         // Tiêu đề Lịch sử xu và nút Xem tất cả luôn hiển thị
         Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-            BasicText("Lịch sử xu", Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
+            BasicText(Str.profileCoinHistory, Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
             SeeAll(onSeeAllHistory)
         }
         if (state.recent.isNotEmpty()) {
@@ -165,18 +167,18 @@ fun ProfileScreen(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    BasicText("Chưa có lịch sử nhận xu", style = type(13.5f, FontWeight.Medium, Alx.Muted))
+                    BasicText(Str.profileNoCoinHistory, style = type(13.5f, FontWeight.Medium, Alx.Muted))
                 }
             }
         }
 
-        SectionTitle("Tài khoản & hỗ trợ")
+        SectionTitle(Str.profileAccountSupport)
         Card(Modifier.padding(top = 12.dp)) {
-            SettingRow("Cài đặt", Sliders, divider = false) { onAction(ProfileAction.Settings) }
-            SettingRow("Ngôn ngữ", Globe, divider = true, value = state.language.nativeName) { sheet = ProfileSheet.Language }
-            SettingRow("Liên hệ hỗ trợ", Help, divider = true) { sheet = ProfileSheet.Contact }
-            SettingRow("Điều khoản & chính sách", Doc, divider = true) { onAction(ProfileAction.Terms) }
-            SettingRow("Đăng xuất", Logout, divider = true, danger = true) { onAction(ProfileAction.Logout) }
+            SettingRow(Str.profileSettings, Sliders, divider = false) { onAction(ProfileAction.Settings) }
+            SettingRow(Str.profileLanguage, Globe, divider = true, value = state.language.nativeName) { sheet = ProfileSheet.Language }
+            SettingRow(Str.profileContactSupport, Help, divider = true) { sheet = ProfileSheet.Contact }
+            SettingRow(Str.profileTermsPolicies, Doc, divider = true) { onAction(ProfileAction.Terms) }
+            SettingRow(Str.profileLogout, Logout, divider = true, danger = true) { onAction(ProfileAction.Logout) }
         }
 
         Spacer(Modifier.height(DockClearance))
@@ -185,7 +187,7 @@ fun ProfileScreen(
 
     when (sheet) {
         ProfileSheet.Language -> BottomSheetDialog(onDismiss = { sheet = null }) {
-            SheetHeader("Ngôn ngữ", "Chọn ngôn ngữ hiển thị của ứng dụng")
+            SheetHeader(Str.profileLanguageSheetTitle, Str.profileLanguageSheetSubtitle)
             Column(Modifier.padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 AppLanguage.values().forEach { lang ->
                     LanguageOption(lang, selected = lang == state.language) {
@@ -197,7 +199,7 @@ fun ProfileScreen(
         }
         ProfileSheet.Contact -> BottomSheetDialog(onDismiss = { sheet = null }) {
             val uri = LocalUriHandler.current
-            SheetHeader("Liên hệ hỗ trợ", "Chọn kênh để nhắn trực tiếp cho chúng tôi")
+            SheetHeader(Str.profileContactSheetTitle, Str.profileContactSheetSubtitle)
             Column(Modifier.padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 contacts.forEach { c -> ContactRow(c) { uri.openUri(c.url) } }
             }
@@ -242,13 +244,14 @@ fun ProfileScreen(
     }
 
     val currentLang = LanguageState.language
+    val planTitle = Str.profileMemberPro
 
-    val state = remember(username, handle, daysLeft, expiryDate, progress, currentLang, recentCoins) {
+    val state = remember(username, handle, daysLeft, expiryDate, progress, currentLang, recentCoins, planTitle) {
         ProfileUiState(
             username = username,
             handle = handle,
             planBadge = "PRO",
-            planName = "Thành viên PRO",
+            planName = planTitle,
             daysLeft = daysLeft,
             expiryDate = expiryDate,
             membershipProgress = progress,
@@ -265,7 +268,7 @@ fun ProfileScreen(
                     navController.navigate(Routes.SETTINGS)
                 }
                 ProfileAction.Terms -> {
-                    Toast.makeText(context, "Điều khoản & chính sách đang được cập nhật", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, Str.profileTermsUpdating, Toast.LENGTH_SHORT).show()
                 }
                 ProfileAction.Logout -> {
                     showLogoutDialog = true
@@ -284,10 +287,10 @@ fun ProfileScreen(
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
             title = {
-                BasicText("Đăng xuất", style = type(18f, FontWeight.Bold, Alx.Ink))
+                BasicText(Str.profileLogoutConfirmTitle, style = type(18f, FontWeight.Bold, Alx.Ink))
             },
             text = {
-                BasicText("Bạn có chắc chắn muốn đăng xuất khỏi tài khoản?", style = type(14f, FontWeight.Medium, Alx.Ink))
+                BasicText(Str.profileLogoutConfirmMsg, style = type(14f, FontWeight.Medium, Alx.Ink))
             },
             confirmButton = {
                 Box(
@@ -302,7 +305,7 @@ fun ProfileScreen(
                         }
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
-                    BasicText("Đăng xuất", style = type(14f, FontWeight.Bold, Color.White))
+                    BasicText(Str.profileLogout, style = type(14f, FontWeight.Bold, Color.White))
                 }
             },
             dismissButton = {
@@ -311,7 +314,7 @@ fun ProfileScreen(
                         .clickable { showLogoutDialog = false }
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
-                    BasicText("Hủy", style = type(14f, FontWeight.SemiBold, Alx.Muted))
+                    BasicText(Str.profileCancel, style = type(14f, FontWeight.SemiBold, Alx.Muted))
                 }
             },
             containerColor = Color.White,
@@ -365,7 +368,7 @@ private fun Membership(s: ProfileUiState, modifier: Modifier) {
             Column(Modifier.weight(1f)) {
                 BasicText(s.planName, style = type(14.5f, FontWeight.Bold, Alx.Ink))
                 BasicText(
-                    "Còn ${s.daysLeft} ngày · Hết hạn ${s.expiryDate}",
+                    Str.profileDaysLeft(s.daysLeft, s.expiryDate),
                     Modifier.padding(top = 1.dp),
                     style = type(12f, FontWeight.Medium, Alx.Muted),
                 )
@@ -414,7 +417,7 @@ private fun SeeAll(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        BasicText("Xem tất cả", style = type(13.5f, FontWeight.Bold, Alx.Blue))
+        BasicText(Str.profileSeeAll, style = type(13.5f, FontWeight.Bold, Alx.Blue))
         SvgIcon(Chevron, 16.dp, Alx.Blue, 2.2f)
     }
 }
