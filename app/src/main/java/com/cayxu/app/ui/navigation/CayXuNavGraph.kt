@@ -33,7 +33,7 @@ import com.cayxu.app.ui.screens.account.AccountScreen
 import com.cayxu.app.ui.screens.blocked.BlockedScreen
 import com.cayxu.app.util.AppUpdateManager
 import com.cayxu.app.ui.screens.friends.FriendsScreen
-import com.cayxu.app.ui.screens.home.HomeScreen
+import com.cayxu.app.ui.home.HomeScreen
 import com.cayxu.app.ui.screens.login.LoginScreen
 import com.cayxu.app.ui.screens.settings.SettingsScreen
 import com.cayxu.app.ui.screens.tasks.TasksScreen
@@ -93,7 +93,8 @@ object Routes {
 
 // Các route hiện thanh điều hướng dưới (bottom bar cố định, không nằm trong vùng chuyển
 // cảnh mờ dần, nên không bị "nẩy" hay animate theo nội dung mỗi lần chuyển màn).
-private val routesWithBottomBar = setOf(Routes.HOME, Routes.TASKS, Routes.UTILITIES, Routes.ACCOUNT, Routes.WALLET, Routes.FRIENDS)
+// Routes.HOME dùng NavBar riêng dạng viên thuốc nổi theo thiết kế canvas.
+private val routesWithBottomBar = setOf(Routes.TASKS, Routes.UTILITIES, Routes.ACCOUNT, Routes.WALLET, Routes.FRIENDS)
 
 /**
  * Luôn đưa được về Trang chủ, dùng cho nút back thủ công ở các màn như Nhiệm vụ/Ví/Tiện ích

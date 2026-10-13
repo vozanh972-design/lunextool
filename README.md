@@ -80,6 +80,34 @@ Cách hoạt động:
 6. Gọi trong `MainActivity`: `setContent { AppFlow(store, validate = { ... }, onBuy = { ... }, home = { CayXuNavGraph(startDestination = Routes.HOME) }) }`.
 Lưu ý: nếu mở lại app mà mất mạng, `validate` sẽ nhận biết lỗi mạng và giữ lại key, cho người dùng vào Trang chủ (chống xóa nhầm key khi offline).
 
+## Trang chủ (HomeScreen.kt)
+```kotlin
+HomeScreen(
+    state = HomeUiState(
+        username = "username", coins = "0", servicesActive = 5, servicesTotal = 5,
+        daysLeft = 25, performance = 0.95f, expiryText = "Hạn dùng 05/11/2026 · 11:51",
+        hasUnread = true,
+        // tiles / wideTile có mặc định đúng như thiết kế (XSMM, GoLike, Tuongtaccheo, TikTok TTC, Nhiemvucheo)
+    ),
+    onTile = { tile -> /* tile.id: "xsmm", "golike", "ttc", "tiktok", "nvc" */ },
+    onExplore = { }, onSeeAll = { }, onSearch = { }, onNotifications = { },
+    selectedTab = HomeTab.Home,
+    onTab = { tab -> /* chuyển Nhiệm vụ / Tiện ích / Hồ sơ */ },
+)
+```
+Nối vào `AppFlow`: `home = { HomeScreen(state = vm.homeState, onTab = { … }) }`. Đây cũng là lambda `home` mà `ActivationSuccessScreen` dựng ngầm để mờ vào.
+Dữ liệu thật (xu, số dịch vụ, ngày còn lại, hạn dùng, số tiền từng ô) lấy từ ViewModel và đưa vào `HomeUiState`; màn không tự gọi mạng.
+
+Số đo từ thiết kế (khung 390 × 844 dp):
+- Nội dung cuộn, padding ngang 20dp, trên 24dp, đáy chừa 104dp cho thanh điều hướng.
+- Header: avatar tròn 44dp (2 chữ cái đầu của username), lời chào tự đổi sáng/trưa/chiều/tối theo giờ máy, chip PRO; 2 nút tròn 44dp (tìm kiếm, chuông có chấm đỏ 8dp khi `hasUnread`).
+- Thẻ thống kê bo 22dp, 3 cột (Tổng xu / Dịch vụ / Còn lại) chia bằng vạch dọc, bên dưới là thanh "Hiệu suất hôm nay" cao 6dp và dòng hạn dùng.
+- Hàng "Khám phá nhiệm vụ" bo 18dp, icon 40dp.
+- "Truy cập nhanh": lưới 2 cột, mỗi ô cao 132dp bo 22dp, khoảng cách 12dp, vòng tròn mờ ở góc trên phải, 1 ô rộng ở cuối (Nhiemvucheo) có nhãn "Sẵn sàng".
+- Thanh điều hướng: viên thuốc nổi cao 66dp, cách 2 bên 16dp và đáy 14dp, tab đang chọn nền #0F172A chiếm 2,5 phần có chữ, ba tab còn lại chỉ icon.
+Không có animation riêng. Chạm vào ô, hàng, nút thì nhún 0.985 trong 120ms. Bóng của ô và thanh điều hướng chỉ gần đúng bản HTML (Compose không có bóng "spread" âm).
+Màu riêng của từng dịch vụ (đỏ XSMM, hồng TTC, xám TikTok, xanh ngọc Nhiemvucheo) nằm trong `DefaultTiles`; thêm dịch vụ mới chỉ cần thêm một `HomeTile`.
+
 ## Lưu ý quan trọng
 Bóng đổ và độ cao dòng chữ có thể lệch nhẹ so với bản HTML.
 

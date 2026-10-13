@@ -1,0 +1,572 @@
+package com.cayxu.app.ui.home
+
+import android.content.Context
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.cayxu.app.data.local.FacebookAccountsStore
+import com.cayxu.app.data.local.GolikeAccountsStore
+import com.cayxu.app.data.local.SecurePrefs
+import com.cayxu.app.data.local.TikTokAccountsStore
+import com.cayxu.app.data.local.TtcAccountsStore
+import com.cayxu.app.data.local.XsmmAccountStore
+import com.cayxu.app.ui.design.Alx
+import com.cayxu.app.ui.design.SvgIcon
+import com.cayxu.app.ui.design.type
+import com.cayxu.app.ui.navigation.Routes
+import com.cayxu.app.ui.screens.home.HomeViewModel
+import java.util.Calendar
+
+/* ───────────────────────────── Dữ liệu ───────────────────────────── */
+
+enum class HomeTab(val label: String) {
+    Home("Trang chủ"), Tasks("Nhiệm vụ"), Utilities("Tiện ích"), Profile("Hồ sơ"),
+}
+
+/** Một ô "Truy cập nhanh". [badgeColor] là màu ô logo, [blobColor] là vòng tròn mờ ở góc. */
+data class HomeTile(
+    val id: String,
+    val badge: String,
+    val badgeColor: Color,
+    val blobColor: Color,
+    val amount: String,
+    val name: String,
+    val subtitle: String,
+    val badgeSizeSp: Float = 12f,
+)
+
+data class HomeUiState(
+    val username: String,
+    val coins: String = "0",
+    val servicesActive: Int = 5,
+    val servicesTotal: Int = 5,
+    val daysLeft: Int = 25,
+    val performance: Float = 0.95f,        // 0..1
+    val expiryText: String = "Hạn dùng 05/11/2026 · 11:51",
+    val hasUnread: Boolean = true,
+    val tiles: List<HomeTile> = DefaultTiles,
+    val wideTile: HomeTile? = DefaultWideTile,
+    val wideStatus: String = "Sẵn sàng",
+)
+
+val DefaultTiles = listOf(
+    HomeTile("xsmm", "XS", Color(0xFFC9363B), Color(0xFFFDECEC), "0 đ", "XSMM", "Tăng tương tác"),
+    HomeTile("golike", "GL", Alx.Blue, Alx.BlueSoft, "0 đ", "GoLike", "Kiếm tiền MXH", 13f),
+    HomeTile("ttc", "TTC", Color(0xFFC2255C), Color(0xFFFDEAF2), "0 xu", "Tuongtaccheo", "Trao đổi like sub"),
+    HomeTile("tiktok", "TikT", Color(0xFF334155), Color(0xFFEDF0F5), "0 acc", "TikTok TTC", "Nhận job tự động", 11f),
+)
+val DefaultWideTile = HomeTile("nvc", "NV", Color(0xFF0E7490), Color(0xFFE3F4F8), "", "Nhiemvucheo", "Tăng view, sub")
+
+/** "Chào buổi sáng / trưa / chiều / tối" theo giờ máy. */
+fun greetingNow(): String {
+    val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    return when {
+        h < 11 -> "Chào buổi sáng,"
+        h < 14 -> "Chào buổi trưa,"
+        h < 18 -> "Chào buổi chiều,"
+        else -> "Chào buổi tối,"
+    }
+}
+
+private val Red = Color(0xFFE5484D)
+
+/* ───────────────────────────── Icon (path khung 24×24, cờ cung viết cách ra) ───────────────────────────── */
+
+private fun roundRect(x: Float, y: Float, w: Float, h: Float, r: Float): String {
+    val x1 = x + w; val y1 = y + h
+    return "M${x + r} $y H${x1 - r} A$r $r 0 0 1 $x1 ${y + r} V${y1 - r} A$r $r 0 0 1 ${x1 - r} $y1 " +
+        "H${x + r} A$r $r 0 0 1 $x ${y1 - r} V${y + r} A$r $r 0 0 1 ${x + r} $y Z"
+}
+
+private val SearchIcon = listOf("M18 11 A7 7 0 1 0 4 11 A7 7 0 1 0 18 11 Z", "M20 20 L16.5 16.5")
+private val BellIcon = listOf(
+    "M18 8 A6 6 0 1 0 6 8 C6 15 3 17 3 17 H21 S18 15 18 8",
+    "M13.7 21 A2 2 0 0 1 10.3 21",
+)
+private val CompassIcon = listOf(
+    "M21 12 A9 9 0 1 0 3 12 A9 9 0 1 0 21 12 Z",
+    "M15.5 8.5 L13.5 13.5 L8.5 15.5 L10.5 10.5 Z",
+)
+private val ChevronIcon = listOf("M9 6 L15 12 L9 18")
+private val HomeIcon = listOf("M3 11 L12 3 L21 11", "M5 10 V20 H19 V10")
+private val TasksIcon = listOf("M21 12 A9 9 0 1 0 3 12 A9 9 0 1 0 21 12 Z", "M8 12 L11 15 L16 9")
+private val GridIcon = listOf(
+    roundRect(3f, 3f, 7.5f, 7.5f, 1.8f), roundRect(13.5f, 3f, 7.5f, 7.5f, 1.8f),
+    roundRect(3f, 13.5f, 7.5f, 7.5f, 1.8f), roundRect(13.5f, 13.5f, 7.5f, 7.5f, 1.8f),
+)
+private val ProfileIcon = listOf(
+    "M16 8 A4 4 0 1 0 8 8 A4 4 0 1 0 16 8 Z",
+    "M4 21 C5.5 16.5 9 15 12 15 S18.5 16.5 20 21",
+)
+
+private fun HomeTab.icon() = when (this) {
+    HomeTab.Home -> HomeIcon
+    HomeTab.Tasks -> TasksIcon
+    HomeTab.Utilities -> GridIcon
+    HomeTab.Profile -> ProfileIcon
+}
+
+/* ───────────────────────────── Màn hình ───────────────────────────── */
+
+/**
+ * Trang chủ. Khung 390 × 844dp, nền #F3F5F9, nội dung cuộn, thanh điều hướng nổi dạng viên thuốc.
+ * Màn này không có animation riêng (chuyển cảnh từ màn chào mừng do ActivationSuccessScreen lo).
+ */
+@Composable
+fun HomeScreen(
+    state: HomeUiState,
+    modifier: Modifier = Modifier,
+    greeting: String = greetingNow(),
+    selectedTab: HomeTab = HomeTab.Home,
+    onSearch: () -> Unit = {},
+    onNotifications: () -> Unit = {},
+    onExplore: () -> Unit = {},
+    onSeeAll: () -> Unit = {},
+    onTile: (HomeTile) -> Unit = {},
+    onTab: (HomeTab) -> Unit = {},
+) {
+    Box(modifier.fillMaxSize().background(Alx.Bg)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .statusBarsPadding()
+                .padding(start = 20.dp, end = 20.dp, top = 24.dp),
+        ) {
+            Header(state, greeting, onSearch, onNotifications)
+            StatsCard(state, Modifier.padding(top = 20.dp))
+            ExploreRow(onExplore, Modifier.padding(top = 12.dp))
+
+            Row(
+                Modifier.padding(top = 24.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                BasicText("Truy cập nhanh", style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
+                BasicText(
+                    "Xem tất cả",
+                    Modifier.clickable(role = Role.Button, onClick = onSeeAll),
+                    style = type(13f, FontWeight.Bold, Alx.Blue),
+                )
+            }
+
+            Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                state.tiles.chunked(2).forEach { pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        pair.forEach { QuickTile(it, { onTile(it) }, Modifier.weight(1f)) }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+                state.wideTile?.let { WideTile(it, state.wideStatus) { onTile(it) } }
+            }
+
+            // chừa chỗ cho thanh điều hướng nổi: 66 + 14 + khoảng thở 24
+            Spacer(Modifier.height(104.dp))
+            Spacer(Modifier.navigationBarsPadding())
+        }
+
+        NavBar(
+            selectedTab, onTab,
+            Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+        )
+    }
+}
+
+/**
+ * Overload kết nối NavController và ViewModel thật trong app.
+ */
+@Composable
+fun HomeScreen(
+    navController: NavController,
+    viewModel: HomeViewModel = viewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val securePrefs = remember { SecurePrefs(context) }
+
+    val buyerUsername = remember { securePrefs.getBuyerUsername() }
+    val effectiveName = remember(uiState.info, buyerUsername) {
+        uiState.info?.effectiveUsername?.ifBlank { null }
+            ?: buyerUsername?.ifBlank { null }
+            ?: "username"
+    }
+    val daysLeft = remember(uiState.info) {
+        uiState.info?.daysLeft ?: securePrefs.getDaysLeft()
+    }
+    val rawExpiresAt = remember(uiState.info) {
+        uiState.info?.expiresAt ?: securePrefs.getExpiresAt() ?: ""
+    }
+    val expiryText = remember(rawExpiresAt) {
+        if (rawExpiresAt.isNotBlank()) "Hạn dùng $rawExpiresAt" else "Hạn dùng 30 ngày"
+    }
+
+    val xsmmPoints = remember { XsmmAccountStore.getPoints(context) }
+    val golikeBalance = remember { GolikeAccountsStore.getBalance(context) }
+    val ttcAccounts = remember { TtcAccountsStore.getAccounts(context) }
+    val ttcCoins = remember(ttcAccounts) { ttcAccounts.sumOf { it.coins } }
+    val tiktokAccounts = remember { TikTokAccountsStore.getAccounts(context) }
+    val totalCoins = xsmmPoints + golikeBalance + ttcCoins
+
+    val tiles = remember(xsmmPoints, golikeBalance, ttcCoins, tiktokAccounts.size) {
+        listOf(
+            HomeTile("xsmm", "XS", Color(0xFFC9363B), Color(0xFFFDECEC), "${xsmmPoints} đ", "XSMM", "Tăng tương tác"),
+            HomeTile("golike", "GL", Alx.Blue, Alx.BlueSoft, "${golikeBalance} đ", "GoLike", "Kiếm tiền MXH", 13f),
+            HomeTile("ttc", "TTC", Color(0xFFC2255C), Color(0xFFFDEAF2), "${ttcCoins} xu", "Tuongtaccheo", "Trao đổi like sub"),
+            HomeTile("tiktok", "TikT", Color(0xFF334155), Color(0xFFEDF0F5), "${tiktokAccounts.size} acc", "TikTok TTC", "Nhận job tự động", 11f),
+        )
+    }
+
+    val state = remember(effectiveName, totalCoins, daysLeft, expiryText, tiles) {
+        HomeUiState(
+            username = effectiveName,
+            coins = totalCoins.toString(),
+            servicesActive = 5,
+            servicesTotal = 5,
+            daysLeft = daysLeft,
+            performance = 0.95f,
+            expiryText = expiryText,
+            hasUnread = true,
+            tiles = tiles,
+            wideTile = DefaultWideTile,
+            wideStatus = "Sẵn sàng",
+        )
+    }
+
+    HomeScreen(
+        state = state,
+        onSearch = { },
+        onNotifications = { },
+        onExplore = { navController.navigate(Routes.TASKS) },
+        onSeeAll = { navController.navigate(Routes.TASKS) },
+        onTile = { tile ->
+            when (tile.id) {
+                "xsmm" -> navController.navigate(Routes.XSMM_LOGIN)
+                "golike" -> navController.navigate(Routes.GOLIKE_ACCOUNT)
+                "ttc" -> navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK)
+                "tiktok" -> navController.navigate(Routes.LINK_ACCOUNT_TIKTOK)
+                "nvc" -> navController.navigate(Routes.simpleTaskPlatform("Nhiemvucheo"))
+            }
+        },
+        selectedTab = HomeTab.Home,
+        onTab = { tab ->
+            when (tab) {
+                HomeTab.Home -> { /* Đang ở Home */ }
+                HomeTab.Tasks -> navController.navigate(Routes.TASKS)
+                HomeTab.Utilities -> navController.navigate(Routes.UTILITIES)
+                HomeTab.Profile -> navController.navigate(Routes.ACCOUNT)
+            }
+        }
+    )
+}
+
+@Composable
+private fun Header(state: HomeUiState, greeting: String, onSearch: () -> Unit, onNotifications: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(44.dp).background(Alx.BlueSoft, CircleShape), contentAlignment = Alignment.Center) {
+                BasicText(initials(state.username), style = type(15f, FontWeight.ExtraBold, Alx.Blue))
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                BasicText(greeting, style = type(12.5f, FontWeight.Medium, Alx.Muted))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    BasicText(state.username, style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f), maxLines = 1)
+                    BasicText(
+                        "PRO",
+                        Modifier.background(Alx.Blue, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+                        style = type(10f, FontWeight.ExtraBold, Alx.White, spacing = 0.08f, lineHeight = 1.2f),
+                    )
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RoundButton("Tìm kiếm", onSearch) { SvgIcon(SearchIcon, 20.dp, Alx.Ink, 1.8f) }
+            RoundButton("Thông báo", onNotifications) {
+                SvgIcon(BellIcon, 20.dp, Alx.Ink, 1.8f)
+                if (state.hasUnread) {
+                    Box(
+                        Modifier.align(Alignment.TopEnd).offset(x = (-11).dp, y = 10.dp).size(8.dp)
+                            .background(Red, CircleShape).border(2.dp, Alx.White, CircleShape),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** "benbenteo10" → "BE", "username" → "US". */
+private fun initials(name: String) = name.trim().take(2).uppercase().ifEmpty { "?" }
+
+@Composable
+private fun RoundButton(label: String, onClick: () -> Unit, content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
+    Box(
+        Modifier
+            .size(44.dp)
+            .background(Alx.White, CircleShape)
+            .border(1.dp, Alx.Line, CircleShape)
+            .clip(CircleShape)
+            .semantics { contentDescription = label }
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+        content = content,
+    )
+}
+
+@Composable
+private fun StatsCard(state: HomeUiState, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(22.dp)
+    Column(modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape).clip(shape)) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(vertical = 16.dp)) {
+            StatCell("Tổng xu", Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    CoinIcon(18.dp)
+                    BasicText(state.coins, style = valueStyle())
+                }
+            }
+            Box(Modifier.width(1.dp).fillMaxHeight().background(Alx.Divider))
+            StatCell("Dịch vụ", Modifier.weight(1f)) {
+                BasicText(
+                    buildAnnotatedString {
+                        append("${state.servicesActive}")
+                        withStyle(SpanStyle(color = Alx.Placeholder, fontWeight = FontWeight.Bold)) { append("/${state.servicesTotal}") }
+                    },
+                    style = valueStyle(),
+                )
+            }
+            Box(Modifier.width(1.dp).fillMaxHeight().background(Alx.Divider))
+            StatCell("Còn lại", Modifier.weight(1f)) {
+                BasicText(
+                    buildAnnotatedString {
+                        append("${state.daysLeft}")
+                        withStyle(SpanStyle(color = Alx.Muted, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)) { append(" ngày") }
+                    },
+                    style = valueStyle(),
+                )
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Alx.Divider))
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                BasicText("Hiệu suất hôm nay", style = type(12f, FontWeight.SemiBold, Alx.Ink2))
+                BasicText("${(state.performance * 100).toInt()}%", style = type(13f, FontWeight.ExtraBold, Alx.Blue))
+            }
+            Box(Modifier.fillMaxWidth().height(6.dp).background(Alx.BlueSoft, RoundedCornerShape(3.dp))) {
+                Box(Modifier.fillMaxWidth(state.performance.coerceIn(0f, 1f)).height(6.dp).background(Alx.Blue, RoundedCornerShape(3.dp)))
+            }
+            BasicText(state.expiryText, style = type(11.5f, FontWeight.Medium, Alx.Muted))
+        }
+    }
+}
+
+private fun valueStyle() = type(20f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.02f)
+
+@Composable
+private fun StatCell(label: String, modifier: Modifier, value: @Composable () -> Unit) {
+    Column(modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        BasicText(label, style = type(11.5f, FontWeight.Medium, Alx.Muted))
+        value()
+    }
+}
+
+/** Xu: lục giác đặc màu mực + hình thoi trắng ở giữa. */
+@Composable
+private fun CoinIcon(size: Dp) {
+    Canvas(Modifier.size(size)) {
+        scale(this.size.width / 24f, Offset.Zero) {
+            val hex = Path().apply {
+                moveTo(12f, 1.5f); lineTo(21f, 6.8f); lineTo(21f, 17.2f); lineTo(12f, 22.5f); lineTo(3f, 17.2f); lineTo(3f, 6.8f); close()
+            }
+            drawPath(hex, Alx.Ink)
+            val gem = Path().apply { moveTo(12f, 7.5f); lineTo(15.5f, 12f); lineTo(12f, 16.5f); lineTo(8.5f, 12f); close() }
+            drawPath(gem, Color.White)
+        }
+    }
+}
+
+@Composable
+private fun ExploreRow(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(18.dp)
+    PressBox(onClick, modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape).clip(shape)) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(40.dp).background(Alx.BlueSoft, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+                SvgIcon(CompassIcon, 20.dp, Alx.Blue, 1.8f)
+            }
+            Column(Modifier.weight(1f)) {
+                BasicText("Khám phá nhiệm vụ", style = type(14.5f, FontWeight.Bold, Alx.Ink))
+                BasicText("Chọn nền tảng để bắt đầu kiếm xu", Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Normal, Alx.Muted))
+            }
+            SvgIcon(ChevronIcon, 18.dp, Alx.Muted, 2f)
+        }
+    }
+}
+
+private val TileShape = RoundedCornerShape(22.dp)
+
+@Composable
+private fun QuickTile(tile: HomeTile, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    PressBox(
+        onClick,
+        modifier.height(132.dp).tileShadow().background(Alx.White, TileShape).border(1.dp, Alx.Line, TileShape).clip(TileShape),
+    ) {
+        Box(Modifier.align(Alignment.TopEnd).offset(x = 30.dp, y = (-30).dp).size(96.dp).background(tile.blobColor, CircleShape))
+        Column(Modifier.fillMaxSize().padding(14.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Badge(tile)
+                BasicText(tile.amount, Modifier.padding(top = 2.dp), style = type(19f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.02f), maxLines = 1)
+            }
+            Spacer(Modifier.weight(1f))
+            BasicText(tile.name, style = type(15f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f), maxLines = 1)
+            BasicText(tile.subtitle, Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Medium, Alx.Muted), maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun WideTile(tile: HomeTile, status: String, onClick: () -> Unit) {
+    PressBox(
+        onClick,
+        Modifier.fillMaxWidth().tileShadow().background(Alx.White, TileShape).border(1.dp, Alx.Line, TileShape).clip(TileShape),
+    ) {
+        Box(Modifier.align(Alignment.TopEnd).offset(x = 34.dp, y = (-40).dp).size(110.dp).background(tile.blobColor, CircleShape))
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Badge(tile)
+            Column(Modifier.weight(1f)) {
+                BasicText(tile.name, style = type(15f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f), maxLines = 1)
+                BasicText(tile.subtitle, Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Medium, Alx.Muted), maxLines = 1)
+            }
+            BasicText(
+                status,
+                Modifier.background(Alx.White, CircleShape).border(1.dp, Color(0xFFBFE3EC), CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),
+                style = type(12f, FontWeight.ExtraBold, tile.badgeColor),
+            )
+        }
+    }
+}
+
+@Composable
+private fun Badge(tile: HomeTile) {
+    Box(Modifier.size(42.dp).background(tile.badgeColor, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
+        BasicText(tile.badge, style = type(tile.badgeSizeSp, FontWeight.ExtraBold, Alx.White))
+    }
+}
+
+/** Bóng nhẹ dưới ô: tương đương `0 12px 22px -18px rgba(15,23,42,.3)` (Compose không có spread âm nên chỉ gần đúng). */
+private fun Modifier.tileShadow() = shadow(
+    elevation = 6.dp, shape = TileShape, clip = false,
+    ambientColor = Color(0x140F172A), spotColor = Color(0x260F172A),
+)
+
+/** Vùng bấm nhún 0.985 trong 120ms, cùng kiểu mọi màn khác. */
+@Composable
+private fun PressBox(onClick: () -> Unit, modifier: Modifier, content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val s by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "press")
+    Box(
+        modifier
+            .graphicsLayer { scaleX = s; scaleY = s }
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick),
+        content = content,
+    )
+}
+
+/* ───────────────────────────── Thanh điều hướng ───────────────────────────── */
+
+/**
+ * Viên thuốc nổi cao 66dp, bo 33dp. Tab đang chọn: nền mực #0F172A, icon + chữ trắng, chiếm 2,5 phần;
+ * tab khác chỉ có icon xám, mỗi tab 1 phần.
+ */
+@Composable
+fun HomeNavBar(selected: HomeTab, onSelect: (HomeTab) -> Unit, modifier: Modifier = Modifier) = NavBar(selected, onSelect, modifier)
+
+@Composable
+private fun NavBar(selected: HomeTab, onSelect: (HomeTab) -> Unit, modifier: Modifier) {
+    val shape = RoundedCornerShape(33.dp)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(66.dp)
+            .shadow(14.dp, shape, ambientColor = Color(0x290F172A), spotColor = Color(0x470F172A))
+            .background(Alx.White, shape)
+            .border(1.dp, Alx.Line, shape)
+            .padding(7.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HomeTab.values().forEach { tab ->
+            val on = tab == selected
+            val item = Modifier
+                .weight(if (on) 2.5f else 1f)
+                .height(52.dp)
+                .let { if (on) it.background(Alx.Ink, RoundedCornerShape(26.dp)) else it }
+                .clip(RoundedCornerShape(26.dp))
+                .semantics { contentDescription = tab.label }
+                .clickable(role = Role.Tab, onClick = { onSelect(tab) })
+            Row(item, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+                SvgIcon(tab.icon(), if (on) 21.dp else 22.dp, if (on) Alx.White else Alx.Muted, 1.9f)
+                if (on) BasicText(tab.label, style = type(14.5f, FontWeight.Bold, Alx.White), maxLines = 1)
+            }
+        }
+    }
+}
+
+/* ───────────────────────────── Preview ───────────────────────────── */
+
+@Preview(widthDp = 390, heightDp = 844, showBackground = true)
+@Composable
+private fun HomeScreenPreview() {
+    HomeScreen(HomeUiState(username = "username"), greeting = "Chào buổi trưa,")
+}
