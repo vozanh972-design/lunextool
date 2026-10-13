@@ -58,7 +58,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.cayxu.app.data.local.FacebookAccountsStore
-import com.cayxu.app.data.local.GolikeAccountsStore
+import com.cayxu.app.ui.screens.golike.GolikeAccountsStore
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.TtcAccountsStore
@@ -259,7 +259,7 @@ fun HomeScreen(
     val ttcAccounts = remember { TtcAccountsStore.getAccounts(context) }
     val ttcCoins = remember(ttcAccounts) { ttcAccounts.sumOf { it.coins } }
     val tiktokAccounts = remember { TikTokAccountsStore.getAccounts(context) }
-    val totalCoins = xsmmPoints + golikeBalance + ttcCoins
+    val totalCoins: Long = xsmmPoints + golikeBalance + ttcCoins
 
     val tiles = remember(xsmmPoints, golikeBalance, ttcCoins, tiktokAccounts.size) {
         listOf(
