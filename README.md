@@ -196,20 +196,34 @@ MainRoute(
                 planBadge = "PRO", planName = "Thành viên PRO",
                 daysLeft = license.daysLeft, expiryDate = license.expiryText,
                 membershipProgress = license.daysLeft / license.totalDays.toFloat(),
+                language = LanguageState.language,
                 recent = recent,
             ),
-            onAction = { action -> /* ProfileAction.EditProfile / Settings / Support / Logout */ },
+            onAction = { action ->
+                when (action) {
+                    ProfileAction.Settings -> { /* mở màn Cài đặt */ }
+                    ProfileAction.Terms -> { /* mở màn Điều khoản & chính sách */ }
+                    ProfileAction.Logout -> { /* xóa key (SecurePrefs.clearKey()) rồi về màn đăng nhập */ }
+                }
+            },
+            onLanguageChange = { lang -> LanguageState.setLanguage(context, lang) },
             onSeeAllHistory = { navController.navigate(Routes.COIN_HISTORY) },
         )
     },
 )
 ```
 - KHÔNG vẽ dock, chỉ chừa `DockClearance` ở đáy. Padding ngang 20dp, đỉnh 28dp.
-- `ProfileUiState` không có giá trị mặc định: tên, gói, số ngày, ngày hết hạn đều lấy từ dữ liệu thật (`SecurePrefs`).
+- `ProfileUiState` không có giá trị mặc định: tên, gói, số ngày, ngày hết hạn, ngôn ngữ đều lấy từ dữ liệu thật (`SecurePrefs`, `LanguageState`).
 - Danh tính: avatar tròn 68dp nền xanh nhạt, chữ cái đầu của `username`; tên 22sp ExtraBold kèm nhãn gói; dưới là `handle`. `planBadge = ""` thì ẩn nhãn.
 - Thẻ thành viên: icon khiên 40dp, tên gói, "Còn N ngày · Hết hạn …", thanh tiến độ cao 5dp (`membershipProgress` 0..1).
-- Mục "Lịch sử xu": tiêu đề 17sp, bên phải "Xem tất cả ›" xanh (vùng chạm 44dp) gọi `onSeeAllHistory` (luôn hiển thị để người dùng có thể bấm xem bất cứ lúc nào). Dưới là 2 dòng mới nhất (`recent`), mỗi dòng giống hệt dòng ở màn Lịch sử (dùng chung `CoinEntryRow`), hiện dạng "Hôm nay, 10:24" / "Hôm qua, 18:12" / "11/10, 20:16". Khi `recent` rỗng thì hiện thẻ "Chưa có lịch sử nhận xu".
-- "Tài khoản & hỗ trợ": 4 dòng cao 54dp. "Đăng xuất" chữ + icon đỏ, không mũi tên; xóa key (`SecurePrefs.clearKey()`) rồi đưa về màn Login.
+- Mục "Lịch sử xu": tiêu đề 17sp, bên phải "Xem tất cả ›" xanh (vùng chạm 44dp) gọi `onSeeAllHistory` (luôn hiển thị để người dùng có thể bấm xem bất cứ lúc nào). Dưới là 2 dòng mới nhất (`recent`), mỗi dòng dùng chung `CoinEntryRow` với màn Lịch sử. Khi `recent` rỗng thì hiện thẻ "Chưa có lịch sử nhận xu".
+- "Tài khoản & hỗ trợ" gồm 5 dòng cao 54dp:
+  1. **Cài đặt** → `onAction(ProfileAction.Settings)`
+  2. **Ngôn ngữ** (bên phải ghi ngôn ngữ đang dùng) → mở popup chọn ngôn ngữ (Tiếng Việt / English), cập nhật tức thì qua `LanguageState`.
+  3. **Liên hệ hỗ trợ** → mở popup kênh liên hệ: Telegram (`https://t.me/thanhgmn`) và Zalo (`https://zalo.me/0931006827`).
+  4. **Điều khoản & chính sách** → `onAction(ProfileAction.Terms)`
+  5. **Đăng xuất** (chữ + icon đỏ, không mũi tên) → `onAction(ProfileAction.Logout)`: xóa key (`SecurePrefs.clearKey()`) rồi đưa về màn Login.
+- Popup là tấm trượt từ đáy (BottomSheet), vẽ trong `Dialog` toàn màn hình nên phủ cả thanh dock. Chạm nền mờ hoặc bấm Back để đóng.
 - Chạm nhún 0.985 trong 120ms; không animation riêng.
 
 ## Lịch sử xu (HistoryScreen.kt) & Sổ xu (CoinLedger)
