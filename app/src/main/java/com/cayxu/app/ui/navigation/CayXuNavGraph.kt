@@ -56,6 +56,7 @@ object Routes {
     const val FRIENDS = "friends"
     const val ACCOUNT = "account"
     const val SETTINGS = "settings"
+    const val COIN_HISTORY = "coin_history"
     const val UTILITIES = "utilities"
     const val NURTURE_SETUP = "nurture_setup"
     const val REG_AND_TRANSFER_PAGE = "reg_and_transfer_page"
@@ -291,6 +292,9 @@ fun CayXuNavGraph(
             composable(Routes.FRIENDS) { FriendsScreen(navController) }
             composable(Routes.ACCOUNT) { com.cayxu.app.ui.profile.ProfileScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
+            composable(Routes.COIN_HISTORY) {
+                com.cayxu.app.ui.history.HistoryScreen(navController)
+            }
             composable(Routes.UTILITIES) {
                 com.cayxu.app.ui.utilities.UtilitiesScreen(navController)
             }

@@ -11,6 +11,8 @@
    - `TasksScreen.kt` → `.../ui/tasks/` (Nhiệm vụ)
    - `UtilitiesScreen.kt` → `.../ui/utilities/` (Tiện ích)
    - `ProfileScreen.kt` → `.../ui/profile/` (Hồ sơ)
+   - `HistoryScreen.kt` & `HistoryViewModel.kt` → `.../ui/history/` (Lịch sử xu)
+   - `CoinLedger.kt` & `RoomCoinLedger.kt` → `.../data/` (Sổ xu Room & interface)
    - `AppFlow.kt` → `.../app/` (luồng điều hướng toàn app, xem mục "Luồng mở app")
    - `ActivationSuccessScreen.kt` → `.../ui/success/` (chào mừng + chuyển cảnh vào Trang chủ)
    Đổi `package` cho đúng app. Mọi màn đều lấy font từ `Manrope` trong `AlxDesign.kt`, màn mới chỉ cần dùng `type(...)`.
@@ -183,31 +185,58 @@ MainRoute(
 
 ## Hồ sơ (ProfileScreen.kt)
 ```kotlin
+val recent by ledger.observeRecent(2).collectAsStateWithLifecycle(emptyList())   // dữ liệu THẬT từ sổ xu
+
 MainRoute(
     home = { … }, tasks = { … }, utilities = { … },
     profile = {
         ProfileScreen(
             state = ProfileUiState(
-                username = "username", handle = "@username",
+                username = session.username, handle = "@" + session.username,
                 planBadge = "PRO", planName = "Thành viên PRO",
-                daysLeft = 25, expiryDate = "05/11/2026",
-                membershipProgress = 0.58f,               // 0..1, tính từ daysLeft / tổng ngày của gói
-                activities = listOf(
-                    ActivityItem(ActivityKind.Follow, "Theo dõi @linh.daily", "Hôm nay, 10:24", "+40", positive = true),
-                    ActivityItem(ActivityKind.Redeem, "Đổi thẻ điện thoại", "Hôm qua, 18:12", "−1.000", positive = false),
-                ),
+                daysLeft = license.daysLeft, expiryDate = license.expiryText,
+                membershipProgress = license.daysLeft / license.totalDays.toFloat(),
+                recent = recent,
             ),
             onAction = { action -> /* ProfileAction.EditProfile / Settings / Support / Logout */ },
+            onSeeAllHistory = { navController.navigate(Routes.COIN_HISTORY) },
         )
     },
 )
 ```
 - KHÔNG vẽ dock, chỉ chừa `DockClearance` ở đáy. Padding ngang 20dp, đỉnh 28dp.
-- Danh tính: avatar tròn 68dp nền xanh nhạt, chữ cái đầu của `username` (tự lấy và viết hoa); tên 22sp ExtraBold kèm nhãn gói (nền xanh, chữ trắng 10sp, bo 6dp); bên dưới là `handle` 13,5sp xám. `planBadge = ""` thì ẩn nhãn.
-- Thẻ thành viên: bo 20dp, ô icon khiên 40dp, tên gói, dòng "Còn N ngày · Hết hạn …", thanh tiến độ cao 5dp (nền xanh nhạt, phần đầy xanh chính).
-- "Hoạt động gần đây": mỗi dòng ô icon 40dp, tiêu đề, thời gian, số tiền xu ở bên phải. `positive = true` màu xanh, `false` màu đỏ. `ActivityKind.Follow` icon người +, `Redeem` icon hộp quà nền đỏ nhạt. Danh sách rỗng thì cả mục ẩn.
-- "Tài khoản & hỗ trợ": 4 dòng cao 54dp. Ba dòng đầu icon xanh và mũi tên; "Đăng xuất" chữ + icon đỏ, đậm, không mũi tên. Đăng xuất gọi `onAction(ProfileAction.Logout)`: app xóa key (`SecurePrefs`) rồi đưa về màn nhập key.
-- Path icon dùng cờ cung cách nhau (xem mục Tiện ích). Chạm dòng nhún 0.985 trong 120ms; không có animation riêng.
+- `ProfileUiState` không có giá trị mặc định: tên, gói, số ngày, ngày hết hạn đều lấy từ dữ liệu thật (`SecurePrefs`).
+- Danh tính: avatar tròn 68dp nền xanh nhạt, chữ cái đầu của `username`; tên 22sp ExtraBold kèm nhãn gói; dưới là `handle`. `planBadge = ""` thì ẩn nhãn.
+- Thẻ thành viên: icon khiên 40dp, tên gói, "Còn N ngày · Hết hạn …", thanh tiến độ cao 5dp (`membershipProgress` 0..1).
+- Mục "Lịch sử xu": tiêu đề 17sp, bên phải "Xem tất cả ›" xanh (vùng chạm 44dp) gọi `onSeeAllHistory`. Dưới là 2 dòng mới nhất (`recent`), mỗi dòng giống hệt dòng ở màn Lịch sử (dùng chung `CoinEntryRow`), hiện dạng "Hôm nay, 10:24" / "Hôm qua, 18:12" / "11/10, 20:16". `recent` rỗng thì ẩn cả mục.
+- "Tài khoản & hỗ trợ": 4 dòng cao 54dp. "Đăng xuất" chữ + icon đỏ, không mũi tên; xóa key (`SecurePrefs.clearKey()`) rồi đưa về màn Login.
+- Chạm nhún 0.985 trong 120ms; không animation riêng.
+
+## Lịch sử xu (HistoryScreen.kt) & Sổ xu (CoinLedger)
+Nguồn dữ liệu là **sổ xu** (`CoinLedger`), đọc dữ liệu thật từ cơ sở dữ liệu Room cục bộ (`RoomCoinLedger.kt`).
+
+### 1. Ghi nhận xu khi hoàn thành nhiệm vụ
+Mỗi lần một nền tảng (XSMM, GoLike, Tuongtaccheo, TikTok TTC, Nhiemvucheo) trả kết quả hoàn thành hoặc người dùng đổi thưởng:
+```kotlin
+val ledger = CoinLedgerProvider.get(context)
+ledger.record(CoinEntry(
+    kind = CoinEntryKind.Follow,                 // Follow, Like, Comment, Share, Watch, Redeem, Other
+    title = "Theo dõi @linh.daily",
+    coins = +40,                                 // âm khi đổi thưởng / trừ xu: -1000
+    atMillis = System.currentTimeMillis(),
+    source = "golike",                           // id nền tảng
+    externalId = task.id,                        // id nhiệm vụ để tránh ghi trùng lặp
+))
+```
+- Có `externalId` thì ghi lại cùng nhiệm vụ sẽ tự động bỏ qua (chỉ mục duy nhất trên `source + externalId`).
+
+### 2. Quan sát luồng dữ liệu (Flow)
+- Hồ sơ: đọc `ledger.observeRecent(2)`
+- Màn Lịch sử: đọc `ledger.observeDay(ngay)` theo ngày đã chọn.
+- Cả hai đều là `Flow`: khi có bản ghi mới, màn hình tự động cập nhật ngay lập tức.
+
+### 3. Điều hướng màn Lịch sử xu
+Màn Lịch sử xu nằm ngoài `MainRoute` (không có dock), được đăng ký qua `Routes.COIN_HISTORY` trong `CayXuNavGraph.kt`. Có nút Back trên góc trái và hỗ trợ BackHandler của Android để quay lại Hồ sơ.
 
 ## Animation thanh dock (MainShell.kt)
 Một viên thuốc nền mực #0F172A TRƯỢT giữa các tab như dock của Apple, không nhảy:

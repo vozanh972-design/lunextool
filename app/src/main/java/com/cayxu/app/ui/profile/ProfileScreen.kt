@@ -43,29 +43,24 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.cayxu.app.data.CoinEntry
+import com.cayxu.app.data.CoinEntryKind
+import com.cayxu.app.data.CoinLedgerProvider
 import com.cayxu.app.data.local.SecurePrefs
+import com.cayxu.app.data.relativeTime
 import com.cayxu.app.ui.design.Alx
 import com.cayxu.app.ui.design.SvgIcon
 import com.cayxu.app.ui.design.type
+import com.cayxu.app.ui.history.CoinEntryCard
+import com.cayxu.app.ui.history.CoinEntryRow
 import com.cayxu.app.ui.main.DockClearance
 import com.cayxu.app.ui.main.MainShell
 import com.cayxu.app.ui.main.MainTab
 import com.cayxu.app.ui.navigation.Routes
 
 /* ───────────────────────────── Dữ liệu ───────────────────────────── */
-
-/** Loại hoạt động quyết định icon và màu ô icon. */
-enum class ActivityKind { Follow, Redeem }
-
-/** Một dòng hoạt động. [amount] đã định dạng sẵn ("+40", "−1.000"); [positive] quyết định xanh hay đỏ. */
-data class ActivityItem(
-    val kind: ActivityKind,
-    val title: String,
-    val time: String,
-    val amount: String,
-    val positive: Boolean,
-)
 
 /** Các dòng trong "Tài khoản & hỗ trợ". Phân biệt bằng giá trị này ở [onAction]. */
 enum class ProfileAction(val label: String) {
@@ -80,14 +75,15 @@ enum class ProfileAction(val label: String) {
  * (ví dụ daysLeft / tổng số ngày của gói) rồi truyền vào.
  */
 data class ProfileUiState(
-    val username: String = "username",
-    val handle: String = "@username",
-    val planBadge: String = "PRO",
-    val planName: String = "Thành viên PRO",
-    val daysLeft: Int = 25,
-    val expiryDate: String = "05/11/2026",
-    val membershipProgress: Float = 0.58f,
-    val activities: List<ActivityItem> = emptyList(),
+    val username: String,
+    val handle: String,
+    val planBadge: String,          // "" thì ẩn nhãn
+    val planName: String,
+    val daysLeft: Int,
+    val expiryDate: String,         // đã định dạng, vd "05/11/2026"
+    val membershipProgress: Float,
+    /** Vài dòng mới nhất của sổ xu (thường 2), lấy từ CoinLedger.observeRecent(2). Rỗng thì ẩn cả mục. */
+    val recent: List<CoinEntry> = emptyList(),
 )
 
 /* Icon: lưới 24×24, cờ cung luôn viết cách nhau vì PathParser không đọc dạng dính. */
@@ -95,12 +91,6 @@ private fun circle(cx: Float, cy: Float, r: Float) =
     "M${cx - r} ${cy}a$r $r 0 1 0 ${2 * r} 0a$r $r 0 1 0 ${-2 * r} 0"
 
 private val Shield = listOf("M12 22s8-4.5 8-11V5l-8-3-8 3v6c0 6.5 8 11 8 11z", "M8.5 12l2.5 2.5 4.5-5")
-private val UserPlus = listOf("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", circle(9f, 7f, 4f), "M19 8v6M22 11h-6")
-private val Gift = listOf(
-    "M5 8h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2z",
-    "M12 8v13M3 12h18",
-    "M12 8c-2 0-4-1-4-3a2 2 0 0 1 4-.5A2 2 0 0 1 16 5c0 2-2 3-4 3z",
-)
 private val User = listOf(circle(12f, 8f, 4f), "M4 21c1.5-4.5 5-6 8-6s6.5 1.5 8 6")
 private val Sliders = listOf("M4 7h10M18 7h2M4 17h2M10 17h10", circle(16f, 7f, 2.2f), circle(8f, 17f, 2.2f))
 private val Help = listOf(circle(12f, 12f, 9f), "M9.5 9.5a2.5 2.5 0 1 1 4 2c-.9.6-1.5 1-1.5 2M12 17h.01")
@@ -108,7 +98,6 @@ private val Logout = listOf("M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5
 private val Chevron = listOf("M9 6l6 6-6 6")
 
 private val RowLine = Color(0xFFEEF1F6)
-private val DangerSoft = Color(0xFFFDECEC)
 
 /* ───────────────────────────── Màn hình ───────────────────────────── */
 
@@ -121,6 +110,7 @@ fun ProfileScreen(
     state: ProfileUiState,
     modifier: Modifier = Modifier,
     onAction: (ProfileAction) -> Unit = {},
+    onSeeAllHistory: () -> Unit = {},
 ) {
     Column(
         modifier
@@ -133,10 +123,14 @@ fun ProfileScreen(
         Identity(state)
         Membership(state, Modifier.padding(top = 20.dp))
 
-        if (state.activities.isNotEmpty()) {
-            SectionTitle("Hoạt động gần đây")
-            Card(Modifier.padding(top = 12.dp)) {
-                state.activities.forEachIndexed { i, a -> ActivityRow(a, divider = i > 0) }
+        if (state.recent.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText("Lịch sử xu", Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
+                SeeAll(onSeeAllHistory)
+            }
+            CoinEntryCard(Modifier.padding(top = 12.dp)) {
+                val today = remember { java.time.LocalDate.now() }
+                state.recent.forEachIndexed { i, e -> CoinEntryRow(e, relativeTime(e.atMillis, today), divider = i > 0) }
             }
         }
 
@@ -159,7 +153,7 @@ fun ProfileScreen(
 }
 
 /**
- * Overload kết nối NavController và dữ liệu thật từ SecurePrefs.
+ * Overload kết nối NavController, CoinLedger thực tế và thông tin bản quyền từ SecurePrefs.
  */
 @Composable
 fun ProfileScreen(
@@ -168,6 +162,8 @@ fun ProfileScreen(
 ) {
     val context = LocalContext.current
     val securePrefs = remember { SecurePrefs(context) }
+    val ledger = remember { CoinLedgerProvider.get(context) }
+    val recentCoins by ledger.observeRecent(2).collectAsStateWithLifecycle(initialValue = emptyList())
     var showLogoutDialog by remember { mutableStateOf(false) }
 
     val buyerUsername = remember { securePrefs.getBuyerUsername() }
@@ -191,7 +187,7 @@ fun ProfileScreen(
         (daysLeft.toFloat() / 30f).coerceIn(0f, 1f)
     }
 
-    val state = remember(username, handle, daysLeft, expiryDate, progress) {
+    val state = remember(username, handle, daysLeft, expiryDate, progress, recentCoins) {
         ProfileUiState(
             username = username,
             handle = handle,
@@ -200,7 +196,7 @@ fun ProfileScreen(
             daysLeft = daysLeft,
             expiryDate = expiryDate,
             membershipProgress = progress,
-            activities = emptyList(),
+            recent = recentCoins,
         )
     }
 
@@ -229,6 +225,9 @@ fun ProfileScreen(
                     showLogoutDialog = true
                 }
             }
+        },
+        onSeeAllHistory = {
+            navController.navigate(Routes.COIN_HISTORY)
         }
     )
 
@@ -239,7 +238,7 @@ fun ProfileScreen(
                 BasicText("Đăng xuất", style = type(18f, FontWeight.Bold, Alx.Ink))
             },
             text = {
-                BasicText("Bạn có chắc chắn muốn đăng xuất khỏi tài khoản?", style = type(14f, FontWeight.Medium, Alx.Ink2))
+                BasicText("Bạn có chắc chắn muốn đăng xuất khỏi tài khoản?", style = type(14f, FontWeight.Medium, Alx.Ink))
             },
             confirmButton = {
                 Box(
@@ -346,25 +345,21 @@ private fun IconTile(paths: List<String>, color: Color, tint: Color, tile: Int, 
     }
 }
 
+/** "Xem tất cả ›" xanh, cạnh tiêu đề Lịch sử xu. Vùng chạm cao 44dp. */
 @Composable
-private fun ActivityRow(a: ActivityItem, divider: Boolean) {
-    Column {
-        if (divider) Box(Modifier.fillMaxWidth().height(1.dp).background(RowLine))
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            when (a.kind) {
-                ActivityKind.Follow -> IconTile(UserPlus, Alx.Blue, Alx.BlueSoft, 40, 12, 19)
-                ActivityKind.Redeem -> IconTile(Gift, Alx.Danger, DangerSoft, 40, 12, 19)
-            }
-            Column(Modifier.weight(1f)) {
-                BasicText(a.title, style = type(14.5f, FontWeight.Bold, Alx.Ink), maxLines = 1)
-                BasicText(a.time, style = type(12f, FontWeight.Medium, Alx.Muted), maxLines = 1)
-            }
-            BasicText(a.amount, style = type(14.5f, FontWeight.ExtraBold, if (a.positive) Alx.Blue else Alx.Danger))
-        }
+private fun SeeAll(onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "press")
+    Row(
+        Modifier.height(44.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
+            .padding(start = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        BasicText("Xem tất cả", style = type(13.5f, FontWeight.Bold, Alx.Blue))
+        SvgIcon(Chevron, 16.dp, Alx.Blue, 2.2f)
     }
 }
 
@@ -398,12 +393,15 @@ private fun SettingRow(label: String, icon: List<String>, danger: Boolean, divid
 @Preview(widthDp = 390, heightDp = 844, showBackground = true)
 @Composable
 private fun ProfileScreenPreview() {
+    val now = System.currentTimeMillis()
     MainShell(selected = MainTab.Profile, onSelect = {}) {
         ProfileScreen(
             ProfileUiState(
-                activities = listOf(
-                    ActivityItem(ActivityKind.Follow, "Theo dõi @linh.daily", "Hôm nay, 10:24", "+40", true),
-                    ActivityItem(ActivityKind.Redeem, "Đổi thẻ điện thoại", "Hôm qua, 18:12", "−1.000", false),
+                username = "username", handle = "@username", planBadge = "PRO", planName = "Thành viên PRO",
+                daysLeft = 25, expiryDate = "05/11/2026", membershipProgress = 0.58f,
+                recent = listOf(
+                    CoinEntry(1, CoinEntryKind.Follow, "Theo dõi @linh.daily", 40, now, "preview"),
+                    CoinEntry(2, CoinEntryKind.Redeem, "Đổi thẻ điện thoại", -1000, now - 86_400_000, "preview"),
                 ),
             ),
         )
