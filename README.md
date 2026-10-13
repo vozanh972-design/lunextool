@@ -9,6 +9,7 @@
    - `MainShell.kt` → `.../ui/main/` (khung 4 tab + MỘT thanh dock dùng chung)
    - `HomeScreen.kt` → `.../ui/home/` (Trang chủ)
    - `TasksScreen.kt` → `.../ui/tasks/` (Nhiệm vụ)
+   - `UtilitiesScreen.kt` → `.../ui/utilities/` (Tiện ích)
    - `AppFlow.kt` → `.../app/` (luồng điều hướng toàn app, xem mục "Luồng mở app")
    - `ActivationSuccessScreen.kt` → `.../ui/success/` (chào mừng + chuyển cảnh vào Trang chủ)
    Đổi `package` cho đúng app. Mọi màn đều lấy font từ `Manrope` trong `AlxDesign.kt`, màn mới chỉ cần dùng `type(...)`.
@@ -126,7 +127,7 @@ chừa `DockClearance` (104dp) ở đáy và KHÔNG tự vẽ dock. Nhờ vậy 
 MainRoute(
     home      = { HomeScreen(homeState, onTile = { … }, onExplore = { /* có thể đổi sang tab Nhiệm vụ */ }) },
     tasks     = { TasksScreen(tasksState, onService = { svc -> /* mở màn của nền tảng */ }) },
-    utilities = { /* màn Tiện ích */ },
+    utilities = { UtilitiesScreen(utilitiesState, onConfigure = { … }, onTool = { … }) },
     profile   = { /* màn Hồ sơ */ },
 )
 ```
@@ -156,6 +157,28 @@ TasksScreen(
 - Danh sách mạng trong `DefaultServices` khớp bản thiết kế hiện tại (XSMM: TikTok, Facebook, Instagram; GoLike: Facebook, Instagram, TikTok; Tuongtaccheo: Facebook; TikTok TTC: TikTok; Nhiemvucheo: Facebook - Chưa hỗ trợ). Sửa theo thực tế.
 - Số "95%" trên bản thiết kế chỉ là số minh họa. Trong app, hiệu suất tính thật từ `today` (xem mục "Hiệu suất hôm nay").
 - Không có animation riêng; chạm hàng nhún 0.985 trong 120ms (chỉ áp dụng cho nền tảng đã hỗ trợ).
+
+## Tiện ích (UtilitiesScreen.kt)
+```kotlin
+MainRoute(
+    home = { … }, tasks = { … },
+    utilities = {
+        UtilitiesScreen(
+            state = UtilitiesUiState(),                    // mặc định đúng thiết kế
+            onConfigure = { /* nút "Cấu hình ngay": mở màn cấu hình nuôi tài khoản */ },
+            onTool = { tool -> /* tool.id: "page_reg", "fb_care", "scenario" */ },
+        )
+    },
+    profile = { … },
+)
+```
+- Tiêu đề "Tiện ích mở rộng" 30sp, dòng phụ 14sp. Padding ngang 20dp. KHÔNG vẽ dock, chỉ chừa `DockClearance` ở đáy.
+- Thẻ nổi bật: bo 24dp, padding 18dp, đổ bóng nhẹ. Nhãn "NỔI BẬT" (11sp, nền xanh nhạt), dòng "Đa luồng", tiêu đề 21sp, mô tả 13,5sp. Sửa chữ qua `FeaturedTool(...)`.
+- Dải quy trình 3 bước (Lướt feed, Cảm xúc, Xem story): nền #F5F8FF, bo 16dp, vòng tròn 36dp. Hai bước đầu vòng đặc xanh, đường nối liền; bước cuối vòng trắng viền #9DB2EE, đường nối trước nó nét đứt. Ba bước cố định theo thiết kế, không nằm trong state.
+- Nút "Cấu hình ngay": cao 50dp, bo 16dp, xanh chính, gọi `onConfigure`.
+- "Công cụ khác": một thẻ trắng bo 20dp, mỗi dòng gồm ô icon 44dp (bo 13dp), nhãn nhóm viết hoa 10,5sp, tên 15sp, mô tả 12sp, mũi tên. Dòng cách nhau bằng đường kẻ 1dp. Thêm công cụ: thêm một `UtilityTool(...)` vào `tools` (id, tag, title, description, màu chữ/icon, màu nền ô, danh sách path icon).
+- Path icon viết trên lưới 24×24 và PHẢI để cờ cung cách nhau (ví dụ `a4 4 0 0 0-4-4`, không viết `0 00-4-4`), nếu không `PathParser` đọc sai. Hàm `circle(cx, cy, r)` có sẵn để tạo hình tròn.
+- Không có animation riêng; chạm nhún 0.985 trong 120ms. Bóng thẻ là xấp xỉ, hơi khác CSS một chút.
 
 ## Animation thanh dock (MainShell.kt)
 Một viên thuốc nền mực #0F172A TRƯỢT giữa các tab như dock của Apple, không nhảy:

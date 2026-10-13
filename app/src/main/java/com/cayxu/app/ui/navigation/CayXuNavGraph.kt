@@ -282,7 +282,7 @@ fun CayXuNavGraph(
                 com.cayxu.app.ui.main.MainRoute(
                     home = { HomeScreen(navController) },
                     tasks = { com.cayxu.app.ui.tasks.TasksScreen(navController) },
-                    utilities = { com.cayxu.app.ui.screens.utilities.UtilitiesScreen(navController) },
+                    utilities = { com.cayxu.app.ui.utilities.UtilitiesScreen(navController) },
                     profile = { AccountScreen(navController) },
                 )
             }
@@ -292,7 +292,7 @@ fun CayXuNavGraph(
             composable(Routes.ACCOUNT) { AccountScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.UTILITIES) {
-                com.cayxu.app.ui.screens.utilities.UtilitiesScreen(navController)
+                com.cayxu.app.ui.utilities.UtilitiesScreen(navController)
             }
             composable(Routes.REG_AND_TRANSFER_PAGE) {
                 com.cayxu.app.ui.screens.utilities.RegAndTransferPageScreen(navController)
