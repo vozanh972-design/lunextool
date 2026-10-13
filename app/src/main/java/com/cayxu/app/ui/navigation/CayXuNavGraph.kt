@@ -283,13 +283,13 @@ fun CayXuNavGraph(
                     home = { HomeScreen(navController) },
                     tasks = { com.cayxu.app.ui.tasks.TasksScreen(navController) },
                     utilities = { com.cayxu.app.ui.utilities.UtilitiesScreen(navController) },
-                    profile = { AccountScreen(navController) },
+                    profile = { com.cayxu.app.ui.profile.ProfileScreen(navController) },
                 )
             }
             composable(Routes.TASKS) { com.cayxu.app.ui.tasks.TasksScreen(navController) }
             composable(Routes.WALLET) { WalletScreen(navController) }
             composable(Routes.FRIENDS) { FriendsScreen(navController) }
-            composable(Routes.ACCOUNT) { AccountScreen(navController) }
+            composable(Routes.ACCOUNT) { com.cayxu.app.ui.profile.ProfileScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.UTILITIES) {
                 com.cayxu.app.ui.utilities.UtilitiesScreen(navController)

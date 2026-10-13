@@ -10,6 +10,7 @@
    - `HomeScreen.kt` → `.../ui/home/` (Trang chủ)
    - `TasksScreen.kt` → `.../ui/tasks/` (Nhiệm vụ)
    - `UtilitiesScreen.kt` → `.../ui/utilities/` (Tiện ích)
+   - `ProfileScreen.kt` → `.../ui/profile/` (Hồ sơ)
    - `AppFlow.kt` → `.../app/` (luồng điều hướng toàn app, xem mục "Luồng mở app")
    - `ActivationSuccessScreen.kt` → `.../ui/success/` (chào mừng + chuyển cảnh vào Trang chủ)
    Đổi `package` cho đúng app. Mọi màn đều lấy font từ `Manrope` trong `AlxDesign.kt`, màn mới chỉ cần dùng `type(...)`.
@@ -128,7 +129,7 @@ MainRoute(
     home      = { HomeScreen(homeState, onTile = { … }, onExplore = { /* có thể đổi sang tab Nhiệm vụ */ }) },
     tasks     = { TasksScreen(tasksState, onService = { svc -> /* mở màn của nền tảng */ }) },
     utilities = { UtilitiesScreen(utilitiesState, onConfigure = { … }, onTool = { … }) },
-    profile   = { /* màn Hồ sơ */ },
+    profile   = { ProfileScreen(profileState, onAction = { /* … */ }) },
 )
 ```
 Truyền `home = { MainRoute(…) }` vào `AppFlow` để thay Trang chủ cũ: sau chào mừng, người dùng vào khung 4 tab.
@@ -179,6 +180,34 @@ MainRoute(
 - "Công cụ khác": một thẻ trắng bo 20dp, mỗi dòng gồm ô icon 44dp (bo 13dp), nhãn nhóm viết hoa 10,5sp, tên 15sp, mô tả 12sp, mũi tên. Dòng cách nhau bằng đường kẻ 1dp. Thêm công cụ: thêm một `UtilityTool(...)` vào `tools` (id, tag, title, description, màu chữ/icon, màu nền ô, danh sách path icon).
 - Path icon viết trên lưới 24×24 và PHẢI để cờ cung cách nhau (ví dụ `a4 4 0 0 0-4-4`, không viết `0 00-4-4`), nếu không `PathParser` đọc sai. Hàm `circle(cx, cy, r)` có sẵn để tạo hình tròn.
 - Không có animation riêng; chạm nhún 0.985 trong 120ms. Bóng thẻ là xấp xỉ, hơi khác CSS một chút.
+
+## Hồ sơ (ProfileScreen.kt)
+```kotlin
+MainRoute(
+    home = { … }, tasks = { … }, utilities = { … },
+    profile = {
+        ProfileScreen(
+            state = ProfileUiState(
+                username = "username", handle = "@username",
+                planBadge = "PRO", planName = "Thành viên PRO",
+                daysLeft = 25, expiryDate = "05/11/2026",
+                membershipProgress = 0.58f,               // 0..1, tính từ daysLeft / tổng ngày của gói
+                activities = listOf(
+                    ActivityItem(ActivityKind.Follow, "Theo dõi @linh.daily", "Hôm nay, 10:24", "+40", positive = true),
+                    ActivityItem(ActivityKind.Redeem, "Đổi thẻ điện thoại", "Hôm qua, 18:12", "−1.000", positive = false),
+                ),
+            ),
+            onAction = { action -> /* ProfileAction.EditProfile / Settings / Support / Logout */ },
+        )
+    },
+)
+```
+- KHÔNG vẽ dock, chỉ chừa `DockClearance` ở đáy. Padding ngang 20dp, đỉnh 28dp.
+- Danh tính: avatar tròn 68dp nền xanh nhạt, chữ cái đầu của `username` (tự lấy và viết hoa); tên 22sp ExtraBold kèm nhãn gói (nền xanh, chữ trắng 10sp, bo 6dp); bên dưới là `handle` 13,5sp xám. `planBadge = ""` thì ẩn nhãn.
+- Thẻ thành viên: bo 20dp, ô icon khiên 40dp, tên gói, dòng "Còn N ngày · Hết hạn …", thanh tiến độ cao 5dp (nền xanh nhạt, phần đầy xanh chính).
+- "Hoạt động gần đây": mỗi dòng ô icon 40dp, tiêu đề, thời gian, số tiền xu ở bên phải. `positive = true` màu xanh, `false` màu đỏ. `ActivityKind.Follow` icon người +, `Redeem` icon hộp quà nền đỏ nhạt. Danh sách rỗng thì cả mục ẩn.
+- "Tài khoản & hỗ trợ": 4 dòng cao 54dp. Ba dòng đầu icon xanh và mũi tên; "Đăng xuất" chữ + icon đỏ, đậm, không mũi tên. Đăng xuất gọi `onAction(ProfileAction.Logout)`: app xóa key (`SecurePrefs`) rồi đưa về màn nhập key.
+- Path icon dùng cờ cung cách nhau (xem mục Tiện ích). Chạm dòng nhún 0.985 trong 120ms; không có animation riêng.
 
 ## Animation thanh dock (MainShell.kt)
 Một viên thuốc nền mực #0F172A TRƯỢT giữa các tab như dock của Apple, không nhảy:
