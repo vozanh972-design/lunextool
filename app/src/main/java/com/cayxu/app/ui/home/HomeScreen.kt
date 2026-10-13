@@ -67,15 +67,12 @@ import com.cayxu.app.data.local.XsmmAccountStore
 import com.cayxu.app.ui.design.Alx
 import com.cayxu.app.ui.design.SvgIcon
 import com.cayxu.app.ui.design.type
+import com.cayxu.app.ui.main.DockClearance
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.screens.home.HomeViewModel
 import java.util.Calendar
 
 /* ───────────────────────────── Dữ liệu ───────────────────────────── */
-
-enum class HomeTab(val label: String) {
-    Home("Trang chủ"), Tasks("Nhiệm vụ"), Utilities("Tiện ích"), Profile("Hồ sơ"),
-}
 
 /** Một ô "Truy cập nhanh". [badgeColor] là màu ô logo, [blobColor] là vòng tròn mờ ở góc. */
 data class HomeTile(
@@ -96,8 +93,6 @@ data class HomeUiState(
     val servicesTotal: Int = 5,
     val daysLeft: Int = 25,
     val today: DayEarnings = DayEarnings(0, 0),          // xu + tiền (đ) kiếm được hôm nay
-    val recentDays: List<DayEarnings> = emptyList(),     // các ngày gần đây (nên truyền 7 ngày trước hôm nay)
-    val dailyGoal: DayEarnings? = null,                  // mục tiêu ngày do người dùng đặt (nếu có)
     val expiryText: String = "Hạn dùng 05/11/2026 · 11:51",
     val hasUnread: Boolean = true,
     val tiles: List<HomeTile> = DefaultTiles,
@@ -108,27 +103,26 @@ data class HomeUiState(
 /** Thu nhập của một ngày: [coins] là số xu, [money] là số tiền (đồng). */
 data class DayEarnings(val coins: Long, val money: Long)
 
-/**
- * Hiệu suất hôm nay (0..1) = hôm nay kiếm được bao nhiêu so với mức "một ngày bình thường" của chính người dùng.
- *  - Mốc so sánh mỗi loại (xu / tiền): [goal] nếu người dùng có đặt, không thì trung bình các ngày CÓ kiếm được
- *    trong [recent] (ngày nghỉ không kéo mốc xuống).
- *  - Mỗi loại có mốc thì tính tỉ lệ = hôm nay / mốc, tối đa 100%. Kết quả là trung bình các tỉ lệ đó.
- *  - Chưa có mốc nào (người dùng mới, chưa có lịch sử, chưa đặt mục tiêu): trả null, màn hình hiện "Chưa có dữ liệu".
- */
-fun computePerformance(today: DayEarnings, recent: List<DayEarnings>, goal: DayEarnings? = null): Float? {
-    fun target(goalValue: Long?, history: List<Long>): Double? {
-        if (goalValue != null && goalValue > 0) return goalValue.toDouble()
-        val active = history.filter { it > 0 }
-        return if (active.isEmpty()) null else active.average()
-    }
-    val ratios = listOfNotNull(
-        target(goal?.coins, recent.map { it.coins })?.let { (today.coins / it).coerceIn(0.0, 1.0) },
-        target(goal?.money, recent.map { it.money })?.let { (today.money / it).coerceIn(0.0, 1.0) },
-    )
-    return if (ratios.isEmpty()) null else ratios.average().toFloat()
+/** Quy đổi & mốc điểm. Chỉnh ở đây nếu tỉ giá hoặc mục tiêu đổi. */
+object PerformanceScale {
+    /** 1.000.000 xu = 10.000đ  →  100 xu = 1đ. */
+    const val COINS_PER_DONG = 100.0
+    /** Kiếm được giá trị tương đương từng này đồng trong ngày thì đạt 100% (10.000.000 xu = 100.000đ). */
+    const val FULL_SCORE_DONG = 100_000.0
 }
 
-val HomeUiState.performance: Float? get() = computePerformance(today, recentDays, dailyGoal)
+/**
+ * Hiệu suất hôm nay (0..1), tính từ xu và tiền thật kiếm được hôm nay:
+ *   giá trị (đ) = xu / 100 + tiền (đ);   hiệu suất = giá trị / 100.000đ, tối đa 100%.
+ * Mức bình thường (vài trăm nghìn xu, vài nghìn đồng) chỉ ra vài %. Phải kiếm cỡ 10 triệu xu
+ * (hoặc tương đương bằng tiền) mới chạm 100%.
+ */
+fun computePerformance(today: DayEarnings): Float {
+    val dong = today.coins / PerformanceScale.COINS_PER_DONG + today.money
+    return (dong / PerformanceScale.FULL_SCORE_DONG).coerceIn(0.0, 1.0).toFloat()
+}
+
+val HomeUiState.performance: Float get() = computePerformance(today)
 
 val DefaultTiles = listOf(
     HomeTile("xsmm", "XS", Color(0xFFC9363B), Color(0xFFFDECEC), "0 đ", "XSMM", "Tăng tương tác"),
@@ -153,12 +147,6 @@ private val Red = Color(0xFFE5484D)
 
 /* ───────────────────────────── Icon (path khung 24×24, cờ cung viết cách ra) ───────────────────────────── */
 
-private fun roundRect(x: Float, y: Float, w: Float, h: Float, r: Float): String {
-    val x1 = x + w; val y1 = y + h
-    return "M${x + r} $y H${x1 - r} A$r $r 0 0 1 $x1 ${y + r} V${y1 - r} A$r $r 0 0 1 ${x1 - r} $y1 " +
-        "H${x + r} A$r $r 0 0 1 $x ${y1 - r} V${y + r} A$r $r 0 0 1 ${x + r} $y Z"
-}
-
 private val SearchIcon = listOf("M18 11 A7 7 0 1 0 4 11 A7 7 0 1 0 18 11 Z", "M20 20 L16.5 16.5")
 private val BellIcon = listOf(
     "M18 8 A6 6 0 1 0 6 8 C6 15 3 17 3 17 H21 S18 15 18 8",
@@ -169,28 +157,11 @@ private val CompassIcon = listOf(
     "M15.5 8.5 L13.5 13.5 L8.5 15.5 L10.5 10.5 Z",
 )
 private val ChevronIcon = listOf("M9 6 L15 12 L9 18")
-private val HomeIcon = listOf("M3 11 L12 3 L21 11", "M5 10 V20 H19 V10")
-private val TasksIcon = listOf("M21 12 A9 9 0 1 0 3 12 A9 9 0 1 0 21 12 Z", "M8 12 L11 15 L16 9")
-private val GridIcon = listOf(
-    roundRect(3f, 3f, 7.5f, 7.5f, 1.8f), roundRect(13.5f, 3f, 7.5f, 7.5f, 1.8f),
-    roundRect(3f, 13.5f, 7.5f, 7.5f, 1.8f), roundRect(13.5f, 13.5f, 7.5f, 7.5f, 1.8f),
-)
-private val ProfileIcon = listOf(
-    "M16 8 A4 4 0 1 0 8 8 A4 4 0 1 0 16 8 Z",
-    "M4 21 C5.5 16.5 9 15 12 15 S18.5 16.5 20 21",
-)
-
-private fun HomeTab.icon() = when (this) {
-    HomeTab.Home -> HomeIcon
-    HomeTab.Tasks -> TasksIcon
-    HomeTab.Utilities -> GridIcon
-    HomeTab.Profile -> ProfileIcon
-}
 
 /* ───────────────────────────── Màn hình ───────────────────────────── */
 
 /**
- * Trang chủ. Khung 390 × 844dp, nền #F3F5F9, nội dung cuộn, thanh điều hướng nổi dạng viên thuốc.
+ * Trang chủ. Khung 390 × 844dp, nền #F3F5F9, nội dung cuộn. KHÔNG vẽ thanh dock: dock dùng chung nằm ở MainShell.
  * Màn này không có animation riêng (chuyển cảnh từ màn chào mừng do ActivationSuccessScreen lo).
  */
 @Composable
@@ -198,13 +169,11 @@ fun HomeScreen(
     state: HomeUiState,
     modifier: Modifier = Modifier,
     greeting: String = greetingNow(),
-    selectedTab: HomeTab = HomeTab.Home,
     onSearch: () -> Unit = {},
     onNotifications: () -> Unit = {},
     onExplore: () -> Unit = {},
     onSeeAll: () -> Unit = {},
     onTile: (HomeTile) -> Unit = {},
-    onTab: (HomeTab) -> Unit = {},
 ) {
     Box(modifier.fillMaxSize().background(Alx.Bg)) {
         Column(
@@ -241,16 +210,10 @@ fun HomeScreen(
                 state.wideTile?.let { WideTile(it, state.wideStatus) { onTile(it) } }
             }
 
-            // chừa chỗ cho thanh điều hướng nổi: 66 + 14 + khoảng thở 24
-            Spacer(Modifier.height(104.dp))
+            // chừa chỗ cho thanh dock dùng chung (MainShell vẽ), không vẽ dock ở đây
+            Spacer(Modifier.height(DockClearance))
             Spacer(Modifier.navigationBarsPadding())
         }
-
-        NavBar(
-            selectedTab, onTab,
-            Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
-        )
     }
 }
 
@@ -261,6 +224,8 @@ fun HomeScreen(
 fun HomeScreen(
     navController: NavController,
     viewModel: HomeViewModel = viewModel(),
+    onExplore: (() -> Unit)? = null,
+    onSeeAll: (() -> Unit)? = null,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -305,6 +270,7 @@ fun HomeScreen(
             servicesActive = 5,
             servicesTotal = 5,
             daysLeft = daysLeft,
+            today = DayEarnings(coins = ttcCoins, money = xsmmPoints + golikeBalance),
             expiryText = expiryText,
             hasUnread = true,
             tiles = tiles,
@@ -317,8 +283,8 @@ fun HomeScreen(
         state = state,
         onSearch = { },
         onNotifications = { },
-        onExplore = { navController.navigate(Routes.TASKS) },
-        onSeeAll = { navController.navigate(Routes.TASKS) },
+        onExplore = onExplore ?: { navController.navigate(Routes.TASKS) },
+        onSeeAll = onSeeAll ?: { navController.navigate(Routes.TASKS) },
         onTile = { tile ->
             when (tile.id) {
                 "xsmm" -> navController.navigate(Routes.XSMM_LOGIN)
@@ -326,15 +292,6 @@ fun HomeScreen(
                 "ttc" -> navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK)
                 "tiktok" -> navController.navigate(Routes.LINK_ACCOUNT_TIKTOK)
                 "nvc" -> navController.navigate(Routes.simpleTaskPlatform("Nhiemvucheo"))
-            }
-        },
-        selectedTab = HomeTab.Home,
-        onTab = { tab ->
-            when (tab) {
-                HomeTab.Home -> { /* Đang ở Home */ }
-                HomeTab.Tasks -> navController.navigate(Routes.TASKS)
-                HomeTab.Utilities -> navController.navigate(Routes.UTILITIES)
-                HomeTab.Profile -> navController.navigate(Routes.ACCOUNT)
             }
         }
     )
@@ -428,14 +385,10 @@ private fun StatsCard(state: HomeUiState, modifier: Modifier = Modifier) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
                 BasicText("Hiệu suất hôm nay", style = type(12f, FontWeight.SemiBold, Alx.Ink2))
-                val perf = state.performance
-                BasicText(
-                    if (perf == null) "Chưa có dữ liệu" else "${(perf * 100).toInt()}%",
-                    style = if (perf == null) type(12f, FontWeight.Medium, Alx.Muted) else type(13f, FontWeight.ExtraBold, Alx.Blue),
-                )
+                BasicText("${(state.performance * 100).toInt()}%", style = type(13f, FontWeight.ExtraBold, Alx.Blue))
             }
             Box(Modifier.fillMaxWidth().height(6.dp).background(Alx.BlueSoft, RoundedCornerShape(3.dp))) {
-                Box(Modifier.fillMaxWidth(state.performance ?: 0f).height(6.dp).background(Alx.Blue, RoundedCornerShape(3.dp)))
+                Box(Modifier.fillMaxWidth(state.performance).height(6.dp).background(Alx.Blue, RoundedCornerShape(3.dp)))
             }
             BasicText(state.expiryText, style = type(11.5f, FontWeight.Medium, Alx.Muted))
         }
@@ -454,7 +407,7 @@ private fun StatCell(label: String, modifier: Modifier, value: @Composable () ->
 
 /** Xu: đồng xu tròn xanh, vòng trắng mờ bên trong, hình thoi trắng ở giữa (khớp thiết kế). */
 @Composable
-private fun CoinIcon(size: Dp) {
+internal fun CoinIcon(size: Dp) {
     Canvas(Modifier.size(size)) {
         scale(this.size.width / 24f, Offset.Zero) {
             drawCircle(Alx.Blue, 11f, Offset(12f, 12f))
@@ -552,46 +505,6 @@ private fun PressBox(onClick: () -> Unit, modifier: Modifier, content: @Composab
     )
 }
 
-/* ───────────────────────────── Thanh điều hướng ───────────────────────────── */
-
-/**
- * Viên thuốc nổi cao 66dp, bo 33dp. Tab đang chọn: nền mực #0F172A, icon + chữ trắng, chiếm 2,5 phần;
- * tab khác chỉ có icon xám, mỗi tab 1 phần.
- */
-@Composable
-fun HomeNavBar(selected: HomeTab, onSelect: (HomeTab) -> Unit, modifier: Modifier = Modifier) = NavBar(selected, onSelect, modifier)
-
-@Composable
-private fun NavBar(selected: HomeTab, onSelect: (HomeTab) -> Unit, modifier: Modifier) {
-    val shape = RoundedCornerShape(33.dp)
-    Row(
-        modifier
-            .fillMaxWidth()
-            .height(66.dp)
-            .shadow(14.dp, shape, ambientColor = Color(0x290F172A), spotColor = Color(0x470F172A))
-            .background(Alx.White, shape)
-            .border(1.dp, Alx.Line, shape)
-            .padding(7.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        HomeTab.values().forEach { tab ->
-            val on = tab == selected
-            val item = Modifier
-                .weight(if (on) 2.5f else 1f)
-                .height(52.dp)
-                .let { if (on) it.background(Alx.Ink, RoundedCornerShape(26.dp)) else it }
-                .clip(RoundedCornerShape(26.dp))
-                .semantics { contentDescription = tab.label }
-                .clickable(role = Role.Tab, onClick = { onSelect(tab) })
-            Row(item, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-                SvgIcon(tab.icon(), if (on) 21.dp else 22.dp, if (on) Alx.White else Alx.Muted, 1.9f)
-                if (on) BasicText(tab.label, style = type(14.5f, FontWeight.Bold, Alx.White), maxLines = 1)
-            }
-        }
-    }
-}
-
 /* ───────────────────────────── Preview ───────────────────────────── */
 
 @Preview(widthDp = 390, heightDp = 844, showBackground = true)
@@ -599,7 +512,6 @@ private fun NavBar(selected: HomeTab, onSelect: (HomeTab) -> Unit, modifier: Mod
 private fun HomeScreenPreview() {
     HomeScreen(HomeUiState(
         username = "username", coins = "1.250",
-        today = DayEarnings(900, 140_000),
-        recentDays = listOf(DayEarnings(1000, 150_000), DayEarnings(1200, 200_000), DayEarnings(0, 0)),
+        today = DayEarnings(coins = 2_000_000, money = 30_000),   // 20.000đ + 30.000đ = 50%
     ), greeting = "Chào buổi trưa,")
 }

@@ -278,8 +278,15 @@ fun CayXuNavGraph(
 
             composable(Routes.BLOCKED) { BlockedScreen() }
 
-            composable(Routes.HOME) { HomeScreen(navController) }
-            composable(Routes.TASKS) { TasksScreen(navController) }
+            composable(Routes.HOME) {
+                com.cayxu.app.ui.main.MainRoute(
+                    home = { HomeScreen(navController) },
+                    tasks = { com.cayxu.app.ui.tasks.TasksScreen(navController) },
+                    utilities = { com.cayxu.app.ui.screens.utilities.UtilitiesScreen(navController) },
+                    profile = { AccountScreen(navController) },
+                )
+            }
+            composable(Routes.TASKS) { com.cayxu.app.ui.tasks.TasksScreen(navController) }
             composable(Routes.WALLET) { WalletScreen(navController) }
             composable(Routes.FRIENDS) { FriendsScreen(navController) }
             composable(Routes.ACCOUNT) { AccountScreen(navController) }

@@ -6,9 +6,12 @@
    - `LanguageSelectionScreen.kt` → `.../ui/screens/welcome/`
    - `LicenseScreen.kt` → `.../ui/license/`
    - `VerifyingScreen.kt` → `.../ui/verify/` (một màn kiểm tra key: ổ khóa → tích xanh hoặc X đỏ)
+   - `MainShell.kt` → `.../ui/main/` (khung 4 tab + MỘT thanh dock dùng chung)
+   - `HomeScreen.kt` → `.../ui/home/` (Trang chủ)
+   - `TasksScreen.kt` → `.../ui/tasks/` (Nhiệm vụ)
    - `AppFlow.kt` → `.../app/` (luồng điều hướng toàn app, xem mục "Luồng mở app")
    - `ActivationSuccessScreen.kt` → `.../ui/success/` (chào mừng + chuyển cảnh vào Trang chủ)
-   Mọi màn đều lấy font từ `Manrope` trong `AlxDesign.kt`, màn mới chỉ cần dùng `type(...)`.
+   Đổi `package` cho đúng app. Mọi màn đều lấy font từ `Manrope` trong `AlxDesign.kt`, màn mới chỉ cần dùng `type(...)`.
 2. Tải font **Manrope** từ Google Fonts. Lấy file variable `Manrope[wght].ttf`, đổi tên thành `manrope.ttf` và đặt vào `app/src/main/res/font/`.
    Chỉ cần đúng 1 file này; code tự chọn độ đậm Medium/SemiBold/Bold/ExtraBold bằng trục wght. Đừng chép cùng một file variable thành 4 tên khác nhau, chữ sẽ bị mảnh.
 3. Dependencies (BOM Compose 2024.06 trở lên):
@@ -87,18 +90,14 @@ HomeScreen(
         username = "username", coins = "0", servicesActive = 5, servicesTotal = 5,
         daysLeft = 25, expiryText = "Hạn dùng 05/11/2026 · 11:51",
         hasUnread = true,
-        today = DayEarnings(coins = 900, money = 140_000),       // kiếm được hôm nay
-        recentDays = last7Days,                                  // List<DayEarnings> 7 ngày trước
-        dailyGoal = null,                                        // hoặc DayEarnings(…) nếu người dùng đặt mục tiêu
+        today = DayEarnings(coins = 2_000_000, money = 30_000),  // xu + tiền (đ) kiếm được hôm nay
         // tiles / wideTile có mặc định đúng như thiết kế (XSMM, GoLike, Tuongtaccheo, TikTok TTC, Nhiemvucheo)
     ),
     onTile = { tile -> /* tile.id: "xsmm", "golike", "ttc", "tiktok", "nvc" */ },
     onExplore = { }, onSeeAll = { }, onSearch = { }, onNotifications = { },
-    selectedTab = HomeTab.Home,
-    onTab = { tab -> /* chuyển Nhiệm vụ / Tiện ích / Hồ sơ */ },
 )
 ```
-Nối vào `AppFlow`: `home = { HomeScreen(state = vm.homeState, onTab = { … }) }`. Đây cũng là lambda `home` mà `ActivationSuccessScreen` dựng ngầm để mờ vào.
+Màn này KHÔNG có dock. Dock nằm ở `MainShell`, xem mục "Khung 4 tab và thanh dock dùng chung" bên dưới.
 Dữ liệu thật (xu, số dịch vụ, ngày còn lại, hạn dùng, số tiền từng ô) lấy từ ViewModel và đưa vào `HomeUiState`; màn không tự gọi mạng.
 
 Số đo từ thiết kế (khung 390 × 844 dp):
@@ -107,19 +106,50 @@ Số đo từ thiết kế (khung 390 × 844 dp):
 - Thẻ thống kê bo 22dp, 3 cột (Tổng xu / Dịch vụ / Còn lại) chia bằng vạch dọc, bên dưới là thanh "Hiệu suất hôm nay" cao 6dp và dòng hạn dùng.
 - Hàng "Khám phá nhiệm vụ" bo 18dp, icon 40dp.
 - "Truy cập nhanh": lưới 2 cột, mỗi ô cao 132dp bo 22dp, khoảng cách 12dp, vòng tròn mờ ở góc trên phải, 1 ô rộng ở cuối (Nhiemvucheo) có nhãn "Sẵn sàng".
-- Thanh điều hướng: viên thuốc nổi cao 66dp, cách 2 bên 16dp và đáy 14dp, tab đang chọn nền #0F172A chiếm 2,5 phần có chữ, ba tab còn lại chỉ icon.
-Không có animation riêng. Chạm vào ô, hàng, nút thì nhún 0.985 trong 120ms. Bóng của ô và thanh điều hướng chỉ gần đúng bản HTML (Compose không có bóng "spread" âm).
+Không có animation riêng. Chạm vào ô, hàng, nút thì nhún 0.985 trong 120ms. Bóng của ô chỉ gần đúng bản HTML (Compose không có bóng "spread" âm).
 Màu riêng của từng dịch vụ (đỏ XSMM, hồng TTC, xám TikTok, xanh ngọc Nhiemvucheo) nằm trong `DefaultTiles`; thêm dịch vụ mới chỉ cần thêm một `HomeTile`.
 
 ### Hiệu suất hôm nay (tính thật, không hardcode)
-`computePerformance(today, recent, goal)` trong `HomeScreen.kt`; `HomeUiState.performance` gọi nó sẵn.
-- So sánh số xu và số tiền (đ) kiếm được HÔM NAY với mức một ngày bình thường của chính người dùng.
-- Mốc so sánh: mục tiêu ngày người dùng tự đặt (`dailyGoal`) nếu có; không thì trung bình các ngày CÓ kiếm được trong 7 ngày gần nhất (ngày nghỉ không kéo mốc xuống).
-- Mỗi loại: hôm nay / mốc, tối đa 100%. Hiệu suất = trung bình các tỉ lệ đó. Chỉ có xu hoặc chỉ có tiền thì tính theo loại có.
-- Người dùng mới, chưa có lịch sử và chưa đặt mục tiêu: trả `null`, màn hiện "Chưa có dữ liệu" và thanh trống (không bịa số).
-- Ví dụ: hôm nay 900 xu + 140.000đ; trung bình ngày có kiếm 1.100 xu và 175.000đ → (82% + 80%) / 2 = 81%.
-Bạn cần ghi lại thu nhập theo ngày (xu + tiền) để truyền `today` và `recentDays`; màn không tự lưu.
-Icon xu đổi thành đồng xu tròn xanh (vòng trắng mờ + hình thoi trắng), trùng với bản thiết kế trên Trang chủ, Nhiệm vụ và Chào mừng.
+`computePerformance(today)` trong `HomeScreen.kt`; `HomeUiState.performance` gọi nó sẵn. Tỉ giá và mốc nằm ở `PerformanceScale`:
+- Quy đổi xu ra đồng: 1.000.000 xu = 10.000đ (100 xu = 1đ).
+- Giá trị hôm nay (đ) = xu / 100 + tiền kiếm được (đ).
+- Hiệu suất = giá trị / 100.000đ, tối đa 100%. Nghĩa là phải kiếm cỡ 10.000.000 xu (hoặc tương đương bằng tiền) trong ngày mới chạm 100%; kiếm bình thường chỉ ra vài %.
+- Ví dụ: 2.000.000 xu (20.000đ) + 30.000đ = 50.000đ → 50%. Ví dụ 900 xu + 140.000đ → 140%, bị chặn ở 100%.
+Muốn đổi mốc thì sửa `FULL_SCORE_DONG`; đổi tỉ giá thì sửa `COINS_PER_DONG`.
+Bạn cần ghi lại thu nhập trong ngày (xu + tiền) để truyền `today`; màn không tự lưu.
+Icon xu là đồng xu tròn xanh (vòng trắng mờ + hình thoi trắng), trùng với thiết kế.
+
+## Khung 4 tab và thanh dock dùng chung (MainShell.kt)
+Chỉ có MỘT thanh dock trong cả app, vẽ ở `MainShell`. Màn Trang chủ, Nhiệm vụ (và Tiện ích, Hồ sơ sau này) chỉ vẽ nội dung,
+chừa `DockClearance` (104dp) ở đáy và KHÔNG tự vẽ dock. Nhờ vậy sửa dock một chỗ là cả app đổi theo, không bao giờ bị hai dock.
+```kotlin
+MainRoute(
+    home      = { HomeScreen(homeState, onTile = { … }, onExplore = { /* có thể đổi sang tab Nhiệm vụ */ }) },
+    tasks     = { TasksScreen(tasksState, onService = { svc -> /* mở màn của nền tảng */ }) },
+    utilities = { /* màn Tiện ích */ },
+    profile   = { /* màn Hồ sơ */ },
+)
+```
+Truyền `home = { MainRoute(…) }` vào `AppFlow` để thay Trang chủ cũ: sau chào mừng, người dùng vào khung 4 tab.
+Dock: viên thuốc nổi cao 66dp, bo 33dp, cách 2 bên 16dp và đáy 14dp (cộng thanh điều hướng hệ thống). Tab đang chọn nền #0F172A, icon + chữ trắng, chiếm 2,5 phần; ba tab còn lại chỉ icon xám, mỗi tab 1 phần.
+Tab đang chọn lưu bằng `rememberSaveable`. Mỗi tab dựng lại khi chuyển (vị trí cuộn không giữ); cần giữ thì thay `when(tab)` bằng `NavHost` hoặc `rememberSaveable` cho `ScrollState` từng màn.
+
+## Nhiệm vụ (TasksScreen.kt)
+```kotlin
+TasksScreen(
+    state = TasksUiState(
+        coins = "1.250",
+        today = DayEarnings(coins = 2_000_000, money = 30_000),   // CÙNG số với Trang chủ, hiệu suất hai nơi luôn khớp
+        // services mặc định đúng thiết kế; mỗi TaskService có status Running (hiện số tiền/xu/acc) hoặc Ready (hiện "Sẵn sàng")
+    ),
+    onService = { svc -> /* svc.id: "xsmm", "golike", "ttc", "tiktok", "nvc" */ },
+)
+```
+- Tiêu đề 30sp, dòng phụ "N nền tảng kiếm xu đang kết nối" (N = số dịch vụ).
+- Thẻ tóm tắt bo 20dp, 2 cột: Tổng xu (có icon xu) và Hiệu suất hôm nay (cùng hàm `computePerformance` với Trang chủ).
+- 3 chip lọc cao 36dp: Tất cả / Đang chạy / Sẵn sàng. Chip đang chọn nền mực, chữ trắng. Lọc theo `TaskService.status`.
+- Mỗi hàng bo 20dp: ô logo 46dp (nền nhạt, chữ màu dịch vụ), tên + mô tả, bên phải là số tiền/xu hoặc "Sẵn sàng", dòng "Check ›" màu xanh.
+- Không có animation riêng; chạm hàng nhún 0.985 trong 120ms.
 
 ## Lưu ý quan trọng
 Bóng đổ và độ cao dòng chữ có thể lệch nhẹ so với bản HTML.
@@ -132,7 +162,7 @@ GitHub là Actions tự build APK cho bạn tải về.
 ### Bước 1 – Đẩy code lên GitHub
 ```bash
 git add .
-git commit -m "Update AUTOLUNEX AppFlow & VerifyingScreen"
+git commit -m "Update AUTOLUNEX MainShell, TasksScreen & HomeScreen"
 git push origin main
 ```
 

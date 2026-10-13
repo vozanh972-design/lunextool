@@ -63,7 +63,7 @@ fun AppFlow(
     store: SessionStore,
     validate: suspend (String) -> Boolean,     // gọi server, true nếu key hợp lệ
     onBuy: () -> Unit,
-    home: @Composable () -> Unit,              // Trang chủ THẬT của app
+    home: @Composable () -> Unit,              // khung chính của app: MainRoute(home = …, tasks = …, …), dock nằm trong MainRoute
 ) {
     val context = LocalContext.current
     val isBlocked = remember { SecurePrefs(context).isPermanentlyBlocked() }
