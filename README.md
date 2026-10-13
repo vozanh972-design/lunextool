@@ -131,7 +131,7 @@ MainRoute(
 )
 ```
 Truyền `home = { MainRoute(…) }` vào `AppFlow` để thay Trang chủ cũ: sau chào mừng, người dùng vào khung 4 tab.
-Dock: viên thuốc nổi cao 82dp, bo 33dp, cách 2 bên 16dp và đáy 14dp (cộng thanh điều hướng hệ thống). Tab đang chọn nền #0F172A, icon + chữ trắng, chiếm 2,5 phần; ba tab còn lại chỉ icon xám, mỗi tab 1 phần.
+Dock: viên thuốc nổi cao 66dp, bo 33dp, cách 2 bên 16dp và đáy 14dp (cộng thanh điều hướng hệ thống). Tab đang chọn nền #0F172A, icon + chữ trắng, chiếm 2,5 phần; ba tab còn lại chỉ icon xám, mỗi tab 1 phần.
 Tab đang chọn lưu bằng `rememberSaveable`. Mỗi tab dựng lại khi chuyển (vị trí cuộn không giữ); cần giữ thì thay `when(tab)` bằng `NavHost` hoặc `rememberSaveable` cho `ScrollState` từng màn.
 
 ## Nhiệm vụ (TasksScreen.kt)
@@ -158,7 +158,7 @@ Một viên thuốc nền mực #0F172A TRƯỢT giữa các tab như dock của
 - Chỉ tab cũ (co lại 2,5 → 1 phần, chữ ngắn dần rồi mất) và tab mới (giãn ra 1 → 2,5 phần, chữ mở ra) đổi bề rộng; các tab ở giữa đứng yên, viên thuốc chỉ lướt qua.
 - Icon đổi xám ↔ trắng theo khoảng cách tới viên thuốc.
 - Chạm tab thì nhún 0.95 trong 120 ms. Tắt animation hệ thống (Animator duration scale = 0) thì nhảy thẳng tới trạng thái cuối.
-Kích thước dock theo thiết kế: tổng cao 82dp (lõi 66dp, tab cao 52dp), bo 33dp, cách 2 bên 16dp và đáy 14dp. Viên thuốc rộng bằng tab đang chọn (2,5 phần).
+Kích thước dock theo thiết kế: tổng cao 66dp (tab cao 52dp), bo 33dp, cách 2 bên 16dp và đáy 14dp. Viên thuốc rộng bằng tab đang chọn (2,5 phần).
 Bản xem trước nằm ở bảng "Thanh dock" trên canvas: dock trên tự chạy một vòng (kể cả trượt ngược Hồ sơ về Trang chủ), dock dưới bấm thử được.
 Các bảng Trang chủ / Nhiệm vụ / Tiện ích / Hồ sơ trên canvas là màn riêng nên dock ở đó chỉ chạy lúc màn vừa mở; hiệu ứng trượt đầy đủ xem ở bảng "Thanh dock" và trong app thật.
 

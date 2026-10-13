@@ -106,7 +106,7 @@ fun MainShell(
 }
 
 /**
- * Viên thuốc nổi cao 82dp (lõi 66dp, tab cao 52dp), bo 33dp, rộng trừ 16dp mỗi bên.
+ * Viên thuốc nổi cao 66dp (tab cao 52dp), bo 33dp, rộng trừ 16dp mỗi bên.
  * Có MỘT viên thuốc mực #0F172A trượt giữa các tab như dock của Apple:
  *  - [pos] là vị trí (số thực) của viên thuốc, chạy bằng lò xo ~0,6s, tắt dần ở cuối. Về tab xa thì trượt ngược lại, không nhảy.
  *  - Chỉ tab cũ (co lại) và tab mới (giãn ra 1 → 2,5 phần) đổi bề rộng và chữ; tab ở giữa đứng yên, viên thuốc chỉ lướt qua.
@@ -131,11 +131,11 @@ private fun Dock(selected: MainTab, onSelect: (MainTab) -> Unit, modifier: Modif
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
-            .height(82.dp)
+            .height(66.dp)
             .shadow(14.dp, shape, ambientColor = Color(0x290F172A), spotColor = Color(0x470F172A))
             .background(Alx.White, shape)
             .border(1.dp, Alx.Line, shape)
-            .padding(horizontal = 7.dp, vertical = 14.dp),
+            .padding(7.dp),
     ) {
         val gap = 4.dp
         val unit = (maxWidth - gap * 3) / 5.5f           // 1 phần = 1 tab thường; tab chọn = 2,5 phần
