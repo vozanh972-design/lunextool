@@ -65,6 +65,7 @@ fun AccountScreen(navController: NavController) {
     var buyerUsername by remember { mutableStateOf(securePrefs.getBuyerUsername()) }
     var packageName by remember { mutableStateOf(securePrefs.getPackageName()?.uppercase() ?: "PRO") }
     var rawExpiresAt by remember { mutableStateOf(securePrefs.getExpiresAt()) }
+    var daysLeft by remember { mutableStateOf(securePrefs.getDaysLeft()) }
 
     LaunchedEffect(Unit) {
         val key = securePrefs.getKey()
@@ -86,6 +87,10 @@ fun AccountScreen(navController: NavController) {
                             result.data.expiresAt?.let {
                                 securePrefs.saveExpiresAt(it)
                                 rawExpiresAt = it
+                            }
+                            result.data.daysLeft?.let {
+                                securePrefs.saveDaysLeft(it)
+                                daysLeft = it
                             }
                         }
                         is com.cayxu.app.data.repository.AuthResult.ApiError -> {
@@ -400,7 +405,7 @@ fun AccountScreen(navController: NavController) {
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Còn 18 ngày · Hết hạn $expiryDate",
+                        text = "Còn $daysLeft ngày · Hết hạn $expiryDate",
                         fontSize = 13.sp,
                         color = TextSecondary
                     )
@@ -417,7 +422,7 @@ fun AccountScreen(navController: NavController) {
                     ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(0.55f)
+                                .fillMaxWidth((daysLeft / 30f).coerceIn(0.05f, 1f))
                                 .fillMaxHeight()
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(Color(0xFF7C3AED))

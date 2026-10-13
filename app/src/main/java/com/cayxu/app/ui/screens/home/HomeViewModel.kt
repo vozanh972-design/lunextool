@@ -61,6 +61,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             when (val result = repository.verifyKey(savedKey, androidId)) {
                 is AuthResult.Success -> {
+                    result.data.daysLeft?.let { securePrefs.saveDaysLeft(it) }
+                    result.data.expiresAt?.let { securePrefs.saveExpiresAt(it) }
+                    result.data.effectiveUsername?.let { if (it.isNotBlank()) securePrefs.saveBuyerUsername(it) }
+                    result.data.packageName?.let { securePrefs.savePackageName(it) }
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         info = result.data,

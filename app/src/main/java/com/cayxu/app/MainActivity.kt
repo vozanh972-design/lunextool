@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
                                         result.data.effectiveUsername?.let { if (it.isNotBlank()) prefs.saveBuyerUsername(it) }
                                         result.data.packageName?.let { prefs.savePackageName(it) }
                                         result.data.expiresAt?.let { prefs.saveExpiresAt(it) }
+                                        result.data.daysLeft?.let { prefs.saveDaysLeft(it) }
                                         true
                                     }
                                     is AuthResult.NetworkError -> {

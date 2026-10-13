@@ -106,6 +106,16 @@ class SecurePrefs(context: Context) {
 
     fun getExpiresAt(): String? = prefs.getString(KEY_EXPIRES_AT, null)
 
+    fun saveDaysLeft(days: Int?) {
+        if (days != null) {
+            prefs.edit().putInt(KEY_DAYS_LEFT, days).apply()
+        } else {
+            prefs.edit().remove(KEY_DAYS_LEFT).apply()
+        }
+    }
+
+    fun getDaysLeft(): Int = prefs.getInt(KEY_DAYS_LEFT, 30)
+
     fun saveActivatedKeysCount(count: Int) {
         prefs.edit().putInt(KEY_ACTIVATED_KEYS, count).apply()
     }
@@ -135,6 +145,7 @@ class SecurePrefs(context: Context) {
         private const val KEY_BUYER_USERNAME = "buyer_username"
         private const val KEY_PACKAGE_NAME = "package_name"
         private const val KEY_EXPIRES_AT = "expires_at"
+        private const val KEY_DAYS_LEFT = "days_left"
         private const val KEY_ACTIVATED_KEYS = "activated_keys"
         private const val KEY_LATEST_VERSION_CODE = "latest_known_version_code"
     }

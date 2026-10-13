@@ -125,7 +125,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
     }
 
     val daysLeft = remember(uiState.info) {
-        uiState.info?.daysLeft ?: 30
+        uiState.info?.daysLeft ?: securePrefs.getDaysLeft()
     }
 
     val expiresAt = remember(uiState.info) {

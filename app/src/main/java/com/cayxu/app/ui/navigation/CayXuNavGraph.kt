@@ -247,28 +247,7 @@ fun CayXuNavGraph(
                 val username = remember(buyerName) {
                     if (!buyerName.isNullOrBlank()) buyerName else "benbenteo10"
                 }
-                val daysLeft = remember {
-                    val expires = prefs.getExpiresAt()
-                    if (!expires.isNullOrBlank()) {
-                        try {
-                            val format = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-                            val date = format.parse(expires)
-                            if (date != null) {
-                                val diff = date.time - System.currentTimeMillis()
-                                (diff / (1000L * 60 * 60 * 24)).toInt().coerceAtLeast(1)
-                            } else 30
-                        } catch (_: Exception) {
-                            try {
-                                val format = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-                                val date = format.parse(expires)
-                                if (date != null) {
-                                    val diff = date.time - System.currentTimeMillis()
-                                    (diff / (1000L * 60 * 60 * 24)).toInt().coerceAtLeast(1)
-                                } else 30
-                            } catch (_: Exception) { 30 }
-                        }
-                    } else 30
-                }
+                val daysLeft = remember { prefs.getDaysLeft() }
 
                 ActivationSuccessScreen(
                     username = username,
