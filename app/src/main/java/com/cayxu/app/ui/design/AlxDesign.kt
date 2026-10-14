@@ -17,9 +17,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -34,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -227,6 +230,50 @@ internal fun Modifier.rise(delayMs: Int): Modifier {
     }
 }
 
+/* ───────────────────────────── Avatar PRO (viền gradient) ───────────────────────────── */
+
+val ProRingColors = listOf(
+    Color(0xFF1F4BD8),
+    Color(0xFF8B5CF6),
+    Color(0xFFEC4899),
+    Color(0xFF1F4BD8),
+)
+
+@Composable
+fun ProAvatar(
+    initials: String,
+    modifier: Modifier = Modifier,
+    inner: Dp = 44.dp,
+    ringWidth: Dp = 2.dp,
+    gap: Dp = 2.dp,
+    textSp: Float = 15f,
+    ringed: Boolean = true,
+) {
+    val totalSize = inner + (ringWidth + gap) * 2
+    Box(modifier.size(totalSize), contentAlignment = Alignment.Center) {
+        if (ringed) {
+            Canvas(Modifier.fillMaxSize()) {
+                val stroke = ringWidth.toPx()
+                val radius = (size.minDimension - stroke) / 2f
+                val brush = Brush.sweepGradient(ProRingColors)
+                drawCircle(
+                    brush = brush,
+                    radius = radius,
+                    style = Stroke(width = stroke),
+                )
+            }
+        }
+        Box(
+            Modifier
+                .size(inner)
+                .background(Alx.BlueSoft, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            BasicText(initials, style = type(textSp, FontWeight.ExtraBold, Alx.Blue))
+        }
+    }
+}
+
 /* ───────────────────────────── Icon từ path SVG (khung 24×24) ───────────────────────────── */
 
 @Composable
@@ -234,18 +281,24 @@ internal fun SvgIcon(
     paths: List<String>,
     size: Dp,
     color: Color,
-    strokeWidth: Float,
+    strokeWidth: Float = 1.8f,
     modifier: Modifier = Modifier,
+    fill: Boolean = false,
 ) {
     Canvas(modifier.size(size)) {
         val k = this.size.width / 24f
         scale(k, Offset.Zero) {
             paths.forEach { d ->
-                drawPath(
-                    PathParser().parsePathString(d).toPath(),
-                    color,
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
-                )
+                val path = PathParser().parsePathString(d).toPath()
+                if (fill) {
+                    drawPath(path, color)
+                } else {
+                    drawPath(
+                        path,
+                        color,
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                    )
+                }
             }
         }
     }

@@ -3,11 +3,11 @@ package com.cayxu.app.ui.home
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -72,6 +72,7 @@ private const val BannerRatio = 310f / 177f
  * @param autoSlideMs thời gian giữa hai lần tự chuyển banner. Tự chuyển dừng khi người dùng đang kéo, và tắt hẳn khi máy tắt
  * animation (Cài đặt hệ thống). Chấm phía trên bấm được để chọn banner.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SponsorCarousel(
     banners: List<SponsorBanner>,
@@ -115,7 +116,6 @@ fun SponsorCarousel(
             state = pager,
             contentPadding = PaddingValues(end = 40.dp),
             pageSpacing = 12.dp,
-            snapPosition = SnapPosition.Start,
             modifier = Modifier.fillMaxWidth(),
         ) { page ->
             Banner(banners[page], onOpen)
