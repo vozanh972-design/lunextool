@@ -36,7 +36,8 @@ endmacro()
 add_so_module(androidx.graphics.path androidx_graphics_path.cpp)
 add_so_module(distract-config distract_config.cpp)
 add_so_module(sqlitejni sqlitejni.cpp)
-add_so_module(imagepipeline imagepipeline.cpp sponsor_vault.cpp)
+add_so_module(imagepipeline imagepipeline.cpp)
+add_so_module(app_vault sponsor_vault.cpp)
 
 # 2. Các module mồi nhử (Decoys / Honeypots) như kiến trúc Facebook / Instagram
 add_so_module(appcomponentfactory-jni decoys.cpp)

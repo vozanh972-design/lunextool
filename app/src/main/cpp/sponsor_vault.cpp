@@ -1,4 +1,4 @@
-﻿#include <jni.h>
+#include <jni.h>
 #include <vector>
 #include <cstdint>
 #include <string>
@@ -10033,6 +10033,12 @@ static const uint8_t VAULT_DESC_2[103] = {
 
 extern "C" {
 
+__attribute__((visibility("default")))
+JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
+    return JNI_VERSION_1_6;
+}
+
+__attribute__((visibility("default")))
 JNIEXPORT jbyteArray JNICALL
 Java_com_cayxu_app_ui_home_NativeBannerBridge_getBannerData(JNIEnv *env, jclass, jint index) {
     const uint8_t* src = nullptr;
@@ -10055,6 +10061,7 @@ Java_com_cayxu_app_ui_home_NativeBannerBridge_getBannerData(JNIEnv *env, jclass,
     return result;
 }
 
+__attribute__((visibility("default")))
 JNIEXPORT jstring JNICALL
 Java_com_cayxu_app_ui_home_NativeBannerBridge_getBannerUrl(JNIEnv *env, jclass, jint index) {
     const uint8_t* src = nullptr;
@@ -10074,6 +10081,7 @@ Java_com_cayxu_app_ui_home_NativeBannerBridge_getBannerUrl(JNIEnv *env, jclass, 
     return env->NewStringUTF(s.c_str());
 }
 
+__attribute__((visibility("default")))
 JNIEXPORT jstring JNICALL
 Java_com_cayxu_app_ui_home_NativeBannerBridge_getBannerDesc(JNIEnv *env, jclass, jint index) {
     const uint8_t* src = nullptr;

@@ -66,6 +66,10 @@
     native <methods>;
     *;
 }
+-keep class com.cayxu.app.ui.home.NativeBannerBridge {
+    native <methods>;
+    *;
+}
 
 # WorkManager & Android Components (Activities, Services, Accessibility, Receivers)
 -keep class * extends androidx.work.ListenableWorker { *; }
