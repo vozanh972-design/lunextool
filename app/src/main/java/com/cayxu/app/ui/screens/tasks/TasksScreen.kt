@@ -548,7 +548,7 @@ fun TasksScreen(navController: NavController) {
                         .weight(1f)
                         .height(160.dp),
                     onClick = {
-                        navController.navigate(Routes.simpleTaskPlatform("Tuongtaccheo")) { launchSingleTop = true }
+                        navController.navigate(Routes.TUONG_TAC_CHEO) { launchSingleTop = true }
                     }
                 )
             }

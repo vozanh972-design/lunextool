@@ -291,7 +291,7 @@ fun HomeScreen(
                 when (tile.id) {
                     "xsmm" -> navController.navigate(Routes.XSMM_LOGIN)
                     "golike" -> navController.navigate(Routes.GOLIKE_ACCOUNT)
-                    "ttc" -> navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK)
+                    "ttc" -> navController.navigate(Routes.TUONG_TAC_CHEO)
                     "tiktok" -> navController.navigate(Routes.LINK_ACCOUNT_TIKTOK)
                     "nvc" -> Unit
                 }

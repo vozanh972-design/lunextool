@@ -262,7 +262,7 @@ fun WalletScreen(navController: NavController) {
                     iconBg = Color(0xFFFDF2F8),
                     iconTint = Color(0xFFDB2777),
                     onClick = {
-                        navController.navigate(Routes.simpleTaskPlatform("Tuongtaccheo")) { launchSingleTop = true }
+                        navController.navigate(Routes.TUONG_TAC_CHEO) { launchSingleTop = true }
                     }
                 )
             }
