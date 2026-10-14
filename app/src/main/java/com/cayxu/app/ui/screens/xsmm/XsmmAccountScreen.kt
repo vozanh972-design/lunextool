@@ -1,4 +1,4 @@
-package com.cayxu.app.ui.screens.xsmm
+﻿package com.cayxu.app.ui.screens.xsmm
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -60,6 +60,7 @@ import com.cayxu.app.data.repository.XsmmAuthRepository
 import com.cayxu.app.data.repository.XsmmLoginResult
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.theme.*
+import com.cayxu.app.ui.xsmm.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -100,6 +101,8 @@ fun XsmmAccountScreen(navController: NavController) {
     val points by XsmmSession.points
     var isRefreshing by remember { mutableStateOf(false) }
 
+    var currentPlatform by remember { mutableStateOf(XsmmPlatform.TikTok) }
+    var selectedTypeId by remember { mutableStateOf<String?>("tiktok") }
     var selectedPlatform by remember { mutableStateOf("tiktok") }
     var selectedVariant by remember { mutableStateOf(TikTokAppVariant.STANDARD) }
     var linkedHandles by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -798,2277 +801,251 @@ fun XsmmAccountScreen(navController: NavController) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(AppBackground)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { navController.popBackStack() }, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Quay lại", tint = TextPrimary)
-            }
-            Spacer(Modifier.width(8.dp))
-            Text("XSMM", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        }
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-        ) {
-            // ---- Thẻ tài khoản XSMM gọn gàng ----
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = CardWhite),
-                border = androidx.compose.foundation.BorderStroke(1.dp, TextSecondary.copy(alpha = 0.15f)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val initial = (username.trim().firstOrNull()?.uppercaseChar() ?: 'X').toString()
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF1877F2)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = initial,
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+    val currentAccounts = remember(currentPlatform, allTikTokAccounts, facebookAccounts, instagramAccounts, linkedHandles, linkedFbUids) {
+        when (currentPlatform) {
+            XsmmPlatform.TikTok -> {
+                allTikTokAccounts.map { acc ->
+                    val typeId = when (acc.variant) {
+                        TikTokAppVariant.LITE -> "tiktok_lite"
+                        TikTokAppVariant.STUDIO -> "tiktok_studio"
+                        else -> "tiktok"
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = username.ifBlank { "XSMM User" },
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        val formattedPoints = try {
-                            java.text.NumberFormat.getInstance(java.util.Locale("vi", "VN")).format(points)
-                        } catch (_: Exception) {
-                            points.toString()
-                        }
-                        Text(
-                            text = "$formattedPoints xu",
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF1877F2)
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            isRefreshing = true
-                            val token = XsmmAccountStore.getToken(context)
-                            if (token.isNullOrBlank()) {
-                                isRefreshing = false
-                            } else {
-                                scope.launch {
-                                    when (val result = XsmmAuthRepository.fetchUser(token)) {
-                                        is XsmmLoginResult.Success -> {
-                                            XsmmSession.login(context, token, result.info.username, result.info.points)
-                                        }
-                                        is XsmmLoginResult.Error -> Unit
-                                    }
-                                    if (selectedPlatform == "facebook") {
-                                        val allFbOnXsmm = XsmmAccountsRepository.getFacebookAccounts(token)
-                                        val xsmmUids = allFbOnXsmm
-                                            .map { it.accountId.trim() }
-                                            .filter { it.isNotBlank() }
-                                            .toSet()
-                                        linkedFbUids = xsmmUids
-
-                                        val accMap = allFbOnXsmm
-                                            .filter { it.accountId.isNotBlank() }
-                                            .associate { it.accountId.trim() to it.accountId.trim() }
-                                        val internalMap = allFbOnXsmm
-                                            .filter { it.accountId.isNotBlank() && it.id.isNotBlank() }
-                                            .associate { it.accountId.trim() to it.id.trim() }
-                                        XsmmAccountStore.saveAccountIdMap(context, accMap)
-                                        XsmmAccountStore.saveInternalIdMap(context, internalMap)
-
-                                        val count = xsmmUids.size
-                                        android.widget.Toast.makeText(context, "Đã đồng bộ XSMM: $count tài khoản Facebook đã liên kết", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                                    isRefreshing = false
-                                }
-                            }
-                        },
-                        enabled = !isRefreshing,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        if (isRefreshing) {
-                            CircularProgressIndicator(color = XsmmAccentEnd, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                        } else {
-                            Icon(Icons.Filled.Refresh, contentDescription = "Làm mới", tint = XsmmAccentEnd, modifier = Modifier.size(20.dp))
-                        }
-                    }
-                    IconButton(
-                        onClick = {
-                            XsmmSession.logout(context)
-                            navController.navigate(Routes.XSMM_LOGIN) {
-                                popUpTo(Routes.XSMM_ACCOUNT) { inclusive = true }
-                            }
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Filled.ExitToApp, contentDescription = "Đăng xuất", tint = DangerRed, modifier = Modifier.size(20.dp))
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // ---- Chọn nền tảng (TikTok / Facebook / Instagram) ----
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = selectedPlatform == "tiktok",
-                    onClick = {
-                        selectedPlatform = "tiktok"
-                        com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, "tiktok")
-                        selectedForRunUids = emptySet()
-                    },
-                    label = { Text("TikTok (${allTikTokAccounts.size})", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = TikTokBrandBlack.copy(alpha = 0.12f),
-                        selectedLabelColor = TikTokBrandBlack
+                    val isLinked = acc.handle.trim().removePrefix("@").lowercase() in linkedHandles
+                    XsmmAccount(
+                        id = acc.uid,
+                        name = if (acc.nickname.isNotBlank()) "${acc.nickname} (@${acc.handle})" else "@${acc.handle.ifBlank { acc.uid }}",
+                        typeId = typeId,
+                        statusLabel = if (!isLinked) "Chưa thêm XSMM" else if (acc.isLive) "Hoạt động" else "Die",
+                        statusOk = isLinked && acc.isLive
                     )
-                )
-                FilterChip(
-                    selected = selectedPlatform == "facebook",
-                    onClick = {
-                        selectedPlatform = "facebook"
-                        com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, "facebook")
-                        selectedForRunUids = emptySet()
-                    },
-                    label = { Text("Facebook (${facebookAccounts.size})", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color(0xFF1877F2).copy(alpha = 0.15f),
-                        selectedLabelColor = Color(0xFF1877F2)
+                }
+            }
+            XsmmPlatform.Facebook -> {
+                facebookAccounts.map { acc ->
+                    val isLinked = linkedFbUids.contains(acc.uid.trim())
+                    XsmmAccount(
+                        id = acc.uid,
+                        name = acc.name.ifBlank { "UID: ${acc.uid}" },
+                        typeId = "facebook",
+                        statusLabel = if (!isLinked) "Chưa thêm XSMM" else if (acc.isLive) "Hoạt động" else "Hết hạn",
+                        statusOk = isLinked && acc.isLive
                     )
-                )
-                FilterChip(
-                    selected = selectedPlatform == "instagram",
-                    onClick = {
-                        selectedPlatform = "instagram"
-                        com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, "instagram")
-                        selectedForRunUids = emptySet()
-                    },
-                    label = { Text("Instagram (${instagramAccounts.size})", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color(0xFFE1306C).copy(alpha = 0.15f),
-                        selectedLabelColor = Color(0xFFE1306C)
+                }
+            }
+            XsmmPlatform.Instagram -> {
+                val localIgAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context)
+                val igMap = localIgAccounts.associateBy { it.username.trim().removePrefix("@").lowercase() }
+                instagramAccounts.map { username ->
+                    val clean = username.trim().removePrefix("@").lowercase()
+                    val acc = igMap[clean]
+                    val isLinked = acc?.isXsmmLinked == true
+                    val displayName = acc?.fullName?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
+                        ?: "@${username.trim().removePrefix("@")}"
+                    XsmmAccount(
+                        id = username,
+                        name = displayName,
+                        typeId = "instagram",
+                        statusLabel = if (!isLinked) "Chưa thêm XSMM" else if (acc?.isLive == true) "Hoạt động" else "Hết hạn",
+                        statusOk = isLinked && (acc?.isLive != false)
                     )
-                )
-            }
-
-            Spacer(Modifier.height(14.dp))
-
-            if (selectedPlatform == "tiktok") {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("Tài khoản TikTok", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                    
-                    if (selectedForRunUids.isNotEmpty()) {
-                        IconButton(
-                            onClick = { showDeleteConfirmSheet = true },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(DangerRed.copy(alpha = 0.12f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Xóa tài khoản đã chọn", tint = DangerRed, modifier = Modifier.size(18.dp))
-                            }
-                        }
-                        Spacer(Modifier.width(6.dp))
-                    }
-
-                    val allUidsInTab = accountsForVariant.filter { it.handle.trim().removePrefix("@").lowercase() in linkedHandles }.map { it.uid }
-                    val allSelected = allUidsInTab.isNotEmpty() && allUidsInTab.all { it in selectedForRunUids }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                selectedForRunUids = if (allSelected) selectedForRunUids - allUidsInTab.toSet()
-                                else selectedForRunUids + allUidsInTab.toSet()
-                            }
-                            .padding(horizontal = 6.dp, vertical = 4.dp)
-                    ) {
-                        Checkbox(
-                            checked = allSelected,
-                            onCheckedChange = null,
-                            colors = CheckboxDefaults.colors(checkedColor = TikTokBrandBlack),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("Tất cả", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                    }
-
-                    Spacer(Modifier.width(6.dp))
-
-                    IconButton(
-                        onClick = { showTikTokCheckSheet = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(TikTokBrandBlack),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = "Thêm/Kiểm tra tài khoản TikTok", tint = Color.White, modifier = Modifier.size(18.dp))
-                        }
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-
-                // ---- 3 tab: TikTok / TikTok Lite / TikTok Studio ----
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    VariantTabChip("TikTok", TikTokAppVariant.STANDARD, selectedVariant, allTikTokAccounts) { selectedVariant = it }
-                    VariantTabChip("TikTok Lite", TikTokAppVariant.LITE, selectedVariant, allTikTokAccounts) { selectedVariant = it }
-                    VariantTabChip("TikTok Studio", TikTokAppVariant.STUDIO, selectedVariant, allTikTokAccounts) { selectedVariant = it }
-                }
-            } else if (selectedPlatform == "facebook") {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("Tài khoản Facebook", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                    
-                    if (selectedForRunUids.isNotEmpty()) {
-                        IconButton(
-                            onClick = { showDeleteConfirmSheet = true },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(DangerRed.copy(alpha = 0.12f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Xóa tài khoản đã chọn", tint = DangerRed, modifier = Modifier.size(18.dp))
-                            }
-                        }
-                        Spacer(Modifier.width(6.dp))
-                    }
-
-                    IconButton(
-                        onClick = { showFacebookLoginSheet = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = "Thêm tài khoản Facebook", tint = Color(0xFF1877F2), modifier = Modifier.size(18.dp))
-                        }
-                    }
-                }
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("Tài khoản Instagram", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                    
-                    if (selectedForRunUids.isNotEmpty()) {
-                        IconButton(
-                            onClick = { showDeleteConfirmSheet = true },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(DangerRed.copy(alpha = 0.12f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Xóa tài khoản đã chọn", tint = DangerRed, modifier = Modifier.size(18.dp))
-                            }
-                        }
-                        Spacer(Modifier.width(6.dp))
-                    }
-
-                    IconButton(
-                        onClick = { showInstagramCookieSheet = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFE1306C).copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = "Thêm tài khoản Instagram", tint = Color(0xFFE1306C), modifier = Modifier.size(18.dp))
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            if (isCheckingLinked) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
-                    CircularProgressIndicator(color = XsmmAccentEnd, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Đang kiểm tra tài khoản trên XSMM...", color = TextSecondary, fontSize = 12.sp)
-                }
-            }
-
-            if (selectedPlatform == "tiktok") {
-                if (accountsForVariant.isEmpty()) {
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = CardWhite),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.padding(20.dp)) {
-                            Text("Chưa có tài khoản nào ở loại này - thêm ở phần Quản lý tài khoản TikTok trước.", color = TextSecondary, fontSize = 13.sp)
-                        }
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        accountsForVariant.forEach { account ->
-                            val handleLower = account.handle.trim().removePrefix("@").lowercase()
-                            val isLinked = handleLower in linkedHandles
-                            val isThisReloading = account.uid in reloadingTikTokUids
-                            XsmmTikTokAccountCard(
-                                account = account,
-                                isSelected = account.uid == selectedAccountUid,
-                                isAdded = isLinked,
-                                isAdding = addingUid == account.uid,
-                                isCheckedForRun = account.uid in selectedForRunUids,
-                                isReloading = isThisReloading,
-                                onCheckedForRunChange = { checked ->
-                                    if (!isLinked) return@XsmmTikTokAccountCard
-                                    selectedForRunUids = if (checked) selectedForRunUids + account.uid
-                                    else selectedForRunUids - account.uid
-                                },
-                                onClick = { selectedAccountUid = account.uid },
-                                onReloadProfile = {
-                                    if (isThisReloading || account.handle.isBlank()) return@XsmmTikTokAccountCard
-                                    reloadingTikTokUids = reloadingTikTokUids + account.uid
-                                    scope.launch(Dispatchers.IO) {
-                                        try {
-                                            val client = TikTokProfileCheckerClient()
-                                            val profile = client.fetchProfile(account.handle)
-                                            if (profile != null) {
-                                                TikTokAccountsStore.updateFullProfile(context, account.uid, profile)
-                                                withContext(Dispatchers.Main) {
-                                                    reloadXsmmTikTok()
-                                                    val msg = if (profile.isLive) {
-                                                        "Đã cập nhật @${profile.username}: Live (${formatTikTokCount(profile.followerCount)} follow)"
-                                                    } else {
-                                                        "Tài khoản @${profile.username} không tồn tại hoặc bị khóa"
-                                                    }
-                                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                                                }
-                                            } else {
-                                                withContext(Dispatchers.Main) {
-                                                    android.widget.Toast.makeText(context, "Không thể kết nối TikTok, vui lòng thử lại", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            withContext(Dispatchers.Main) {
-                                                android.widget.Toast.makeText(context, "Lỗi cập nhật: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
-                                        } finally {
-                                            withContext(Dispatchers.Main) {
-                                                reloadingTikTokUids = reloadingTikTokUids - account.uid
-                                            }
-                                        }
-                                    }
-                                },
-                                onAddClick = {
-                                    val token = XsmmAccountStore.getToken(context)
-                                    if (token.isNullOrBlank()) {
-                                        android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
-                                        return@XsmmTikTokAccountCard
-                                    }
-                                    addingUid = account.uid
-                                    scope.launch {
-                                        when (val result = XsmmAccountsRepository.addTikTokAccount2(token, account.handle)) {
-                                             is XsmmAddAccountResult.Success -> {
-                                                linkedHandles = linkedHandles + handleLower
-                                                val newId = result.account.accountId.ifBlank { result.account.id }
-                                                if (newId.isNotBlank()) {
-                                                    val currentMap = XsmmAccountStore.getAccountIdMap(context).toMutableMap()
-                                                    currentMap[handleLower] = newId
-                                                    XsmmAccountStore.saveAccountIdMap(context, currentMap)
-                                                }
-                                                android.widget.Toast.makeText(context, "Đã thêm @${account.handle} vào XSMM", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
-                                            is XsmmAddAccountResult.Error -> {
-                                                android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
-                                            }
-                                        }
-                                        addingUid = null
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-            } else if (selectedPlatform == "facebook") {
-                if (facebookAccounts.isEmpty()) {
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = CardWhite),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable { showFacebookLoginSheet = true }
-                    ) {
-                        Column(
-                            Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text("Chưa có tài khoản Facebook nào.", color = TextSecondary, fontSize = 13.sp)
-                            Spacer(Modifier.height(4.dp))
-                            Text("Bấm vào đây hoặc nút dấu + để đăng nhập tài khoản Facebook.", color = Color(0xFF1877F2), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        }
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        facebookAccounts.forEach { account ->
-                            val isChecked = account.uid in selectedForRunUids
-                            val isRunningFbThis = com.cayxu.app.automation.facebook.XsmmFacebookManager.isRunning(account.uid)
-                            val currentFbAvatar = liveFbAvatars[account.uid] ?: account.avatar
-                            val fbAvatarModel = remember(currentFbAvatar, avatarVersion) {
-                                if (currentFbAvatar.isBlank()) null
-                                else coil.request.ImageRequest.Builder(context)
-                                    .data(currentFbAvatar)
-                                    .crossfade(true)
-                                    .memoryCacheKey("${currentFbAvatar}_$avatarVersion")
-                                    .diskCacheKey("${currentFbAvatar}_$avatarVersion")
-                                    .build()
-                            }
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = CardWhite),
-                                border = if (isChecked) androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF1877F2)) else null,
-                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null
-                                    ) {
-                                        selectedForRunUids = if (isChecked) selectedForRunUids - account.uid
-                                        else selectedForRunUids + account.uid
-                                    }
-                            ) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Checkbox(
-                                            checked = isChecked,
-                                            onCheckedChange = { checked ->
-                                                selectedForRunUids = if (checked) selectedForRunUids + account.uid
-                                                else selectedForRunUids - account.uid
-                                            },
-                                            colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2))
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-
-                                        // Avatar Facebook có nút đổi ảnh cây bút nhỏ nằm bên trong
-                                        val isThisFbUploading = isUploadingAvatar && targetFbAvatarChangeUid == account.uid
-                                        Box(
-                                            modifier = Modifier
-                                                .size(46.dp)
-                                                .clip(CircleShape)
-                                                .border(1.5.dp, Color(0xFF1877F2).copy(alpha = 0.6f), CircleShape)
-                                                .clickable(enabled = !isUploadingAvatar) {
-                                                    targetFbAvatarChangeUid = account.uid
-                                                    pickFbAvatarLauncher.launch("image/*")
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (currentFbAvatar.isNotBlank()) {
-                                                AsyncImage(
-                                                    model = fbAvatarModel,
-                                                    contentDescription = "Avatar Facebook",
-                                                    contentScale = ContentScale.Crop,
-                                                    modifier = Modifier.fillMaxSize()
-                                                )
-                                            } else {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(Color(0xFF1877F2)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text(
-                                                        text = (account.name.firstOrNull() ?: 'F').uppercase(),
-                                                        color = Color.White,
-                                                        fontWeight = FontWeight.Bold,
-                                                        fontSize = 16.sp
-                                                    )
-                                                }
-                                            }
-
-                                            // Lớp phủ và icon bút sửa ảnh nằm bên trong đáy avatar
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(16.dp)
-                                                    .align(Alignment.BottomCenter)
-                                                    .background(Color.Black.copy(alpha = 0.45f)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Edit,
-                                                    contentDescription = "Đổi avatar",
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(11.dp)
-                                                )
-                                            }
-
-                                            if (isThisFbUploading) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(Color.Black.copy(alpha = 0.6f)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    CircularProgressIndicator(
-                                                        color = Color.White,
-                                                        strokeWidth = 2.dp,
-                                                        modifier = Modifier.size(20.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        Spacer(Modifier.width(10.dp))
-
-                                        Column(Modifier.weight(1f)) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text(
-                                                    account.name.ifBlank { account.uid },
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 14.5.sp,
-                                                    color = TextPrimary,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-
-                                                // Nút Live/Die nằm ngay cạnh tên acc
-                                                val isLive = account.isLive
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(if (isLive) Color(0xFF22C55E).copy(alpha = 0.12f) else DangerRed.copy(alpha = 0.12f))
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(6.dp)
-                                                            .clip(CircleShape)
-                                                            .background(if (isLive) Color(0xFF16A34A) else DangerRed)
-                                                    )
-                                                    Spacer(Modifier.width(4.dp))
-                                                    Text(
-                                                        if (isLive) "Live" else "Die",
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = if (isLive) Color(0xFF16A34A) else DangerRed
-                                                    )
-                                                }
-                                            }
-
-                                            Spacer(Modifier.height(2.dp))
-                                            Text(
-                                                "UID: ${account.uid}",
-                                                color = TextSecondary,
-                                                fontSize = 12.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-
-                                            Spacer(Modifier.height(4.dp))
-                                            // Trạng thái kiểm tra trên XSMM / Nút Thêm vào XSMM nằm ngang hàng riêng
-                                            val isFbLinked = account.uid.trim() in linkedFbUids
-                                            val isFbAdding = account.uid in addingFbUids
-
-                                            if (isFbAdding) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .background(Color(0xFF1877F2).copy(alpha = 0.08f))
-                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                                ) {
-                                                    CircularProgressIndicator(
-                                                        color = Color(0xFF1877F2),
-                                                        strokeWidth = 2.dp,
-                                                        modifier = Modifier.size(12.dp)
-                                                    )
-                                                    Spacer(Modifier.width(5.dp))
-                                                    Text(
-                                                        "Đang thêm...",
-                                                        color = Color(0xFF1877F2),
-                                                        fontSize = 10.5.sp,
-                                                        fontWeight = FontWeight.Medium,
-                                                        maxLines = 1,
-                                                        softWrap = false
-                                                    )
-                                                }
-                                            } else if (isFbLinked) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .background(Color(0xFF16A34A).copy(alpha = 0.12f))
-                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                                ) {
-                                                    Icon(
-                                                        Icons.Filled.Check,
-                                                        contentDescription = null,
-                                                        tint = Color(0xFF16A34A),
-                                                        modifier = Modifier.size(12.dp)
-                                                    )
-                                                    Spacer(Modifier.width(4.dp))
-                                                    Text(
-                                                        "Đã liên kết XSMM",
-                                                        color = Color(0xFF16A34A),
-                                                        fontSize = 10.5.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        maxLines = 1,
-                                                        softWrap = false
-                                                    )
-                                                }
-                                            } else {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .background(Color(0xFF1877F2).copy(alpha = 0.12f))
-                                                        .clickable {
-                                                            val token = XsmmAccountStore.getToken(context)
-                                                            if (token.isNullOrBlank()) {
-                                                                android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
-                                                                return@clickable
-                                                            }
-                                                            addingFbUids = addingFbUids + account.uid
-                                                            scope.launch {
-                                                                when (val res = XsmmAccountsRepository.addFacebookAccount(token, account.uid)) {
-                                                                    is XsmmAddAccountResult.Success -> {
-                                                                        android.widget.Toast.makeText(context, "Đã thêm Facebook [${account.name.ifBlank { account.uid }}] vào XSMM, đang đồng bộ...", android.widget.Toast.LENGTH_SHORT).show()
-                                                                        linkedSyncTrigger = System.currentTimeMillis()
-                                                                    }
-                                                                    is XsmmAddAccountResult.Error -> {
-                                                                        android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
-                                                                    }
-                                                                }
-                                                                addingFbUids = addingFbUids - account.uid
-                                                            }
-                                                        }
-                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                                ) {
-                                                    Icon(
-                                                        Icons.Filled.Add,
-                                                        contentDescription = null,
-                                                        tint = Color(0xFF1877F2),
-                                                        modifier = Modifier.size(12.dp)
-                                                    )
-                                                    Spacer(Modifier.width(4.dp))
-                                                    Text(
-                                                        "Thêm vào XSMM",
-                                                        color = Color(0xFF1877F2),
-                                                        fontSize = 10.5.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        maxLines = 1,
-                                                        softWrap = false
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        // Nút Reload (Làm mới) màu xanh chủ đạo Facebook
-                                        IconButton(
-                                            onClick = {
-                                                scope.launch(Dispatchers.IO) {
-                                                    val mgr = com.cayxu.app.facebook.FacebookAccountManager()
-                                                    try {
-                                                        if (account.note.contains("c_user=")) {
-                                                            val directAcc = mgr.getTokenFromCookie(account.note, account.phone.ifBlank { null })
-                                                            if (directAcc != null && directAcc.isLive) {
-                                                                val updated = account.copy(
-                                                                    name = directAcc.name.ifBlank { account.name },
-                                                                    avatar = directAcc.avatar.ifBlank { account.avatar },
-                                                                    bio = directAcc.bio.ifBlank { account.bio },
-                                                                    pages = directAcc.pages.ifEmpty { account.pages },
-                                                                    isLive = true
-                                                                )
-                                                                com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
-                                                            } else {
-                                                                val updated = account.copy(isLive = false)
-                                                                com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
-                                                            }
-                                                        } else {
-                                                            val token = account.bio.ifBlank { null }
-                                                            if (!token.isNullOrBlank()) {
-                                                                val details = mgr.fetchAccountDetailsWithToken(token, account.phone.ifBlank { null })
-                                                                val updated = account.copy(
-                                                                    name = details.name.ifBlank { account.name },
-                                                                    avatar = details.avatar.ifBlank { account.avatar },
-                                                                    email = details.email,
-                                                                    pages = details.pages.ifEmpty { account.pages },
-                                                                    isLive = true
-                                                                )
-                                                                com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
-                                                            } else {
-                                                                val updated = account.copy(isLive = false)
-                                                                com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
-                                                            }
-                                                        }
-                                                    } catch (_: Exception) {
-                                                        val updated = account.copy(isLive = false)
-                                                        com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updated)
-                                                    }
-
-                                                    // Kiểm tra thực tế tài khoản này và các Page của nó qua danh sách toàn bộ acc XSMM
-                                                    val xsmmToken = XsmmAccountStore.getToken(context)
-                                                    if (!xsmmToken.isNullOrBlank()) {
-                                                        val allFbOnXsmm = XsmmAccountsRepository.getFacebookAccounts(xsmmToken)
-                                                        val targetUids = mutableListOf(account.uid.trim())
-                                                        account.pages.forEach { p ->
-                                                            val pUid = p.additionalProfileId.ifBlank { p.pageId }.trim()
-                                                            if (pUid.isNotBlank()) targetUids.add(pUid)
-                                                        }
-                                                        val accMap = XsmmAccountStore.getAccountIdMap(context).toMutableMap()
-                                                        val internalMap = XsmmAccountStore.getInternalIdMap(context).toMutableMap()
-                                                        val newlyLinked = mutableSetOf<String>()
-                                                        val newlyUnlinked = mutableSetOf<String>()
-
-                                                        targetUids.forEach { u ->
-                                                            val matched = allFbOnXsmm.firstOrNull { it.accountId.trim() == u || it.linkAccount.contains(u) }
-                                                            if (matched != null) {
-                                                                newlyLinked.add(u)
-                                                                accMap[u] = matched.accountId.trim()
-                                                                if (matched.id.isNotBlank()) internalMap[u] = matched.id
-                                                            } else {
-                                                                newlyUnlinked.add(u)
-                                                                accMap.remove(u)
-                                                                internalMap.remove(u)
-                                                            }
-                                                        }
-                                                        withContext(Dispatchers.Main) {
-                                                            linkedFbUids = (linkedFbUids + newlyLinked) - newlyUnlinked
-                                                            XsmmAccountStore.saveAccountIdMap(context, accMap)
-                                                            XsmmAccountStore.saveInternalIdMap(context, internalMap)
-                                                        }
-                                                    }
-
-                                                    withContext(Dispatchers.Main) {
-                                                        avatarVersion = System.currentTimeMillis()
-                                                        facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
-                                                        android.widget.Toast.makeText(context, "Đã làm mới thông tin Facebook", android.widget.Toast.LENGTH_SHORT).show()
-                                                    }
-                                                }
-                                            },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(28.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(0xFF1877F2).copy(alpha = 0.1f)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Refresh,
-                                                    contentDescription = "Làm mới",
-                                                    tint = Color(0xFF1877F2),
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-
-                                        Spacer(Modifier.width(6.dp))
-
-                                        // Nút Chạy (Play tam giác màu xanh Facebook) / Dừng
-                                        IconButton(
-                                            onClick = {
-                                                if (isRunningFbThis) {
-                                                    com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(account.uid)
-                                                    android.widget.Toast.makeText(context, "Đã dừng chạy Facebook: ${account.name.ifBlank { account.uid }}", android.widget.Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    com.cayxu.app.automation.facebook.XsmmFacebookManager.start(context, account.uid)
-                                                    android.widget.Toast.makeText(context, "Bắt đầu chạy Facebook: ${account.name.ifBlank { account.uid }}", android.widget.Toast.LENGTH_SHORT).show()
-                                                }
-                                            },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(28.dp)
-                                                    .clip(CircleShape)
-                                                    .background(if (isRunningFbThis) DangerRed else Color(0xFF1877F2)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                if (isRunningFbThis) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(10.dp)
-                                                            .clip(RoundedCornerShape(2.dp))
-                                                            .background(Color.White)
-                                                    )
-                                                } else {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.PlayArrow,
-                                                        contentDescription = "Chạy",
-                                                        tint = Color.White,
-                                                        modifier = Modifier.size(18.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    val fbStatus = fbStatusMap[account.uid]
-                                    val fbSuccess = fbSuccessCountMap[account.uid] ?: 0
-                                    val fbErrors = fbErrorCountMap[account.uid] ?: 0
-                                    val fbErrDetail = fbErrorDetailMap[account.uid]
-                                    if (!fbStatus.isNullOrBlank() || fbSuccess > 0 || fbErrors > 0) {
-                                        Spacer(Modifier.height(6.dp))
-                                        Column(
-                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.SpaceBetween
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.weight(1f),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    if (isRunningFbThis) {
-                                                        CircularProgressIndicator(
-                                                            color = Color(0xFF1877F2),
-                                                            strokeWidth = 1.6.dp,
-                                                            modifier = Modifier.size(10.dp)
-                                                        )
-                                                        Spacer(Modifier.width(5.dp))
-                                                    }
-                                                    Text(
-                                                        text = fbStatus ?: "Sẵn sàng",
-                                                        fontSize = 11.5.sp,
-                                                        color = if (isRunningFbThis) Color(0xFF1877F2) else TextSecondary,
-                                                        maxLines = 2,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
-                                                if (fbSuccess > 0 || fbErrors > 0 || !fbErrDetail.isNullOrBlank()) {
-                                                    Spacer(Modifier.width(6.dp))
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                    ) {
-                                                        if (fbSuccess > 0) {
-                                                            Text("+$fbSuccess", color = Color(0xFF16A34A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                        }
-                                                        if (fbErrors > 0) {
-                                                            Text("-$fbErrors", color = DangerRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                        }
-                                                        if (fbErrors > 0 || !fbErrDetail.isNullOrBlank()) {
-                                                            IconButton(
-                                                                onClick = { selectedErrorDetailAccount = account.uid },
-                                                                modifier = Modifier.size(24.dp)
-                                                            ) {
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .size(20.dp)
-                                                                        .clip(CircleShape)
-                                                                        .background(DangerRed.copy(alpha = 0.15f)),
-                                                                    contentAlignment = Alignment.Center
-                                                                ) {
-                                                                    Icon(
-                                                                        imageVector = Icons.Filled.Warning,
-                                                                        contentDescription = "Xem chi tiết lỗi",
-                                                                        tint = DangerRed,
-                                                                        modifier = Modifier.size(12.dp)
-                                                                    )
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Trạng thái Page: Nếu không có page -> hiển thị "Tài khoản không có page", nếu có page -> hiển thị danh sách với chữ "Page: " ở trước tên
-                                    Spacer(Modifier.height(10.dp))
-                                    HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
-                                    Spacer(Modifier.height(8.dp))
-
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(start = 4.dp, end = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        if (account.pages.isEmpty()) {
-                                            Text(
-                                                "Tài khoản không có page",
-                                                fontSize = 11.5.sp,
-                                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                                                color = TextSecondary.copy(alpha = 0.8f)
-                                            )
-                                        } else {
-                                            Text(
-                                                "Danh sách Page / Profile+ (${account.pages.size}):",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = TextSecondary
-                                            )
-                                        }
-
-                                        // Nút chấm than (i) xem Full Info xuống cùng hàng với trạng thái Page
-                                        IconButton(
-                                            onClick = { selectedFbDetailAccount = account },
-                                            modifier = Modifier.size(28.dp)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(26.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    Icons.Filled.Info,
-                                                    contentDescription = "Xem thông tin chi tiết",
-                                                    tint = Color(0xFF1877F2),
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    if (account.pages.isNotEmpty()) {
-                                        Spacer(Modifier.height(4.dp))
-                                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            account.pages.forEach { page ->
-                                                Column(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .clip(RoundedCornerShape(10.dp))
-                                                        .background(Color(0xFFF8FAFC))
-                                                        .border(0.8.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
-                                                        .padding(horizontal = 8.dp, vertical = 6.dp)
-                                                ) {
-                                                    val pageDisplayUid = livePageUids[page.pageId] ?: page.displayUid
-                                                    val effectivePageUid = (page.additionalProfileId.takeIf { it.isNotBlank() && it.startsWith("615") }
-                                                        ?: pageDisplayUid.takeIf { it.isNotBlank() && it.startsWith("615") }
-                                                        ?: page.additionalProfileId.takeIf { it.isNotBlank() }
-                                                        ?: pageDisplayUid.takeIf { it.isNotBlank() }
-                                                        ?: page.pageId).trim()
-
-                                                    val isPageRunning = runningFbAccounts.any {
-                                                        it.equals(effectivePageUid, ignoreCase = true) ||
-                                                        it.equals(page.pageId, ignoreCase = true) ||
-                                                        (page.additionalProfileId.isNotBlank() && it.equals(page.additionalProfileId, ignoreCase = true)) ||
-                                                        (pageDisplayUid.isNotBlank() && it.equals(pageDisplayUid, ignoreCase = true))
-                                                    }
-
-                                                    val isPageChecked = effectivePageUid in selectedForRunUids ||
-                                                        page.pageId in selectedForRunUids ||
-                                                        (page.additionalProfileId.isNotBlank() && page.additionalProfileId in selectedForRunUids) ||
-                                                        (pageDisplayUid.isNotBlank() && pageDisplayUid in selectedForRunUids)
-
-                                                    Row(
-                                                        modifier = Modifier.fillMaxWidth(),
-                                                        verticalAlignment = Alignment.CenterVertically
-                                                    ) {
-                                                        // 1. Dấu tích chọn (Checkbox) của Page như Profile
-                                                        Checkbox(
-                                                            checked = isPageChecked,
-                                                            onCheckedChange = { checked ->
-                                                                selectedForRunUids = if (checked) {
-                                                                    selectedForRunUids + effectivePageUid
-                                                                } else {
-                                                                    selectedForRunUids - effectivePageUid - page.pageId - page.additionalProfileId - pageDisplayUid
-                                                                }
-                                                            },
-                                                            colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1877F2)),
-                                                            modifier = Modifier.size(22.dp)
-                                                        )
-                                                        Spacer(Modifier.width(8.dp))
-
-                                                        // 2. Avatar của Page
-                                                        val avatarToDisplay = livePageAvatars[page.pageId] ?: (
-                                                            if (page.avatar.isNotBlank() && !page.avatar.contains("silhouette") && !page.avatar.endsWith(".gif") && !page.avatar.contains(page.displayUid)) page.avatar
-                                                            else "https://graph.facebook.com/v21.0/${page.pageId}/picture?type=large"
-                                                        )
-                                                        if (avatarToDisplay.isNotBlank()) {
-                                                            AsyncImage(
-                                                                model = avatarToDisplay,
-                                                                contentDescription = "Page Avatar",
-                                                                contentScale = ContentScale.Crop,
-                                                                modifier = Modifier
-                                                                    .size(28.dp)
-                                                                    .clip(CircleShape)
-                                                            )
-                                                        } else {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .size(28.dp)
-                                                                    .clip(CircleShape)
-                                                                    .background(Color(0xFF1877F2).copy(alpha = 0.15f)),
-                                                                contentAlignment = Alignment.Center
-                                                            ) {
-                                                                Icon(
-                                                                    Icons.Filled.Flag,
-                                                                    contentDescription = null,
-                                                                    tint = Color(0xFF1877F2),
-                                                                    modifier = Modifier.size(15.dp)
-                                                                )
-                                                            }
-                                                        }
-                                                        Spacer(Modifier.width(8.dp))
-
-                                                        // 3. Tên Page và ép hiển thị UID thật (615), không hiển thị ID page
-                                                        Column(modifier = Modifier.weight(1f)) {
-                                                            val uid615 = effectivePageUid
-                                                            Text(
-                                                                "Page: ${page.pageName.ifBlank { uid615.ifBlank { page.pageId } }}",
-                                                                fontSize = 12.sp,
-                                                                fontWeight = FontWeight.SemiBold,
-                                                                color = TextPrimary,
-                                                                maxLines = 1,
-                                                                overflow = TextOverflow.Ellipsis
-                                                            )
-                                                            if (uid615.isNotBlank()) {
-                                                                Text(
-                                                                    "UID: $uid615",
-                                                                    fontSize = 10.sp,
-                                                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                                                                    color = TextSecondary,
-                                                                    maxLines = 1,
-                                                                    overflow = TextOverflow.Ellipsis
-                                                                )
-                                                            }
-
-                                                            Spacer(Modifier.height(3.dp))
-
-                                                             // Trạng thái liên kết Page: chỉ so sánh UID Page với danh sách account_id từ XSMM
-                                                             val pageUid = effectivePageUid
-                                                             val isPageLinked = pageUid.isNotBlank() && pageUid in linkedFbUids
-                                                             val isPageAdding = pageUid.isNotBlank() && pageUid in addingFbUids
-
-                                                            if (isPageAdding) {
-                                                                Row(
-                                                                    verticalAlignment = Alignment.CenterVertically,
-                                                                    modifier = Modifier
-                                                                        .clip(RoundedCornerShape(5.dp))
-                                                                        .background(Color(0xFF1877F2).copy(alpha = 0.08f))
-                                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                                ) {
-                                                                    CircularProgressIndicator(
-                                                                        color = Color(0xFF1877F2),
-                                                                        strokeWidth = 1.5.dp,
-                                                                        modifier = Modifier.size(11.dp)
-                                                                    )
-                                                                    Spacer(Modifier.width(4.dp))
-                                                                    Text(
-                                                                        "Đang thêm...",
-                                                                        color = Color(0xFF1877F2),
-                                                                        fontSize = 9.5.sp,
-                                                                        fontWeight = FontWeight.Medium,
-                                                                        maxLines = 1,
-                                                                        softWrap = false
-                                                                    )
-                                                                }
-                                                            } else if (isPageLinked) {
-                                                                Row(
-                                                                    verticalAlignment = Alignment.CenterVertically,
-                                                                    modifier = Modifier
-                                                                        .clip(RoundedCornerShape(5.dp))
-                                                                        .background(Color(0xFF16A34A).copy(alpha = 0.12f))
-                                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                                ) {
-                                                                    Icon(
-                                                                        Icons.Filled.Check,
-                                                                        contentDescription = null,
-                                                                        tint = Color(0xFF16A34A),
-                                                                        modifier = Modifier.size(11.dp)
-                                                                    )
-                                                                    Spacer(Modifier.width(3.dp))
-                                                                    Text(
-                                                                        "Đã liên kết XSMM",
-                                                                        color = Color(0xFF16A34A),
-                                                                        fontSize = 9.5.sp,
-                                                                        fontWeight = FontWeight.Bold,
-                                                                        maxLines = 1,
-                                                                        softWrap = false
-                                                                    )
-                                                                }
-                                                            } else {
-                                                                Row(
-                                                                    verticalAlignment = Alignment.CenterVertically,
-                                                                    modifier = Modifier
-                                                                        .clip(RoundedCornerShape(5.dp))
-                                                                        .background(Color(0xFF1877F2).copy(alpha = 0.12f))
-                                                                        .clickable {
-                                                                            val token = XsmmAccountStore.getToken(context)
-                                                                            if (token.isNullOrBlank()) {
-                                                                                android.widget.Toast.makeText(context, "Chưa đăng nhập XSMM", android.widget.Toast.LENGTH_SHORT).show()
-                                                                                return@clickable
-                                                                            }
-                                                                            val targetToAdd = pageUid
-                                                                            if (targetToAdd.isBlank()) {
-                                                                                android.widget.Toast.makeText(context, "Chưa xác định được UID của Page", android.widget.Toast.LENGTH_SHORT).show()
-                                                                                return@clickable
-                                                                            }
-                                                                            addingFbUids = addingFbUids + targetToAdd
-                                                                            scope.launch {
-                                                                                when (val res = XsmmAccountsRepository.addFacebookAccount(token, targetToAdd)) {
-                                                                                    is XsmmAddAccountResult.Success -> {
-                                                                                        android.widget.Toast.makeText(context, "Đã thêm Page [${page.pageName.ifBlank { targetToAdd }}] vào XSMM, đang đồng bộ...", android.widget.Toast.LENGTH_SHORT).show()
-                                                                                        linkedSyncTrigger = System.currentTimeMillis()
-                                                                                    }
-                                                                                    is XsmmAddAccountResult.Error -> {
-                                                                                        android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
-                                                                                    }
-                                                                                }
-                                                                                addingFbUids = addingFbUids - targetToAdd
-                                                                            }
-                                                                        }
-                                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                                ) {
-                                                                    Icon(
-                                                                        Icons.Filled.Add,
-                                                                        contentDescription = null,
-                                                                        tint = Color(0xFF1877F2),
-                                                                        modifier = Modifier.size(11.dp)
-                                                                    )
-                                                                    Spacer(Modifier.width(3.dp))
-                                                                    Text(
-                                                                        "Thêm vào XSMM",
-                                                                        color = Color(0xFF1877F2),
-                                                                        fontSize = 9.5.sp,
-                                                                        fontWeight = FontWeight.Bold,
-                                                                        maxLines = 1,
-                                                                        softWrap = false
-                                                                    )
-                                                                }
-                                                            }
-                                                        }
-
-                                                        // 4. Dấu chấm than xanh (i) xem info và đổi avatar bìa của page
-                                                        IconButton(
-                                                            onClick = { selectedFbDetailPage = Pair(account, page) },
-                                                            modifier = Modifier.size(28.dp)
-                                                        ) {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .size(26.dp)
-                                                                    .clip(CircleShape)
-                                                                    .background(Color(0xFF1877F2).copy(alpha = 0.12f)),
-                                                                contentAlignment = Alignment.Center
-                                                            ) {
-                                                                Icon(
-                                                                    Icons.Filled.Info,
-                                                                    contentDescription = "Xem thông tin và đổi avatar bìa của Page",
-                                                                    tint = Color(0xFF1877F2),
-                                                                    modifier = Modifier.size(16.dp)
-                                                                )
-                                                            }
-                                                        }
-
-                                                        Spacer(Modifier.width(4.dp))
-
-                                                        // 5. Nút Play / Stop riêng cho Page
-                                                        IconButton(
-                                                            onClick = {
-                                                                if (isPageRunning) {
-                                                                    com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(effectivePageUid)
-                                                                    com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(page.pageId)
-                                                                    if (page.additionalProfileId.isNotBlank()) com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(page.additionalProfileId)
-                                                                    if (pageDisplayUid.isNotBlank()) com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(pageDisplayUid)
-                                                                    android.widget.Toast.makeText(context, "Đã dừng chạy Page: ${page.pageName.ifBlank { effectivePageUid }}", android.widget.Toast.LENGTH_SHORT).show()
-                                                                } else {
-                                                                    com.cayxu.app.automation.facebook.XsmmFacebookManager.start(context, effectivePageUid)
-                                                                    android.widget.Toast.makeText(context, "Bắt đầu chạy Page: ${page.pageName.ifBlank { effectivePageUid }}", android.widget.Toast.LENGTH_SHORT).show()
-                                                                }
-                                                            },
-                                                            modifier = Modifier.size(28.dp)
-                                                        ) {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .size(26.dp)
-                                                                    .clip(CircleShape)
-                                                                    .background(if (isPageRunning) DangerRed else Color(0xFF1877F2)),
-                                                                contentAlignment = Alignment.Center
-                                                            ) {
-                                                                if (isPageRunning) {
-                                                                    Box(
-                                                                        modifier = Modifier
-                                                                            .size(9.dp)
-                                                                            .clip(RoundedCornerShape(2.dp))
-                                                                            .background(Color.White)
-                                                                    )
-                                                                } else {
-                                                                    Icon(
-                                                                        imageVector = Icons.Filled.PlayArrow,
-                                                                        contentDescription = "Chạy Page",
-                                                                        tint = Color.White,
-                                                                        modifier = Modifier.size(15.dp)
-                                                                    )
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-
-                                                    // 6. Trạng thái chạy & tiến độ nhận nhiệm vụ của Page (Live status)
-                                                    val pageStatus = fbStatusMap[effectivePageUid]
-                                                        ?: fbStatusMap[page.pageId]
-                                                        ?: fbStatusMap[page.additionalProfileId]
-                                                        ?: (if (pageDisplayUid.isNotBlank()) fbStatusMap[pageDisplayUid] else null)
-
-                                                    val pageSuccess = fbSuccessCountMap[effectivePageUid]
-                                                        ?: fbSuccessCountMap[page.pageId]
-                                                        ?: fbSuccessCountMap[page.additionalProfileId]
-                                                        ?: (if (pageDisplayUid.isNotBlank()) fbSuccessCountMap[pageDisplayUid] else null)
-                                                        ?: 0
-
-                                                    val pageErrors = fbErrorCountMap[effectivePageUid]
-                                                        ?: fbErrorCountMap[page.pageId]
-                                                        ?: fbErrorCountMap[page.additionalProfileId]
-                                                        ?: (if (pageDisplayUid.isNotBlank()) fbErrorCountMap[pageDisplayUid] else null)
-                                                        ?: 0
-
-                                                    val pageErrorDetail = fbErrorDetailMap[effectivePageUid]
-                                                        ?: fbErrorDetailMap[page.pageId]
-                                                        ?: fbErrorDetailMap[page.additionalProfileId]
-                                                        ?: (if (pageDisplayUid.isNotBlank()) fbErrorDetailMap[pageDisplayUid] else null)
-
-                                                    if (isPageRunning || !pageStatus.isNullOrBlank() || pageSuccess > 0 || pageErrors > 0 || !pageErrorDetail.isNullOrBlank()) {
-                                                        Spacer(Modifier.height(5.dp))
-                                                        Column(
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .clip(RoundedCornerShape(6.dp))
-                                                                .background(if (isPageRunning) Color(0xFF1877F2).copy(alpha = 0.08f) else Color(0xFFE2E8F0).copy(alpha = 0.4f))
-                                                                .padding(horizontal = 6.dp, vertical = 4.dp)
-                                                        ) {
-                                                            Row(
-                                                                modifier = Modifier.fillMaxWidth(),
-                                                                verticalAlignment = Alignment.CenterVertically,
-                                                                horizontalArrangement = Arrangement.SpaceBetween
-                                                            ) {
-                                                                Row(
-                                                                    modifier = Modifier.weight(1f),
-                                                                    verticalAlignment = Alignment.CenterVertically
-                                                                ) {
-                                                                    if (isPageRunning) {
-                                                                        CircularProgressIndicator(
-                                                                            color = Color(0xFF1877F2),
-                                                                            strokeWidth = 1.6.dp,
-                                                                            modifier = Modifier.size(10.dp)
-                                                                        )
-                                                                        Spacer(Modifier.width(5.dp))
-                                                                    }
-                                                                    Text(
-                                                                        text = pageStatus ?: if (isPageRunning) "Đang chạy..." else "Sẵn sàng",
-                                                                        fontSize = 11.sp,
-                                                                        color = if (isPageRunning) Color(0xFF1877F2) else TextSecondary,
-                                                                        maxLines = 2,
-                                                                        overflow = TextOverflow.Ellipsis
-                                                                    )
-                                                                }
-                                                                if (pageSuccess > 0 || pageErrors > 0 || !pageErrorDetail.isNullOrBlank()) {
-                                                                    Spacer(Modifier.width(6.dp))
-                                                                    Row(
-                                                                        verticalAlignment = Alignment.CenterVertically,
-                                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                                    ) {
-                                                                        if (pageSuccess > 0) {
-                                                                            Text("+$pageSuccess", color = Color(0xFF16A34A), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                                                                        }
-                                                                        if (pageErrors > 0) {
-                                                                            Text("-$pageErrors", color = DangerRed, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                                                                        }
-                                                                        if (pageErrors > 0 || !pageErrorDetail.isNullOrBlank()) {
-                                                                            IconButton(
-                                                                                onClick = { selectedErrorDetailAccount = effectivePageUid },
-                                                                                modifier = Modifier.size(22.dp)
-                                                                            ) {
-                                                                                Box(
-                                                                                    modifier = Modifier
-                                                                                        .size(18.dp)
-                                                                                        .clip(CircleShape)
-                                                                                        .background(DangerRed.copy(alpha = 0.15f)),
-                                                                                    contentAlignment = Alignment.Center
-                                                                                ) {
-                                                                                    Icon(
-                                                                                        imageVector = Icons.Filled.Warning,
-                                                                                        contentDescription = "Xem chi tiết lỗi Page",
-                                                                                        tint = DangerRed,
-                                                                                        modifier = Modifier.size(11.dp)
-                                                                                    )
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                if (instagramAccounts.isEmpty()) {
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = CardWhite),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text("Chưa có tài khoản Instagram nào.", color = TextSecondary, fontSize = 13.sp)
-                            Spacer(Modifier.height(4.dp))
-                            Text("Bấm dấu + để đăng nhập tài khoản Instagram.", color = TextSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
-                        }
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        instagramAccounts.forEach { igUid ->
-                            val cleanIg = igUid.trim()
-                            val isChecked = cleanIg in selectedForRunUids
-                            val igAcc = remember(cleanIg, instagramAccounts, avatarVersion) {
-                                com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, cleanIg)
-                            }
-                            val cleanUname = remember(cleanIg, igAcc) {
-                                com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(
-                                    (igAcc?.username?.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
-                                        ?: igAcc?.fullName?.takeIf { !it.contains("người dùng", ignoreCase = true) && !it.contains(" ") && it.isNotBlank() }
-                                        ?: cleanIg.takeIf { !it.contains("người dùng", ignoreCase = true) && !it.all { c -> c.isDigit() } && it.isNotBlank() }
-                                        ?: igAcc?.userId?.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
-                                        ?: igAcc?.fullName?.takeIf { !it.contains("người dùng", ignoreCase = true) && it.isNotBlank() }
-                                        ?: cleanIg)
-                                ).trim().removePrefix("@")
-                            }
-                            val lookupKey = cleanUname.lowercase()
-                            val rawDisplayName = remember(cleanIg, igAcc, cleanUname) {
-                                igAcc?.fullName?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
-                                    ?: igAcc?.username?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
-                                    ?: cleanUname
-                            }
-                            val displayName = remember(rawDisplayName) {
-                                com.cayxu.app.instagram.InstagramApiClient.unescapeUnicode(rawDisplayName)
-                            }
-                            val accountKeys = remember(cleanIg, cleanUname, igAcc) {
-                                setOfNotNull(
-                                    cleanIg.trim().lowercase().takeIf { it.isNotBlank() },
-                                    cleanUname.trim().lowercase().takeIf { it.isNotBlank() },
-                                    lookupKey.takeIf { it.isNotBlank() },
-                                    igAcc?.userId?.trim()?.lowercase()?.takeIf { it.isNotBlank() },
-                                    igAcc?.username?.trim()?.removePrefix("@")?.lowercase()?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) },
-                                    igAcc?.fullName?.trim()?.removePrefix("@")?.lowercase()?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) && !it.contains(" ") }
-                                )
-                            }
-                            val isRunningThis = runningIgAccounts.any { it.lowercase() in accountKeys }
-                                || accountKeys.any { com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(it) }
-                            val rawStatus = accountKeys.firstNotNullOfOrNull { igStatusMap[it] } ?: "• Sẵn sàng"
-                            val isStatusDie = rawStatus.contains("DIE", ignoreCase = true) ||
-                                rawStatus.contains("Checkpoint", ignoreCase = true) ||
-                                rawStatus.contains("Kháng nghị", ignoreCase = true) ||
-                                rawStatus.contains("suspended", ignoreCase = true) ||
-                                rawStatus.contains("challenge", ignoreCase = true) ||
-                                rawStatus.contains("login_required", ignoreCase = true) ||
-                                rawStatus.contains("1357031")
-                            val currentStatus = when {
-                                isStatusDie -> if (!rawStatus.startsWith("•")) "• $rawStatus" else rawStatus
-                                igAcc?.isLive == false -> "• Lỗi: Kháng nghị / Checkpoint / DIE"
-                                rawStatus.equals("Live", ignoreCase = true) || rawStatus.isBlank() -> "• Sẵn sàng"
-                                !rawStatus.startsWith("•") -> "• $rawStatus"
-                                else -> rawStatus
-                            }
-                            val isLive = (igAcc?.isLive != false) && !isStatusDie
-                            val avatarModel = remember(igAcc?.avatar, avatarVersion) {
-                                val av = igAcc?.avatar?.trim().orEmpty()
-                                if (av.isBlank() || !av.startsWith("http")) null
-                                else coil.request.ImageRequest.Builder(context)
-                                    .data(av)
-                                    .crossfade(true)
-                                    .memoryCacheKey("${av}_$avatarVersion")
-                                    .diskCacheKey("${av}_$avatarVersion")
-                                    .build()
-                            }
-                            Card(
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = CardWhite),
-                                border = if (isChecked) androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFE1306C)) else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEEEEEE)),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null
-                                    ) {
-                                        selectedForRunUids = if (isChecked) selectedForRunUids - cleanIg
-                                        else selectedForRunUids + cleanIg
-                                    }
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    val isLinked = igAcc?.isXsmmLinked == true
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Checkbox(
-                                            checked = isChecked,
-                                            onCheckedChange = { checked ->
-                                                selectedForRunUids = if (checked) selectedForRunUids + cleanIg
-                                                else selectedForRunUids - cleanIg
-                                            },
-                                            colors = CheckboxDefaults.colors(checkedColor = Color(0xFFE1306C)),
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-
-                                        // Avatar tròn 40dp có nút camera đổi ảnh nằm gọn BÊN TRONG avatar
-                                        val isThisUploading = isUploadingAvatar && targetAvatarChangeUsername == cleanIg
-                                        Box(
-                                            modifier = Modifier
-                                                .size(40.dp)
-                                                .clip(CircleShape)
-                                                .border(1.5.dp, Color(0xFFE1306C).copy(alpha = 0.6f), CircleShape)
-                                                .clickable(enabled = !isUploadingAvatar) {
-                                                    targetAvatarChangeUsername = cleanIg
-                                                    pickAvatarLauncher.launch("image/*")
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (avatarModel != null) {
-                                                AsyncImage(
-                                                    model = avatarModel,
-                                                    contentDescription = "Avatar",
-                                                    contentScale = ContentScale.Crop,
-                                                    modifier = Modifier.fillMaxSize()
-                                                )
-                                            } else {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(
-                                                            Brush.linearGradient(
-                                                                colors = listOf(
-                                                                    Color(0xFF833AB4),
-                                                                    Color(0xFFFD1D1D),
-                                                                    Color(0xFFF77737)
-                                                                )
-                                                            )
-                                                        ),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.Person,
-                                                        contentDescription = null,
-                                                        tint = Color.White,
-                                                        modifier = Modifier.size(22.dp)
-                                                    )
-                                                }
-                                            }
-
-                                            // Lớp phủ và icon bút/camera sửa ảnh nằm bên trong đáy avatar
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(14.dp)
-                                                    .align(Alignment.BottomCenter)
-                                                    .background(Color.Black.copy(alpha = 0.45f)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Edit,
-                                                    contentDescription = "Đổi avatar",
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(10.dp)
-                                                )
-                                            }
-
-                                            if (isThisUploading) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(Color.Black.copy(alpha = 0.6f)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    CircularProgressIndicator(
-                                                        color = Color.White,
-                                                        strokeWidth = 2.dp,
-                                                        modifier = Modifier.size(18.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        Spacer(Modifier.width(10.dp))
-
-                                        // Cột Tên & Trạng thái (layout_weight="1")
-                                        Column(
-                                            modifier = Modifier.weight(1f),
-                                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                                        ) {
-                                            val isAddingThis = cleanUname in addingIgUsernames || lookupKey in addingIgUsernames || cleanIg in addingIgUsernames
-
-                                            // Hàng trên: Tên hiển thị (Bold, 15sp, #000000) + • Live/Die
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text(
-                                                    text = displayName,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 15.sp,
-                                                    color = Color(0xFF000000),
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f, fill = false)
-                                                )
-
-                                                // Chấm + chữ "• Live" (#E8F5E9, #00C853, 11sp, bold)
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(4.dp))
-                                                        .background(if (isLive) Color(0xFFE8F5E9) else Color(0xFFFFEBEE))
-                                                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(5.dp)
-                                                            .clip(CircleShape)
-                                                            .background(if (isLive) Color(0xFF00C853) else Color(0xFFD32F2F))
-                                                    )
-                                                    Spacer(Modifier.width(3.dp))
-                                                    Text(
-                                                        text = if (isLive) "Live" else "Die",
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = if (isLive) Color(0xFF00C853) else Color(0xFFD32F2F)
-                                                    )
-                                                }
-                                            }
-
-                                            // Hàng dưới: Username "@username" (#757575, 12sp) + Nút [+ Thêm XSMM] HOẶC badge [✓ Đã liên kết XSMM]
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text(
-                                                    text = "@$cleanUname",
-                                                    color = Color(0xFF757575),
-                                                    fontSize = 12.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f, fill = false)
-                                                )
-
-                                                if (isLinked) {
-                                                    // Badge: [✓ Đã liên kết XSMM]
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier
-                                                            .clip(RoundedCornerShape(6.dp))
-                                                            .background(Color(0xFFE8F5E9))
-                                                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = "✓ Đã liên kết XSMM",
-                                                            fontSize = 11.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = Color(0xFF2E7D32)
-                                                        )
-                                                    }
-                                                } else {
-                                                    // Nút: [+ Thêm XSMM]
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier
-                                                            .clip(RoundedCornerShape(6.dp))
-                                                            .background(Color(0xFFFF4081))
-                                                            .clickable(enabled = !isAddingThis) {
-                                                                if (cleanUname in addingIgUsernames) return@clickable
-                                                                addingIgUsernames = addingIgUsernames + cleanUname
-                                                                scope.launch(Dispatchers.IO) {
-                                                                    try {
-                                                                        val token = XsmmAccountStore.getToken(context)
-                                                                        if (token.isNullOrBlank()) {
-                                                                            withContext(Dispatchers.Main) {
-                                                                                android.widget.Toast.makeText(context, "Chưa đăng nhập tài khoản XSMM!", android.widget.Toast.LENGTH_SHORT).show()
-                                                                                addingIgUsernames = addingIgUsernames - cleanUname
-                                                                            }
-                                                                            return@launch
-                                                                        }
-                                                                        val res = XsmmAccountsRepository.addInstagramAccount2(token, cleanUname)
-                                                                        when (res) {
-                                                                            is XsmmAddAccountResult.Success -> {
-                                                                                com.cayxu.app.data.local.InstagramAccountsStore.setXsmmLinked(context, cleanUname, true)
-                                                                                withContext(Dispatchers.Main) {
-                                                                                    avatarVersion = System.currentTimeMillis()
-                                                                                    android.widget.Toast.makeText(context, "Đã thêm @$cleanUname vào XSMM thành công!", android.widget.Toast.LENGTH_SHORT).show()
-                                                                                    addingIgUsernames = addingIgUsernames - cleanUname
-                                                                                }
-                                                                            }
-                                                                            is XsmmAddAccountResult.Error -> {
-                                                                                if (res.message.contains("đã tồn tại", ignoreCase = true) ||
-                                                                                    res.message.contains("already exists", ignoreCase = true) ||
-                                                                                    res.message.contains("đã có", ignoreCase = true)) {
-                                                                                    com.cayxu.app.data.local.InstagramAccountsStore.setXsmmLinked(context, cleanUname, true)
-                                                                                    withContext(Dispatchers.Main) {
-                                                                                        avatarVersion = System.currentTimeMillis()
-                                                                                        android.widget.Toast.makeText(context, "Đã liên kết @$cleanUname với XSMM!", android.widget.Toast.LENGTH_SHORT).show()
-                                                                                        addingIgUsernames = addingIgUsernames - cleanUname
-                                                                                    }
-                                                                                } else {
-                                                                                    withContext(Dispatchers.Main) {
-                                                                                        android.widget.Toast.makeText(context, "Lỗi thêm XSMM: ${res.message}", android.widget.Toast.LENGTH_LONG).show()
-                                                                                        addingIgUsernames = addingIgUsernames - cleanUname
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    } catch (e: Exception) {
-                                                                        withContext(Dispatchers.Main) {
-                                                                            android.widget.Toast.makeText(context, "Lỗi kết nối: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                                                                            addingIgUsernames = addingIgUsernames - cleanUname
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                                                    ) {
-                                                        if (isAddingThis) {
-                                                            CircularProgressIndicator(
-                                                                color = Color.White,
-                                                                strokeWidth = 1.5.dp,
-                                                                modifier = Modifier.size(10.dp)
-                                                            )
-                                                            Spacer(Modifier.width(4.dp))
-                                                            Text(
-                                                                text = "Đang thêm...",
-                                                                fontSize = 11.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = Color.White
-                                                            )
-                                                        } else {
-                                                            Text(
-                                                                text = "+ Thêm XSMM",
-                                                                fontSize = 11.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = Color.White
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        Spacer(Modifier.width(8.dp))
-
-                                        // Nút Reload (Làm mới) 32dp
-                                        IconButton(
-                                            onClick = {
-                                                scope.launch(Dispatchers.IO) {
-                                                    val acc = accountKeys.firstNotNullOfOrNull { com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, it) }
-                                                    if (acc == null || acc.cookie.isBlank()) {
-                                                        withContext(Dispatchers.Main) {
-                                                            accountKeys.forEach { k ->
-                                                                com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[k] = "• Chưa lưu cookie"
-                                                            }
-                                                        }
-                                                        return@launch
-                                                    }
-                                                    
-                                                    withContext(Dispatchers.Main) {
-                                                        accountKeys.forEach { k ->
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[k] = "• Đang kiểm tra cookie..."
-                                                        }
-                                                    }
-                                                    val igAccObj = com.cayxu.app.automation.instagram.IgXsmmAccount(
-                                                        userId = acc.userId,
-                                                        username = acc.username,
-                                                        cookie = acc.cookie,
-                                                        proxy = acc.proxy.takeIf { it.isNotBlank() }
-                                                    )
-                                                    val runner = com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner("", igAccObj)
-                                                    val (isLiveResult, tokens) = runner.syncSessionTokens()
-                                                    val bestUname = tokens["username"]?.takeIf { it.isNotBlank() } ?: acc.username
-                                                    val updatedAcc = acc.copy(
-                                                        isLive = isLiveResult,
-                                                        username = bestUname,
-                                                        fbDtsg = tokens["fb_dtsg"] ?: acc.fbDtsg,
-                                                        lsd = tokens["lsd"] ?: acc.lsd,
-                                                        userId = tokens["userId"] ?: acc.userId
-                                                    )
-                                                    com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, updatedAcc)
-                                                    withContext(Dispatchers.Main) {
-                                                        val statusText = if (isLiveResult) "• Sẵn sàng" else "• Lỗi: Kháng nghị / Checkpoint / DIE"
-                                                        accountKeys.forEach { k ->
-                                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[k] = statusText
-                                                        }
-                                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[bestUname] = statusText
-                                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.statusMap[bestUname.lowercase()] = statusText
-                                                        if (!isLiveResult) {
-                                                            val errDetail = runner.account.lastErrorMessage ?: "Tài khoản bị Kháng nghị / Checkpoint / DIE"
-                                                            accountKeys.forEach { k ->
-                                                                com.cayxu.app.automation.instagram.XsmmInstagramManager.lastErrorDetail[k] = errDetail
-                                                            }
-                                                        }
-                                                        val msg = if (isLiveResult) "Đã cập nhật: $displayName" else "Tài khoản bị Kháng nghị / Checkpoint / DIE: $displayName"
-                                                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                                                        avatarVersion = System.currentTimeMillis()
-                                                        instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
-                                                    }
-                                                }
-                                            },
-                                            enabled = !isRunningThis,
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(28.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(0xFFE1306C).copy(alpha = 0.1f)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Refresh,
-                                                    contentDescription = "Làm mới",
-                                                    tint = Color(0xFFE1306C),
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-
-                                        Spacer(Modifier.width(6.dp))
-
-                                        // Nút Chạy (Play tam giác 36dp) / Dừng (Stop ô vuông đỏ)
-                                        IconButton(
-                                            onClick = {
-                                                val targetRunAccount = cleanUname.ifBlank { cleanIg }
-                                                if (isRunningThis) {
-                                                    accountKeys.forEach { k ->
-                                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(k)
-                                                    }
-                                                    android.widget.Toast.makeText(context, "Đã dừng chạy $displayName", android.widget.Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    if (!isLinked) {
-                                                        android.widget.Toast.makeText(context, "BẮT BUỘC: Bạn cần bấm '+ Thêm XSMM' để liên kết tài khoản trước khi chạy!", android.widget.Toast.LENGTH_SHORT).show()
-                                                        return@IconButton
-                                                    }
-                                                    com.cayxu.app.automation.instagram.XsmmInstagramManager.start(context, targetRunAccount)
-                                                    android.widget.Toast.makeText(context, "Bắt đầu chạy $displayName", android.widget.Toast.LENGTH_SHORT).show()
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .alpha(if (isLinked || isRunningThis) 1.0f else 0.5f)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(32.dp)
-                                                    .clip(CircleShape)
-                                                    .background(if (isRunningThis) DangerRed else Color(0xFFFF4081)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                if (isRunningThis) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(10.dp)
-                                                            .clip(RoundedCornerShape(2.dp))
-                                                            .background(Color.White)
-                                                    )
-                                                } else {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.PlayArrow,
-                                                        contentDescription = "Chạy",
-                                                        tint = Color.White,
-                                                        modifier = Modifier.size(18.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // 🔹 DÒNG 2: TRẠNG THÁI HIỆN TẠI (LOG REALTIME)
-                                    val successCount = accountKeys.firstNotNullOfOrNull { igSuccessCountMap[it] } ?: 0
-                                    val errorCount = accountKeys.firstNotNullOfOrNull { igErrorCountMap[it] } ?: 0
-                                    val isError = currentStatus.contains("Lỗi", ignoreCase = true) || currentStatus.contains("DIE", ignoreCase = true) || currentStatus.contains("Không tìm thấy", ignoreCase = true)
-                                    val isRunningNow = isRunningThis
-
-                                    Text(
-                                        text = currentStatus,
-                                        fontSize = 12.sp,
-                                        color = if (isError) Color(0xFFC62828) else if (isRunningNow) Color(0xFF1E40AF) else Color(0xFF424242),
-                                        fontWeight = if (isRunningNow) FontWeight.SemiBold else FontWeight.Normal,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-
-                                    // 🔹 DÒNG 3: THỐNG KÊ GỌN (Hoàn thành, Lỗi, Proxy)
-                                    val proxyDisplay = remember(igAcc?.proxy) {
-                                        val p = igAcc?.proxy?.trim().orEmpty()
-                                        if (p.isBlank()) null
-                                        else {
-                                            val parts = p.split(":")
-                                            val first = parts.getOrNull(0)?.take(3) ?: "prx"
-                                            val last = parts.lastOrNull()?.takeLast(4) ?: "..."
-                                            "$first...$last"
-                                        }
-                                    }
-
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            // Hoàn thành
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(Color(0xFFE8F5E9))
-                                                    .padding(horizontal = 8.dp, vertical = 3.dp)
-                                            ) {
-                                                Text(
-                                                    text = "✓ Hoàn thành: $successCount",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color(0xFF2E7D32)
-                                                )
-                                            }
-
-                                            // Lỗi
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(Color(0xFFFFEBEE))
-                                                    .padding(horizontal = 8.dp, vertical = 3.dp)
-                                            ) {
-                                                Text(
-                                                    text = "• Lỗi: $errorCount",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color(0xFFC62828)
-                                                )
-                                            }
-
-                                            // Proxy (nếu có)
-                                            if (proxyDisplay != null) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .background(Color(0xFFF5F5F5))
-                                                        .padding(horizontal = 7.dp, vertical = 3.dp)
-                                                ) {
-                                                    Text(
-                                                        text = "Proxy: $proxyDisplay",
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Medium,
-                                                        color = Color(0xFF616161)
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        val errorDetail = accountKeys.firstNotNullOfOrNull { igErrorDetailMap[it] }
-                                            ?: (if (errorCount > 0) currentStatus else null)
-                                        if (errorDetail != null || errorCount > 0) {
-                                            IconButton(
-                                                onClick = { selectedErrorDetailAccount = cleanUname.ifBlank { cleanIg } },
-                                                modifier = Modifier.size(28.dp)
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(24.dp)
-                                                        .clip(CircleShape)
-                                                        .background(DangerRed.copy(alpha = 0.12f)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.Warning,
-                                                        contentDescription = "Xem chi tiết lỗi",
-                                                        tint = DangerRed,
-                                                        modifier = Modifier.size(14.dp)
-                                                    )
-                                                }
-                                            }
-                                        } else if (isRunningNow) {
-                                            Text(
-                                                text = "Đang chạy...",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color(0xFFFF4081)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(90.dp))
-        }
-
-        // ---- Thanh điều khiển cố định dưới cùng ----
-        if (selectedPlatform == "tiktok") {
-            // ---- TikTok: 2 nút Cấu hình chạy + Chạy to màu đen TikTok ----
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(AppBackground)
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedButton(
-                    onClick = {
-                        com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, "tiktok")
-                        navController.navigate(Routes.XSMM_RUN_CONFIG)
-                    },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TikTokBrandBlack),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, TikTokBrandBlack.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).height(48.dp)
-                ) {
-                    Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp), tint = TikTokBrandBlack)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Cấu hình chạy", maxLines = 1, color = TikTokBrandBlack)
-                }
-                Button(
-                    onClick = {
-                        val selected = if (selectedForRunUids.isNotEmpty()) {
-                            accountsForVariant.filter { it.uid in selectedForRunUids }
-                        } else if (selectedAccountUid != null) {
-                            accountsForVariant.filter { it.uid == selectedAccountUid }
-                        } else {
-                            accountsForVariant
-                        }
-                        val handles = selected.map { it.handle.trim().removePrefix("@") }.filter { it.isNotBlank() }
-                        if (handles.isEmpty()) {
-                            android.widget.Toast.makeText(context, "Chưa có tài khoản nào để chạy", android.widget.Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        com.cayxu.app.ui.overlay.xsmm.startXsmmJobRunnerOverlay(context, handles)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = TikTokBrandBlack),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).height(48.dp)
-                ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
-                    Spacer(Modifier.width(6.dp))
-                    val runCount = if (selectedForRunUids.isNotEmpty()) selectedForRunUids.size else accountsForVariant.size
-                    Text(if (runCount > 1) "Chạy ($runCount)" else "Chạy", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            }
-        } else {
-            // ---- Instagram & Facebook: Thanh công cụ tiện ích (Cấu hình, Tất cả, Xóa, Thêm +) ----
-            val isIg = selectedPlatform == "instagram"
-            val platformColor = if (isIg) Color(0xFFE1306C) else Color(0xFF1877F2)
-            val allFbKeys = remember(facebookAccounts, livePageUids) {
-                facebookAccounts.flatMap { acc ->
-                    listOf(acc.uid) + acc.pages.map { p ->
-                        val u = livePageUids[p.pageId] ?: p.displayUid
-                        (p.additionalProfileId.takeIf { it.isNotBlank() && it.startsWith("615") }
-                            ?: u.takeIf { it.isNotBlank() && it.startsWith("615") }
-                            ?: p.additionalProfileId.takeIf { it.isNotBlank() }
-                            ?: u.takeIf { it.isNotBlank() }
-                            ?: p.pageId).trim()
-                    }
-                }.toSet()
-            }
-            val allSelected = if (isIg) {
-                instagramAccounts.isNotEmpty() && instagramAccounts.all { it.trim() in selectedForRunUids }
-            } else {
-                allFbKeys.isNotEmpty() && allFbKeys.all { it in selectedForRunUids }
-            }
-
-            Surface(
-                color = CardWhite,
-                shadowElevation = 8.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Nút Cấu hình chạy
-                    OutlinedButton(
-                        onClick = {
-                            com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, selectedPlatform)
-                            navController.navigate(Routes.XSMM_RUN_CONFIG)
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = platformColor),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, platformColor.copy(alpha = 0.5f)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.height(42.dp)
-                    ) {
-                        Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp), tint = platformColor)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Cấu hình", fontSize = 13.sp, color = platformColor)
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Nút Tất cả
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    if (isIg) {
-                                        val cleanAccounts = instagramAccounts.map { it.trim() }.toSet()
-                                        selectedForRunUids = if (allSelected) selectedForRunUids - cleanAccounts
-                                        else selectedForRunUids + cleanAccounts
-                                    } else {
-                                        selectedForRunUids = if (allSelected) selectedForRunUids - allFbKeys
-                                        else selectedForRunUids + allFbKeys
-                                    }
-                                }
-                                .padding(horizontal = 6.dp, vertical = 6.dp)
-                        ) {
-                            Checkbox(
-                                checked = allSelected,
-                                onCheckedChange = null,
-                                colors = CheckboxDefaults.colors(checkedColor = platformColor),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text("Tất cả", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                        }
-
-                        // Nút Xóa (thùng rác đỏ khi có acc được chọn)
-                        if (selectedForRunUids.isNotEmpty()) {
-                            IconButton(
-                                onClick = { showDeleteConfirmSheet = true },
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(DangerRed.copy(alpha = 0.12f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Delete,
-                                        contentDescription = "Xóa tài khoản đã chọn",
-                                        tint = DangerRed,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        // Nút Chạy tất cả / Dừng tất cả (Dành cho Instagram)
-                        if (isIg && instagramAccounts.isNotEmpty()) {
-                            val isAnyIgRunning = runningIgAccounts.isNotEmpty() || com.cayxu.app.automation.instagram.XsmmInstagramManager.isAnyRunning()
-                            IconButton(
-                                onClick = {
-                                    if (isAnyIgRunning) {
-                                        com.cayxu.app.automation.instagram.XsmmInstagramManager.stopAll()
-                                        android.widget.Toast.makeText(context, "Đã dừng tất cả tác vụ Instagram", android.widget.Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        val allIgAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context)
-                                        val rawList = if (selectedForRunUids.isNotEmpty()) {
-                                            selectedForRunUids.toList()
-                                        } else {
-                                            instagramAccounts
-                                        }
-                                        val accountsToRun = rawList.mapNotNull { uname ->
-                                            val clean = uname.trim().removePrefix("@").lowercase()
-                                            val match = allIgAccounts.firstOrNull { acc ->
-                                                val accUname = acc.username.trim().removePrefix("@").lowercase()
-                                                val accUid = acc.userId.trim().lowercase()
-                                                (accUname == clean || accUid == clean || acc.username == uname || acc.userId == uname) && acc.isXsmmLinked
-                                            }
-                                            match?.let { acc ->
-                                                val candidate = acc.username.trim().removePrefix("@")
-                                                if (candidate.isNotBlank() && !candidate.contains("người dùng", ignoreCase = true)) candidate
-                                                else acc.userId.trim().takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) } ?: candidate
-                                            }
-                                        }.distinct()
-                                        if (accountsToRun.isEmpty()) {
-                                            android.widget.Toast.makeText(context, "Chưa có tài khoản nào được liên kết XSMM! Hãy thêm nick vào XSMM trước.", android.widget.Toast.LENGTH_LONG).show()
-                                        } else {
-                                            com.cayxu.app.automation.instagram.XsmmInstagramManager.startAccounts(context, accountsToRun)
-                                            android.widget.Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Instagram", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isAnyIgRunning) DangerRed else platformColor),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isAnyIgRunning) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(11.dp)
-                                                .clip(RoundedCornerShape(2.dp))
-                                                .background(Color.White)
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Filled.PlayArrow,
-                                            contentDescription = "Chạy tất cả",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        } else if (!isIg && facebookAccounts.isNotEmpty()) {
-                            // Nút Chạy tất cả / Dừng tất cả (Dành cho Facebook)
-                            val isAnyFbRunning = com.cayxu.app.automation.facebook.XsmmFacebookManager.isAnyRunning()
-                            IconButton(
-                                onClick = {
-                                    if (isAnyFbRunning) {
-                                        com.cayxu.app.automation.facebook.XsmmFacebookManager.stopAll()
-                                        android.widget.Toast.makeText(context, "Đã dừng tất cả tác vụ Facebook", android.widget.Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        val accountsToRun = if (selectedForRunUids.isNotEmpty()) {
-                                            selectedForRunUids.toList()
-                                        } else {
-                                            facebookAccounts.map { it.uid }
-                                        }
-                                        if (accountsToRun.isEmpty()) {
-                                            android.widget.Toast.makeText(context, "Vui lòng chọn ít nhất 1 tài khoản để chạy", android.widget.Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            com.cayxu.app.automation.facebook.XsmmFacebookManager.startAccounts(context, accountsToRun)
-                                            android.widget.Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Facebook", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isAnyFbRunning) DangerRed else platformColor),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isAnyFbRunning) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(11.dp)
-                                                .clip(RoundedCornerShape(2.dp))
-                                                .background(Color.White)
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Filled.PlayArrow,
-                                            contentDescription = "Chạy tất cả",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // Nút Thêm acc (+)
-                        IconButton(
-                            onClick = {
-                                if (isIg) showInstagramCookieSheet = true
-                                else showFacebookLoginSheet = true
-                            },
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(platformColor),
-                                    contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Add,
-                                    contentDescription = "Thêm tài khoản",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-                    }
                 }
             }
         }
     }
+
+    val platformCounts = mapOf(
+        XsmmPlatform.TikTok to allTikTokAccounts.size,
+        XsmmPlatform.Facebook to facebookAccounts.size,
+        XsmmPlatform.Instagram to instagramAccounts.size
+    )
+
+    val uiState = XsmmAccountsUiState(
+        username = username,
+        coinBalance = points,
+        platformCounts = platformCounts,
+        selectedPlatform = currentPlatform,
+        selectedTypeId = selectedTypeId,
+        accounts = currentAccounts,
+        selectedAccountIds = selectedForRunUids,
+        refreshingBalance = isRefreshing
+    )
+
+    XsmmAccountsScreen(
+        state = uiState,
+        onBack = { navController.popBackStack() },
+        onRefreshBalance = {
+            scope.launch {
+                isRefreshing = true
+                val token = XsmmAccountStore.getToken(context)
+                if (!token.isNullOrBlank()) {
+                    try {
+                        when (val result = XsmmAuthRepository.fetchUser(token)) {
+                            is XsmmLoginResult.Success -> {
+                                XsmmSession.login(context, token, result.info.username, result.info.points)
+                                Toast.makeText(context, "Đã làm mới số dư xu", Toast.LENGTH_SHORT).show()
+                            }
+                            is XsmmLoginResult.Error -> {
+                                Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Lỗi kết nối: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                isRefreshing = false
+            }
+        },
+        onLogout = {
+            XsmmSession.logout(context)
+            navController.navigate(Routes.XSMM_LOGIN) {
+                popUpTo(Routes.XSMM_ACCOUNT) { inclusive = true }
+            }
+        },
+        onSelectPlatform = { plat ->
+            currentPlatform = plat
+            selectedPlatform = when (plat) {
+                XsmmPlatform.TikTok -> "tiktok"
+                XsmmPlatform.Facebook -> "facebook"
+                XsmmPlatform.Instagram -> "instagram"
+            }
+            selectedTypeId = when (plat) {
+                XsmmPlatform.TikTok -> "tiktok"
+                XsmmPlatform.Facebook -> "facebook"
+                XsmmPlatform.Instagram -> "instagram"
+            }
+            selectedForRunUids = emptySet()
+        },
+        onSelectType = { typeId ->
+            selectedTypeId = typeId
+            if (currentPlatform == XsmmPlatform.TikTok) {
+                selectedVariant = when (typeId) {
+                    "tiktok_lite" -> TikTokAppVariant.LITE
+                    "tiktok_studio" -> TikTokAppVariant.STUDIO
+                    else -> TikTokAppVariant.STANDARD
+                }
+            }
+        },
+        onToggleSelectAll = {
+            val visibleIds = when (currentPlatform) {
+                XsmmPlatform.TikTok -> {
+                    val targetVariant = when (selectedTypeId) {
+                        "tiktok_lite" -> TikTokAppVariant.LITE
+                        "tiktok_studio" -> TikTokAppVariant.STUDIO
+                        else -> TikTokAppVariant.STANDARD
+                    }
+                    allTikTokAccounts.filter { it.variant == targetVariant }.map { it.uid }
+                }
+                XsmmPlatform.Facebook -> facebookAccounts.map { it.uid }
+                XsmmPlatform.Instagram -> instagramAccounts
+            }
+            val allSelected = visibleIds.isNotEmpty() && visibleIds.all { it in selectedForRunUids }
+            selectedForRunUids = if (allSelected) {
+                selectedForRunUids - visibleIds.toSet()
+            } else {
+                selectedForRunUids + visibleIds.toSet()
+            }
+        },
+        onToggleAccount = { acc ->
+            selectedForRunUids = if (selectedForRunUids.contains(acc.id)) {
+                selectedForRunUids - acc.id
+            } else {
+                selectedForRunUids + acc.id
+            }
+        },
+        onAddAccount = {
+            when (currentPlatform) {
+                XsmmPlatform.TikTok -> showTikTokCheckSheet = true
+                XsmmPlatform.Facebook -> showFacebookLoginSheet = true
+                XsmmPlatform.Instagram -> showInstagramCookieSheet = true
+            }
+        },
+        onOpenConfig = {
+            val platformKey = when (currentPlatform) {
+                XsmmPlatform.TikTok -> "tiktok"
+                XsmmPlatform.Facebook -> "facebook"
+                XsmmPlatform.Instagram -> "instagram"
+            }
+            com.cayxu.app.data.local.XsmmRunConfigStore.setActivePlatform(context, platformKey)
+            navController.navigate(Routes.XSMM_RUN_CONFIG)
+        },
+        onRun = {
+            when (currentPlatform) {
+                XsmmPlatform.TikTok -> {
+                    val targetVariant = when (selectedTypeId) {
+                        "tiktok_lite" -> TikTokAppVariant.LITE
+                        "tiktok_studio" -> TikTokAppVariant.STUDIO
+                        else -> TikTokAppVariant.STANDARD
+                    }
+                    val accountsForCurrentVariant = allTikTokAccounts.filter { it.variant == targetVariant }
+                    val selected = if (selectedForRunUids.isNotEmpty()) {
+                        accountsForCurrentVariant.filter { it.uid in selectedForRunUids }
+                    } else if (selectedAccountUid != null) {
+                        accountsForCurrentVariant.filter { it.uid == selectedAccountUid }
+                    } else {
+                        accountsForCurrentVariant
+                    }
+                    val handles = selected.map { it.handle.trim().removePrefix("@") }.filter { it.isNotBlank() }
+                    if (handles.isEmpty()) {
+                        Toast.makeText(context, "Chưa có tài khoản nào để chạy", Toast.LENGTH_SHORT).show()
+                    } else {
+                        com.cayxu.app.ui.overlay.xsmm.startXsmmJobRunnerOverlay(context, handles)
+                    }
+                }
+                XsmmPlatform.Facebook -> {
+                    val isAnyFbRunning = com.cayxu.app.automation.facebook.XsmmFacebookManager.isAnyRunning()
+                    if (isAnyFbRunning) {
+                        com.cayxu.app.automation.facebook.XsmmFacebookManager.stopAll()
+                        Toast.makeText(context, "Đã dừng tất cả tác vụ Facebook", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val accountsToRun = if (selectedForRunUids.isNotEmpty()) {
+                            selectedForRunUids.toList()
+                        } else {
+                            facebookAccounts.map { it.uid }
+                        }
+                        if (accountsToRun.isEmpty()) {
+                            Toast.makeText(context, "Vui lòng chọn ít nhất 1 tài khoản để chạy", Toast.LENGTH_SHORT).show()
+                        } else {
+                            com.cayxu.app.automation.facebook.XsmmFacebookManager.startAccounts(context, accountsToRun)
+                            Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Facebook", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                XsmmPlatform.Instagram -> {
+                    val isAnyIgRunning = com.cayxu.app.automation.instagram.XsmmInstagramManager.isAnyRunning()
+                    if (isAnyIgRunning) {
+                        com.cayxu.app.automation.instagram.XsmmInstagramManager.stopAll()
+                        Toast.makeText(context, "Đã dừng tất cả tác vụ Instagram", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val allIgAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context)
+                        val rawList = if (selectedForRunUids.isNotEmpty()) {
+                            selectedForRunUids.toList()
+                        } else {
+                            instagramAccounts
+                        }
+                        val accountsToRun = rawList.mapNotNull { uname ->
+                            val clean = uname.trim().removePrefix("@").lowercase()
+                            val match = allIgAccounts.firstOrNull { acc ->
+                                val accUname = acc.username.trim().removePrefix("@").lowercase()
+                                val accUid = acc.userId.trim().lowercase()
+                                (accUname == clean || accUid == clean || acc.username == uname || acc.userId == uname) && acc.isXsmmLinked
+                            }
+                            match?.let { acc ->
+                                val candidate = acc.username.trim().removePrefix("@")
+                                if (candidate.isNotBlank() && !candidate.contains("người dùng", ignoreCase = true)) candidate
+                                else acc.userId.trim().takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) } ?: candidate
+                            }
+                        }.distinct()
+                        if (accountsToRun.isEmpty()) {
+                            Toast.makeText(context, "Chưa có tài khoản nào được liên kết XSMM! Hãy thêm nick vào XSMM trước.", Toast.LENGTH_LONG).show()
+                        } else {
+                            com.cayxu.app.automation.instagram.XsmmInstagramManager.startAccounts(context, accountsToRun)
+                            Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Instagram", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
+    )
 
 }
 

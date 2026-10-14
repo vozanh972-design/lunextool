@@ -15,6 +15,7 @@
    - `CoinLedger.kt` & `RoomCoinLedger.kt` → `.../data/` (Sổ xu Room & interface)
    - `AppFlow.kt` → `.../app/` (luồng điều hướng toàn app, xem mục "Luồng mở app")
    - `ActivationSuccessScreen.kt` → `.../ui/success/` (chào mừng + chuyển cảnh vào Trang chủ)
+   - `XsmmLoginScreen.kt` & `XsmmAccountsScreen.kt` → `.../ui/xsmm/` (Màn đăng nhập và danh sách tài khoản 3 nền tảng XSMM)
    Đổi `package` cho đúng app. Mọi màn đều lấy font từ `Manrope` trong `AlxDesign.kt`, màn mới chỉ cần dùng `type(...)`.
 2. Tải font **Manrope** từ Google Fonts. Lấy file variable `Manrope[wght].ttf`, đổi tên thành `manrope.ttf` và đặt vào `app/src/main/res/font/`.
    Chỉ cần đúng 1 file này; code tự chọn độ đậm Medium/SemiBold/Bold/ExtraBold bằng trục wght. Đừng chép cùng một file variable thành 4 tên khác nhau, chữ sẽ bị mảnh.
@@ -261,6 +262,20 @@ Màn con toàn màn hình mở từ dòng "Cài đặt" ở Hồ sơ, không có
   3. **HỖ TRỢ & HỆ THỐNG**: Trung tâm hỗ trợ (Telegram `t.me/thanhgmn`), Điều khoản sử dụng, Chính sách bảo mật, và Phiên bản ứng dụng (đọc `versionName` thật của app).
 - Công tắc 52×32dp bo 16dp: bật nền xanh chính, tắt nền #CBD2DF, nút tròn trắng 26dp trượt 150ms.
 - Dữ liệu lưu thật qua `AppSettingsStore` (SharedPreferences `autolunex_settings`) và đồng bộ trực tiếp với `AppBackgroundService` & `AppAlertNotifier`.
+
+## Đăng nhập XSMM (XsmmLoginScreen.kt)
+Màn hình đăng nhập tài khoản hệ thống XSMM để lấy token làm nhiệm vụ:
+- Giao diện hiện đại đồng bộ Design System Alx, hỗ trợ mở webview trực tiếp đến xsmm.net để lấy token an toàn.
+- Tự động lưu phiên đăng nhập và cập nhật số dư xu.
+
+## XSMM: danh sách tài khoản (XsmmAccountsScreen.kt)
+Gộp chung cả 3 tab nền tảng (TikTok, Facebook, Instagram) trong một giao diện duy nhất, chuyển tab mượt mà qua `state.selectedPlatform`:
+- **TikTok**: Có các chip lọc phân loại tài khoản ("TikTok", "TikTok Lite", "TikTok Studio"), thẻ trống viền icon khi chưa có nick, thanh công cụ dưới gồm 2 nút: "Cấu hình" và "Chạy".
+- **Facebook & Instagram**: Không hiển thị chip lọc loại, thẻ trạng thái rỗng có nền màu nhạt bấm vào để mở form thêm tài khoản nhanh. Thanh dưới đáy thay nút "Chạy" bằng checkbox chọn "Tất cả" và nút thêm tài khoản (+).
+- **Màu sắc nhận diện**:
+  - TikTok và Facebook: Sử dụng màu xanh dương chủ đạo (`Alx.Blue`).
+  - Instagram: Sử dụng màu hồng-magenta (`#C2255C`) đặc trưng cho tab, nút (+) và nút "Cấu hình".
+- Thẻ tài khoản gọn gàng hiển thị trạng thái hoạt động (Live/Die), avatar, username và số liệu liên kết hệ thống.
 
 ## Animation thanh dock (MainShell.kt)
 Một viên thuốc nền mực #0F172A TRƯỢT giữa các tab như dock của Apple, không nhảy:
