@@ -15,7 +15,7 @@
    - `CoinLedger.kt` & `RoomCoinLedger.kt` → `.../data/` (Sổ xu Room & interface)
    - `AppFlow.kt` → `.../app/` (luồng điều hướng toàn app, xem mục "Luồng mở app")
    - `ActivationSuccessScreen.kt` → `.../ui/success/` (chào mừng + chuyển cảnh vào Trang chủ)
-   - `XsmmLoginScreen.kt` & `XsmmAccountsScreen.kt` → `.../ui/xsmm/` (Màn đăng nhập và danh sách tài khoản 3 nền tảng XSMM)
+   - `XsmmLoginScreen.kt`, `XsmmAccountsScreen.kt` & `XsmmAddAccountSheets.kt` → `.../ui/xsmm/` (Màn đăng nhập, danh sách tài khoản 3 nền tảng XSMM và các tấm thêm tài khoản)
    Đổi `package` cho đúng app. Mọi màn đều lấy font từ `Manrope` trong `AlxDesign.kt`, màn mới chỉ cần dùng `type(...)`.
 2. Tải font **Manrope** từ Google Fonts. Lấy file variable `Manrope[wght].ttf`, đổi tên thành `manrope.ttf` và đặt vào `app/src/main/res/font/`.
    Chỉ cần đúng 1 file này; code tự chọn độ đậm Medium/SemiBold/Bold/ExtraBold bằng trục wght. Đừng chép cùng một file variable thành 4 tên khác nhau, chữ sẽ bị mảnh.
@@ -276,6 +276,12 @@ Gộp chung cả 3 tab nền tảng (TikTok, Facebook, Instagram) trong một gi
   - TikTok và Facebook: Sử dụng màu xanh dương chủ đạo (`Alx.Blue`).
   - Instagram: Sử dụng màu hồng-magenta (`#C2255C`) đặc trưng cho tab, nút (+) và nút "Cấu hình".
 - Thẻ tài khoản gọn gàng hiển thị trạng thái hoạt động (Live/Die), avatar, username và số liệu liên kết hệ thống.
+
+## XSMM: tấm "Đăng nhập Facebook" / "Thêm tài khoản Instagram" (XsmmAddAccountSheets.kt)
+Bộ 2 tấm trượt (bottom sheet) toàn màn hình hiển thị dưới dạng Dialog mượt mà:
+- **XsmmFbLoginSheet**: Đăng nhập tài khoản Facebook hỗ trợ 3 tùy chọn định dạng (`Token`, `UID|PASS|2FA`, `UID|PASS|COOKIE`) hoặc tự động nhận diện định dạng từ dữ liệu dán vào. Hỗ trợ dán hàng loạt nhiều nick (mỗi dòng 1 nick).
+- **XsmmIgAddSheet**: Thêm tài khoản Instagram theo định dạng Cookie hoặc Cookie|Proxy, hỗ trợ dán hàng loạt tài khoản với placeholder mẫu trực quan.
+- **Tích hợp**: Cả 2 tấm là lớp giao diện độc lập phát sinh sự kiện qua `onSubmit`, kết nối trực tiếp với logic kiểm tra tài khoản Live và lưu trữ trong `XsmmAccountScreen.kt`.
 
 ## Animation thanh dock (MainShell.kt)
 Một viên thuốc nền mực #0F172A TRƯỢT giữa các tab như dock của Apple, không nhảy:

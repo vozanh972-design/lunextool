@@ -57,6 +57,14 @@ import com.cayxu.app.data.repository.XsmmAccountsRepository
 import com.cayxu.app.data.repository.XsmmAccountsResult
 import com.cayxu.app.data.repository.XsmmAddAccountResult
 import com.cayxu.app.data.repository.XsmmAuthRepository
+import com.cayxu.app.data.local.FacebookAccountsStore
+import com.cayxu.app.data.local.InstagramAccount
+import com.cayxu.app.data.local.InstagramAccountsStore
+import com.cayxu.app.data.local.LinkedAccountsStore
+import com.cayxu.app.facebook.FacebookAccountManager
+import com.cayxu.app.instagram.GoMaxInstagramEngine
+import com.cayxu.app.instagram.InstagramApiClient
+import com.example.facebooktoken.FacebookToken
 import com.cayxu.app.data.repository.XsmmLoginResult
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.theme.*
@@ -567,22 +575,211 @@ fun XsmmAccountScreen(navController: NavController) {
     }
 
     if (showInstagramCookieSheet) {
-        InstagramCookieBottomSheet(
+        XsmmIgAddSheet(
             onDismiss = { showInstagramCookieSheet = false },
-            onCookieSaved = {
-                instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+            onSubmit = { data ->
+                val rawInput = data.trim()
+                if (rawInput.isBlank()) {
+                    Toast.makeText(context, "Vui lòng nhập danh sách tài khoản", Toast.LENGTH_SHORT).show()
+                    return@XsmmIgAddSheet
+                }
+
+                val lines = rawInput.lines().map { it.trim() }.filter { it.isNotBlank() }
+                val hasValidCookieLine = lines.any { line ->
+                    val rawCookie = if (line.contains("|")) line.substring(0, line.lastIndexOf("|")).trim() else line
+                    rawCookie.contains("sessionid") && rawCookie.contains("ds_user_id") && rawCookie.contains("csrftoken")
+                }
+
+                if (!hasValidCookieLine) {
+                    Toast.makeText(context, "Cookie thiếu các trường bắt buộc (cần có sessionid, ds_user_id, csrftoken)", Toast.LENGTH_LONG).show()
+                    return@XsmmIgAddSheet
+                }
+
+                Toast.makeText(context, "Đang kiểm tra tài khoản Instagram...", Toast.LENGTH_SHORT).show()
+                showInstagramCookieSheet = false
+
+                scope.launch {
+                    val addedAccounts = mutableListOf<String>()
+                    withContext(Dispatchers.IO) {
+                        for (line in lines) {
+                            var rawCookie = ""
+                            var proxyStr: String? = null
+                            if (line.contains("|")) {
+                                val lastPipeIndex = line.lastIndexOf("|")
+                                rawCookie = line.substring(0, lastPipeIndex).trim()
+                                proxyStr = line.substring(lastPipeIndex + 1).trim().takeIf { it.isNotBlank() }
+                            } else {
+                                rawCookie = line
+                            }
+
+                            if (!rawCookie.contains("sessionid") || !rawCookie.contains("ds_user_id") || !rawCookie.contains("csrftoken")) {
+                                continue
+                            }
+
+                            val engine = GoMaxInstagramEngine.create(proxyStr)
+                            val igAccount = engine.checkLiveCookie(rawCookie, proxyStr)
+
+                            if (igAccount != null && igAccount.isLive) {
+                                val dev = InstagramApiClient.getDeviceProfileFor(igAccount.userId)
+                                val pic = try {
+                                    InstagramApiClient.fetchProfilePic(igAccount.username, rawCookie, proxyStr)
+                                } catch (_: Exception) { null }
+
+                                withContext(Dispatchers.Main) {
+                                    InstagramAccountsStore.addAccount(
+                                        context,
+                                        InstagramAccount(
+                                            username = igAccount.username,
+                                            userId = igAccount.userId,
+                                            cookie = igAccount.cookie,
+                                            userAgent = dev.userAgent,
+                                            proxy = proxyStr.orEmpty(),
+                                            fullName = igAccount.username,
+                                            avatar = pic.orEmpty(),
+                                            fbDtsg = igAccount.fbDtsg.orEmpty(),
+                                            lsd = igAccount.lsd.orEmpty(),
+                                            isLive = true
+                                        )
+                                    )
+                                    LinkedAccountsStore.addAccount(context, "Instagram", igAccount.username)
+                                    addedAccounts.add(igAccount.username)
+                                }
+                            }
+                        }
+                    }
+
+                    if (addedAccounts.isNotEmpty()) {
+                        val successMsg = if (addedAccounts.size == 1) {
+                            "Thêm tài khoản @${addedAccounts.first()} thành công!"
+                        } else {
+                            "Thêm thành công ${addedAccounts.size} tài khoản Instagram!"
+                        }
+                        Toast.makeText(context, successMsg, Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Không có tài khoản nào Live hoặc Cookie hết hạn", Toast.LENGTH_SHORT).show()
+                    }
+                    instagramAccounts = InstagramAccountsStore.getAccounts(context).map { it.username }
+                }
             }
         )
     }
 
     if (showFacebookLoginSheet) {
-        FacebookLoginBottomSheet(
-            onDismiss = {
+        XsmmFbLoginSheet(
+            onDismiss = { showFacebookLoginSheet = false },
+            onSubmit = { format, data ->
+                val raw = data.trim()
+                if (raw.isBlank()) {
+                    Toast.makeText(context, "Vui lòng dán dữ liệu tài khoản", Toast.LENGTH_SHORT).show()
+                    return@XsmmFbLoginSheet
+                }
+
+                Toast.makeText(context, "Đang kiểm tra tài khoản Facebook...", Toast.LENGTH_SHORT).show()
                 showFacebookLoginSheet = false
-                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
-            },
-            onAccountSaved = {
-                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+
+                scope.launch {
+                    val checkedAccounts = withContext(Dispatchers.IO) {
+                        raw.lines().mapNotNull { rawLine ->
+                            val line = rawLine.trim()
+                            if (line.isBlank()) return@mapNotNull null
+
+                            async(Dispatchers.IO) {
+                                val accountManager = FacebookAccountManager()
+                                val parts = if (line.contains("|")) line.split("|").map { it.trim() } else listOf(line)
+
+                                val directToken = when {
+                                    line.startsWith("EAA") -> line
+                                    format == XsmmFbFormat.Token -> {
+                                        parts.find { it.startsWith("EAA") } ?: line
+                                    }
+                                    else -> parts.find { it.startsWith("EAA") }
+                                }
+
+                                val proxy = parts.find { it.matches(Regex("""\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+.*""")) }
+                                val cookiePart = parts.find { it.contains("c_user=") || it.contains("xs=") }
+
+                                if (!directToken.isNullOrBlank() && (directToken.startsWith("EAA") || format == XsmmFbFormat.Token)) {
+                                    try {
+                                        val details = accountManager.fetchAccountDetailsWithToken(directToken, proxy)
+                                        if (details.isLive) {
+                                            return@async details.copy(
+                                                bio = directToken,
+                                                note = cookiePart ?: details.note,
+                                                phone = proxy.orEmpty(),
+                                                isLive = true
+                                            )
+                                        }
+                                    } catch (_: Exception) {}
+                                }
+
+                                var token: String? = null
+                                var cookie: String? = cookiePart
+                                var uidFromLine: String? = null
+
+                                try {
+                                    val processResults = FacebookToken.process(line)
+                                    val firstRes = processResults.firstOrNull()
+                                    if (firstRes != null && firstRes.success && !firstRes.token.isNullOrBlank()) {
+                                        token = firstRes.token
+                                        cookie = firstRes.cookie ?: cookie
+                                        uidFromLine = firstRes.uid
+                                    }
+                                } catch (_: Exception) {}
+
+                                if (!token.isNullOrBlank()) {
+                                    try {
+                                        val details = accountManager.fetchAccountDetailsWithToken(token, proxy)
+                                        if (details.isLive) {
+                                            val resolvedUid = if (details.uid.isBlank() || details.uid == "Token") (uidFromLine ?: details.uid) else details.uid
+                                            return@async details.copy(
+                                                uid = resolvedUid,
+                                                bio = token,
+                                                note = cookie ?: details.note,
+                                                phone = proxy.orEmpty(),
+                                                isLive = true
+                                            )
+                                        }
+                                    } catch (_: Exception) {}
+                                }
+
+                                if (!cookie.isNullOrBlank()) {
+                                    try {
+                                        val cookieAcc = accountManager.getTokenFromCookie(cookie, proxy)
+                                        if (cookieAcc != null && cookieAcc.isLive) {
+                                            return@async cookieAcc.copy(
+                                                note = cookie,
+                                                phone = proxy.orEmpty(),
+                                                isLive = true
+                                            )
+                                        }
+                                    } catch (_: Exception) {}
+                                }
+
+                                val fallbackUid = uidFromLine ?: cookie?.let { c ->
+                                    Regex("""c_user=(\d+)""").find(c)?.groupValues?.get(1)
+                                } ?: parts.getOrNull(0)?.takeIf { it.matches(Regex("""\d+""")) } ?: "N/A"
+
+                                return@async FacebookAccount(
+                                    uid = fallbackUid,
+                                    name = fallbackUid,
+                                    note = cookie.orEmpty(),
+                                    bio = directToken ?: token.orEmpty(),
+                                    phone = proxy.orEmpty(),
+                                    isLive = false
+                                )
+                            }
+                        }.awaitAll()
+                    }
+
+                    FacebookAccountsStore.addAccounts(context, checkedAccounts)
+                    val liveCount = checkedAccounts.count { it.isLive }
+                    if (liveCount > 0) {
+                        Toast.makeText(context, "Đăng nhập thành công ($liveCount tài khoản)", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Đăng nhập thất bại: Tài khoản DIE hoặc sai pass/2FA", Toast.LENGTH_SHORT).show()
+                    }
+                    facebookAccounts = FacebookAccountsStore.getAccounts(context, forceReload = true)
+                }
             }
         )
     }
