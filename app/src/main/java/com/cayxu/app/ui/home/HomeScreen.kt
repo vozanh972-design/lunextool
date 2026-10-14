@@ -33,7 +33,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,18 +60,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.cayxu.app.data.local.FacebookAccountsStore
-import com.cayxu.app.ui.screens.golike.GolikeAccountsStore
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.TtcAccountsStore
 import com.cayxu.app.data.local.XsmmAccountStore
 import com.cayxu.app.ui.design.Alx
+import com.cayxu.app.ui.design.ProAvatar
 import com.cayxu.app.ui.design.SvgIcon
 import com.cayxu.app.ui.design.type
+import com.cayxu.app.ui.locale.Str
 import com.cayxu.app.ui.main.DockClearance
+import com.cayxu.app.ui.main.MainShell
+import com.cayxu.app.ui.main.MainTab
 import com.cayxu.app.ui.navigation.Routes
+import com.cayxu.app.ui.profile.ContactChannel
+import com.cayxu.app.ui.profile.ContactKind
+import com.cayxu.app.ui.screens.golike.GolikeAccountsStore
 import com.cayxu.app.ui.screens.home.HomeViewModel
+import com.cayxu.app.ui.support.DefaultSupportContacts
+import com.cayxu.app.ui.support.SupportSheet
 import java.util.Calendar
 
 /* ───────────────────────────── Dữ liệu ───────────────────────────── */
@@ -95,10 +104,9 @@ data class HomeUiState(
     val daysLeft: Int = 25,
     val today: DayEarnings = DayEarnings(0, 0),          // xu + tiền (đ) kiếm được hôm nay
     val expiryText: String = "Hạn dùng 05/11/2026 · 11:51",
-    val hasUnread: Boolean = true,
     val tiles: List<HomeTile> = DefaultTiles,
     val wideTile: HomeTile? = DefaultWideTile,
-    val wideStatus: String = "Chưa hỗ trợ",
+    val wideStatus: String = "Sẵn sàng",
 )
 
 /** Thu nhập của một ngày: [coins] là số xu, [money] là số tiền (đồng). */
@@ -131,34 +139,26 @@ val DefaultTiles = listOf(
     HomeTile("ttc", "TTC", Color(0xFFC2255C), Color(0xFFFDEAF2), "0 xu", "Tuongtaccheo", "Trao đổi like sub"),
     HomeTile("tiktok", "TikT", Color(0xFF334155), Color(0xFFEDF0F5), "0 acc", "TikTok TTC", "Nhận job tự động", 11f),
 )
-val DefaultWideTile = HomeTile("nvc", "NV", Color(0xFF94A3B8), Color(0xFFF1F5F9), "", "Nhiemvucheo", "Chưa hỗ trợ", 12f, isSupported = false)
+val DefaultWideTile = HomeTile("nvc", "NV", Color(0xFF0E7490), Color(0xFFE3F4F8), "", "Nhiemvucheo", "Tăng view, sub")
 
 /** "Chào buổi sáng / trưa / chiều / tối" theo giờ máy. */
 fun greetingNow(): String {
     val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-    val isEn = com.cayxu.app.ui.locale.LanguageState.language == com.cayxu.app.ui.locale.AppLanguage.EN
-    return when {
-        h < 11 -> if (isEn) "Good morning," else "Chào buổi sáng,"
-        h < 14 -> if (isEn) "Good afternoon," else "Chào buổi trưa,"
-        h < 18 -> if (isEn) "Good afternoon," else "Chào buổi chiều,"
-        else -> if (isEn) "Good evening," else "Chào buổi tối,"
-    }
+    return Str.greeting(h)
 }
-
-private val Red = Color(0xFFE5484D)
 
 /* ───────────────────────────── Icon (path khung 24×24, cờ cung viết cách ra) ───────────────────────────── */
 
-private val SearchIcon = listOf("M18 11 A7 7 0 1 0 4 11 A7 7 0 1 0 18 11 Z", "M20 20 L16.5 16.5")
-private val BellIcon = listOf(
-    "M18 8 A6 6 0 1 0 6 8 C6 15 3 17 3 17 H21 S18 15 18 8",
-    "M13.7 21 A2 2 0 0 1 10.3 21",
+// Icon "hỗ trợ": người đeo tai nghe có mic. Vòng ngoài vẽ nét, hai chụp tai tô đặc (vẽ lớp riêng vì SvgIcon tô cả bộ path).
+private val SupportOutline = listOf(
+    "M15.4 11.5 A3.4 3.4 0 1 0 8.6 11.5 A3.4 3.4 0 1 0 15.4 11.5 Z",
+    "M4.5 12 V11 A7.5 7.5 0 0 1 19.5 11 V12",
+    "M19.7 16.5 C19.7 18.7 18.1 20 15.7 20 H13.5",
 )
-private val CompassIcon = listOf(
-    "M21 12 A9 9 0 1 0 3 12 A9 9 0 1 0 21 12 Z",
-    "M15.5 8.5 L13.5 13.5 L8.5 15.5 L10.5 10.5 Z",
+private val SupportCups = listOf(
+    "M4.1 11.5 H4.5 A1.3 1.3 0 0 1 5.8 12.8 V15.2 A1.3 1.3 0 0 1 4.5 16.5 H4.1 A1.3 1.3 0 0 1 2.8 15.2 V12.8 A1.3 1.3 0 0 1 4.1 11.5 Z",
+    "M19.5 11.5 H19.9 A1.3 1.3 0 0 1 21.2 12.8 V15.2 A1.3 1.3 0 0 1 19.9 16.5 H19.5 A1.3 1.3 0 0 1 18.2 15.2 V12.8 A1.3 1.3 0 0 1 19.5 11.5 Z",
 )
-private val ChevronIcon = listOf("M9 6 L15 12 L9 18")
 
 /* ───────────────────────────── Màn hình ───────────────────────────── */
 
@@ -171,12 +171,15 @@ fun HomeScreen(
     state: HomeUiState,
     modifier: Modifier = Modifier,
     greeting: String = greetingNow(),
-    onSearch: () -> Unit = {},
-    onNotifications: () -> Unit = {},
-    onExplore: () -> Unit = {},
+    sponsors: List<SponsorBanner> = DefaultSponsorBanners,
+    contacts: List<ContactChannel> = DefaultSupportContacts,
+    onSponsorOpen: (String) -> Unit = {},
     onSeeAll: () -> Unit = {},
     onTile: (HomeTile) -> Unit = {},
 ) {
+    var showSupport by remember { mutableStateOf(false) }
+    if (showSupport) SupportSheet(onDismiss = { showSupport = false }, contacts = contacts)
+
     Box(modifier.fillMaxSize().background(Alx.Bg)) {
         Column(
             Modifier
@@ -185,18 +188,18 @@ fun HomeScreen(
                 .statusBarsPadding()
                 .padding(start = 20.dp, end = 20.dp, top = 24.dp),
         ) {
-            Header(state, greeting, onSearch, onNotifications)
+            Header(state, greeting, onSupport = { showSupport = true })
             StatsCard(state, Modifier.padding(top = 20.dp))
-            ExploreRow(onExplore, Modifier.padding(top = 12.dp))
+            SponsorCarousel(sponsors, Modifier.padding(top = 12.dp), onOpen = onSponsorOpen)
 
             Row(
                 Modifier.padding(top = 24.dp).fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Bottom,
             ) {
-                BasicText(com.cayxu.app.ui.locale.Str.homeQuickAccess, style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
+                BasicText(Str.homeQuickAccess, style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
                 BasicText(
-                    com.cayxu.app.ui.locale.Str.profileSeeAll,
+                    Str.profileSeeAll,
                     Modifier.clickable(role = Role.Button, onClick = onSeeAll),
                     style = type(13f, FontWeight.Bold, Alx.Blue),
                 )
@@ -221,12 +224,12 @@ fun HomeScreen(
 
 /**
  * Overload kết nối NavController và ViewModel thật trong app.
+ * Đọc dữ liệu thật từ các tài khoản, điểm XSMM, số dư Golike, tài khoản TTC, TikTok.
  */
 @Composable
 fun HomeScreen(
     navController: NavController,
     viewModel: HomeViewModel = viewModel(),
-    onExplore: (() -> Unit)? = null,
     onSeeAll: (() -> Unit)? = null,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -274,18 +277,14 @@ fun HomeScreen(
             daysLeft = daysLeft,
             today = DayEarnings(coins = ttcCoins, money = xsmmPoints + golikeBalance),
             expiryText = expiryText,
-            hasUnread = true,
             tiles = tiles,
             wideTile = DefaultWideTile,
-            wideStatus = "Chưa hỗ trợ",
+            wideStatus = Str.homeNotSupported,
         )
     }
 
     HomeScreen(
         state = state,
-        onSearch = { },
-        onNotifications = { },
-        onExplore = onExplore ?: { navController.navigate(Routes.TASKS) },
         onSeeAll = onSeeAll ?: { navController.navigate(Routes.TASKS) },
         onTile = { tile ->
             if (tile.isSupported) {
@@ -302,12 +301,11 @@ fun HomeScreen(
 }
 
 @Composable
-private fun Header(state: HomeUiState, greeting: String, onSearch: () -> Unit, onNotifications: () -> Unit) {
+private fun Header(state: HomeUiState, greeting: String, onSupport: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(44.dp).background(Alx.BlueSoft, CircleShape), contentAlignment = Alignment.Center) {
-                BasicText(initials(state.username), style = type(15f, FontWeight.ExtraBold, Alx.Blue))
-            }
+            // Header luôn hiện nhãn PRO nên avatar luôn có viền PRO (gradient xanh, tím, hồng).
+            ProAvatar(initials(state.username), inner = 44.dp, ringWidth = 2.dp, gap = 2.dp, textSp = 15f, ringed = true)
             Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 BasicText(greeting, style = type(12.5f, FontWeight.Medium, Alx.Muted))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -320,17 +318,9 @@ private fun Header(state: HomeUiState, greeting: String, onSearch: () -> Unit, o
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            RoundButton(com.cayxu.app.ui.locale.Str.search, onSearch) { SvgIcon(SearchIcon, 20.dp, Alx.Ink, 1.8f) }
-            RoundButton(com.cayxu.app.ui.locale.Str.notifications, onNotifications) {
-                SvgIcon(BellIcon, 20.dp, Alx.Ink, 1.8f)
-                if (state.hasUnread) {
-                    Box(
-                        Modifier.align(Alignment.TopEnd).offset(x = (-11).dp, y = 10.dp).size(8.dp)
-                            .background(Red, CircleShape).border(2.dp, Alx.White, CircleShape),
-                    )
-                }
-            }
+        RoundButton("Liên hệ hỗ trợ", onSupport) {
+            SvgIcon(SupportOutline, 20.dp, Alx.Ink, 1.8f)
+            SvgIcon(SupportCups, 20.dp, Alx.Ink, 1.8f, fill = true)   // hai chụp tai tô đặc, chồng đúng lên lớp nét
         }
     }
 }
@@ -340,14 +330,18 @@ private fun initials(name: String) = name.trim().take(2).uppercase().ifEmpty { "
 
 @Composable
 private fun RoundButton(label: String, onClick: () -> Unit, content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "roundBtnPress")
     Box(
         Modifier
             .size(44.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
             .background(Alx.White, CircleShape)
             .border(1.dp, Alx.Line, CircleShape)
             .clip(CircleShape)
             .semantics { contentDescription = label }
-            .clickable(role = Role.Button, onClick = onClick),
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
         content = content,
     )
@@ -358,14 +352,14 @@ private fun StatsCard(state: HomeUiState, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(22.dp)
     Column(modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape).clip(shape)) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(vertical = 16.dp)) {
-            StatCell(com.cayxu.app.ui.locale.Str.homeTotalCoins, Modifier.weight(1f)) {
+            StatCell(Str.homeTotalCoins, Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CoinIcon(18.dp)
                     BasicText(state.coins, style = valueStyle())
                 }
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(Alx.Divider))
-            StatCell(com.cayxu.app.ui.locale.Str.homeServices, Modifier.weight(1f)) {
+            StatCell(Str.homeServices, Modifier.weight(1f)) {
                 BasicText(
                     buildAnnotatedString {
                         append("${state.servicesActive}")
@@ -375,11 +369,11 @@ private fun StatsCard(state: HomeUiState, modifier: Modifier = Modifier) {
                 )
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(Alx.Divider))
-            StatCell(com.cayxu.app.ui.locale.Str.homeRemaining, Modifier.weight(1f)) {
+            StatCell(Str.homeRemaining, Modifier.weight(1f)) {
                 BasicText(
                     buildAnnotatedString {
                         append("${state.daysLeft}")
-                        withStyle(SpanStyle(color = Alx.Muted, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)) { append(com.cayxu.app.ui.locale.Str.homeDaysUnit) }
+                        withStyle(SpanStyle(color = Alx.Muted, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)) { append(Str.homeDaysUnit) }
                     },
                     style = valueStyle(),
                 )
@@ -388,7 +382,7 @@ private fun StatsCard(state: HomeUiState, modifier: Modifier = Modifier) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Alx.Divider))
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-                BasicText(com.cayxu.app.ui.locale.Str.homeTodayPerformance, style = type(12f, FontWeight.SemiBold, Alx.Ink2))
+                BasicText(Str.homeTodayPerformance, style = type(12f, FontWeight.SemiBold, Alx.Ink2))
                 BasicText("${(state.performance * 100).toInt()}%", style = type(13f, FontWeight.ExtraBold, Alx.Blue))
             }
             Box(Modifier.fillMaxWidth().height(6.dp).background(Alx.BlueSoft, RoundedCornerShape(3.dp))) {
@@ -422,23 +416,6 @@ internal fun CoinIcon(size: Dp) {
     }
 }
 
-@Composable
-private fun ExploreRow(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val shape = RoundedCornerShape(18.dp)
-    PressBox(onClick, modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape).clip(shape)) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(40.dp).background(Alx.BlueSoft, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                SvgIcon(CompassIcon, 20.dp, Alx.Blue, 1.8f)
-            }
-            Column(Modifier.weight(1f)) {
-                BasicText(com.cayxu.app.ui.locale.Str.homeExploreTasks, style = type(14.5f, FontWeight.Bold, Alx.Ink))
-                BasicText(com.cayxu.app.ui.locale.Str.homeExploreDesc, Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Normal, Alx.Muted))
-            }
-            SvgIcon(ChevronIcon, 18.dp, Alx.Muted, 2f)
-        }
-    }
-}
-
 private val TileShape = RoundedCornerShape(22.dp)
 
 @Composable
@@ -462,72 +439,21 @@ private fun QuickTile(tile: HomeTile, onClick: () -> Unit, modifier: Modifier = 
 
 @Composable
 private fun WideTile(tile: HomeTile, status: String, onClick: () -> Unit) {
-    val shape = TileShape
-    val source = remember { MutableInteractionSource() }
-    val pressed by source.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        if (tile.isSupported && pressed) 0.985f else 1f,
-        tween(120),
-        label = "press",
-    )
-    val boxModifier = Modifier
-        .fillMaxWidth()
-        .tileShadow()
-        .graphicsLayer { scaleX = scale; scaleY = scale }
-        .background(if (tile.isSupported) Alx.White else Color(0xFFF8FAFC), shape)
-        .border(1.dp, if (tile.isSupported) Alx.Line else Color(0xFFE2E8F0), shape)
-        .clip(shape)
-        .then(
-            if (tile.isSupported) {
-                Modifier.clickable(
-                    interactionSource = source,
-                    indication = null,
-                    role = Role.Button,
-                    onClick = onClick,
-                )
-            } else {
-                Modifier
-            }
-        )
-
-    Box(boxModifier) {
+    PressBox(
+        onClick,
+        Modifier.fillMaxWidth().tileShadow().background(Alx.White, TileShape).border(1.dp, Alx.Line, TileShape).clip(TileShape),
+    ) {
         Box(Modifier.align(Alignment.TopEnd).offset(x = 34.dp, y = (-40).dp).size(110.dp).background(tile.blobColor, CircleShape))
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Badge(tile)
             Column(Modifier.weight(1f)) {
-                BasicText(
-                    tile.name,
-                    style = type(
-                        15f,
-                        FontWeight.ExtraBold,
-                        if (tile.isSupported) Alx.Ink else Color(0xFF64748B),
-                        spacing = -0.01f,
-                    ),
-                    maxLines = 1,
-                )
-                BasicText(
-                    tile.subtitle,
-                    Modifier.padding(top = 1.dp),
-                    style = type(12f, FontWeight.Medium, Alx.Muted),
-                    maxLines = 1,
-                )
+                BasicText(tile.name, style = type(15f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f), maxLines = 1)
+                BasicText(tile.subtitle, Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Medium, Alx.Muted), maxLines = 1)
             }
-            val displayStatus = if (tile.isSupported) com.cayxu.app.ui.locale.Str.homeReady else com.cayxu.app.ui.locale.Str.homeNotSupported
             BasicText(
-                displayStatus,
-                Modifier
-                    .background(Alx.White, CircleShape)
-                    .border(
-                        1.dp,
-                        if (tile.isSupported) Color(0xFFBFE3EC) else Color(0xFFE2E8F0),
-                        CircleShape,
-                    )
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                style = type(
-                    12f,
-                    FontWeight.ExtraBold,
-                    if (tile.isSupported) tile.badgeColor else Color(0xFF94A3B8),
-                ),
+                status,
+                Modifier.background(Alx.White, CircleShape).border(1.dp, Color(0xFFBFE3EC), CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),
+                style = type(12f, FontWeight.ExtraBold, tile.badgeColor),
             )
         }
     }
@@ -565,8 +491,13 @@ private fun PressBox(onClick: () -> Unit, modifier: Modifier, content: @Composab
 @Preview(widthDp = 390, heightDp = 844, showBackground = true)
 @Composable
 private fun HomeScreenPreview() {
-    HomeScreen(HomeUiState(
-        username = "username", coins = "1.250",
-        today = DayEarnings(coins = 2_000_000, money = 30_000),   // 20.000đ + 30.000đ = 50%
-    ), greeting = "Chào buổi trưa,")
+    MainShell(selected = MainTab.Home, onSelect = {}) {
+        HomeScreen(
+            HomeUiState(
+                username = "username", coins = "1.250",
+                today = DayEarnings(coins = 2_000_000, money = 30_000),   // 20.000đ + 30.000đ = 50%
+            ),
+            greeting = "Chào buổi trưa,"
+        )
+    }
 }

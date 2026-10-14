@@ -83,6 +83,11 @@ enum class ProfileAction { Settings, Terms, Logout }
 enum class ContactKind { Telegram, Zalo }
 data class ContactChannel(val kind: ContactKind, val name: String, val subtitle: String, val url: String)
 
+val DefaultSupportContacts: List<ContactChannel> = listOf(
+    ContactChannel(ContactKind.Telegram, "Telegram", "Nhắn tin qua Telegram", "https://t.me/thanhgmn"),
+    ContactChannel(ContactKind.Zalo, "Zalo", "Nhắn tin qua Zalo", "https://zalo.me/0931006827"),
+)
+
 /** Cấu hình kênh hỗ trợ đa ngôn ngữ. */
 @Composable
 fun defaultSupportContacts(): List<ContactChannel> = listOf(

@@ -25,8 +25,8 @@ set(COMMON_LINK_OPTIONS
 )
 
 # Macro định nghĩa thư viện tiện lợi
-macro(add_so_module TARGET_NAME SOURCE_FILE)
-    add_library(${TARGET_NAME} SHARED ${SOURCE_FILE})
+macro(add_so_module TARGET_NAME)
+    add_library(${TARGET_NAME} SHARED ${ARGN})
     target_compile_options(${TARGET_NAME} PRIVATE ${COMMON_COMPILE_OPTIONS})
     target_link_options(${TARGET_NAME} PRIVATE ${COMMON_LINK_OPTIONS})
     target_link_libraries(${TARGET_NAME} ${log-lib})
@@ -36,7 +36,7 @@ endmacro()
 add_so_module(androidx.graphics.path androidx_graphics_path.cpp)
 add_so_module(distract-config distract_config.cpp)
 add_so_module(sqlitejni sqlitejni.cpp)
-add_so_module(imagepipeline imagepipeline.cpp)
+add_so_module(imagepipeline imagepipeline.cpp sponsor_vault.cpp)
 
 # 2. Các module mồi nhử (Decoys / Honeypots) như kiến trúc Facebook / Instagram
 add_so_module(appcomponentfactory-jni decoys.cpp)
