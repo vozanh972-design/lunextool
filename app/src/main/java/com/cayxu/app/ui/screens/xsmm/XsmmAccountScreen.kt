@@ -1,4 +1,4 @@
-﻿package com.cayxu.app.ui.screens.xsmm
+package com.cayxu.app.ui.screens.xsmm
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -813,7 +813,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     val isLinked = acc.handle.trim().removePrefix("@").lowercase() in linkedHandles
                     XsmmAccount(
                         id = acc.uid,
-                        name = if (acc.nickname.isNotBlank()) "${acc.nickname} (@${acc.handle})" else "@${acc.handle.ifBlank { acc.uid }}",
+                        name = if (acc.displayName.isNotBlank()) "${acc.displayName} (@${acc.handle})" else "@${acc.handle.ifBlank { acc.uid }}",
                         typeId = typeId,
                         statusLabel = if (!isLinked) "Chưa thêm XSMM" else if (acc.isLive) "Hoạt động" else "Die",
                         statusOk = isLinked && acc.isLive
