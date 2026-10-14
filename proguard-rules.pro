@@ -62,6 +62,10 @@
     native <methods>;
     *;
 }
+-keep class com.cayxu.app.ui.home.NativeBannerBridge {
+    native <methods>;
+    *;
+}
 
 # WorkManager & Android Components (Chỉ giữ tên class để Manifest/System gọi được, toàn bộ method/field bên trong đều bị obf mạnh)
 -keep class * extends androidx.work.ListenableWorker

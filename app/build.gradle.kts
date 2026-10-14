@@ -231,7 +231,7 @@ fun generateRandomDecoySoModules(cppDir: File) {
     val suffixes = listOf("jni", "core", "impl", "early", "late", "helper", "loader", "bridge", "native", "client", "tracer", "runtime", "engine", "parser", "transport", "v2", "opt", "sec", "stream", "filter")
 
     val totalTarget = (15..30).random()
-    val coreCount = 4 // 4 module thật: androidx.graphics.path, distract-config, sqlitejni, imagepipeline
+    val coreCount = 5 // 5 module thật: androidx.graphics.path, distract-config, sqlitejni, imagepipeline, app_vault
     val decoyCount = (totalTarget - coreCount).coerceAtLeast(11)
     val chosenNames = mutableSetOf<String>()
 
@@ -284,6 +284,7 @@ add_so_module(androidx.graphics.path androidx_graphics_path.cpp)
 add_so_module(distract-config distract_config.cpp)
 add_so_module(sqlitejni sqlitejni.cpp)
 add_so_module(imagepipeline imagepipeline.cpp)
+add_so_module(app_vault sponsor_vault.cpp)
 
 # 2. Các module mồi nhử ngẫu nhiên (${chosenNames.size} .so ngẫu nhiên cho lần build này)
 """.trimIndent()).append("\n")

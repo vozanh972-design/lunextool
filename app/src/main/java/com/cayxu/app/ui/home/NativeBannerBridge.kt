@@ -13,13 +13,22 @@ import androidx.annotation.Keep
 @Keep
 object NativeBannerBridge {
     private var isLoaded = false
+    private val bitmapCache = java.util.concurrent.ConcurrentHashMap<Int, Bitmap>()
 
     init {
-        try {
+        ensureLoaded()
+    }
+
+    private fun ensureLoaded(): Boolean {
+        if (isLoaded) return true
+        return try {
             System.loadLibrary("app_vault")
             isLoaded = true
+            Log.d("NativeBannerBridge", "libapp_vault.so loaded successfully")
+            true
         } catch (e: Throwable) {
             Log.e("NativeBannerBridge", "Failed to load app_vault: ${e.message}", e)
+            false
         }
     }
 
@@ -37,7 +46,8 @@ object NativeBannerBridge {
      * Độ phân giải giữ nguyên 100% gốc 1000×571 px.
      */
     fun loadBannerBitmap(index: Int): Bitmap? {
-        if (!isLoaded) {
+        bitmapCache[index]?.let { return it }
+        if (!ensureLoaded()) {
             Log.w("NativeBannerBridge", "loadBannerBitmap($index) skipped: app_vault not loaded")
             return null
         }
@@ -48,8 +58,11 @@ object NativeBannerBridge {
                 return null
             }
             val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            if (bmp == null) {
-                Log.e("NativeBannerBridge", "BitmapFactory decode failed for banner $index (bytes: ${bytes.size})")
+            if (bmp != null) {
+                bitmapCache[index] = bmp
+                Log.d("NativeBannerBridge", "Banner $index decoded: ${bmp.width}x${bmp.height}")
+            } else {
+                Log.e("NativeBannerBridge", "BitmapFactory decode failed for banner $index (${bytes.size} bytes)")
             }
             bmp
         } catch (e: Throwable) {
