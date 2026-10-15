@@ -132,8 +132,8 @@ fun XsmmRunConfigInstagramScreen(
             }
 
             SectionCard(innerPadding = 0.dp) {
-                NumberRow("Thời gian lấy nhiệm vụ", state.getTaskWaitSeconds, onGetTaskWaitChange, unit = "giây", divider = false)
-                NumberRow("Thời gian làm nhiệm vụ", state.workSeconds, onWorkSecondsChange, unit = "giây", divider = true)
+                NumberRow("Thời gian lấy nhiệm vụ", state.getTaskWaitSeconds, onGetTaskWaitChange, unit = "s", divider = false)
+                NumberRow("Thời gian làm nhiệm vụ", state.workSeconds, onWorkSecondsChange, unit = "s", divider = true)
                 NumberRow("Số nhiệm vụ muốn làm", state.taskCount, onTaskCountChange, placeholder = "Để trống = không giới hạn", wide = true, divider = true)
                 NumberRow("Số lần hết NV sẽ dừng", state.stopAfterEmptyTimes, onStopAfterEmptyChange, divider = true)
                 NumberRow("Số job lỗi / nhả sẽ đổi acc", state.errorSwapAccountCount, onErrorSwapChange, divider = true)
@@ -227,10 +227,10 @@ private fun RadioDot(selected: Boolean) {
 @Composable
 private fun BehaviorToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit, divider: Boolean) {
     Column {
-        if (divider) Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFEEF1F6)))
+        if (divider) Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(1.dp).background(Color(0xFFEEF1F6)))
         Row(
             Modifier.fillMaxWidth().heightIn(min = 56.dp).toggleable(checked, role = Role.Switch, onValueChange = onChange)
-                .padding(vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -249,9 +249,9 @@ private fun NumberRow(
     divider: Boolean, unit: String? = null, placeholder: String? = null, wide: Boolean = false,
 ) {
     Column {
-        if (divider) Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFEEF1F6)))
+        if (divider) Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(1.dp).background(Color(0xFFEEF1F6)))
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(vertical = 8.dp),
+            Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BasicText(label, Modifier.weight(1f).padding(end = 10.dp), style = type(14f, FontWeight.SemiBold, Alx.Ink))
