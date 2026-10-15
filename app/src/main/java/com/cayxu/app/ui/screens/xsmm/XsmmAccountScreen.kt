@@ -1045,6 +1045,7 @@ fun XsmmAccountScreen(navController: NavController) {
                         else -> "tiktok"
                     }
                     val isLinked = acc.handle.trim().removePrefix("@").lowercase() in linkedHandles
+                    val isReloading = acc.uid in reloadingTikTokUids
                     val cleanHandle = acc.handle.trim().removePrefix("@")
                     XsmmAccount(
                         id = acc.uid,
