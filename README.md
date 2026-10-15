@@ -16,6 +16,7 @@
    - `AppFlow.kt` → `.../app/` (luồng điều hướng toàn app, xem mục "Luồng mở app")
    - `ActivationSuccessScreen.kt` → `.../ui/success/` (chào mừng + chuyển cảnh vào Trang chủ)
    - `XsmmLoginScreen.kt`, `XsmmAccountsScreen.kt`, `XsmmAddAccountSheets.kt`, `XsmmRunConfigTiktokScreen.kt`, `XsmmRunConfigFacebookScreen.kt` & `XsmmRunConfigInstagramScreen.kt` → `.../ui/xsmm/` (Màn đăng nhập, danh sách tài khoản 3 nền tảng XSMM, các tấm thêm tài khoản và 3 màn cấu hình chạy riêng biệt)
+   - `RunningOverlayWindow.kt` → `.../ui/overlay/` (Màn hình nổi khi đang chạy nhiệm vụ — bản đầy đủ + bản thu nhỏ kéo-thả được)
    Đổi `package` cho đúng app. Mọi màn đều lấy font từ `Manrope` trong `AlxDesign.kt`, màn mới chỉ cần dùng `type(...)`.
 2. Tải font **Manrope** từ Google Fonts. Lấy file variable `Manrope[wght].ttf`, đổi tên thành `manrope.ttf` và đặt vào `app/src/main/res/font/`.
    Chỉ cần đúng 1 file này; code tự chọn độ đậm Medium/SemiBold/Bold/ExtraBold bằng trục wght. Đừng chép cùng một file variable thành 4 tên khác nhau, chữ sẽ bị mảnh.
@@ -324,6 +325,52 @@ XsmmRunConfigTiktokScreen(
 - Ô số dùng `BasicTextField` chỉ nhận chữ số (`filter { it.isDigit() }`), chưa có giới hạn min/max hay validate nghiệp vụ — bạn tự thêm nếu cần.
 - 3 file này hoàn toàn độc lập với nhau (không `import` lẫn nhau, mỗi file tự có các composable phụ trợ riêng như `Switch`, `NumberField`...) nên xoá/sửa 1 file không ảnh hưởng 2 file kia.
 - Chưa biên dịch, bạn chạy thử và báo lỗi nếu có.
+
+## Màn hình nổi khi đang chạy (RunningOverlayWindow.kt) — CHỈ THAY GIAO DIỆN, không đụng logic
+**Quan trọng:** file này CHỈ là lớp giao diện, khớp đúng bản thiết kế canvas đã chốt (`GolikeOverlay.dc.html`). KHÔNG có: logic chạy nhiệm vụ thật, logic tạm dừng/tiếp tục thật, logic xin quyền hiển thị-đè-lên-app-khác (`SYSTEM_ALERT_WINDOW` / `Settings.canDrawOverlays`), logic tạo/gỡ overlay bằng `WindowManager`, logic lưu lại vị trí đã kéo. Tất cả đi vào qua `RunningOverlayUiState`, đi ra qua callback — **bạn phải tự nối lại file logic thật (service đang chạy nhiệm vụ, nơi tạo/điều khiển overlay) vào màn nổi mới này**, file không tự biết phải làm gì khi người dùng bấm nút hay kéo thả.
+
+Cách dùng dự kiến — Service nền tạo MỘT system overlay window kiểu `TYPE_APPLICATION_OVERLAY`, to bằng cả màn hình thiết bị (`MATCH_PARENT` × `MATCH_PARENT`, nền trong suốt, `FLAG_NOT_TOUCH_MODAL`), rồi đặt `RunningOverlayWindow` làm nội dung `ComposeView` của cửa sổ đó:
+```kotlin
+RunningOverlayWindow(
+    state = RunningOverlayUiState(
+        mode = "Golike",
+        accountLabel = currentAccount?.displayName,   // null = overlay tự hiện "Chưa chọn tài khoản"/"No account selected"
+        doneTasks = session.doneCount,
+        earnedCoins = session.earnedCoins,
+        statusText = session.statusText,               // đã dịch sẵn đúng ngôn ngữ hiện tại từ phía logic
+        paused = session.isPaused,
+        expanded = overlayPrefs.expanded,
+        dockedSide = overlayPrefs.dockedSide,
+        language = appSettings.language,                // dùng chung AppLanguage đã có ở màn Chọn ngôn ngữ
+    ),
+    onReposition = { /* bắt đầu cho người dùng kéo cả cửa sổ overlay bằng WindowManager — hành vi thật, không vẽ ở đây */ },
+    onCollapse = { overlayPrefs.expanded = false },
+    onExpand = { overlayPrefs.expanded = true },
+    onClose = { service.stopOverlay() },
+    onPauseResume = { session.togglePause() },
+    onDockSideChange = { side -> overlayPrefs.dockedSide = side },  // tự lưu lại để lần sau mở ra đúng vị trí
+)
+```
+
+**Vì sao khung bao bằng cả màn hình:** để việc kéo-thả bản thu nhỏ xử lý HOÀN TOÀN bằng Compose offset bên trong, không cần gọi `WindowManager.updateViewLayout` theo từng khung hình khi kéo — đây là cách làm phổ biến cho overlay dạng "bong bóng nổi" (chat-head). Nút "Đổi vị trí" ở bản đầy đủ là chuyện khác (di chuyển cả cửa sổ overlay bằng `WindowManager`, không phải kéo trong Compose) nên cố ý để `onReposition` trống — đó là logic thật.
+
+**2 trạng thái, đúng theo thiết kế canvas:**
+- **Bản đầy đủ**: thẻ trắng bo góc, hàng tiêu đề (AUTOLUNEX + version + 3 nút Đổi vị trí/Thu nhỏ/Đóng), 3 dòng thông tin (Chế độ / Tài khoản / Đã làm), dòng trạng thái nền xanh nhạt có chấm nháy (chỉ hiện khi `statusText` không rỗng), nút Tạm dừng/Tiếp tục dưới cùng.
+- **Bản thu nhỏ**: logo vuông-bo-góc-nhẹ 56dp (chữ "A" + viền xanh lá nháy báo đang chạy + huy hiệu số NV đã làm) đậu sát mép màn hình — cố ý đặt tràn ra ngoài mép một đoạn (`BubbleOverhang = 28.dp`) để nửa logo bị chính mép màn hình thật "cắt" tự nhiên, không cần code clip riêng — kèm dòng trạng thái gắn liền bên cạnh (nền tối, chấm xanh lá nháy + `statusText`, tự cắt bớt kèm "…" nếu dài).
+
+**Đậu phải vs đậu trái (`OverlaySide`):** đậu phải thì dòng trạng thái bên trái logo (đúng y hệt thiết kế gốc); đậu trái thì CHỈ đổi vị trí sang trái, nội dung/thông tin hiển thị giữ nguyên y hệt (vẫn logo + dòng trạng thái + số NV) — nhưng thứ tự trái-phải của logo và dòng trạng thái tự LẬT GƯƠNG (logo ló ra mép trái, dòng trạng thái nằm bên phải logo) để chữ trạng thái không bao giờ bị tràn ra ngoài màn hình — đúng như đã chốt khi duyệt thiết kế.
+
+**Kéo-thả + tự hít mép (snap) — chỉ áp dụng cho bản thu nhỏ, bản đầy đủ không kéo được:** chạm giữ vào bản thu nhỏ và kéo ngang, thả tay ra thì tự `animateTo` trượt mượt (260ms) sang đúng mép gần hơn (so khoảng cách tâm logo với điểm giữa màn hình), rồi mới gọi `onDockSideChange(side)` — không bao giờ "nhảy cóc" sang mép kia trước khi animation xong. Toàn bộ xử lý bằng `Animatable` + `detectHorizontalDragGestures`, không đụng `WindowManager`.
+
+**Animation — đúng yêu cầu "phải có animation khi đè vô hay bấm tương tác":**
+- Mọi nút bấm (Đổi vị trí / Thu nhỏ / Đóng / Tạm dừng-Tiếp tục / chạm vào bản thu nhỏ) đều co nhẹ khi đè ngón tay (scale 0,88–0,96 tuỳ nút, 110ms) — cùng kiểu press-animation đã dùng ở các màn khác trong app.
+- Chuyển cảnh đầy đủ ⇄ thu nhỏ: fade + scale (180ms mở ra, 140ms thu lại), không bật tắt đột ngột.
+- Icon Tạm dừng ⇄ Tiếp tục đổi bằng `AnimatedContent` (fade 120ms), không giật.
+- Chấm nháy báo "đang chạy" (`PulsingDot`) lặp lại 1,4s, cùng nhịp với bản thiết kế canvas.
+
+**Ngôn ngữ:** `RunningOverlayUiState.language` dùng chung `AppLanguage` (`VI`/`EN`) đã có sẵn ở `LanguageScreen.kt` — đổi ngôn ngữ app thì overlay tự đổi theo. Chỉ các NHÃN CỐ ĐỊNH của overlay (Chế độ/Mode, Tài khoản/Account, Chưa chọn tài khoản/No account selected, Đã làm/Done, đơn vị NV/tasks, Tạm dừng/Pause, Tiếp tục/Resume) được dịch sẵn trong `OverlayStrings`. RIÊNG `statusText` (vd "Đang mở TikTok kiểm tra nick…") là nội dung ĐỘNG do logic thật tạo ra — overlay KHÔNG tự dịch, bạn tự đưa đúng chữ theo ngôn ngữ hiện tại từ nơi gọi trước khi gán vào state.
+- Có 3 `@Preview`: bản đầy đủ, bản thu nhỏ đậu phải (tiếng Việt), bản thu nhỏ đậu trái (tiếng Anh) — xem nhanh cả 2 ngôn ngữ + 2 phía cùng lúc.
+- Đã được nối vào `XsmmJobRunnerOverlayService` để chạy trực tiếp cho nhiệm vụ XSMM TikTok.
 
 ## Animation thanh dock (MainShell.kt)
 Một viên thuốc nền mực #0F172A TRƯỢT giữa các tab như dock của Apple, không nhảy:

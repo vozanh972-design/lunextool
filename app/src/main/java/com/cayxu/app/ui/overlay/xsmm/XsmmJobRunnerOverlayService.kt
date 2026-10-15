@@ -32,14 +32,33 @@ import com.cayxu.app.ui.screens.golike.GolikeRunningManager
 import com.cayxu.app.ui.screens.golike.GolikeRunConfigStore
 import com.cayxu.app.ui.screens.golike.GolikeSession
 import com.cayxu.app.ui.screens.golike.GolikeTikTokTaskRunner
-import com.cayxu.app.ui.screens.xsmm.XsmmSession
 import kotlin.math.min
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.ViewTreeLifecycleOwner
+import androidx.lifecycle.ViewTreeViewModelStoreOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.ViewTreeSavedStateRegistryOwner
+import com.cayxu.app.ui.locale.LanguageState
+import com.cayxu.app.ui.overlay.OverlaySide
+import com.cayxu.app.ui.overlay.RunningOverlayUiState
+import com.cayxu.app.ui.overlay.RunningOverlayWindow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -56,13 +75,23 @@ class XsmmJobRunnerOverlayService : Service() {
     }
 
     private lateinit var windowManager: WindowManager
-    private var fullPanel: View? = null
-    private var miniBubble: View? = null
-    private var panelParams: WindowManager.LayoutParams? = null
-    private var bubbleParams: WindowManager.LayoutParams? = null
-    private var statusValueView: TextView? = null
-    private var taskInfoView: TextView? = null
-    private var progressInfoView: TextView? = null
+    private var overlayComposeView: ComposeView? = null
+    private var overlayLifecycleOwner: OverlayLifecycleOwner? = null
+    private var overlayParams: WindowManager.LayoutParams? = null
+    private val overlayUiState = MutableStateFlow(
+        RunningOverlayUiState(
+            mode = "XSMM",
+            accountLabel = null,
+            doneTasks = 0,
+            earnedCoins = 0L,
+            statusText = "Đang khởi động...",
+            paused = false,
+            expanded = true,
+            dockedSide = OverlaySide.Right,
+            language = LanguageState.language,
+            appVersion = "v1.0.5"
+        )
+    )
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var runnerJob: Job? = null
@@ -72,7 +101,6 @@ class XsmmJobRunnerOverlayService : Service() {
     private var totalEarnedPoints = 0L
 
     private var isPaused = false
-    private var pauseButtonView: TextView? = null
     private var lastBubbleX = -1
     private var lastBubbleY = -1
 
@@ -115,10 +143,12 @@ class XsmmJobRunnerOverlayService : Service() {
             ?: intent?.getStringExtra("extra_mode")
             ?: MODE_RUN_JOBS
 
-        if (fullPanel != null || miniBubble != null) {
+        if (overlayComposeView != null) {
             runnerJob?.cancel()
-            fullPanel?.let { runCatching { windowManager.removeView(it) } }; fullPanel = null
-            miniBubble?.let { runCatching { windowManager.removeView(it) } }; miniBubble = null
+            overlayComposeView?.let { runCatching { windowManager.removeView(it) } }
+            overlayComposeView = null
+            overlayLifecycleOwner?.onDestroy()
+            overlayLifecycleOwner = null
         }
 
         val variantStr = intent?.getStringExtra(EXTRA_VARIANT)
@@ -132,12 +162,31 @@ class XsmmJobRunnerOverlayService : Service() {
             ?.filter { it.isNotBlank() }
             .orEmpty()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        showFullPanel()
+
+        val accSummary = when {
+            accountHandles.isEmpty() -> null
+            accountHandles.size == 1 -> "@${accountHandles.first()}"
+            else -> "@${accountHandles.first()} + ${accountHandles.size - 1} acc"
+        }
+        val appV = appVersionName()
+
+        overlayUiState.value = RunningOverlayUiState(
+            mode = if (currentPlatform == PLATFORM_GOLIKE) "Golike" else "XSMM TikTok",
+            accountLabel = accSummary,
+            doneTasks = totalCompleted,
+            earnedCoins = totalEarnedPoints,
+            statusText = "Đang khởi động...",
+            paused = isPaused,
+            expanded = true,
+            dockedSide = OverlaySide.Right,
+            language = LanguageState.language,
+            appVersion = if (appV.isNotBlank()) "v$appV" else "v1.0.5"
+        )
+        initOverlayCompose()
 
         serviceScope.launch {
             XsmmJobStatusBridge.status.collect { text ->
-                statusValueView?.text = text
-                (statusValueView?.parent as? View)?.visibility = if (text.isBlank()) View.GONE else View.VISIBLE
+                overlayUiState.value = overlayUiState.value.copy(statusText = text)
             }
         }
 
@@ -159,7 +208,7 @@ class XsmmJobRunnerOverlayService : Service() {
 
             // Thu nhỏ sang mini bubble để không che khuất màn hình TikTok
             launch(Dispatchers.Main) {
-                if (fullPanel != null) showMiniBubble()
+                showMiniBubble()
             }
 
             TikTokAppLauncher.launch(applicationContext, variant, forceStopFirst = true)
@@ -283,7 +332,7 @@ class XsmmJobRunnerOverlayService : Service() {
                     if (cleanHandle.isNotBlank()) {
                         // Chủ động thu nhỏ để không che màn hình khi thao tác
                         launch(Dispatchers.Main) {
-                            if (!isPaused && fullPanel != null) showMiniBubble()
+                            if (!isPaused) showMiniBubble()
                         }
                         val allAccounts = com.cayxu.app.data.local.TikTokAccountsStore.getAccounts(applicationContext)
                         val matchedAccount = allAccounts.firstOrNull { it.handle.trim().removePrefix("@").equals(cleanHandle, ignoreCase = true) }
@@ -373,7 +422,7 @@ class XsmmJobRunnerOverlayService : Service() {
 
                                     // Chủ động thu nhỏ thành bong bóng khi chạy job tránh chạm nhầm nút
                                     launch(Dispatchers.Main) {
-                                        if (!isPaused && fullPanel != null) showMiniBubble()
+                                        if (!isPaused) showMiniBubble()
                                     }
 
                                     val target = task.idorlink.ifBlank { task.targetUrl }
@@ -568,7 +617,7 @@ class XsmmJobRunnerOverlayService : Service() {
 
                     // Tự động thu nhỏ màn nổi khi bắt đầu chạy để không che màn hình
                     launch(Dispatchers.Main) {
-                        if (!isPaused && fullPanel != null) showMiniBubble()
+                        if (!isPaused) showMiniBubble()
                     }
 
                     GolikeTikTokTaskRunner.runTikTokTaskLoop(
@@ -615,7 +664,10 @@ class XsmmJobRunnerOverlayService : Service() {
     }
 
     private fun updateProgressDisplay() {
-        progressInfoView?.text = "Đã làm: $totalCompleted NV  |  +$totalEarnedPoints $currencyUnit"
+        overlayUiState.value = overlayUiState.value.copy(
+            doneTasks = totalCompleted,
+            earnedCoins = totalEarnedPoints
+        )
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -629,141 +681,54 @@ class XsmmJobRunnerOverlayService : Service() {
         packageManager.getPackageInfo(packageName, 0).versionName ?: ""
     } catch (e: PackageManager.NameNotFoundException) { "" }
 
-    private fun makeDraggable(view: View, params: WindowManager.LayoutParams) {
-        var ix = 0; var iy = 0; var tx = 0f; var ty = 0f
-        view.setOnTouchListener { _, e ->
-            when (e.action) {
-                MotionEvent.ACTION_DOWN -> { ix = params.x; iy = params.y; tx = e.rawX; ty = e.rawY; true }
-                MotionEvent.ACTION_MOVE -> { params.x = ix + (e.rawX - tx).toInt(); params.y = iy + (e.rawY - ty).toInt(); windowManager.updateViewLayout(view, params); true }
-                else -> false
-            }
-        }
-    }
+    private fun initOverlayCompose() {
+        if (overlayComposeView != null) return
 
-    private fun showFullPanel() {
-        fullPanel?.let { runCatching { windowManager.removeView(it) } }; fullPanel = null
-        miniBubble?.let { runCatching { windowManager.removeView(it) } }; miniBubble = null
+        val lifecycleOwner = OverlayLifecycleOwner().apply { onCreate() }
+        overlayLifecycleOwner = lifecycleOwner
 
-        val panelW = min((resources.displayMetrics.widthPixels * 0.86f).toInt(), dp(360))
         val params = WindowManager.LayoutParams(
-            panelW,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            dp(460),
             overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = ((resources.displayMetrics.widthPixels - panelW) / 2).coerceAtLeast(0)
-            y = dp(120)
+            x = 0
+            y = 0
         }
-        panelParams = params
+        overlayParams = params
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(18).toFloat()
-                setColor(Color.parseColor("#F00E1611"))
-                setStroke(dp(1.5f), themeColor)
+        val composeView = ComposeView(this).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            ViewTreeLifecycleOwner.set(this, lifecycleOwner)
+            ViewTreeViewModelStoreOwner.set(this, lifecycleOwner)
+            ViewTreeSavedStateRegistryOwner.set(this, lifecycleOwner)
+
+            setContent {
+                val uiState by overlayUiState.collectAsState()
+                RunningOverlayWindow(
+                    state = uiState,
+                    onReposition = { TikTokAppLauncher.bringToolToFront(applicationContext) },
+                    onCollapse = { showMiniBubble() },
+                    onExpand = { showFullPanel() },
+                    onClose = { stopSelf() },
+                    onPauseResume = { togglePause() },
+                    onDockSideChange = { side ->
+                        overlayUiState.value = overlayUiState.value.copy(dockedSide = side)
+                    }
+                )
             }
         }
 
-        // Header
-        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        header.addView(View(this).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(themeColor) } }, LinearLayout.LayoutParams(dp(9), dp(9)).apply { rightMargin = dp(8) })
-        header.addView(TextView(this).apply { text = "CayXu"; setTextColor(Color.WHITE); textSize = 16f; setTypeface(typeface, android.graphics.Typeface.BOLD) })
-        header.addView(TextView(this).apply { val v = appVersionName(); text = if (v.isNotBlank()) "v$v" else ""; setTextColor(Color.parseColor("#8A93A6")); textSize = 12f; setPadding(dp(8), 0, 0, 0) })
-        header.addView(View(this), LinearLayout.LayoutParams(0, 0, 1f))
-        header.addView(circleBtn("\u21A9", themeLightBg, themeColor) { TikTokAppLauncher.bringToolToFront(applicationContext) })
-        header.addView(spacer(8))
-        header.addView(circleBtn("\u2013", Color.parseColor("#2E2E38"), Color.parseColor("#C7CBD4")) { showMiniBubble() })
-        header.addView(spacer(8))
-        header.addView(circleBtn("\u2715", Color.parseColor("#3DFF5252"), Color.parseColor("#FF6B6B")) { stopSelf() })
-        root.addView(header)
-        root.addView(divider())
-
-        root.addView(infoRow("Chế độ", platformTitle, themeColor))
-        val accSummary = when {
-            accountHandles.isEmpty() -> "Chưa chọn tài khoản"
-            accountHandles.size == 1 -> "@${accountHandles.first()}"
-            else -> "@${accountHandles.first()} + ${accountHandles.size - 1} acc khác"
-        }
-        root.addView(infoRow("Tài khoản", accSummary, Color.WHITE))
-
-        val progressTv = TextView(this).apply {
-            text = "Đã làm: $totalCompleted NV  |  +$totalEarnedPoints $currencyUnit"
-            setTextColor(if (currentPlatform == PLATFORM_GOLIKE) Color.parseColor("#FFA500") else Color.parseColor("#34D399"))
-            textSize = 12.5f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, dp(2), 0, dp(4))
-        }
-        progressInfoView = progressTv
-        root.addView(progressTv)
-
-        root.addView(divider())
-
-        // Đẩy trạng thái thao tác lên vị trí NV HIỆN TẠI, rút gọn nội dung
-        val statusRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(4), 0, dp(10))
-        }
-        statusRow.addView(
-            View(this).apply {
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(themeColor) }
-            },
-            LinearLayout.LayoutParams(dp(7), dp(7)).apply { rightMargin = dp(8) }
-        )
-        val statusTv = TextView(this).apply {
-            val cur = XsmmJobStatusBridge.status.value
-            text = if (cur.isNotBlank()) cur else "Đang lấy nhiệm vụ..."
-            setTextColor(Color.parseColor("#C7CBD4"))
-            textSize = 13f
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-        statusRow.addView(statusTv, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        statusValueView = statusTv
-        root.addView(statusRow)
-
-        val pauseBtn = TextView(this).apply {
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            setPadding(0, dp(14), 0, dp(14))
-            updatePauseButtonState(this)
-            setOnClickListener {
-                togglePause()
-            }
-        }
-        pauseButtonView = pauseBtn
-        root.addView(pauseBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
-
-        makeDraggable(root, params)
-        windowManager.addView(root, params)
-        fullPanel = root
-    }
-
-    private fun updatePauseButtonState(btn: TextView) {
-        if (isPaused) {
-            btn.text = "▶  TIẾP TỤC"
-            btn.background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(themeColor) // Màu tiếp tục theo nền tảng
-            }
-        } else {
-            btn.text = "\u25A0  TẠM DỪNG"
-            btn.background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(Color.parseColor("#F2534A")) // Đỏ tạm dừng
-            }
-        }
+        windowManager.addView(composeView, params)
+        overlayComposeView = composeView
     }
 
     private fun togglePause() {
         isPaused = !isPaused
-        pauseButtonView?.let { updatePauseButtonState(it) }
+        overlayUiState.value = overlayUiState.value.copy(paused = isPaused)
         if (isPaused) {
             XsmmJobStatusBridge.update("Đã tạm dừng (nhấn Tiếp tục để chạy lại)")
         } else {
@@ -772,56 +737,26 @@ class XsmmJobRunnerOverlayService : Service() {
     }
 
     private fun showMiniBubble() {
-        fullPanel?.let { runCatching { windowManager.removeView(it) } }; fullPanel = null
-        pauseButtonView = null
-        val size = dp(52)
-        val initialX = if (lastBubbleX >= 0) lastBubbleX else dp(16)
-        val initialY = if (lastBubbleY >= 0) lastBubbleY else dp(160)
-        val params = WindowManager.LayoutParams(
-            size, size, overlayType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.START; x = initialX; y = initialY }
-        bubbleParams = params
-        val bubble = FrameLayout(this).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#F00E1611")); setStroke(dp(1.5f), themeColor) } }
-        bubble.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher_round) }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply { val i = dp(6); setMargins(i, i, i, i) })
-        var drag = false; var ix = 0; var iy = 0; var tx = 0f; var ty = 0f
-        bubble.setOnTouchListener { _, e ->
-            when (e.action) {
-                MotionEvent.ACTION_DOWN -> { drag = false; ix = params.x; iy = params.y; tx = e.rawX; ty = e.rawY; true }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = (e.rawX - tx).toInt()
-                    val dy = (e.rawY - ty).toInt()
-                    if (kotlin.math.abs(dx) > 8 || kotlin.math.abs(dy) > 8) drag = true
-                    params.x = ix + dx
-                    params.y = iy + dy
-                    lastBubbleX = params.x
-                    lastBubbleY = params.y
-                    windowManager.updateViewLayout(bubble, params)
-                    true
-                }
-                MotionEvent.ACTION_UP -> { if (!drag) showFullPanel(); true }
-                else -> false
-            }
+        overlayUiState.value = overlayUiState.value.copy(expanded = false)
+        serviceScope.launch {
+            delay(160L) // Đợi hoạt ảnh thu nhỏ (140ms) hoàn tất trước khi thu hẹp khung window
+            updateOverlayWindowSize(false)
         }
-        windowManager.addView(bubble, params); miniBubble = bubble
     }
 
-    private fun circleBtn(sym: String, bg: Int, fg: Int, onClick: () -> Unit): View = TextView(this).apply {
-        text = sym; setTextColor(fg); textSize = 14f; gravity = Gravity.CENTER
-        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(bg) }
-        layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)); setOnClickListener { onClick() }
+    private fun showFullPanel() {
+        updateOverlayWindowSize(true) // Mở rộng khung window trước để không bị cắt xén khi bung thẻ
+        overlayUiState.value = overlayUiState.value.copy(expanded = true)
     }
-    private fun spacer(v: Int): View = View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(v), 0) }
-    private fun divider(): View = View(this).apply {
-        setBackgroundColor(themeDivider)
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply { topMargin = dp(10); bottomMargin = dp(10) }
-    }
-    private fun infoRow(label: String, value: String, valueColor: Int): View {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(3), 0, dp(3)) }
-        row.addView(TextView(this).apply { text = label; setTextColor(Color.parseColor("#8A93A6")); textSize = 13f }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(TextView(this).apply { text = value; setTextColor(valueColor); textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD) })
-        return row
+
+    private fun updateOverlayWindowSize(expanded: Boolean) {
+        val view = overlayComposeView ?: return
+        val params = overlayParams ?: return
+        val targetH = if (expanded) dp(460) else dp(230)
+        if (params.height != targetH) {
+            params.height = targetH
+            runCatching { windowManager.updateViewLayout(view, params) }
+        }
     }
 
     override fun onDestroy() {
@@ -834,9 +769,33 @@ class XsmmJobRunnerOverlayService : Service() {
                 GolikeRunningManager.runningAccounts[k] = false
             }
         }
-        fullPanel?.let { runCatching { windowManager.removeView(it) } }
-        miniBubble?.let { runCatching { windowManager.removeView(it) } }
-        fullPanel = null
-        miniBubble = null
+        overlayComposeView?.let { runCatching { windowManager.removeView(it) } }
+        overlayComposeView = null
+        overlayLifecycleOwner?.onDestroy()
+        overlayLifecycleOwner = null
+    }
+}
+
+private class OverlayLifecycleOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
+    private val lifecycleRegistry = LifecycleRegistry(this)
+    private val savedStateRegistryController = SavedStateRegistryController.create(this)
+    private val store = ViewModelStore()
+
+    override val lifecycle: Lifecycle get() = lifecycleRegistry
+    override val savedStateRegistry: SavedStateRegistry get() = savedStateRegistryController.savedStateRegistry
+    override val viewModelStore: ViewModelStore get() = store
+
+    fun onCreate() {
+        savedStateRegistryController.performRestore(null)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+    }
+
+    fun onDestroy() {
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        store.clear()
     }
 }
