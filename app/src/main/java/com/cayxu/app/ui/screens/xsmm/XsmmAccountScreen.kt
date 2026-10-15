@@ -1045,15 +1045,15 @@ fun XsmmAccountScreen(navController: NavController) {
                         else -> "tiktok"
                     }
                     val isLinked = acc.handle.trim().removePrefix("@").lowercase() in linkedHandles
-                    val isReloading = acc.uid in reloadingTikTokUids
+                    val cleanHandle = acc.handle.trim().removePrefix("@")
                     XsmmAccount(
                         id = acc.uid,
-                        name = if (acc.displayName.isNotBlank()) "${acc.displayName} (@${acc.handle})" else "@${acc.handle.ifBlank { acc.uid }}",
+                        name = "@${cleanHandle.ifBlank { acc.uid }}",
                         typeId = typeId,
                         statusLabel = if (!isLinked) "Chưa thêm XSMM" else if (acc.isLive) "Hoạt động" else "Die",
                         statusOk = isLinked && acc.isLive,
                         avatarUrl = acc.avatarUrl,
-                        handle = acc.handle,
+                        handle = cleanHandle,
                         followerCount = acc.followerCount,
                         heartCount = acc.heartCount,
                         createDateFormatted = acc.createDateFormatted,
@@ -1323,6 +1323,11 @@ fun XsmmAccountScreen(navController: NavController) {
                         }
                     }
                 }
+            }
+        },
+        onDeleteSelected = {
+            if (selectedForRunUids.isNotEmpty()) {
+                showDeleteConfirmSheet = true
             }
         }
     )

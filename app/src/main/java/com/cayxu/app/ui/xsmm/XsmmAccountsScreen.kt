@@ -142,6 +142,13 @@ private val Gear = listOf(
     "M19.4 15 a1.65 1.65 0 0 0 0.33 1.82 l0.06 0.06 a2 2 0 0 1 0 2.83 a2 2 0 0 1 -2.83 0 l-0.06 -0.06 a1.65 1.65 0 0 0 -1.82 -0.33 a1.65 1.65 0 0 0 -1 1.51 V21 a2 2 0 0 1 -2 2 a2 2 0 0 1 -2 -2 v-0.09 a1.65 1.65 0 0 0 -1 -1.51 a1.65 1.65 0 0 0 -1.82 0.33 l-0.06 0.06 a2 2 0 0 1 -2.83 0 a2 2 0 0 1 0 -2.83 l0.06 -0.06 a1.65 1.65 0 0 0 0.33 -1.82 a1.65 1.65 0 0 0 -1.51 -1 H3 a2 2 0 0 1 -2 -2 a2 2 0 0 1 2 -2 h0.09 a1.65 1.65 0 0 0 1.51 -1 a1.65 1.65 0 0 0 -0.33 -1.82 l-0.06 -0.06 a2 2 0 0 1 0 -2.83 a2 2 0 0 1 2.83 0 l0.06 0.06 a1.65 1.65 0 0 0 1.82 0.33 H9 a1.65 1.65 0 0 0 1 -1.51 V3 a2 2 0 0 1 2 -2 a2 2 0 0 1 2 2 v0.09 a1.65 1.65 0 0 0 1 1.51 a1.65 1.65 0 0 0 1.82 -0.33 l0.06 -0.06 a2 2 0 0 1 2.83 0 a2 2 0 0 1 0 2.83 l-0.06 0.06 a1.65 1.65 0 0 0 -0.33 1.82 V9 a1.65 1.65 0 0 0 1.51 1 H21 a2 2 0 0 1 2 2 a2 2 0 0 1 -2 2 h-0.09 a1.65 1.65 0 0 0 -1.51 1 z"
 )
 private val Play = listOf("M7 4.5v15l12-7.5z")
+private val Trash = listOf(
+    "M3 6h18",
+    "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
+    "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
+    "M10 11v6",
+    "M14 11v6"
+)
 
 /* ───────────────────────────── Màn hình ───────────────────────────── */
 
@@ -174,6 +181,7 @@ fun XsmmAccountsScreen(
     modifier: Modifier = Modifier,
     accountTypes: Map<XsmmPlatform, List<XsmmAccountTypeFilter>> = DefaultXsmmAccountTypes,
     onReloadAccount: ((XsmmAccount) -> Unit)? = null,
+    onDeleteSelected: (() -> Unit)? = null,
 ) {
     val types = accountTypes[state.selectedPlatform].orEmpty()
     val visible = state.visibleAccounts()
@@ -213,12 +221,19 @@ fun XsmmAccountsScreen(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PressBox(onClick = onToggleSelectAll, contentAlignment = Alignment.CenterStart) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Checkbox(allSelected)
                             BasicText("Tất cả", style = type(13f, FontWeight.SemiBold, Alx.Muted))
                         }
+                    }
+                    if (state.selectedAccountIds.isNotEmpty() && onDeleteSelected != null) {
+                        PressBox(
+                            onClick = onDeleteSelected,
+                            modifier = Modifier.size(40.dp).background(Alx.DangerBg, CircleShape).border(1.dp, Alx.Danger.copy(alpha = 0.35f), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) { SvgIcon(Trash, 18.dp, Alx.Danger, 2f) }
                     }
                     PressBox(
                         onClick = onAddAccount,
@@ -600,12 +615,14 @@ private fun AccountRow(
                     )
                 }
 
-                // Dòng trạng thái (Hoạt động / Chưa thêm XSMM / ...)
-                Spacer(Modifier.height(2.dp))
-                BasicText(
-                    account.statusLabel,
-                    style = type(12f, FontWeight.SemiBold, if (account.statusOk) Alx.Blue else Alx.Danger)
-                )
+                // Dòng trạng thái (Ẩn nếu là "Hoạt động" vì phía trên đã có badge Live)
+                if (account.statusLabel.isNotBlank() && account.statusLabel != "Hoạt động") {
+                    Spacer(Modifier.height(2.dp))
+                    BasicText(
+                        account.statusLabel,
+                        style = type(12f, FontWeight.SemiBold, if (account.statusOk) Alx.Blue else Alx.Danger)
+                    )
+                }
             }
 
             // Nút làm mới profile qua API
