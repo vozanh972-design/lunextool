@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -483,6 +484,8 @@ private fun EmptyState(platform: XsmmPlatform, onAddAccount: () -> Unit, modifie
     }
 }
 
+private val LiveGreen = Color(0xFF16A34A)
+
 private fun formatCount(count: Long): String {
     return when {
         count >= 1_000_000 -> String.format(java.util.Locale.US, "%.1fM", count / 1_000_000.0)
@@ -560,17 +563,17 @@ private fun AccountRow(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(if (isLiveOk) Alx.Green.copy(alpha = 0.12f) else Alx.Danger.copy(alpha = 0.12f))
+                            .background(if (isLiveOk) LiveGreen.copy(alpha = 0.12f) else Alx.Danger.copy(alpha = 0.12f))
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Box(
                             Modifier.size(5.dp).clip(CircleShape)
-                                .background(if (isLiveOk) Alx.Green else Alx.Danger)
+                                .background(if (isLiveOk) LiveGreen else Alx.Danger)
                         )
                         Spacer(Modifier.width(4.dp))
                         BasicText(
                             if (isLiveOk) "Live" else "Die",
-                            style = type(10f, FontWeight.ExtraBold, if (isLiveOk) Alx.Green else Alx.Danger)
+                            style = type(10f, FontWeight.ExtraBold, if (isLiveOk) LiveGreen else Alx.Danger)
                         )
                     }
                 }
