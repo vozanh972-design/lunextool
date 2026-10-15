@@ -15,7 +15,7 @@
    - `CoinLedger.kt` & `RoomCoinLedger.kt` → `.../data/` (Sổ xu Room & interface)
    - `AppFlow.kt` → `.../app/` (luồng điều hướng toàn app, xem mục "Luồng mở app")
    - `ActivationSuccessScreen.kt` → `.../ui/success/` (chào mừng + chuyển cảnh vào Trang chủ)
-   - `XsmmLoginScreen.kt`, `XsmmAccountsScreen.kt` & `XsmmAddAccountSheets.kt` → `.../ui/xsmm/` (Màn đăng nhập, danh sách tài khoản 3 nền tảng XSMM và các tấm thêm tài khoản)
+   - `XsmmLoginScreen.kt`, `XsmmAccountsScreen.kt`, `XsmmAddAccountSheets.kt`, `XsmmRunConfigTiktokScreen.kt`, `XsmmRunConfigFacebookScreen.kt` & `XsmmRunConfigInstagramScreen.kt` → `.../ui/xsmm/` (Màn đăng nhập, danh sách tài khoản 3 nền tảng XSMM, các tấm thêm tài khoản và 3 màn cấu hình chạy riêng biệt)
    Đổi `package` cho đúng app. Mọi màn đều lấy font từ `Manrope` trong `AlxDesign.kt`, màn mới chỉ cần dùng `type(...)`.
 2. Tải font **Manrope** từ Google Fonts. Lấy file variable `Manrope[wght].ttf`, đổi tên thành `manrope.ttf` và đặt vào `app/src/main/res/font/`.
    Chỉ cần đúng 1 file này; code tự chọn độ đậm Medium/SemiBold/Bold/ExtraBold bằng trục wght. Đừng chép cùng một file variable thành 4 tên khác nhau, chữ sẽ bị mảnh.
@@ -282,6 +282,48 @@ Bộ 2 tấm trượt (bottom sheet) toàn màn hình hiển thị dưới dạn
 - **XsmmFbLoginSheet**: Đăng nhập tài khoản Facebook hỗ trợ 3 tùy chọn định dạng (`Token`, `UID|PASS|2FA`, `UID|PASS|COOKIE`) hoặc tự động nhận diện định dạng từ dữ liệu dán vào. Hỗ trợ dán hàng loạt nhiều nick (mỗi dòng 1 nick).
 - **XsmmIgAddSheet**: Thêm tài khoản Instagram theo định dạng Cookie hoặc Cookie|Proxy, hỗ trợ dán hàng loạt tài khoản với placeholder mẫu trực quan.
 - **Tích hợp**: Cả 2 tấm là lớp giao diện độc lập phát sinh sự kiện qua `onSubmit`, kết nối trực tiếp với logic kiểm tra tài khoản Live và lưu trữ trong `XsmmAccountScreen.kt`.
+
+## XSMM: Cấu hình chạy — 3 file riêng theo nền tảng (XsmmRunConfigTiktokScreen.kt / XsmmRunConfigFacebookScreen.kt / XsmmRunConfigInstagramScreen.kt) — CHỈ THAY GIAO DIỆN, không đụng logic
+**Quan trọng:** cả 3 file CHỈ là lớp giao diện. Không có logic chạy nhiệm vụ, không gọi API, không tự lưu cấu hình, không tự validate số nhập — mọi trạng thái (các switch bật/tắt, các số, chế độ đã chọn) đều đi vào qua `UiState` và đi ra ngoài qua các callback (`onXChange`, `onSave`); bạn tự nối với logic thật, không có gì được "ngầm" xử lý bên trong file.
+
+Theo đúng hướng kiến trúc hiện tại của app — **giao diện dùng chung (cùng token màu/chữ `Alx`, cùng kiểu thẻ/switch/ô số) nhưng logic tách riêng theo từng màn** — nên màn "Cấu hình chạy" của XSMM được tách thành 3 file/3 composable độc lập theo từng nền tảng, KHÔNG gộp chung 1 màn có dropdown chuyển nền tảng như bản thiết kế canvas ban đầu:
+- `XsmmRunConfigTiktokScreen(state: XsmmRunConfigTiktokUiState, ...)` — loại nhiệm vụ: Theo dõi (Follow) / Thích (Like) / Bình luận (Comment), đều là switch bật/tắt độc lập.
+- `XsmmRunConfigFacebookScreen(state: XsmmRunConfigFacebookUiState, ...)` — loại nhiệm vụ gồm 14 switch độc lập: Like, Love, Care, Haha, Wow, Sad, Angry, Theo dõi, Comment, Share, Like Page, Tham gia nhóm, Cảm xúc comment, Đánh giá.
+- `XsmmRunConfigInstagramScreen(state: XsmmRunConfigInstagramUiState, ...)` — loại nhiệm vụ là **chọn 1 trong 4** (`XsmmIgTaskMode`: Ngẫu nhiên (Tym/Follow/Comment) / Chỉ Follow / Chỉ Tym / Chỉ Comment), vẽ dạng radio chứ không phải switch vì 4 lựa chọn này loại trừ lẫn nhau theo đúng ảnh gốc — nếu thực tế bên logic cho bật nhiều cùng lúc thì đổi `mode` thành tập hợp rồi đổi `ModeRow` sang switch như 2 file kia.
+
+Cả 3 màn giống nhau ở phần còn lại (copy y hệt nhau theo đúng ảnh gốc, không có logic gì khác nhau ở đây — chỉ khác nội dung chữ/field nếu bạn đổi):
+- Thẻ "Loại nhiệm vụ" luôn có dòng phụ đề "Bật nhiều loại → xoay vòng; hết NV đợi 10s rồi sang loại kế".
+- 6 ô số: Thời gian lấy nhiệm vụ / Thời gian làm nhiệm vụ (đơn vị giây), Số nhiệm vụ muốn làm / Số lần hoàn thành NV sẽ dừng (để trống = không giới hạn, placeholder báo rõ), Số lần hết NV sẽ dừng, Số job lỗi / nhả sẽ đổi acc.
+- 2 switch cuối: "Lướt trước khi làm", "Trở về Home rồi lướt".
+- Nút "Lưu cấu hình" cố định ở đáy màn, gọi `onSave`.
+
+Mỗi file có một ô nhận diện nền tảng (`PlatformBadge`) ngay dưới tiêu đề — dùng đúng 3 file logo tròn `R.drawable.ic_platform_{tiktok,facebook,instagram}` đã có sẵn trong `res/drawable` (cùng bộ ảnh với màn Nhiệm vụ), không vẽ icon riêng — chỉ để xác nhận đang ở cấu hình của nền tảng nào, không bấm chuyển được (vì mỗi file giờ là 1 màn cố định cho đúng 1 nền tảng).
+
+Cách dùng — mỗi platform tự quản state/ViewModel riêng của nó, ví dụ:
+```kotlin
+var tiktokState by remember { mutableStateOf(XsmmRunConfigTiktokUiState()) }
+
+XsmmRunConfigTiktokScreen(
+    state = tiktokState,
+    onBack = onBack,
+    onFollowChange = { tiktokState = tiktokState.copy(follow = it) },
+    onLikeChange = { tiktokState = tiktokState.copy(like = it) },
+    onCommentChange = { tiktokState = tiktokState.copy(comment = it) },
+    onGetTaskWaitChange = { tiktokState = tiktokState.copy(getTaskWaitSeconds = it) },
+    onWorkSecondsChange = { tiktokState = tiktokState.copy(workSeconds = it) },
+    onTaskCountChange = { tiktokState = tiktokState.copy(taskCount = it) },
+    onStopAfterEmptyChange = { tiktokState = tiktokState.copy(stopAfterEmptyTimes = it) },
+    onErrorSwapChange = { tiktokState = tiktokState.copy(errorSwapAccountCount = it) },
+    onStopAfterDoneChange = { tiktokState = tiktokState.copy(stopAfterDoneTimes = it) },
+    onBrowseBeforeTaskChange = { tiktokState = tiktokState.copy(browseBeforeTask = it) },
+    onBackHomeThenBrowseChange = { tiktokState = tiktokState.copy(backHomeThenBrowse = it) },
+    onSave = { vm.saveTiktokRunConfig(tiktokState) },  // hàm lưu thật của bạn
+)
+```
+`XsmmRunConfigFacebookScreen` và `XsmmRunConfigInstagramScreen` dùng y hệt cách này, chỉ đổi tên state/callback theo đúng field của từng file. Mỗi file có `@Preview` riêng ở cuối để xem nhanh.
+- Ô số dùng `BasicTextField` chỉ nhận chữ số (`filter { it.isDigit() }`), chưa có giới hạn min/max hay validate nghiệp vụ — bạn tự thêm nếu cần.
+- 3 file này hoàn toàn độc lập với nhau (không `import` lẫn nhau, mỗi file tự có các composable phụ trợ riêng như `Switch`, `NumberField`...) nên xoá/sửa 1 file không ảnh hưởng 2 file kia.
+- Chưa biên dịch, bạn chạy thử và báo lỗi nếu có.
 
 ## Animation thanh dock (MainShell.kt)
 Một viên thuốc nền mực #0F172A TRƯỢT giữa các tab như dock của Apple, không nhảy:
