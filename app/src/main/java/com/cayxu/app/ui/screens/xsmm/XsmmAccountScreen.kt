@@ -159,7 +159,14 @@ fun XsmmAccountScreen(navController: NavController) {
                 val sHandle = sa.handle.trim().removePrefix("@").lowercase()
                 val idx = list.indexOfFirst { it.handle.trim().removePrefix("@").lowercase() == sHandle }
                 if (idx >= 0) {
-                    list[idx] = sa
+                    val existing = list[idx]
+                    list[idx] = if (sa.avatarUrl.isNotBlank() || sa.createDateFormatted.isNotBlank() || sa.followerCount > 0) {
+                        sa
+                    } else if (existing.avatarUrl.isNotBlank() || existing.createDateFormatted.isNotBlank()) {
+                        existing
+                    } else {
+                        sa
+                    }
                 } else {
                     list.add(sa)
                 }
@@ -170,6 +177,36 @@ fun XsmmAccountScreen(navController: NavController) {
         if (merged.isNotEmpty()) {
             XsmmAccountStore.saveSavedTikTokAccounts(context, merged)
         }
+    }
+
+    fun updateTikTokProfile(uid: String, prof: com.cayxu.app.tiktok.checker.TikTokFullProfile) {
+        TikTokAccountsStore.updateFullProfile(context, uid, prof)
+        val saved = XsmmAccountStore.getSavedTikTokAccounts(context).toMutableList()
+        val clean = prof.username.trim().removePrefix("@").lowercase()
+        val sIdx = saved.indexOfFirst {
+            it.uid == uid || it.handle.trim().removePrefix("@").lowercase() == clean
+        }
+        val avatar = if (!prof.avatarHdUrl.isNullOrBlank()) prof.avatarHdUrl
+            else if (!prof.avatarThumbUrl.isNullOrBlank()) prof.avatarThumbUrl
+            else ""
+        if (sIdx >= 0) {
+            val old = saved[sIdx]
+            saved[sIdx] = old.copy(
+                handle = if (prof.username.isNotBlank()) prof.username else old.handle,
+                displayName = if (prof.nickname.isNotBlank()) prof.nickname else old.displayName,
+                avatarUrl = if (avatar.isNotBlank()) avatar else old.avatarUrl,
+                followerCount = prof.followerCount,
+                followingCount = prof.followingCount,
+                heartCount = prof.totalFavorited,
+                videoCount = prof.videoCount,
+                bio = prof.biography.ifBlank { old.bio },
+                isLive = prof.isLive,
+                createdAt = if (prof.createTimestampSec > 0) prof.createTimestampSec * 1000L else old.createdAt,
+                createDateFormatted = if (prof.formattedCreateDate.isNotBlank()) prof.formattedCreateDate else old.createDateFormatted
+            )
+            XsmmAccountStore.saveSavedTikTokAccounts(context, saved)
+        }
+        reloadXsmmTikTok()
     }
 
     LaunchedEffect(Unit) {
@@ -263,11 +300,11 @@ fun XsmmAccountScreen(navController: NavController) {
         }
     }
 
-    LaunchedEffect(selectedPlatform, selectedVariant, allTikTokAccounts.size) {
+    LaunchedEffect(selectedPlatform, allTikTokAccounts.map { it.uid to (it.avatarUrl.isNotBlank() && it.createDateFormatted.isNotBlank()) }) {
         if (selectedPlatform == "tiktok") {
-            // Tự động kiểm tra và làm mới cho các tài khoản chưa có avatar, chưa có ngày tạo chuẩn, hoặc bị đánh dấu Die do lỗi cũ
-            val needCheck = accountsForVariant.filter {
-                (it.avatarUrl.isBlank() || it.createDateFormatted.isBlank() || !it.isLive) &&
+            // Tự động kiểm tra và làm mới API cho các tài khoản chưa có avatar, chưa có ngày tạo hoặc follow
+            val needCheck = allTikTokAccounts.filter {
+                (it.avatarUrl.isBlank() || it.createDateFormatted.isBlank() || it.followerCount <= 0L) &&
                 it.handle.isNotBlank() && it.uid !in reloadingTikTokUids
             }
             if (needCheck.isNotEmpty()) {
@@ -276,17 +313,17 @@ fun XsmmAccountScreen(navController: NavController) {
                     val jobs = needCheck.map { acc ->
                         launch(Dispatchers.IO) {
                             try {
-                                val prof = client.fetchProfile(acc.handle)
+                                val cleanHandle = acc.handle.trim().removePrefix("@")
+                                val prof = client.fetchProfile(cleanHandle)
                                 if (prof != null) {
-                                    TikTokAccountsStore.updateFullProfile(context, acc.uid, prof)
+                                    withContext(Dispatchers.Main) {
+                                        updateTikTokProfile(acc.uid, prof)
+                                    }
                                 }
                             } catch (ignored: Exception) {}
                         }
                     }
                     jobs.forEach { it.join() }
-                    withContext(Dispatchers.Main) {
-                        reloadXsmmTikTok()
-                    }
                 }
             }
         }
@@ -998,7 +1035,7 @@ fun XsmmAccountScreen(navController: NavController) {
         }
     }
 
-    val currentAccounts = remember(currentPlatform, allTikTokAccounts, facebookAccounts, instagramAccounts, linkedHandles, linkedFbUids) {
+    val currentAccounts = remember(currentPlatform, allTikTokAccounts, facebookAccounts, instagramAccounts, linkedHandles, linkedFbUids, liveFbAvatars, reloadingTikTokUids) {
         when (currentPlatform) {
             XsmmPlatform.TikTok -> {
                 allTikTokAccounts.map { acc ->
@@ -1008,24 +1045,35 @@ fun XsmmAccountScreen(navController: NavController) {
                         else -> "tiktok"
                     }
                     val isLinked = acc.handle.trim().removePrefix("@").lowercase() in linkedHandles
+                    val isReloading = acc.uid in reloadingTikTokUids
                     XsmmAccount(
                         id = acc.uid,
                         name = if (acc.displayName.isNotBlank()) "${acc.displayName} (@${acc.handle})" else "@${acc.handle.ifBlank { acc.uid }}",
                         typeId = typeId,
                         statusLabel = if (!isLinked) "Chưa thêm XSMM" else if (acc.isLive) "Hoạt động" else "Die",
-                        statusOk = isLinked && acc.isLive
+                        statusOk = isLinked && acc.isLive,
+                        avatarUrl = acc.avatarUrl,
+                        handle = acc.handle,
+                        followerCount = acc.followerCount,
+                        heartCount = acc.heartCount,
+                        createDateFormatted = acc.createDateFormatted,
+                        isLive = acc.isLive,
+                        isReloading = isReloading,
                     )
                 }
             }
             XsmmPlatform.Facebook -> {
                 facebookAccounts.map { acc ->
                     val isLinked = linkedFbUids.contains(acc.uid.trim())
+                    val curAv = liveFbAvatars[acc.uid] ?: acc.avatar
                     XsmmAccount(
                         id = acc.uid,
                         name = acc.name.ifBlank { "UID: ${acc.uid}" },
                         typeId = "facebook",
                         statusLabel = if (!isLinked) "Chưa thêm XSMM" else if (acc.isLive) "Hoạt động" else "Hết hạn",
-                        statusOk = isLinked && acc.isLive
+                        statusOk = isLinked && acc.isLive,
+                        avatarUrl = curAv,
+                        isLive = acc.isLive,
                     )
                 }
             }
@@ -1043,7 +1091,10 @@ fun XsmmAccountScreen(navController: NavController) {
                         name = displayName,
                         typeId = "instagram",
                         statusLabel = if (!isLinked) "Chưa thêm XSMM" else if (acc?.isLive == true) "Hoạt động" else "Hết hạn",
-                        statusOk = isLinked && (acc?.isLive != false)
+                        statusOk = isLinked && (acc?.isLive != false),
+                        avatarUrl = acc?.avatar.orEmpty(),
+                        followerCount = acc?.followersCount?.toLong() ?: 0L,
+                        isLive = acc?.isLive != false,
                     )
                 }
             }
@@ -1237,6 +1288,38 @@ fun XsmmAccountScreen(navController: NavController) {
                         } else {
                             com.cayxu.app.automation.instagram.XsmmInstagramManager.startAccounts(context, accountsToRun)
                             Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Instagram", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        },
+        onReloadAccount = { acc ->
+            if (currentPlatform == XsmmPlatform.TikTok) {
+                if (!reloadingTikTokUids.contains(acc.id)) {
+                    reloadingTikTokUids = reloadingTikTokUids + acc.id
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val client = TikTokProfileCheckerClient()
+                            val clean = acc.handle.ifBlank { acc.name }.trim().removePrefix("@").split(" ").firstOrNull()?.replace("(", "")?.replace(")", "") ?: ""
+                            val prof = client.fetchProfile(clean)
+                            if (prof != null) {
+                                withContext(Dispatchers.Main) {
+                                    updateTikTokProfile(acc.id, prof)
+                                    Toast.makeText(context, "Đã làm mới @$clean", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, "Không lấy được thông tin @$clean", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "Lỗi kiểm tra: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        } finally {
+                            withContext(Dispatchers.Main) {
+                                reloadingTikTokUids = reloadingTikTokUids - acc.id
+                            }
                         }
                     }
                 }

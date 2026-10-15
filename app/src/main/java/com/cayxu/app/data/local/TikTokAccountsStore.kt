@@ -148,7 +148,7 @@ object TikTokAccountsStore {
             current[idx] = old.copy(
                 handle = if (profile.username.isNotBlank()) profile.username else old.handle,
                 displayName = if (profile.nickname.isNotBlank()) profile.nickname else old.displayName,
-                avatarUrl = if (!profile.avatarHdUrl.isNullOrBlank()) profile.avatarHdUrl else old.avatarUrl,
+                avatarUrl = if (!profile.avatarHdUrl.isNullOrBlank()) profile.avatarHdUrl else if (!profile.avatarThumbUrl.isNullOrBlank()) profile.avatarThumbUrl else old.avatarUrl,
                 followerCount = profile.followerCount,
                 followingCount = profile.followingCount,
                 heartCount = profile.totalFavorited,

@@ -37,6 +37,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -84,13 +87,20 @@ val DefaultXsmmAccountTypes: Map<XsmmPlatform, List<XsmmAccountTypeFilter>> = ma
     XsmmPlatform.Instagram to listOf(XsmmAccountTypeFilter("instagram", "Instagram")),
 )
 
-/** Một tài khoản trong danh sách. [statusLabel]/[statusOk] để tô màu trạng thái (vd "Hoạt động" / "Lỗi"). */
+/** Một tài khoản trong danh sách. Có đầy đủ avatar, follower, tim, ngày tạo, trạng thái từ API. */
 data class XsmmAccount(
     val id: String,
     val name: String,
     val typeId: String,
     val statusLabel: String = "Hoạt động",
     val statusOk: Boolean = true,
+    val avatarUrl: String = "",
+    val handle: String = "",
+    val followerCount: Long = 0L,
+    val heartCount: Long = 0L,
+    val createDateFormatted: String = "",
+    val isLive: Boolean = true,
+    val isReloading: Boolean = false,
 )
 
 data class XsmmAccountsUiState(
@@ -162,6 +172,7 @@ fun XsmmAccountsScreen(
     onRun: () -> Unit,
     modifier: Modifier = Modifier,
     accountTypes: Map<XsmmPlatform, List<XsmmAccountTypeFilter>> = DefaultXsmmAccountTypes,
+    onReloadAccount: ((XsmmAccount) -> Unit)? = null,
 ) {
     val types = accountTypes[state.selectedPlatform].orEmpty()
     val visible = state.visibleAccounts()
@@ -229,7 +240,14 @@ fun XsmmAccountsScreen(
                 EmptyState(state.selectedPlatform, onAddAccount, Modifier.padding(top = 16.dp))
             } else {
                 Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    visible.forEach { acc -> AccountRow(acc, acc.id in state.selectedAccountIds) { onToggleAccount(acc) } }
+                    visible.forEach { acc ->
+                        AccountRow(
+                            account = acc,
+                            selected = acc.id in state.selectedAccountIds,
+                            onReload = onReloadAccount?.let { { it(acc) } },
+                            onClick = { onToggleAccount(acc) }
+                        )
+                    }
                 }
             }
 
@@ -465,12 +483,28 @@ private fun EmptyState(platform: XsmmPlatform, onAddAccount: () -> Unit, modifie
     }
 }
 
+private fun formatCount(count: Long): String {
+    return when {
+        count >= 1_000_000 -> String.format(java.util.Locale.US, "%.1fM", count / 1_000_000.0)
+        count >= 1_000 -> String.format(java.util.Locale.US, "%.1fK", count / 1_000.0)
+        else -> count.toString()
+    }
+}
+
 /**
- * Dòng tài khoản khi danh sách KHÔNG rỗng. Thiết kế gốc chỉ có trạng thái rỗng, nên dòng này là bố cục
- * hợp lý theo cùng phong cách (checkbox + avatar chữ cái đầu + tên + trạng thái) — bạn có thể đổi tự do.
+ * Dòng tài khoản khi danh sách KHÔNG rỗng:
+ * - Checkbox chọn tài khoản
+ * - Avatar tròn hiển thị ảnh HD thực tế từ API (AsyncImage), có chữ cái đầu dự phòng
+ * - Thông tin: Tên (@handle), badge Live/Die, số follower + tim, ngày tạo tài khoản, trạng thái
+ * - Nút làm mới (Reload) để cập nhật lại thông tin mới nhất từ API
  */
 @Composable
-private fun AccountRow(account: XsmmAccount, selected: Boolean, onClick: () -> Unit) {
+private fun AccountRow(
+    account: XsmmAccount,
+    selected: Boolean,
+    onReload: (() -> Unit)? = null,
+    onClick: () -> Unit
+) {
     val shape = RoundedCornerShape(18.dp)
     PressBox(
         onClick = onClick,
@@ -480,18 +514,114 @@ private fun AccountRow(account: XsmmAccount, selected: Boolean, onClick: () -> U
             .padding(12.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Checkbox(selected)
-            Box(Modifier.size(40.dp).background(Alx.Chip, CircleShape), contentAlignment = Alignment.Center) {
-                BasicText(account.name.firstOrNull()?.uppercaseChar()?.toString() ?: "?", style = type(14f, FontWeight.ExtraBold, Alx.ChipText))
+
+            // Avatar ảnh HD từ API hoặc chữ cái đầu
+            Box(
+                Modifier.size(44.dp).clip(CircleShape).background(Alx.Chip),
+                contentAlignment = Alignment.Center
+            ) {
+                if (account.avatarUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = account.avatarUrl,
+                        contentDescription = "Avatar",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    BasicText(
+                        account.name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "?",
+                        style = type(15f, FontWeight.ExtraBold, Alx.ChipText)
+                    )
+                }
             }
+
             Column(Modifier.weight(1f)) {
-                BasicText(account.name, style = type(14.5f, FontWeight.Bold, Alx.Ink), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    BasicText(
+                        account.name,
+                        style = type(14.5f, FontWeight.Bold, Alx.Ink),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+
+                    // Badge trạng thái Live / Die
+                    val isLiveOk = account.isLive && account.statusOk
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isLiveOk) Alx.Green.copy(alpha = 0.12f) else Alx.Danger.copy(alpha = 0.12f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Box(
+                            Modifier.size(5.dp).clip(CircleShape)
+                                .background(if (isLiveOk) Alx.Green else Alx.Danger)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        BasicText(
+                            if (isLiveOk) "Live" else "Die",
+                            style = type(10f, FontWeight.ExtraBold, if (isLiveOk) Alx.Green else Alx.Danger)
+                        )
+                    }
+                }
+
+                // Dòng thống kê Follower và Tim từ API
+                val stats = buildList {
+                    if (account.followerCount > 0) add("${formatCount(account.followerCount)} followers")
+                    if (account.heartCount > 0) add("${formatCount(account.heartCount)} tim")
+                }
+                if (stats.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
+                    BasicText(
+                        stats.joinToString(" • "),
+                        style = type(11.5f, FontWeight.SemiBold, Color(0xFFE1306C))
+                    )
+                }
+
+                // Dòng Ngày tạo từ API
+                if (account.createDateFormatted.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    BasicText(
+                        "Tạo: ${account.createDateFormatted}",
+                        style = type(11f, FontWeight.Medium, Alx.Muted)
+                    )
+                }
+
+                // Dòng trạng thái (Hoạt động / Chưa thêm XSMM / ...)
+                Spacer(Modifier.height(2.dp))
                 BasicText(
                     account.statusLabel,
-                    Modifier.padding(top = 2.dp),
-                    style = type(12f, FontWeight.SemiBold, if (account.statusOk) Alx.Blue else Alx.Danger),
+                    style = type(12f, FontWeight.SemiBold, if (account.statusOk) Alx.Blue else Alx.Danger)
                 )
+            }
+
+            // Nút làm mới profile qua API
+            if (onReload != null) {
+                if (account.isReloading) {
+                    CircularProgressIndicator(
+                        color = Alx.Blue,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(20.dp)
+                    )
+                } else {
+                    PressBox(
+                        onClick = onReload,
+                        modifier = Modifier.size(32.dp).clip(CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        SvgIcon(Refresh, 16.dp, Alx.Muted, 2f)
+                    }
+                }
             }
         }
     }
