@@ -1861,14 +1861,21 @@ private val xsmmTikTokOptions = listOf(
     XsmmTikTokTypeOption(TikTokAppVariant.STUDIO, "TikTok Studio", "Dành cho nhà sáng tạo nội dung")
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun XsmmTikTokCheckSheet(
     initialVariant: TikTokAppVariant = TikTokAppVariant.STANDARD,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    var selectedVariant by remember { mutableStateOf(initialVariant) }
+    var selectedApp by remember {
+        mutableStateOf(
+            when (initialVariant) {
+                TikTokAppVariant.LITE -> com.cayxu.app.ui.xsmm.TiktokAppVariant.TikTokLite
+                TikTokAppVariant.STUDIO -> com.cayxu.app.ui.xsmm.TiktokAppVariant.TikTokStudio
+                else -> com.cayxu.app.ui.xsmm.TiktokAppVariant.TikTok
+            }
+        )
+    }
     var overlayGranted by remember { mutableStateOf(com.cayxu.app.automation.tiktok.TikTokAppLauncher.isOverlayPermissionGranted(context)) }
     var accessibilityGranted by remember { mutableStateOf(com.cayxu.app.automation.tiktok.TikTokAppLauncher.isAccessibilityServiceEnabled(context)) }
 
@@ -1884,160 +1891,57 @@ fun XsmmTikTokCheckSheet(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    ModalBottomSheet(
+    val installedApps = remember(context) {
+        val set = mutableSetOf<com.cayxu.app.ui.xsmm.TiktokAppVariant>()
+        if (com.cayxu.app.automation.tiktok.TikTokAppLauncher.isInstalled(context, TikTokAppVariant.STANDARD)) {
+            set.add(com.cayxu.app.ui.xsmm.TiktokAppVariant.TikTok)
+        }
+        if (com.cayxu.app.automation.tiktok.TikTokAppLauncher.isInstalled(context, TikTokAppVariant.LITE)) {
+            set.add(com.cayxu.app.ui.xsmm.TiktokAppVariant.TikTokLite)
+        }
+        if (com.cayxu.app.automation.tiktok.TikTokAppLauncher.isInstalled(context, TikTokAppVariant.STUDIO)) {
+            set.add(com.cayxu.app.ui.xsmm.TiktokAppVariant.TikTokStudio)
+        }
+        set
+    }
+
+    androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        containerColor = CardWhite,
-        dragHandle = { BottomSheetDefaults.DragHandle() }
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp)
-        ) {
-            Text("Kiểm tra tài khoản TikTok", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Màn hình nổi & Trợ năng cần được cấp quyền để tự động mở TikTok và kiểm tra trạng thái nick.",
-                fontSize = 12.sp,
-                color = TextSecondary
-            )
-            Spacer(Modifier.height(16.dp))
-
-            // 1. Quyền hiển thị trên ứng dụng khác
-            XsmmTikTokPermissionCard(
-                title = "Hiển thị trên ứng dụng khác",
-                desc = "Để hiện màn nổi (overlay) kiểm tra và điều khiển trên TikTok",
-                granted = overlayGranted,
-                onClick = { com.cayxu.app.automation.tiktok.TikTokAppLauncher.openOverlayPermissionSettings(context) }
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            // 2. Quyền Trợ năng
-            XsmmTikTokPermissionCard(
-                title = "Dịch vụ Trợ năng (Accessibility)",
-                desc = "Để tự động bấm tab \"Tôi\" và kiểm tra @username TikTok",
-                granted = accessibilityGranted,
-                onClick = { com.cayxu.app.automation.tiktok.TikTokAppLauncher.openAccessibilitySettings(context) }
-            )
-
-            Spacer(Modifier.height(18.dp))
-            Text("Chọn ứng dụng cần kiểm tra:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            Spacer(Modifier.height(8.dp))
-
-            // Variant selector chips
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                xsmmTikTokOptions.forEach { opt ->
-                    val isSel = selectedVariant == opt.variant
-                    val isInstalled = com.cayxu.app.automation.tiktok.TikTokAppLauncher.isInstalled(context, opt.variant)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (isSel) Color(0xFF1E293B) else AppBackground)
-                            .clickable { selectedVariant = opt.variant }
-                            .padding(vertical = 10.dp, horizontal = 6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                opt.title,
-                                fontSize = 12.5.sp,
-                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSel) Color.White else TextPrimary
-                            )
-                            Text(
-                                if (isInstalled) "Đã cài" else "Chưa cài",
-                                fontSize = 10.sp,
-                                color = if (isSel) Color(0xFF94A3B8) else TextSecondary
-                            )
-                        }
-                    }
+        com.cayxu.app.ui.xsmm.XsmmTiktokCheckScreen(
+            state = com.cayxu.app.ui.xsmm.XsmmTiktokCheckUiState(
+                overlayGranted = overlayGranted,
+                accessibilityGranted = accessibilityGranted,
+                selectedApp = selectedApp,
+                installedApps = installedApps,
+            ),
+            onDismiss = onDismiss,
+            onGrantOverlay = {
+                com.cayxu.app.automation.tiktok.TikTokAppLauncher.openOverlayPermissionSettings(context)
+            },
+            onGrantAccessibility = {
+                com.cayxu.app.automation.tiktok.TikTokAppLauncher.openAccessibilitySettings(context)
+            },
+            onSelectApp = { selectedApp = it },
+            onCheckAccount = {
+                val variant = when (selectedApp) {
+                    com.cayxu.app.ui.xsmm.TiktokAppVariant.TikTokLite -> TikTokAppVariant.LITE
+                    com.cayxu.app.ui.xsmm.TiktokAppVariant.TikTokStudio -> TikTokAppVariant.STUDIO
+                    else -> TikTokAppVariant.STANDARD
                 }
+                if (!com.cayxu.app.automation.tiktok.TikTokAppLauncher.isInstalled(context, variant)) {
+                    android.widget.Toast.makeText(context, "Chưa cài đặt ${selectedApp.title} trên máy này", android.widget.Toast.LENGTH_SHORT).show()
+                    return@XsmmTiktokCheckScreen
+                }
+                if (!overlayGranted || !accessibilityGranted) {
+                    android.widget.Toast.makeText(context, "Vui lòng cấp đủ 2 quyền ở trên trước khi kiểm tra", android.widget.Toast.LENGTH_SHORT).show()
+                    return@XsmmTiktokCheckScreen
+                }
+
+                com.cayxu.app.ui.overlay.xsmm.startXsmmVerifyTikTokAccount(context, variant)
+                onDismiss()
             }
-
-            Spacer(Modifier.height(22.dp))
-
-            // Nút "Kiểm tra tài khoản"
-            Button(
-                onClick = {
-                    if (!com.cayxu.app.automation.tiktok.TikTokAppLauncher.isInstalled(context, selectedVariant)) {
-                        val variantName = xsmmTikTokOptions.first { it.variant == selectedVariant }.title
-                        android.widget.Toast.makeText(context, "Chưa cài đặt $variantName trên máy này", android.widget.Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    if (!overlayGranted || !accessibilityGranted) {
-                        android.widget.Toast.makeText(context, "Vui lòng cấp đủ 2 quyền ở trên trước khi kiểm tra", android.widget.Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-
-                    com.cayxu.app.ui.overlay.xsmm.startXsmmVerifyTikTokAccount(context, selectedVariant)
-                    onDismiss()
-                },
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF0F172A),
-                    disabledContainerColor = Color(0xFF94A3B8)
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-            ) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Kiểm tra tài khoản", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            }
-
-            Spacer(Modifier.height(16.dp))
-        }
+        )
     }
 }
-
-@Composable
-private fun XsmmTikTokPermissionCard(
-    title: String,
-    desc: String,
-    granted: Boolean,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(AppBackground)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            Spacer(Modifier.height(2.dp))
-            Text(desc, fontSize = 11.sp, color = TextSecondary, lineHeight = 15.sp)
-        }
-        Spacer(Modifier.width(8.dp))
-        if (granted) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(SuccessGreen.copy(alpha = 0.15f))
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Text("Đã cấp", color = SuccessGreen, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-            }
-        } else {
-            Button(
-                onClick = onClick,
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
-                modifier = Modifier.height(34.dp)
-            ) {
-                Text("Cấp quyền", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            }
-        }
-    }
-}
-
-

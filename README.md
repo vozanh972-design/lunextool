@@ -15,7 +15,7 @@
    - `CoinLedger.kt` & `RoomCoinLedger.kt` → `.../data/` (Sổ xu Room & interface)
    - `AppFlow.kt` → `.../app/` (luồng điều hướng toàn app, xem mục "Luồng mở app")
    - `ActivationSuccessScreen.kt` → `.../ui/success/` (chào mừng + chuyển cảnh vào Trang chủ)
-   - `XsmmLoginScreen.kt`, `XsmmAccountsScreen.kt`, `XsmmAddAccountSheets.kt`, `XsmmRunConfigTiktokScreen.kt`, `XsmmRunConfigFacebookScreen.kt` & `XsmmRunConfigInstagramScreen.kt` → `.../ui/xsmm/` (Màn đăng nhập, danh sách tài khoản 3 nền tảng XSMM, các tấm thêm tài khoản và 3 màn cấu hình chạy riêng biệt)
+   - `XsmmLoginScreen.kt`, `XsmmAccountsScreen.kt`, `XsmmAddAccountSheets.kt`, `XsmmTiktokCheckScreen.kt`, `XsmmRunConfigTiktokScreen.kt`, `XsmmRunConfigFacebookScreen.kt` & `XsmmRunConfigInstagramScreen.kt` → `.../ui/xsmm/` (Màn đăng nhập, danh sách tài khoản 3 nền tảng XSMM, các tấm thêm/kiểm tra tài khoản và 3 màn cấu hình chạy riêng biệt)
    - `RunningOverlayWindow.kt` → `.../ui/overlay/` (Màn hình nổi khi đang chạy nhiệm vụ — bản đầy đủ + bản thu nhỏ kéo-thả được)
    Đổi `package` cho đúng app. Mọi màn đều lấy font từ `Manrope` trong `AlxDesign.kt`, màn mới chỉ cần dùng `type(...)`.
 2. Tải font **Manrope** từ Google Fonts. Lấy file variable `Manrope[wght].ttf`, đổi tên thành `manrope.ttf` và đặt vào `app/src/main/res/font/`.
@@ -283,6 +283,15 @@ Bộ 2 tấm trượt (bottom sheet) toàn màn hình hiển thị dưới dạn
 - **XsmmFbLoginSheet**: Đăng nhập tài khoản Facebook hỗ trợ 3 tùy chọn định dạng (`Token`, `UID|PASS|2FA`, `UID|PASS|COOKIE`) hoặc tự động nhận diện định dạng từ dữ liệu dán vào. Hỗ trợ dán hàng loạt nhiều nick (mỗi dòng 1 nick).
 - **XsmmIgAddSheet**: Thêm tài khoản Instagram theo định dạng Cookie hoặc Cookie|Proxy, hỗ trợ dán hàng loạt tài khoản với placeholder mẫu trực quan.
 - **Tích hợp**: Cả 2 tấm là lớp giao diện độc lập phát sinh sự kiện qua `onSubmit`, kết nối trực tiếp với logic kiểm tra tài khoản Live và lưu trữ trong `XsmmAccountScreen.kt`.
+
+## XSMM: Kiểm tra tài khoản — nhánh TikTok (XsmmTiktokCheckScreen.kt) — CHỈ THAY GIAO DIỆN, không đụng logic
+**Lưu ý quan trọng về nguồn gốc màn này:** đây là code cho màn **"Kiểm tra tài khoản" của XSMM, nhánh TikTok** — KHÔNG PHẢI cho Golike. Trong app hiện tại, màn "Golike: kiểm tra tài khoản" chỉ là bản copy gần như y nguyên bố cục từ chính màn XSMM TikTok này (cùng 2 dòng xin quyền, cùng lưới chọn app TikTok/TikTok Lite/TikTok Studio, cùng tấm bottom-sheet). Vì vậy file Kotlin này được đặt tên và viết tài liệu theo đúng màn gốc là XSMM TikTok; nếu sau này cần dùng lại cho Golike thì tự copy/nối logic tương ứng bên phía Golike, không sửa trực tiếp file này.
+
+`XsmmTiktokCheckScreen(state: XsmmTiktokCheckUiState, onDismiss, onGrantOverlay, onGrantAccessibility, onSelectApp, onCheckAccount, modifier)` — tấm bottom-sheet đè lên nền mờ (scrim), gồm:
+- 2 dòng xin quyền: "Hiển thị trên ứng dụng khác" (`state.overlayGranted`) và "Dịch vụ Trợ năng" (`state.accessibilityGranted`) — mỗi dòng tự đổi giữa nhãn "Cấp quyền" (nút xanh, gọi `onGrantOverlay`/`onGrantAccessibility`) và badge "Đã cấp" khi đã được cấp. File KHÔNG tự xin quyền hệ thống (không có `ActivityResultLauncher`, không mở `Settings`) — bạn tự nối hành vi xin quyền thật vào 2 callback này.
+- Lưới 3 ô chọn app (`TiktokAppVariant`: TikTok / TikTok Lite / TikTok Studio) — ô nào có trong `state.installedApps` mới bấm chọn được (`onSelectApp`), ô chưa cài sẽ mờ đi và không bấm được; ô đang chọn tô nền đen theo đúng phong cách thiết kế gốc. Việc app nào đã cài trên máy do bạn tự truyền vào qua `installedApps`, file không tự kiểm tra `PackageManager`.
+- Nút "Kiểm tra tài khoản" ở dưới: chỉ bật khi `state.accessibilityGranted == true` (khớp đúng luật gốc: phải có quyền Trợ năng mới cho chạy); khi tắt còn có thêm dòng chữ nhỏ "Cấp quyền Trợ năng để tiếp tục". Bấm vào gọi `onCheckAccount` — file không tự mở app, không tự đọc @username, không tự lưu tài khoản.
+- `onDismiss` gọi khi chạm vào nền mờ phía sau tấm — dùng để đóng màn, quay lại màn trước đó.
 
 ## XSMM: Cấu hình chạy — 3 file riêng theo nền tảng (XsmmRunConfigTiktokScreen.kt / XsmmRunConfigFacebookScreen.kt / XsmmRunConfigInstagramScreen.kt) — CHỈ THAY GIAO DIỆN, không đụng logic
 **Quan trọng:** cả 3 file CHỈ là lớp giao diện. Không có logic chạy nhiệm vụ, không gọi API, không tự lưu cấu hình, không tự validate số nhập — mọi trạng thái (các switch bật/tắt, các số, chế độ đã chọn) đều đi vào qua `UiState` và đi ra ngoài qua các callback (`onXChange`, `onSave`); bạn tự nối với logic thật, không có gì được "ngầm" xử lý bên trong file.
