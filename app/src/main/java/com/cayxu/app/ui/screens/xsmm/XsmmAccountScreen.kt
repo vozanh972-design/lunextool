@@ -134,6 +134,7 @@ fun XsmmAccountScreen(navController: NavController) {
         mutableStateOf(if (saved.isNotEmpty()) saved else TikTokAccountsStore.getAccounts(context).filter { it.enabled })
     }
     var reloadingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var linkingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
     var facebookAccounts by remember { mutableStateOf(com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)) }
     var instagramAccounts by remember {
@@ -1035,7 +1036,7 @@ fun XsmmAccountScreen(navController: NavController) {
         }
     }
 
-    val currentAccounts = remember(currentPlatform, allTikTokAccounts, facebookAccounts, instagramAccounts, linkedHandles, linkedFbUids, liveFbAvatars, reloadingTikTokUids) {
+    val currentAccounts = remember(currentPlatform, allTikTokAccounts, facebookAccounts, instagramAccounts, linkedHandles, linkedFbUids, liveFbAvatars, reloadingTikTokUids, linkingTikTokUids) {
         when (currentPlatform) {
             XsmmPlatform.TikTok -> {
                 allTikTokAccounts.map { acc ->
@@ -1046,12 +1047,13 @@ fun XsmmAccountScreen(navController: NavController) {
                     }
                     val isLinked = acc.handle.trim().removePrefix("@").lowercase() in linkedHandles
                     val isReloading = acc.uid in reloadingTikTokUids
+                    val isLinking = acc.uid in linkingTikTokUids
                     val cleanHandle = acc.handle.trim().removePrefix("@")
                     XsmmAccount(
                         id = acc.uid,
                         name = "@${cleanHandle.ifBlank { acc.uid }}",
                         typeId = typeId,
-                        statusLabel = if (!isLinked) "Chưa thêm XSMM" else if (acc.isLive) "Hoạt động" else "Die",
+                        statusLabel = if (!isLinked) "Chưa liên kết" else if (acc.isLive) "Hoạt động" else "Die",
                         statusOk = isLinked && acc.isLive,
                         avatarUrl = acc.avatarUrl,
                         handle = cleanHandle,
@@ -1060,6 +1062,8 @@ fun XsmmAccountScreen(navController: NavController) {
                         createDateFormatted = acc.createDateFormatted,
                         isLive = acc.isLive,
                         isReloading = isReloading,
+                        isLinked = isLinked,
+                        isLinking = isLinking,
                     )
                 }
             }
@@ -1291,6 +1295,51 @@ fun XsmmAccountScreen(navController: NavController) {
                             Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Instagram", Toast.LENGTH_SHORT).show()
                         }
                     }
+                }
+            }
+        },
+        onLinkAccount = { acc ->
+            val cleanHandle = acc.handle.trim().removePrefix("@")
+            if (cleanHandle.isBlank()) {
+                Toast.makeText(context, "Handle tài khoản không hợp lệ", Toast.LENGTH_SHORT).show()
+                return@XsmmAccountsScreen
+            }
+            val handleLower = cleanHandle.lowercase()
+            if (handleLower in linkedHandles) {
+                Toast.makeText(context, "Tài khoản @$cleanHandle đã được liên kết XSMM rồi", Toast.LENGTH_SHORT).show()
+                return@XsmmAccountsScreen
+            }
+            linkingTikTokUids = linkingTikTokUids + acc.id
+            scope.launch {
+                try {
+                    val token = XsmmAccountStore.getToken(context)
+                    if (token.isNullOrBlank()) {
+                        Toast.makeText(context, "Vui lòng đăng nhập XSMM trước khi liên kết", Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
+                    when (val result = XsmmAccountsRepository.addTikTokAccount2(token, cleanHandle)) {
+                        is XsmmAddAccountResult.Success -> {
+                            linkedHandles = linkedHandles + handleLower
+                            Toast.makeText(context, "Đã liên kết @$cleanHandle với XSMM thành công!", Toast.LENGTH_SHORT).show()
+                            linkedSyncTrigger = System.currentTimeMillis()
+                        }
+                        is XsmmAddAccountResult.Error -> {
+                            if (result.message.contains("đã tồn tại", ignoreCase = true) ||
+                                result.message.contains("already", ignoreCase = true) ||
+                                result.message.contains("exist", ignoreCase = true)
+                            ) {
+                                linkedHandles = linkedHandles + handleLower
+                                Toast.makeText(context, "Tài khoản @$cleanHandle đã có trên XSMM!", Toast.LENGTH_SHORT).show()
+                                linkedSyncTrigger = System.currentTimeMillis()
+                            } else {
+                                Toast.makeText(context, "Lỗi liên kết: ${result.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Lỗi liên kết: ${e.message}", Toast.LENGTH_SHORT).show()
+                } finally {
+                    linkingTikTokUids = linkingTikTokUids - acc.id
                 }
             }
         },

@@ -102,6 +102,8 @@ data class XsmmAccount(
     val createDateFormatted: String = "",
     val isLive: Boolean = true,
     val isReloading: Boolean = false,
+    val isLinked: Boolean = true,
+    val isLinking: Boolean = false,
 )
 
 data class XsmmAccountsUiState(
@@ -182,6 +184,7 @@ fun XsmmAccountsScreen(
     accountTypes: Map<XsmmPlatform, List<XsmmAccountTypeFilter>> = DefaultXsmmAccountTypes,
     onReloadAccount: ((XsmmAccount) -> Unit)? = null,
     onDeleteSelected: (() -> Unit)? = null,
+    onLinkAccount: ((XsmmAccount) -> Unit)? = null,
 ) {
     val types = accountTypes[state.selectedPlatform].orEmpty()
     val visible = state.visibleAccounts()
@@ -260,7 +263,9 @@ fun XsmmAccountsScreen(
                         AccountRow(
                             account = acc,
                             selected = acc.id in state.selectedAccountIds,
+                            platform = state.selectedPlatform,
                             onReload = onReloadAccount?.let { { it(acc) } },
+                            onLinkAccount = onLinkAccount?.let { { it(acc) } },
                             onClick = { onToggleAccount(acc) }
                         )
                     }
@@ -520,7 +525,9 @@ private fun formatCount(count: Long): String {
 private fun AccountRow(
     account: XsmmAccount,
     selected: Boolean,
+    platform: XsmmPlatform = XsmmPlatform.TikTok,
     onReload: (() -> Unit)? = null,
+    onLinkAccount: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val shape = RoundedCornerShape(18.dp)
@@ -572,24 +579,75 @@ private fun AccountRow(
                         modifier = Modifier.weight(1f, fill = false)
                     )
 
-                    // Badge trạng thái Live / Die
-                    val isLiveOk = account.isLive && account.statusOk
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(if (isLiveOk) LiveGreen.copy(alpha = 0.12f) else Alx.Danger.copy(alpha = 0.12f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Box(
-                            Modifier.size(5.dp).clip(CircleShape)
-                                .background(if (isLiveOk) LiveGreen else Alx.Danger)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        BasicText(
-                            if (isLiveOk) "Live" else "Die",
-                            style = type(10f, FontWeight.ExtraBold, if (isLiveOk) LiveGreen else Alx.Danger)
-                        )
+                    if (platform == XsmmPlatform.TikTok) {
+                        // Cho TikTok: Thay badge Live bằng logic nút "Chưa liên kết" / badge "Đã liên kết"
+                        if (account.isLinked) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(LiveGreen.copy(alpha = 0.12f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Box(
+                                    Modifier.size(5.dp).clip(CircleShape).background(LiveGreen)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                BasicText(
+                                    "Đã liên kết",
+                                    style = type(10f, FontWeight.ExtraBold, LiveGreen)
+                                )
+                            }
+                        } else {
+                            PressBox(
+                                onClick = { onLinkAccount?.invoke() },
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Alx.Blue.copy(alpha = 0.12f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    if (account.isLinking) {
+                                        CircularProgressIndicator(
+                                            color = Alx.Blue,
+                                            strokeWidth = 1.5.dp,
+                                            modifier = Modifier.size(9.dp)
+                                        )
+                                    } else {
+                                        Box(
+                                            Modifier.size(5.dp).clip(CircleShape).background(Alx.Blue)
+                                        )
+                                    }
+                                    BasicText(
+                                        if (account.isLinking) "Đang liên kết..." else "Chưa liên kết",
+                                        style = type(10f, FontWeight.ExtraBold, Alx.Blue)
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        // Cho Facebook / Instagram: Giữ nguyên badge Live / Die
+                        val isLiveOk = account.isLive && account.statusOk
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isLiveOk) LiveGreen.copy(alpha = 0.12f) else Alx.Danger.copy(alpha = 0.12f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Box(
+                                Modifier.size(5.dp).clip(CircleShape)
+                                    .background(if (isLiveOk) LiveGreen else Alx.Danger)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            BasicText(
+                                if (isLiveOk) "Live" else "Die",
+                                style = type(10f, FontWeight.ExtraBold, if (isLiveOk) LiveGreen else Alx.Danger)
+                            )
+                        }
                     }
                 }
 
@@ -615,8 +673,13 @@ private fun AccountRow(
                     )
                 }
 
-                // Dòng trạng thái (Ẩn nếu là "Hoạt động" vì phía trên đã có badge Live)
-                if (account.statusLabel.isNotBlank() && account.statusLabel != "Hoạt động") {
+                // Dòng trạng thái (Ẩn nếu là "Hoạt động" hoặc "Chưa liên kết" / "Đã liên kết" vì phía trên đã có badge)
+                if (account.statusLabel.isNotBlank() && 
+                    account.statusLabel != "Hoạt động" && 
+                    account.statusLabel != "Chưa liên kết" && 
+                    account.statusLabel != "Chưa thêm XSMM" &&
+                    account.statusLabel != "Đã liên kết"
+                ) {
                     Spacer(Modifier.height(2.dp))
                     BasicText(
                         account.statusLabel,
