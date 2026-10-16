@@ -1907,7 +1907,7 @@ fun XsmmTikTokCheckSheet(
 
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         com.cayxu.app.ui.xsmm.XsmmTiktokCheckScreen(
             state = com.cayxu.app.ui.xsmm.XsmmTiktokCheckUiState(
