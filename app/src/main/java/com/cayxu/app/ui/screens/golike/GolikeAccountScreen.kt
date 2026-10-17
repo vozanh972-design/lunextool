@@ -468,6 +468,15 @@ fun GolikeAccountScreen(navController: NavController) {
         )
     }
 
+    // Nếu chưa đăng nhập Golike: Hiển thị màn hình GolikeScreen mới (trạng thái chưa đăng nhập)
+    if (!isLoggedIn) {
+        GolikeScreen(
+            onBack = { navController.popBackStack() },
+            onLogin = { showWebViewLoginDialog = true }
+        )
+        return
+    }
+
     if (showAddAccountSheet) {
         GolikeAddAccountBottomSheet(
             platform = selectedPlatform,
