@@ -1228,21 +1228,7 @@ fun GolikeAccountScreen(navController: NavController) {
                     // Nút Thêm/Quét tài khoản (+) bằng màn nổi (Overlay)
                     IconButton(
                         onClick = {
-                            val overlayGranted = TikTokAppLauncher.isOverlayPermissionGranted(context)
-                            val accessibilityGranted = TikTokAppLauncher.isAccessibilityServiceEnabled(context)
-                            if (!TikTokAppLauncher.isInstalled(context, selectedVariant)) {
-                                val variantName = when (selectedVariant) {
-                                    TikTokAppVariant.STANDARD -> "TikTok"
-                                    TikTokAppVariant.LITE -> "TikTok Lite"
-                                    TikTokAppVariant.STUDIO -> "TikTok Studio"
-                                }
-                                Toast.makeText(context, "Chưa cài đặt $variantName trên thiết bị này", Toast.LENGTH_SHORT).show()
-                            } else if (!overlayGranted || !accessibilityGranted) {
-                                showAddAccountSheet = true
-                            } else {
-                                GolikeAccountsStore.setScanningTikTok(context, true)
-                                startGolikeVerifyTikTokAccount(context, selectedVariant)
-                            }
+                            showAddAccountSheet = true
                         },
                         modifier = Modifier.size(32.dp)
                     ) {
