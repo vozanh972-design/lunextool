@@ -518,39 +518,18 @@ object GolikeTikTokTaskRunner {
     }
 
     /**
-     * Mở đối tượng TikTok (profile người dùng hoặc video) bằng Deep link chuyên biệt trước,
+     * Mở đối tượng TikTok (profile hoặc video bài viết) bằng URL THẬT do Golike cấp,
      * tự động gắn đích danh package TikTok để mở ngay trong app thật, không nhảy ra trình duyệt.
      */
-    private fun openTikTokTarget(context: Context, targetUrl: String, objectId: String, variant: TikTokAppVariant): Boolean {
-        val cleanUser = objectId.trim().removePrefix("@")
+    private fun openTikTokTarget(context: Context, realUrl: String, variant: TikTokAppVariant): Boolean {
+        val cleanUrl = if (!realUrl.startsWith("http://") && !realUrl.startsWith("https://")) "https://$realUrl" else realUrl
+        val uri = Uri.parse(cleanUrl)
         val candidates = TikTokAppLauncher.candidatePackages(variant)
 
-        // 1. Thử Deep link nội bộ của TikTok để nhảy thẳng vào màn hình profile
-        val deepLinks = listOf(
-            "snssdk1233://user/profile/$cleanUser",
-            "snssdk1128://user/profile/$cleanUser",
-            "tiktok://user/profile?unique_id=$cleanUser"
-        )
-        for (scheme in deepLinks) {
-            val uri = Uri.parse(scheme)
-            for (pkg in candidates) {
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                        setPackage(pkg)
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    context.startActivity(intent)
-                    return true
-                } catch (_: Exception) {}
-            }
-        }
-
-        // 2. Fallback: Dùng URL web mở đích danh package app TikTok
-        val webUrl = if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) targetUrl else "https://www.tiktok.com/@$cleanUser"
-        val webUri = Uri.parse(webUrl)
+        // 1. Mở đích danh bằng package của TikTok (chuẩn nhất cho cả video, profile và vt.tiktok)
         for (pkg in candidates) {
             try {
-                val intent = Intent(Intent.ACTION_VIEW, webUri).apply {
+                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                     setPackage(pkg)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
@@ -559,9 +538,9 @@ object GolikeTikTokTaskRunner {
             } catch (_: Exception) {}
         }
 
-        // 3. Fallback cuối: Mở Intent ACTION_VIEW mặc định
+        // 2. Fallback: Mở Intent ACTION_VIEW mặc định
         return try {
-            val intent = Intent(Intent.ACTION_VIEW, webUri).apply {
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
@@ -737,7 +716,7 @@ object GolikeTikTokTaskRunner {
                 onStatusChange("Mở follow nick cấu hình @$targetConfigUser...")
                 XsmmJobStatusBridge.update("Mở follow nick cấu hình @$targetConfigUser...")
 
-                openTikTokTarget(context, "https://www.tiktok.com/@$targetConfigUser", targetConfigUser, variant)
+                openTikTokTarget(context, "https://www.tiktok.com/@$targetConfigUser", variant)
                 delay(1200L) // Chờ TikTok load trang cá nhân
 
                 if (TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
@@ -1031,20 +1010,48 @@ object GolikeTikTokTaskRunner {
                 }
 
                 val adsId = jobData.optLong("ads_id", jobData.optLong("id", 0L))
-                val jobType = jobData.optString("type", "follow")
-                val link = jobData.optString("link")
-                val objectId = jobData.optString("object_id")
+                val rawType = jobData.optString("type", "follow").lowercase()
+                val link = jobData.optString("link").trim()
+                val objectId = jobData.optString("object_id").trim()
 
-                val targetUrl = when {
+                val isFollowJob = rawType.contains("follow") || rawType.contains("sub")
+                val isLikeJob = rawType.contains("like") || rawType.contains("tym") || rawType.contains("tim") || rawType.contains("love")
+                val normalizedJobType = if (isLikeJob) "like" else "follow"
+                val shortType = if (isLikeJob) "Tym" else "Follow"
+
+                // 1. URL THẬT do Golike cấp (dùng để mở thẳng trong ứng dụng TikTok)
+                val realUrl = when {
                     link.isNotBlank() -> link
-                    jobType.contains("follow", ignoreCase = true) -> "https://www.tiktok.com/@${objectId.removePrefix("@")}"
+                    isFollowJob -> "https://www.tiktok.com/@${objectId.removePrefix("@")}"
                     else -> "https://www.tiktok.com/@user/video/$objectId"
                 }
 
-                val shortType = if (jobType.contains("follow", ignoreCase = true)) "Follow" else "Tym"
+                // 2. Tên hiển thị chuẩn xác và thân thiện trên Màn nổi (Overlay)
+                val displayTarget = when {
+                    isFollowJob -> {
+                        if (link.contains("@")) {
+                            "@" + link.substringAfter("@").substringBefore("/").substringBefore("?").trim()
+                        } else if (!objectId.all { it.isDigit() } && objectId.isNotBlank()) {
+                            "@" + objectId.removePrefix("@")
+                        } else {
+                            "nick mục tiêu"
+                        }
+                    }
+                    isLikeJob -> {
+                        val vid = if (objectId.all { it.isDigit() } && objectId.isNotBlank()) {
+                            objectId
+                        } else if (link.contains("/video/")) {
+                            link.substringAfter("/video/").substringBefore("?").substringBefore("/")
+                        } else {
+                            objectId.takeLast(10)
+                        }
+                        "Video #$vid"
+                    }
+                    else -> objectId.ifBlank { "nhiệm vụ" }
+                }
 
                 // ─────────────────────────────────────────────────────────────
-                // BƯỚC 2: THỜI GIAN LÀM JOB (GIÂY) & BẤM FOLLOW
+                // BƯỚC 2: THỜI GIAN LÀM JOB (GIÂY) & THỰC HIỆN FOLLOW / TYM
                 // ─────────────────────────────────────────────────────────────
                 val doJobDelay = if (cfg.doJobMaxSeconds >= cfg.doJobMinSeconds && cfg.doJobMinSeconds > 0) {
                     (cfg.doJobMinSeconds..cfg.doJobMaxSeconds).random()
@@ -1052,19 +1059,20 @@ object GolikeTikTokTaskRunner {
                     8
                 }
 
-                val openMsg = "Mở $shortType: ${objectId.ifBlank { targetUrl.takeLast(15) }}"
+                val openMsg = "Mở $shortType: $displayTarget"
                 onStatusChange(openMsg)
                 XsmmJobStatusBridge.update(openMsg)
 
-                openTikTokTarget(context, targetUrl, objectId, variant)
+                // Mở trực tiếp bằng URL thật do Golike cấp qua package TikTok đích danh
+                openTikTokTarget(context, realUrl, variant)
                 delay(1200L)
 
-                // Đếm ngược trong thời gian làm job trước khi bấm Follow
+                // Đếm ngược trong thời gian làm job trước khi bấm Follow / Thả tim
                 val waitDoStartTime = System.currentTimeMillis()
                 val waitDoEndTime = waitDoStartTime + doJobDelay * 1000L
                 while (System.currentTimeMillis() < waitDoEndTime && isActive && GolikeRunningManager.isRunning(account.id)) {
                     val secLeft = ((waitDoEndTime - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
-                    val waitMsg = "Đang mở @$objectId | Chờ làm job (${secLeft}s)..."
+                    val waitMsg = "Đang mở $displayTarget | Chờ làm job (${secLeft}s)..."
                     onStatusChange(waitMsg)
                     XsmmJobStatusBridge.update(waitMsg)
                     delay(1000L)
@@ -1072,19 +1080,19 @@ object GolikeTikTokTaskRunner {
 
                 if (!GolikeRunningManager.isRunning(account.id) || !isActive) break
 
-                // Bấm tương tác (Follow / Like)
+                // Bấm tương tác (Follow hoặc Thả tim liên tục)
                 var taskActionSuccess = false
                 val isA11yEnabled = TikTokAppLauncher.isAccessibilityServiceEnabled(context)
                 if (isA11yEnabled) {
                     val actionId = XsmmTaskAutomationBridge.triggerTask(
-                        taskType = jobType,
+                        taskType = normalizedJobType,
                         swipeBefore = false,
                         returnHomeAndSwipe = false,
                         durationSeconds = 3
                     )
 
                     val actionStartTime = System.currentTimeMillis()
-                    val maxWaitTime = 15000L // Chờ tối đa 15s cho việc tìm và bấm nút
+                    val maxWaitTime = 15000L // Chờ tối đa 15s cho việc tìm và bấm nút / thả tim
                     while ((GolikeRunningManager.isRunning(account.id) || GolikeRunningManager.isRunning(cleanUsername)) &&
                            isActive && (System.currentTimeMillis() - actionStartTime) < maxWaitTime) {
                         val res = XsmmTaskAutomationBridge.result.value
@@ -1137,7 +1145,7 @@ object GolikeTikTokTaskRunner {
                         val compEndTime = compStartTime + completeJobDelay * 1000L
                         while (System.currentTimeMillis() < compEndTime && isActive && GolikeRunningManager.isRunning(account.id)) {
                             val secLeft = ((compEndTime - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
-                            val compMsg = "Đã $shortType | Lướt tin chờ báo cáo (${secLeft}s)..."
+                            val compMsg = "Đã $shortType $displayTarget | Lướt tin chờ báo cáo (${secLeft}s)..."
                             onStatusChange(compMsg)
                             XsmmJobStatusBridge.update(compMsg)
                             delay(1000L)
@@ -1146,7 +1154,7 @@ object GolikeTikTokTaskRunner {
                         // Nếu TẮT: đứng yên đếm ngược đủ thời gian hoàn thành
                         for (sec in completeJobDelay downTo 1) {
                             if (!GolikeRunningManager.isRunning(account.id) || !isActive) break
-                            val compMsg = "Đã $shortType | Chờ hoàn tất (${sec}s)..."
+                            val compMsg = "Đã $shortType $displayTarget | Chờ hoàn tất (${sec}s)..."
                             onStatusChange(compMsg)
                             XsmmJobStatusBridge.update(compMsg)
                             delay(1000L)
@@ -1159,6 +1167,7 @@ object GolikeTikTokTaskRunner {
                     onStatusChange(reportMsg)
                     XsmmJobStatusBridge.update(reportMsg)
 
+                    // Báo cáo hoàn thành lên Golike bằng ID số (adsId) và accountId chuẩn
                     val compRes = client.completeTikTokJob(adsId, golikeAccId)
                     if (compRes != null && compRes.optBoolean("success", false)) {
                         totalCompletedTasks++
@@ -1171,15 +1180,15 @@ object GolikeTikTokTaskRunner {
                         val failMsg = compRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Lỗi hoàn thành nhiệm vụ"
                         onStatusChange("Lỗi: $failMsg")
                         XsmmJobStatusBridge.update("Lỗi: $failMsg")
-                        client.skipJob(adsId, objectId, golikeAccId, jobType)
+                        client.skipJob(adsId, objectId, golikeAccId, normalizedJobType)
                         onJobFailed(failMsg)
                     }
                 } else {
-                    // Nếu không bấm được Follow (ví dụ nick bị chặn hoặc không tìm thấy nút) -> BỎ QUA NHIỆM VỤ
+                    // Nếu không bấm được Follow/Tym (ví dụ nick bị chặn hoặc không tìm thấy nút) -> BỎ QUA NHIỆM VỤ
                     val skipMsg = "Không bấm được $shortType -> Bỏ qua nhiệm vụ"
                     onStatusChange(skipMsg)
                     XsmmJobStatusBridge.update(skipMsg)
-                    client.skipJob(adsId, objectId, golikeAccId, jobType)
+                    client.skipJob(adsId, objectId, golikeAccId, normalizedJobType)
                     onJobFailed(skipMsg)
                 }
 

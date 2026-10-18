@@ -1517,10 +1517,12 @@ class TikTokAccessibilityService : AccessibilityService() {
         if (bounds.width() <= 0 || bounds.height() <= 0) return
         val cx = bounds.exactCenterX()
         val cy = bounds.exactCenterY()
-        tapAt(cx, cy)
         scope.launch {
-            delay(120)
-            tapAt(cx, cy)
+            // Táp nhanh liên tục 4 cái dưới 1 giây vào giữa màn hình để thả tim video chuẩn TikTok
+            repeat(4) {
+                tapAt(cx, cy)
+                delay(100)
+            }
         }
     }
 
@@ -1619,7 +1621,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                     } else {
                         XsmmTaskAutomationBridge.updateProgress("Không thấy nút Follow")
                     }
-                } else if (action.taskType.contains("like", ignoreCase = true)) {
+                } else if (action.taskType.contains("like", ignoreCase = true) || action.taskType.contains("tym", ignoreCase = true) || action.taskType.contains("tim", ignoreCase = true) || action.taskType.contains("love", ignoreCase = true)) {
                     XsmmTaskAutomationBridge.updateProgress("Đang thả tim video...")
                     delay(1200)
                     doubleTapCenter()
