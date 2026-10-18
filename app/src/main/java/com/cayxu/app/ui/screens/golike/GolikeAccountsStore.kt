@@ -280,7 +280,8 @@ object GolikeAccountsStore {
             scheme = getScheme(context),
             webVersion = getWebVersion(context),
             webVersionText = getWebVersionText(context),
-            webData = getWebData(context)
+            webData = getWebData(context),
+            signingKey = getSigningKey(context)
         )
     }
 
@@ -303,15 +304,20 @@ object GolikeAccountsStore {
         val deviceAccounts = runCatching { TikTokAccountsStore.getAccounts(context) }.getOrDefault(emptyList())
 
         deviceAccounts.forEach { acc ->
-            val clean = acc.handle.trim().removePrefix("@")
+            val clean = acc.handle.trim().removePrefix("@").lowercase()
             if (clean.isNotBlank()) {
+                val mapId = getTikTokAccountIdFromMap(context, clean).orEmpty()
+                val isLinked = mapId.isNotBlank()
                 val existingIndex = currentGolike.indexOfFirst { it.id.equals(clean, ignoreCase = true) || it.username.equals(clean, ignoreCase = true) }
                 if (existingIndex >= 0) {
                     val existing = currentGolike[existingIndex]
                     currentGolike[existingIndex] = existing.copy(
                         id = clean,
                         username = clean,
-                        avatar = if (acc.avatarUrl.isNotBlank()) acc.avatarUrl else existing.avatar
+                        avatar = if (acc.avatarUrl.isNotBlank()) acc.avatarUrl else existing.avatar,
+                        isGolikeLinked = existing.isGolikeLinked || isLinked,
+                        golikeAccountId = existing.golikeAccountId.ifBlank { mapId },
+                        lastStatus = if (existing.isGolikeLinked || isLinked) "Đã liên kết Golike • Sẵn sàng" else existing.lastStatus
                     )
                 } else {
                     currentGolike.add(
@@ -321,8 +327,9 @@ object GolikeAccountsStore {
                             username = clean,
                             avatar = acc.avatarUrl,
                             isLive = true,
-                            isGolikeLinked = false,
-                            lastStatus = "Cần liên kết Golike"
+                            isGolikeLinked = isLinked,
+                            golikeAccountId = mapId,
+                            lastStatus = if (isLinked) "Đã liên kết Golike • Sẵn sàng" else "Cần liên kết Golike"
                         )
                     )
                 }
@@ -359,12 +366,18 @@ object GolikeAccountsStore {
 
         if (platform.lowercase() == "tiktok") {
             return list.map { acc ->
-                val cleanHandle = acc.id.trim().removePrefix("@")
-                if (cleanHandle.isNotBlank() && (acc.username.contains(" ") || acc.username.isBlank())) {
-                    acc.copy(id = cleanHandle, username = cleanHandle)
-                } else {
-                    acc
-                }
+                val cleanHandle = acc.id.trim().removePrefix("@").lowercase()
+                val mapId = getTikTokAccountIdFromMap(context, cleanHandle)
+                    ?: getTikTokAccountIdFromMap(context, acc.username.trim().removePrefix("@").lowercase())
+                val isLinked = acc.isGolikeLinked || !mapId.isNullOrBlank() || acc.golikeAccountId.isNotBlank()
+                val effectiveId = acc.golikeAccountId.ifBlank { mapId.orEmpty() }
+                acc.copy(
+                    id = cleanHandle,
+                    username = if (acc.username.contains(" ") || acc.username.isBlank()) cleanHandle else acc.username,
+                    isGolikeLinked = isLinked,
+                    golikeAccountId = effectiveId,
+                    lastStatus = if (isLinked && (acc.lastStatus.contains("Cần liên kết") || acc.lastStatus.isBlank())) "Đã liên kết Golike • Sẵn sàng" else acc.lastStatus
+                )
             }
         }
         return list

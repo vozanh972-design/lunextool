@@ -19,11 +19,14 @@ object GolikeTikTokTaskRunner {
 
     // ─────────────────────────────────────────────────────────────────────────
     // Kiểm tra session đủ 5 trường bắt buộc của Golike Gateway.
-    // Trả về null nếu đủ, trả về thông báo lỗi nếu thiếu.
+    // Trả về null nếu đủ, trả về thông báo lỗi cụ thể nếu thiếu.
     // ─────────────────────────────────────────────────────────────────────────
     private fun checkSession(client: GolikeApiClient): String? {
-        if (client.authToken.isNullOrBlank() || client.username.isNullOrBlank()) {
-            return "Phiên Golike hết hạn. Vui lòng đăng nhập lại Golike."
+        if (client.authToken.isNullOrBlank()) {
+            return "Lỗi: Chưa có token đăng nhập Golike (Vào app để đăng nhập)"
+        }
+        if (client.username.isNullOrBlank()) {
+            return "Lỗi: Chưa có thông tin tài khoản Golike"
         }
         return null
     }
@@ -257,7 +260,7 @@ object GolikeTikTokTaskRunner {
         if (declareMsg.contains("tải lại trang", ignoreCase = true) ||
             declareMsg.contains("phiên bản mới nhất", ignoreCase = true)
         ) {
-            val errMsg = "Phiên Golike hết hạn. Vui lòng đăng nhập lại Golike."
+            val errMsg = "Golike: $declareMsg"
             onProgress(errMsg)
             XsmmJobStatusBridge.update(errMsg)
             return@withContext Result.failure(Exception(errMsg))
@@ -598,7 +601,7 @@ object GolikeTikTokTaskRunner {
             if (declareMsg.contains("tải lại trang", ignoreCase = true) ||
                 declareMsg.contains("phiên bản mới nhất", ignoreCase = true)
             ) {
-                val errMsg = "Phiên Golike hết hạn. Vui lòng đăng nhập lại Golike."
+                val errMsg = "Golike: $declareMsg"
                 onStatusChange(errMsg)
                 XsmmJobStatusBridge.update(errMsg)
                 onJobFailed(errMsg)
@@ -883,8 +886,8 @@ object GolikeTikTokTaskRunner {
                 val jobRes = client.getTikTokJob(golikeAccId, currentWebData)
                 if (jobRes == null || !jobRes.optBoolean("success", false)) {
                     consecutiveFails++
-                    val errMsg = jobRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Chưa có nhiệm vụ phù hợp lúc này"
-                    onStatusChange("Chưa có job: $errMsg (Chờ ${cfg.delayMinSeconds}s...)")
+                    val errMsg = jobRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Chưa có nhiệm vụ lúc này"
+                    onStatusChange("Golike: $errMsg (Chờ ${cfg.delayMinSeconds}s)")
                     onJobFailed(errMsg)
 
                     if (cfg.autoSwitchOnFail && consecutiveFails >= cfg.failJobCountToSwitchAccount) {

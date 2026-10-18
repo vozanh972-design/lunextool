@@ -115,84 +115,129 @@ suspend fun checkGolikeLinkedStatusForTikTokAccounts(
         val dataArray = res?.optJSONArray("data")
             ?: res?.optJSONObject("data")?.optJSONArray("data")
 
-        val golikeNickMap = mutableMapOf<String, Pair<String, String>>()
-        if (dataArray != null) {
-            for (i in 0 until dataArray.length()) {
-                val item = dataArray.optJSONObject(i) ?: continue
-                val rawId = item.opt("id") ?: item.opt("account_id")
-                val accountId = when (rawId) {
-                    is Number -> rawId.toLong().toString()
-                    is String -> rawId.trim()
-                    else -> item.optString("id").ifBlank { item.optString("account_id") }
-                }
-                val avatar = item.optString("avatar_thumb").ifBlank { item.optString("avatar") }
-                val u1 = item.optString("unique_username").trim().removePrefix("@").lowercase()
-                val u2 = item.optString("unique_id").trim().removePrefix("@").lowercase()
-                val u3 = item.optString("nickname").trim().removePrefix("@").lowercase()
-                val u4 = item.optString("tiktok_account").trim().removePrefix("@").lowercase()
+        if (dataArray == null) {
+            android.util.Log.w("GolikeCheck", "Không nhận được dataArray từ Golike API: $res")
+            return
+        }
 
-                listOf(u1, u2, u3, u4).filter { it.isNotBlank() }.forEach { handle ->
-                    golikeNickMap[handle] = Pair(accountId, avatar)
-                }
+        val golikeNickMap = mutableMapOf<String, Pair<String, String>>()
+        val serverAccounts = mutableListOf<GolikeAccount>()
+        for (i in 0 until dataArray.length()) {
+            val item = dataArray.optJSONObject(i) ?: continue
+            val rawId = item.opt("id") ?: item.opt("account_id")
+            val accountId = when (rawId) {
+                is Number -> rawId.toLong().toString()
+                is String -> rawId.trim()
+                else -> item.optString("id").ifBlank { item.optString("account_id") }
+            }
+            val avatar = item.optString("avatar_thumb").ifBlank { item.optString("avatar") }
+            val u1 = item.optString("unique_username").trim().removePrefix("@").lowercase()
+            val u2 = item.optString("unique_id").trim().removePrefix("@").lowercase()
+            val u3 = item.optString("nickname").trim().removePrefix("@").lowercase()
+            val u4 = item.optString("tiktok_account").trim().removePrefix("@").lowercase()
+            val displayHandle = u1.ifBlank { u4.ifBlank { u2.ifBlank { u3.ifBlank { "acc_$accountId" } } } }
+
+            listOf(u1, u2, u3, u4).filter { it.isNotBlank() }.forEach { handle ->
+                golikeNickMap[handle] = Pair(accountId, avatar)
+                GolikeAccountsStore.saveTikTokMapping(context, handle, accountId)
+            }
+
+            if (displayHandle.isNotBlank()) {
+                serverAccounts.add(
+                    GolikeAccount(
+                        id = displayHandle,
+                        platform = "tiktok",
+                        username = displayHandle,
+                        avatar = avatar,
+                        isLive = true,
+                        isGolikeLinked = true,
+                        golikeAccountId = accountId,
+                        lastStatus = "Đã liên kết Golike • Sẵn sàng"
+                    )
+                )
             }
         }
 
         withContext(Dispatchers.Main) {
             if (uiTikTokAccounts != null) {
+                // 1. Cập nhật các tài khoản hiện có trong UI
                 uiTikTokAccounts.forEachIndexed { index, acc ->
                     val cleanHandle = acc.username.trim().removePrefix("@").lowercase()
                     val cleanId = acc.id.trim().removePrefix("@").lowercase()
+                    val mapId = GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanHandle)
+                        ?: GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanId)
+
                     val match = golikeNickMap[cleanHandle] ?: golikeNickMap[cleanId]
-                    if (match != null) {
-                        val (golikeId, serverAvatar) = match
+                    val golikeId = match?.first ?: mapId ?: acc.golikeAccountId
+                    val serverAvatar = match?.second.orEmpty()
+
+                    val isLinked = !golikeId.isNullOrBlank() || acc.isGolikeLinked
+                    if (!golikeId.isNullOrBlank()) {
                         GolikeAccountsStore.saveTikTokMapping(context, cleanHandle, golikeId)
                         if (cleanId != cleanHandle) {
                             GolikeAccountsStore.saveTikTokMapping(context, cleanId, golikeId)
                         }
-                        uiTikTokAccounts[index] = acc.copy(
-                            isGolikeLinked = true,
-                            golikeAccountId = golikeId,
-                            avatar = if (acc.avatar.isBlank() && serverAvatar.isNotBlank()) serverAvatar else acc.avatar,
-                            lastStatus = "Đã liên kết Golike • Sẵn sàng"
-                        )
-                    } else {
-                        uiTikTokAccounts[index] = acc.copy(
-                            isGolikeLinked = false,
-                            golikeAccountId = "",
-                            lastStatus = "Cần liên kết Golike"
-                        )
+                    }
+
+                    uiTikTokAccounts[index] = acc.copy(
+                        isGolikeLinked = isLinked,
+                        golikeAccountId = golikeId.orEmpty(),
+                        avatar = if (acc.avatar.isBlank() && serverAvatar.isNotBlank()) serverAvatar else acc.avatar,
+                        lastStatus = if (isLinked) "Đã liên kết Golike • Sẵn sàng" else acc.lastStatus
+                    )
+                }
+
+                // 2. Tự động thêm các tài khoản từ server Golike chưa có trong UI
+                serverAccounts.forEach { serverAcc ->
+                    val exists = uiTikTokAccounts.any { local ->
+                        local.id.equals(serverAcc.id, ignoreCase = true) ||
+                                local.username.trim().removePrefix("@").equals(serverAcc.username, ignoreCase = true) ||
+                                (local.golikeAccountId.isNotBlank() && local.golikeAccountId == serverAcc.golikeAccountId)
+                    }
+                    if (!exists) {
+                        uiTikTokAccounts.add(serverAcc)
                     }
                 }
                 GolikeAccountsStore.saveTikTokAccounts(context, uiTikTokAccounts.toList())
             } else {
-                val currentAccounts = GolikeAccountsStore.getTikTokAccounts(context)
-                if (currentAccounts.isNotEmpty()) {
-                    val updatedAccounts = currentAccounts.map { acc ->
-                        val cleanHandle = acc.username.trim().removePrefix("@").lowercase()
-                        val cleanId = acc.id.trim().removePrefix("@").lowercase()
-                        val match = golikeNickMap[cleanHandle] ?: golikeNickMap[cleanId]
-                        if (match != null) {
-                            val (golikeId, serverAvatar) = match
-                            GolikeAccountsStore.saveTikTokMapping(context, cleanHandle, golikeId)
-                            if (cleanId != cleanHandle) {
-                                GolikeAccountsStore.saveTikTokMapping(context, cleanId, golikeId)
-                            }
-                            acc.copy(
-                                isGolikeLinked = true,
-                                golikeAccountId = golikeId,
-                                avatar = if (acc.avatar.isBlank() && serverAvatar.isNotBlank()) serverAvatar else acc.avatar,
-                                lastStatus = "Đã liên kết Golike • Sẵn sàng"
-                            )
-                        } else {
-                            acc.copy(
-                                isGolikeLinked = false,
-                                golikeAccountId = "",
-                                lastStatus = "Cần liên kết Golike"
-                            )
+                val currentAccounts = GolikeAccountsStore.getTikTokAccounts(context).toMutableList()
+                val updatedAccounts = currentAccounts.map { acc ->
+                    val cleanHandle = acc.username.trim().removePrefix("@").lowercase()
+                    val cleanId = acc.id.trim().removePrefix("@").lowercase()
+                    val mapId = GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanHandle)
+                        ?: GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanId)
+
+                    val match = golikeNickMap[cleanHandle] ?: golikeNickMap[cleanId]
+                    val golikeId = match?.first ?: mapId ?: acc.golikeAccountId
+                    val serverAvatar = match?.second.orEmpty()
+
+                    val isLinked = !golikeId.isNullOrBlank() || acc.isGolikeLinked
+                    if (!golikeId.isNullOrBlank()) {
+                        GolikeAccountsStore.saveTikTokMapping(context, cleanHandle, golikeId)
+                        if (cleanId != cleanHandle) {
+                            GolikeAccountsStore.saveTikTokMapping(context, cleanId, golikeId)
                         }
                     }
-                    GolikeAccountsStore.saveTikTokAccounts(context, updatedAccounts)
+
+                    acc.copy(
+                        isGolikeLinked = isLinked,
+                        golikeAccountId = golikeId.orEmpty(),
+                        avatar = if (acc.avatar.isBlank() && serverAvatar.isNotBlank()) serverAvatar else acc.avatar,
+                        lastStatus = if (isLinked) "Đã liên kết Golike • Sẵn sàng" else acc.lastStatus
+                    )
+                }.toMutableList()
+
+                serverAccounts.forEach { serverAcc ->
+                    val exists = updatedAccounts.any { local ->
+                        local.id.equals(serverAcc.id, ignoreCase = true) ||
+                                local.username.trim().removePrefix("@").equals(serverAcc.username, ignoreCase = true) ||
+                                (local.golikeAccountId.isNotBlank() && local.golikeAccountId == serverAcc.golikeAccountId)
+                    }
+                    if (!exists) {
+                        updatedAccounts.add(serverAcc)
+                    }
                 }
+                GolikeAccountsStore.saveTikTokAccounts(context, updatedAccounts)
             }
         }
     } catch (e: Exception) {
