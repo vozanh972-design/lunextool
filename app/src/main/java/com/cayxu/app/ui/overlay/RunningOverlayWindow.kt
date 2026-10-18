@@ -77,6 +77,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -90,9 +91,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -323,21 +327,22 @@ private fun CollapsedBubble(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .wrapContentSize()
-            .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
+            .scale(pressScale)
             .pointerInput(Unit) {
                 detectDragGestures(
-                    onDragStart = { dragging = true },
+                    onDragStart = { _: Offset -> dragging = true },
                     onDragEnd = {
                         dragging = false
                         onDragEndSnap?.invoke()
                     },
                     onDragCancel = {
                         dragging = false
+                    },
+                    onDrag = { change: PointerInputChange, dragAmount: Offset ->
+                        change.consume()
+                        onDragDelta?.invoke(dragAmount.x, dragAmount.y)
                     }
-                ) { change, dragAmount ->
-                    change.consume()
-                    onDragDelta?.invoke(dragAmount.x, dragAmount.y)
-                }
+                )
             }
             .clickable(interactionSource = pressSource, indication = null, role = Role.Button, onClick = onExpand),
     ) {
