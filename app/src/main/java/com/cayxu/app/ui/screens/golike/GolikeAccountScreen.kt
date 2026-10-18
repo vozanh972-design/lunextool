@@ -125,14 +125,13 @@ suspend fun checkGolikeLinkedStatusForTikTokAccounts(
                     is String -> rawId.trim()
                     else -> item.optString("id").ifBlank { item.optString("account_id") }
                 }
-                val avatar = item.optString("avatar")
+                val avatar = item.optString("avatar_thumb").ifBlank { item.optString("avatar") }
                 val u1 = item.optString("unique_username").trim().removePrefix("@").lowercase()
-                val u2 = item.optString("username").trim().removePrefix("@").lowercase()
+                val u2 = item.optString("unique_id").trim().removePrefix("@").lowercase()
                 val u3 = item.optString("nickname").trim().removePrefix("@").lowercase()
                 val u4 = item.optString("tiktok_account").trim().removePrefix("@").lowercase()
-                val u5 = item.optString("name").trim().removePrefix("@").lowercase()
 
-                listOf(u1, u2, u3, u4, u5).filter { it.isNotBlank() }.forEach { handle ->
+                listOf(u1, u2, u3, u4).filter { it.isNotBlank() }.forEach { handle ->
                     golikeNickMap[handle] = Pair(accountId, avatar)
                 }
             }
@@ -315,6 +314,37 @@ fun GolikeAccountScreen(navController: NavController) {
     // Khởi tạo nạp danh sách TikTok ngay khi mở màn hình
     LaunchedEffect(Unit) {
         reloadAccounts()
+    }
+
+    // Tự động kiểm tra và đồng bộ trạng thái liên kết nick từ Golike API khi mở màn hình hoặc sau đăng nhập
+    LaunchedEffect(isLoggedIn, selectedPlatform) {
+        if (isLoggedIn) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val client = GolikeAccountsStore.getApiClient(context)
+                    // 1. Cập nhật số dư và thông tin người dùng
+                    val me = client.getMe()
+                    val data = me?.optJSONObject("data")
+                    val newCoin = data?.optLong("coin")
+                    val newUname = data?.optString("username")?.takeIf { it.isNotBlank() }
+                    if (newCoin != null) {
+                        GolikeAccountsStore.updateBalance(context, newCoin)
+                        withContext(Dispatchers.Main) {
+                            GolikeSession.updateBalance(context, newCoin)
+                            if (newUname != null) {
+                                GolikeSession.username.value = newUname
+                            }
+                        }
+                    }
+
+                    // 2. Quét danh sách nick đã liên kết từ API Golike về và đối chiếu
+                    syncLinkedAccountsFromApi(context, client, selectedPlatform, if (selectedPlatform == "tiktok") tiktokAccounts else null)
+                    withContext(Dispatchers.Main) {
+                        reloadAccounts()
+                    }
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current

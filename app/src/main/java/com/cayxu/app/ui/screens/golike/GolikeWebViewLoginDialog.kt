@@ -239,8 +239,28 @@ fun GolikeWebViewLoginDialog(
                                                 scheme = scheme
                                             )
 
-                                            // BƯỚC 3: CẬP NHẬT GOLIKE SESSION, ĐÓNG WEBVIEW & THÔNG BÁO TRÊN MAIN THREAD
+                                            // BƯỚC 3: CẬP NHẬT GOLIKE SESSION, ĐỒNG BỘ ĐẦY ĐỦ VÀ ĐÓNG WEBVIEW TRÊN MAIN THREAD
                                             scope.launch(Dispatchers.Main) {
+                                                // Chờ 1.5s để web hoàn tất nạp trang chủ, trích xuất trọn vẹn webData & signingKey
+                                                try {
+                                                    webViewInstance?.evaluateJavascript(
+                                                        "if(window.goMaxCaptureSessionStore) window.goMaxCaptureSessionStore();",
+                                                        null
+                                                    )
+                                                } catch (_: Exception) {}
+                                                delay(1200L)
+                                                try {
+                                                    webViewInstance?.evaluateJavascript(
+                                                        "if(window.goMaxCaptureSessionStore) window.goMaxCaptureSessionStore();",
+                                                        null
+                                                    )
+                                                } catch (_: Exception) {}
+                                                delay(300L)
+
+                                                val latestWebData = GolikeAccountsStore.getWebData(context).ifBlank { webData }
+                                                val latestSigningKey = GolikeAccountsStore.getSigningKey(context).ifBlank { signingKey }
+                                                val latestGAuth = GolikeAccountsStore.getGAuth(context).ifBlank { gAuth }
+
                                                 GolikeSession.login(
                                                     context = context,
                                                     userToken = authToken,
@@ -248,10 +268,10 @@ fun GolikeWebViewLoginDialog(
                                                     userBalance = 0L,
                                                     tToken = tToken,
                                                     deviceId = deviceId,
-                                                    gAuth = gAuth,
-                                                    signingKey = signingKey,
+                                                    gAuth = latestGAuth,
+                                                    signingKey = latestSigningKey,
                                                     userId = userId,
-                                                    webData = webData
+                                                    webData = latestWebData
                                                 )
                                                 Toast.makeText(context, "Đã liên kết Golike: @$resolvedUsername", Toast.LENGTH_SHORT).show()
                                                 onLoginSuccess(resolvedUsername)

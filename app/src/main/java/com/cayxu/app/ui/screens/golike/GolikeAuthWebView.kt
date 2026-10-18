@@ -105,13 +105,14 @@ object GolikeAuthWebView {
                 webData = directData;
               }
 
-              // Quét localStorage tìm signing_key và user_id
+              // Quét localStorage tìm signing_key, user_id, webData
               for (let i = 0; i < localStorage.length; i++) {
                 let storageKey = localStorage.key(i);
                 let raw = localStorage.getItem(storageKey);
                 if (!raw) continue;
                 if (!signingKey && storageKey === 'signing_key') signingKey = raw;
                 if (!userId && storageKey === 'user_id') userId = raw;
+                if ((!webData || webData === 'null' || webData === 'undefined') && (storageKey === '__' || storageKey === 'data' || storageKey === '_data')) webData = raw;
                 if (!version && (storageKey === 'version' || storageKey === 'app_version')) version = raw;
               }
 
@@ -305,9 +306,15 @@ object GolikeAuthWebView {
 
         @JavascriptInterface
         fun sendSessionStore(signingKey: String, userId: String, webData: String) {
-            if (signingKey.isNotBlank()) savedSigningKey = signingKey
+            if (signingKey.isNotBlank()) {
+                savedSigningKey = signingKey
+                context?.let { ctx -> GolikeAccountsStore.saveSigningKey(ctx, signingKey) }
+            }
             if (userId.isNotBlank()) savedUserId = userId
-            if (webData.isNotBlank() && webData != "null") savedWebData = webData
+            if (webData.isNotBlank() && webData != "null" && webData != "undefined") {
+                savedWebData = webData
+                context?.let { ctx -> GolikeAccountsStore.saveWebData(ctx, webData) }
+            }
             checkAndNotify()
         }
 
@@ -322,10 +329,16 @@ object GolikeAuthWebView {
             if (!auth.isNullOrBlank() && auth != "Bearer null" && auth != "Bearer undefined" &&
                 (uname.isNotBlank() || devId.isNotBlank())
             ) {
-                // Đảm bảo luôn lưu webVersion và webVersionText vào Store khi login thành công
+                // Đảm bảo luôn lưu webVersion, webVersionText, webData và signingKey vào Store khi login thành công
                 context?.let { ctx ->
                     try {
                         GolikeAccountsStore.saveWebVersionInfo(ctx, savedWebVersion, savedWebVersionText)
+                        if (!savedWebData.isNullOrBlank() && savedWebData != "null" && savedWebData != "undefined") {
+                            GolikeAccountsStore.saveWebData(ctx, savedWebData!!)
+                        }
+                        if (!savedSigningKey.isNullOrBlank()) {
+                            GolikeAccountsStore.saveSigningKey(ctx, savedSigningKey!!)
+                        }
                     } catch (_: Exception) {}
                 }
 

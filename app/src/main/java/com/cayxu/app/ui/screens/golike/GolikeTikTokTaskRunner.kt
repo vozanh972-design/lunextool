@@ -139,19 +139,23 @@ object GolikeTikTokTaskRunner {
                 ?: listRes?.optJSONObject("data")?.optJSONArray("data")
 
             if (listData != null) {
+                val golikeLoginUsername = client.username?.trim()?.removePrefix("@")?.lowercase().orEmpty()
                 for (i in 0 until listData.length()) {
                     val item = listData.optJSONObject(i) ?: continue
                     val sUnique = item.optString("unique_username").trim().removePrefix("@").lowercase()
-                    val sUser = item.optString("username").trim().removePrefix("@").lowercase()
+                    val sUniqueId = item.optString("unique_id").trim().removePrefix("@").lowercase()
                     val sNick = item.optString("nickname").trim().removePrefix("@").lowercase()
                     val sAccount = item.optString("tiktok_account").trim().removePrefix("@").lowercase()
+                    val rawUser = item.optString("username").trim().removePrefix("@").lowercase()
+                    val sUser = if (rawUser == golikeLoginUsername) "" else rawUser
                     val sName = item.optString("name").trim().removePrefix("@").lowercase()
 
-                    val isMatch = sUnique == cleanUsername || sUser == cleanUsername || sNick == cleanUsername ||
-                            sAccount == cleanUsername || sName == cleanUsername ||
+                    val isMatch = sUnique == cleanUsername || sUniqueId == cleanUsername ||
+                            sNick == cleanUsername || sAccount == cleanUsername ||
+                            (sUser.isNotBlank() && sUser == cleanUsername) ||
+                            (sName.isNotBlank() && sName == cleanUsername) ||
                             (sUnique.isNotBlank() && (sUnique.contains(cleanUsername) || cleanUsername.contains(sUnique))) ||
-                            (sUser.isNotBlank() && (sUser.contains(cleanUsername) || cleanUsername.contains(sUser))) ||
-                            (sAccount.isNotBlank() && (sAccount.contains(cleanUsername) || cleanUsername.contains(sAccount)))
+                            (sUniqueId.isNotBlank() && (sUniqueId.contains(cleanUsername) || cleanUsername.contains(sUniqueId)))
 
                     if (isMatch) {
                         val rawId = item.opt("id") ?: item.opt("account_id")
@@ -197,7 +201,8 @@ object GolikeTikTokTaskRunner {
             scheme = GolikeAccountsStore.getScheme(context),
             webVersion = GolikeAccountsStore.getWebVersion(context),
             webVersionText = GolikeAccountsStore.getWebVersionText(context),
-            webData = GolikeAccountsStore.getWebData(context)
+            webData = GolikeAccountsStore.getWebData(context),
+            signingKey = GolikeAccountsStore.getSigningKey(context)
         )
 
         // ── Guard: Kiểm tra đủ 5 trường session bắt buộc của Golike Gateway ──
@@ -530,7 +535,8 @@ object GolikeTikTokTaskRunner {
             scheme = GolikeAccountsStore.getScheme(context),
             webVersion = GolikeAccountsStore.getWebVersion(context),
             webVersionText = GolikeAccountsStore.getWebVersionText(context),
-            webData = GolikeAccountsStore.getWebData(context)
+            webData = GolikeAccountsStore.getWebData(context),
+            signingKey = GolikeAccountsStore.getSigningKey(context)
         )
 
         // ── Guard: Kiểm tra đủ 5 trường session bắt buộc của Golike Gateway ──
@@ -850,6 +856,20 @@ object GolikeTikTokTaskRunner {
 
         // BƯỚC 3: CHUYỂN NGAY SANG VÒNG LẶP LÀM JOB CỦA GOLIKE
         val golikeAccId = golikeAccountId.ifBlank { account.id }
+
+        // Khởi tạo security session lấy signing_key chuẩn bị cho việc hoàn thành job
+        if (client.signingKey.isNullOrBlank()) {
+            try {
+                val secRes = client.createSecuritySession()
+                val secKey = secRes?.optString("signing_key").orEmpty()
+                if (secKey.isNotBlank()) {
+                    GolikeAccountsStore.saveSigningKey(context, secKey)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("GolikeTaskRunner", "Lỗi tạo security session: ${e.message}")
+            }
+        }
+
         GolikeRunningManager.runningAccounts[account.id] = true
         GolikeRunningManager.runningAccounts[cleanUsername] = true
         var consecutiveFails = 0

@@ -21,10 +21,12 @@ class GolikeApiClient(
     var scheme: String? = null,
     var webVersion: String? = null,
     var webVersionText: String? = null,
-    var webData: String? = null
+    var webData: String? = null,
+    var signingKey: String? = null
 ) {
     companion object {
         const val BASE_URL = "https://gateway.golike.net/api"
+        const val SECURITY_URL = "https://api.golike.net/api/v1/security"
         const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
@@ -45,7 +47,8 @@ class GolikeApiClient(
         scheme: String? = null,
         webVersion: String? = null,
         webVersionText: String? = null,
-        webData: String? = null
+        webData: String? = null,
+        signingKey: String? = null
     ) {
         this.authToken = if (authToken.startsWith("Bearer ", ignoreCase = true)) authToken else "Bearer $authToken"
         this.tToken = tToken
@@ -58,6 +61,7 @@ class GolikeApiClient(
         this.webVersion = webVersion ?: this.webVersion
         this.webVersionText = webVersionText ?: this.webVersionText
         this.webData = webData ?: this.webData
+        this.signingKey = signingKey ?: this.signingKey
     }
 
     private fun newRequestBuilder(url: String): Request.Builder {
@@ -185,14 +189,96 @@ class GolikeApiClient(
     fun getFacebookJob(fbId: String): JSONObject? =
         execute(newRequestBuilder("$BASE_URL/advertising/publishers/get-jobs-2026?fb_id=$fbId").get().build())
 
-    // 4. Hoàn thành nhiệm vụ (Complete Job)
-    fun completeTikTokJob(adsId: Long, accountId: String): JSONObject? {
-        val body = JSONObject().apply {
+    // 3b. Khởi tạo Security Session (Lấy signing_key chuẩn gweb-v3)
+    fun createSecuritySession(): JSONObject? {
+        val req = Request.Builder()
+            .url("$SECURITY_URL/session")
+            .header("User-Agent", USER_AGENT)
+            .header("Origin", "https://app.golike.net")
+            .header("Referer", "https://app.golike.net/")
+            .header("Accept", "application/json, text/plain, */*")
+            .header("Content-Type", "application/json;charset=UTF-8")
+            .header("g-scheme", scheme?.takeIf { it.isNotBlank() } ?: "gweb-v3")
+            .apply {
+                authToken?.let { header("Authorization", if (it.startsWith("Bearer ", ignoreCase = true)) it else "Bearer $it") }
+            }
+            .post("{}".toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        val res = execute(req)
+        val key = res?.optString("signing_key").orEmpty()
+        if (key.isNotBlank()) {
+            this.signingKey = key
+        }
+        return res
+    }
+
+    // 3c. Lấy chữ ký Token chứng thực cho complete_job
+    fun getSecurityToken(adsId: Any, accountId: Any): String? {
+        val bodyObj = JSONObject().apply {
             put("ads_id", adsId)
             put("account_id", accountId)
             put("async", true)
+            put("data", JSONObject.NULL)
+        }
+        val reqPayload = JSONObject().apply {
+            put("plt", "tiktok")
+            put("act", "complete_job")
+            put("req", JSONObject().apply {
+                put("method", "POST")
+                put("path", "/api/advertising/publishers/tiktok/complete-jobs")
+                put("query", "")
+                put("body", bodyObj.toString())
+            })
+            put("tel", JSONObject().apply {
+                put("trg", "click")
+                put("aut", 0)
+                put("idle", (70..110).random())
+                put("iev", (12..18).random())
+                put("vis", 1)
+                put("foc", 1)
+            })
+        }
+
+        val builder = Request.Builder()
+            .url("$SECURITY_URL/token")
+            .header("User-Agent", USER_AGENT)
+            .header("Origin", "https://app.golike.net")
+            .header("Referer", "https://app.golike.net/")
+            .header("Accept", "application/json, text/plain, */*")
+            .header("Content-Type", "application/json;charset=UTF-8")
+            .apply {
+                authToken?.let { header("Authorization", if (it.startsWith("Bearer ", ignoreCase = true)) it else "Bearer $it") }
+                gAuth?.let { if (it.isNotBlank()) header("g-auth", it) }
+            }
+            .post(reqPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        val res = execute(builder)
+        return res?.optString("token")?.takeIf { it.isNotBlank() }
+    }
+
+    // 4. Hoàn thành nhiệm vụ (Complete Job)
+    fun completeTikTokJob(adsId: Any, accountId: Any): JSONObject? {
+        val numAccId = when (accountId) {
+            is Number -> accountId
+            is String -> accountId.toLongOrNull() ?: accountId
+            else -> accountId
+        }
+        val sigToken = getSecurityToken(adsId, numAccId)
+
+        val body = JSONObject().apply {
+            put("ads_id", adsId)
+            put("account_id", numAccId)
+            put("async", true)
+            put("data", JSONObject.NULL)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
-        return execute(newRequestBuilder("$BASE_URL/advertising/publishers/tiktok/complete-jobs").post(body).build())
+
+        val reqBuilder = newRequestBuilder("$BASE_URL/advertising/publishers/tiktok/complete-jobs")
+            .post(body)
+        if (!sigToken.isNullOrBlank()) {
+            reqBuilder.header("sig", sigToken)
+        }
+        return execute(reqBuilder.build())
     }
 
     fun completeInstagramJob(adsId: Long, accountId: String): JSONObject? {

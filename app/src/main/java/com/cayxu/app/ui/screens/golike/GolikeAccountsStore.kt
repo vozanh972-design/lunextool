@@ -116,6 +116,18 @@ object GolikeAccountsStore {
         prefs(context).edit().putString(KEY_HEADER, header.trim()).commit()
     }
 
+    fun saveWebData(context: Context, webData: String) {
+        if (webData.isNotBlank() && webData != "null") {
+            prefs(context).edit().putString(KEY_WEB_DATA, webData.trim()).commit()
+        }
+    }
+
+    fun saveSigningKey(context: Context, signingKey: String) {
+        if (signingKey.isNotBlank()) {
+            prefs(context).edit().putString(KEY_SIGNING_KEY, signingKey.trim()).commit()
+        }
+    }
+
     fun saveLogin(
         context: Context,
         token: String,
