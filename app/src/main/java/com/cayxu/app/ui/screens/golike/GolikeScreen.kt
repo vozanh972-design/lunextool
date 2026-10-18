@@ -89,9 +89,9 @@ fun GolikeScreen(
                 modifier = Modifier
                     .size(96.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(Alx.BlueSoft),
+                    .background(GolikeOrangeSoft),
                 contentAlignment = Alignment.Center,
-            ) { SvgIcon(IconLoginArrow, 32.dp, Alx.Blue, 1.9f) }
+            ) { SvgIcon(IconLoginArrow, 32.dp, GolikeOrange, 1.9f) }
 
             Spacer(Modifier.height(20.dp))
             BasicText(
@@ -120,11 +120,14 @@ fun GolikeScreen(
 
 /* ───────────────────────────── Khối dùng chung trong file này ───────────────────────────── */
 
+val GolikeOrange = Color(0xFFF59E0B)
+val GolikeOrangeSoft = Color(0xFFFFF7ED)
+
 private val IconBack = listOf("M19 12H5M11 6l-6 6 6 6")
 private val IconLoginArrow = listOf("M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-4M10 17l5-5-5-5M15 12H3")
 
 /**
- * Nút chính có icon + nhãn, cùng phong cách PrimaryButton (pill xanh,
+ * Nút chính có icon + nhãn, cùng phong cách PrimaryButton (pill cam,
  * đổ bóng, nhún nhẹ khi đè) nhưng thêm icon bên trái.
  */
 @Composable
@@ -137,8 +140,8 @@ private fun LoginButton(label: String, onClick: () -> Unit, modifier: Modifier =
         modifier = modifier
             .height(56.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .shadow(12.dp, shape, ambientColor = Color(0x4D1F4BD8), spotColor = Color(0xB31F4BD8))
-            .background(Alx.Blue, shape)
+            .shadow(12.dp, shape, ambientColor = Color(0x4DF59E0B), spotColor = Color(0xB3F59E0B))
+            .background(GolikeOrange, shape)
             .clip(shape)
             .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick),
         horizontalArrangement = Arrangement.Center,
