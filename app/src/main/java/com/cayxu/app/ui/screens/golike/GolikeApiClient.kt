@@ -20,7 +20,8 @@ class GolikeApiClient(
     var client: String? = null,
     var scheme: String? = null,
     var webVersion: String? = null,
-    var webVersionText: String? = null
+    var webVersionText: String? = null,
+    var webData: String? = null
 ) {
     companion object {
         const val BASE_URL = "https://gateway.golike.net/api"
@@ -43,7 +44,8 @@ class GolikeApiClient(
         client: String? = null,
         scheme: String? = null,
         webVersion: String? = null,
-        webVersionText: String? = null
+        webVersionText: String? = null,
+        webData: String? = null
     ) {
         this.authToken = if (authToken.startsWith("Bearer ", ignoreCase = true)) authToken else "Bearer $authToken"
         this.tToken = tToken
@@ -55,6 +57,7 @@ class GolikeApiClient(
         this.scheme = scheme ?: this.scheme
         this.webVersion = webVersion ?: this.webVersion
         this.webVersionText = webVersionText ?: this.webVersionText
+        this.webData = webData ?: this.webData
     }
 
     private fun newRequestBuilder(url: String): Request.Builder {
@@ -168,8 +171,13 @@ class GolikeApiClient(
     }
 
     // 3. Lấy nhiệm vụ (Get Job)
-    fun getTikTokJob(accountId: String): JSONObject? =
-        execute(newRequestBuilder("$BASE_URL/advertising/publishers/tiktok/jobs?account_id=$accountId").get().build())
+    fun getTikTokJob(accountId: String, customWebData: String? = null): JSONObject? {
+        val effectiveData = customWebData?.takeIf { it.isNotBlank() }
+            ?: webData?.takeIf { it.isNotBlank() && it != "null" }
+            ?: "null"
+        val url = "$BASE_URL/advertising/publishers/tiktok/jobs?account_id=$accountId&data=$effectiveData"
+        return execute(newRequestBuilder(url).get().build())
+    }
 
     fun getInstagramJob(accountId: String): JSONObject? =
         execute(newRequestBuilder("$BASE_URL/advertising/publishers/instagram/jobs?instagram_account_id=$accountId").get().build())

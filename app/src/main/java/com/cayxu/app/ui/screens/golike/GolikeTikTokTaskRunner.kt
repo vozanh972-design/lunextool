@@ -196,7 +196,8 @@ object GolikeTikTokTaskRunner {
             client = GolikeAccountsStore.getClient(context),
             scheme = GolikeAccountsStore.getScheme(context),
             webVersion = GolikeAccountsStore.getWebVersion(context),
-            webVersionText = GolikeAccountsStore.getWebVersionText(context)
+            webVersionText = GolikeAccountsStore.getWebVersionText(context),
+            webData = GolikeAccountsStore.getWebData(context)
         )
 
         // ── Guard: Kiểm tra đủ 5 trường session bắt buộc của Golike Gateway ──
@@ -528,7 +529,8 @@ object GolikeTikTokTaskRunner {
             client = GolikeAccountsStore.getClient(context),
             scheme = GolikeAccountsStore.getScheme(context),
             webVersion = GolikeAccountsStore.getWebVersion(context),
-            webVersionText = GolikeAccountsStore.getWebVersionText(context)
+            webVersionText = GolikeAccountsStore.getWebVersionText(context),
+            webData = GolikeAccountsStore.getWebData(context)
         )
 
         // ── Guard: Kiểm tra đủ 5 trường session bắt buộc của Golike Gateway ──
@@ -857,7 +859,8 @@ object GolikeTikTokTaskRunner {
                 onStatusChange("Đang lấy nhiệm vụ TikTok...")
 
                 // 1. Lấy nhiệm vụ (Get Job)
-                val jobRes = client.getTikTokJob(golikeAccId)
+                val currentWebData = GolikeAccountsStore.getWebData(context)
+                val jobRes = client.getTikTokJob(golikeAccId, currentWebData)
                 if (jobRes == null || !jobRes.optBoolean("success", false)) {
                     consecutiveFails++
                     val errMsg = jobRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Chưa có nhiệm vụ phù hợp lúc này"

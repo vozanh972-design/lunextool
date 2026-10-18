@@ -267,7 +267,8 @@ object GolikeAccountsStore {
             client = getClient(context),
             scheme = getScheme(context),
             webVersion = getWebVersion(context),
-            webVersionText = getWebVersionText(context)
+            webVersionText = getWebVersionText(context),
+            webData = getWebData(context)
         )
     }
 

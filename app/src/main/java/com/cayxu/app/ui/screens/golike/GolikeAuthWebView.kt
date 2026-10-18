@@ -89,12 +89,21 @@ object GolikeAuthWebView {
                 let match = document.body && document.body.innerText ? document.body.innerText.match(/(\d+\.\d+\.\d+\.\d+)/) : null;
                 if (match) webVersionText = match[1];
               } catch(e) {}
+              let localGVer = localStorage.getItem('g-version') || localStorage.getItem('gVersion');
+              if (localGVer && localGVer !== 'null' && localGVer !== 'undefined') {
+                webVersionText = localGVer;
+              }
               if (!webVersionText && (webVersion && webVersion !== '3.0')) {
                 webVersionText = webVersion;
               }
               if (!webVersionText) webVersionText = '26.09.17.1';
 
               let version = webVersionText;
+
+              let directData = localStorage.getItem('__');
+              if (directData && directData !== 'null' && directData !== 'undefined') {
+                webData = directData;
+              }
 
               // Quét localStorage tìm signing_key và user_id
               for (let i = 0; i < localStorage.length; i++) {
