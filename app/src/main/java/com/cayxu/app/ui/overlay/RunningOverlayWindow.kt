@@ -254,14 +254,20 @@ private fun ExpandedCard(
         }
 
         if (state.statusText.isNotBlank()) {
+            val isError = state.statusText.startsWith("Lỗi", ignoreCase = true) ||
+                    state.statusText.startsWith("Golike:", ignoreCase = true)
             Row(
-                Modifier.padding(top = 10.dp).fillMaxWidth().background(Color(0xFFF5F8FF), RoundedCornerShape(14.dp))
+                Modifier.padding(top = 10.dp).fillMaxWidth()
+                    .background(if (isError) Color(0xFFFDECEC) else Color(0xFFF5F8FF), RoundedCornerShape(14.dp))
                     .padding(horizontal = 12.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                PulsingDot(Alx.Blue, 8.dp)
-                BasicText(state.statusText, style = type(13f, FontWeight.SemiBold, Color(0xFF334155), lineHeight = 1.35f))
+                PulsingDot(if (isError) Alx.Danger else Alx.Blue, 8.dp)
+                BasicText(
+                    state.statusText,
+                    style = type(13f, FontWeight.SemiBold, if (isError) Alx.Danger else Color(0xFF334155), lineHeight = 1.35f)
+                )
             }
         }
 
@@ -303,7 +309,7 @@ private fun PauseResumeButton(paused: Boolean, t: OverlayStrings, onClick: () ->
 
 /* ───────────────────────────── Bản thu nhỏ (kéo-thả được) ───────────────────────────── */
 
-private val BubbleOverhang = 28.dp   // phần logo ló ra ngoài mép màn hình (bị mép thiết bị "cắt" tự nhiên, không cần clip riêng)
+private val BubbleOverhang = 0.dp   // Không đẩy lọt mép, toàn bộ icon và bong bóng nằm trọn 100% trong màn hình
 
 @Composable
 private fun CollapsedBubble(
@@ -400,9 +406,9 @@ private fun StatusLabel(text: String, roundLeft: Boolean, roundRight: Boolean) {
         topEnd = if (roundRight) 16.dp else 0.dp, bottomEnd = if (roundRight) 16.dp else 0.dp,
     )
     Row(
-        Modifier.widthIn(max = 190.dp)
+        Modifier.widthIn(max = 240.dp)
             .background(Color(0xFF10151F), shape)
-            .padding(start = if (roundLeft) 12.dp else 20.dp, end = if (roundRight) 12.dp else 20.dp, top = 9.dp, bottom = 9.dp),
+            .padding(start = if (roundLeft) 12.dp else 16.dp, end = if (roundRight) 12.dp else 16.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
@@ -415,11 +421,15 @@ private fun StatusLabel(text: String, roundLeft: Boolean, roundRight: Boolean) {
 private fun LogoBadge(doneTasks: Int) {
     val shape = RoundedCornerShape(20.dp)
     Box(
-        Modifier.size(56.dp).shadow(14.dp, shape, ambientColor = Color(0x8C000000), spotColor = Color(0x8C000000))
+        Modifier.size(52.dp).shadow(14.dp, shape, ambientColor = Color(0x8C000000), spotColor = Color(0x8C000000))
             .background(Color(0xFF0F172A), shape).border(2.dp, Color(0xFF22C55E), shape),
         contentAlignment = Alignment.Center,
     ) {
-        BasicText("A", style = type(16f, FontWeight.ExtraBold, Alx.White, spacing = -0.02f))
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(id = com.cayxu.app.R.mipmap.ic_launcher),
+            contentDescription = "App Icon",
+            modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp))
+        )
         Box(
             Modifier.align(Alignment.BottomStart).offset(x = (-3).dp, y = 3.dp)
                 .widthIn(min = 21.dp).height(21.dp).background(Alx.Blue, CircleShape).border(2.dp, Color(0xFF10151F), CircleShape)

@@ -143,6 +143,9 @@ object GolikeTikTokTaskRunner {
 
             if (listData != null) {
                 val golikeLoginUsername = client.username?.trim()?.removePrefix("@")?.lowercase().orEmpty()
+                val targetClean = cleanUsername.trim().removePrefix("@").lowercase()
+                val targetAlphanum = targetClean.replace(Regex("[._\\s-]"), "")
+
                 for (i in 0 until listData.length()) {
                     val item = listData.optJSONObject(i) ?: continue
                     val sUnique = item.optString("unique_username").trim().removePrefix("@").lowercase()
@@ -153,12 +156,15 @@ object GolikeTikTokTaskRunner {
                     val sUser = if (rawUser == golikeLoginUsername) "" else rawUser
                     val sName = item.optString("name").trim().removePrefix("@").lowercase()
 
-                    val isMatch = sUnique == cleanUsername || sUniqueId == cleanUsername ||
-                            sNick == cleanUsername || sAccount == cleanUsername ||
-                            (sUser.isNotBlank() && sUser == cleanUsername) ||
-                            (sName.isNotBlank() && sName == cleanUsername) ||
-                            (sUnique.isNotBlank() && (sUnique.contains(cleanUsername) || cleanUsername.contains(sUnique))) ||
-                            (sUniqueId.isNotBlank() && (sUniqueId.contains(cleanUsername) || cleanUsername.contains(sUniqueId)))
+                    val isMatch = sUnique == targetClean || sUniqueId == targetClean ||
+                            sNick == targetClean || sAccount == targetClean ||
+                            (sUser.isNotBlank() && sUser == targetClean) ||
+                            (sName.isNotBlank() && sName == targetClean) ||
+                            (targetAlphanum.isNotBlank() && (
+                                sUnique.replace(Regex("[._\\s-]"), "") == targetAlphanum ||
+                                sNick.replace(Regex("[._\\s-]"), "") == targetAlphanum
+                            )) ||
+                            (sUnique.isNotBlank() && (sUnique.contains(targetClean) || targetClean.contains(sUnique)))
 
                     if (isMatch) {
                         val rawId = item.opt("id") ?: item.opt("account_id")
@@ -260,7 +266,7 @@ object GolikeTikTokTaskRunner {
         if (declareMsg.contains("tải lại trang", ignoreCase = true) ||
             declareMsg.contains("phiên bản mới nhất", ignoreCase = true)
         ) {
-            val errMsg = "Golike: $declareMsg"
+            val errMsg = "Golike: Nick @$cleanUsername chưa liên kết trên Golike (Vào app.golike.net để liên kết nick trước)"
             onProgress(errMsg)
             XsmmJobStatusBridge.update(errMsg)
             return@withContext Result.failure(Exception(errMsg))
@@ -601,7 +607,7 @@ object GolikeTikTokTaskRunner {
             if (declareMsg.contains("tải lại trang", ignoreCase = true) ||
                 declareMsg.contains("phiên bản mới nhất", ignoreCase = true)
             ) {
-                val errMsg = "Golike: $declareMsg"
+                val errMsg = "Golike: Nick @$cleanUsername chưa liên kết trên Golike (Vào app.golike.net để liên kết trước)"
                 onStatusChange(errMsg)
                 XsmmJobStatusBridge.update(errMsg)
                 onJobFailed(errMsg)

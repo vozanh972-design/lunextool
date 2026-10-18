@@ -124,7 +124,10 @@ class XsmmJobRunnerOverlayService : Service() {
 
     private suspend fun checkPauseWait() {
         if (isPaused) {
-            XsmmJobStatusBridge.update("Đã tạm dừng (nhấn Tiếp tục để chạy lại)")
+            val curText = overlayUiState.value.statusText
+            if (!curText.startsWith("Lỗi", ignoreCase = true) && !curText.startsWith("Golike:", ignoreCase = true)) {
+                XsmmJobStatusBridge.update("Đã tạm dừng (nhấn Tiếp tục để chạy lại)")
+            }
             while (isPaused && serviceScope.isActive) {
                 delay(400L)
             }
@@ -599,7 +602,7 @@ class XsmmJobRunnerOverlayService : Service() {
 
                     val cleanHandle = handle.trim().removePrefix("@").lowercase()
                     val currentAccounts = GolikeAccountsStore.getAccounts(applicationContext, "tiktok")
-                    val matchedAcc = currentAccounts.firstOrNull {
+                    var matchedAcc = currentAccounts.firstOrNull {
                         it.username.trim().removePrefix("@").equals(cleanHandle, ignoreCase = true) || it.id.equals(cleanHandle, ignoreCase = true)
                     } ?: GolikeAccount(
                         id = cleanHandle,
@@ -610,6 +613,22 @@ class XsmmJobRunnerOverlayService : Service() {
                         isGolikeLinked = false,
                         lastStatus = "Sẵn sàng"
                     )
+
+                    // Tự động kiểm tra và gắn golikeAccountId từ cache hoặc server Golike
+                    var resolvedId = GolikeAccountsStore.getTikTokAccountIdFromMap(applicationContext, cleanHandle).orEmpty()
+                    if (resolvedId.isBlank() && matchedAcc.golikeAccountId.isNotBlank()) {
+                        resolvedId = matchedAcc.golikeAccountId
+                    }
+                    if (resolvedId.isBlank()) {
+                        val serverId = GolikeTikTokTaskRunner.findExistingTikTokAccountId(client, cleanHandle)
+                        if (!serverId.isNullOrBlank()) {
+                            resolvedId = serverId
+                            GolikeAccountsStore.saveTikTokMapping(applicationContext, cleanHandle, resolvedId)
+                        }
+                    }
+                    if (resolvedId.isNotBlank()) {
+                        matchedAcc = matchedAcc.copy(golikeAccountId = resolvedId, isGolikeLinked = true)
+                    }
 
                     GolikeRunningManager.runningAccounts[matchedAcc.id] = true
                     launch(Dispatchers.Main) {
@@ -731,7 +750,10 @@ class XsmmJobRunnerOverlayService : Service() {
         isPaused = !isPaused
         overlayUiState.value = overlayUiState.value.copy(paused = isPaused)
         if (isPaused) {
-            XsmmJobStatusBridge.update("Đã tạm dừng (nhấn Tiếp tục để chạy lại)")
+            val curText = overlayUiState.value.statusText
+            if (!curText.startsWith("Lỗi", ignoreCase = true) && !curText.startsWith("Golike:", ignoreCase = true)) {
+                XsmmJobStatusBridge.update("Đã tạm dừng (nhấn Tiếp tục để chạy lại)")
+            }
         } else {
             XsmmJobStatusBridge.update("Đang tiếp tục chạy...")
         }
@@ -753,7 +775,7 @@ class XsmmJobRunnerOverlayService : Service() {
     private fun updateOverlayWindowSize(expanded: Boolean) {
         val view = overlayComposeView ?: return
         val params = overlayParams ?: return
-        val targetH = if (expanded) dp(460) else dp(230)
+        val targetH = if (expanded) dp(500) else dp(380)
         if (params.height != targetH) {
             params.height = targetH
             runCatching { windowManager.updateViewLayout(view, params) }
