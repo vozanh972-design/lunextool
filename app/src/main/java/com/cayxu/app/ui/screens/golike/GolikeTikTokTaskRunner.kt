@@ -532,7 +532,7 @@ object GolikeTikTokTaskRunner {
             val cfg = GolikeRunConfigStore.get(context, "tiktok")
             val cleanUsername = account.id.ifBlank { account.username }.trim().removePrefix("@").lowercase()
 
-        // ── Nạp đầy đủ 100% session và headers phiên bản từ SharedPreferences vào client trước khi gọi API ──
+        // ── Nạp đầy đủ session từ SharedPreferences vào client trước khi gọi API ──
         val token = GolikeAccountsStore.getToken(context).orEmpty()
         client.updateSession(
             authToken = token,
@@ -546,10 +546,12 @@ object GolikeTikTokTaskRunner {
             webVersion = GolikeAccountsStore.getWebVersion(context),
             webVersionText = GolikeAccountsStore.getWebVersionText(context),
             webData = GolikeAccountsStore.getWebData(context),
-            signingKey = GolikeAccountsStore.getSigningKey(context)
+            signingKey = GolikeAccountsStore.getSigningKey(context),
+            context = context
         )
+        GolikeWasmSigner.init(context)
 
-        // ── Guard: Kiểm tra đủ 5 trường session bắt buộc của Golike Gateway ──
+        // ── Guard: Kiểm tra đăng nhập Golike ──
         val sessionErr = checkSession(client)
         if (sessionErr != null) {
             onStatusChange(sessionErr)
@@ -865,7 +867,17 @@ object GolikeTikTokTaskRunner {
         }
 
         // BƯỚC 3: CHUYỂN NGAY SANG VÒNG LẶP LÀM JOB CỦA GOLIKE
-        val golikeAccId = golikeAccountId.ifBlank { account.id }
+        var finalNumericId = golikeAccountId.ifBlank {
+            GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanUsername).orEmpty()
+        }
+        if (finalNumericId.toLongOrNull() == null) {
+            val found = findExistingTikTokAccountId(client, cleanUsername)
+            if (!found.isNullOrBlank()) {
+                finalNumericId = found
+                GolikeAccountsStore.saveTikTokMapping(context, cleanUsername, finalNumericId)
+            }
+        }
+        val golikeAccId = finalNumericId.ifBlank { account.id }
 
         // Khởi tạo security session lấy signing_key & userId chuẩn bị cho việc nhận và hoàn thành job
         try {

@@ -751,6 +751,8 @@ class XsmmJobRunnerOverlayService : Service() {
                         val dm = resources.displayMetrics
                         val screenW = dm.widthPixels
                         val screenH = dm.heightPixels
+                        // Chuyển tạm về START khi kéo tự do
+                        params.gravity = Gravity.TOP or Gravity.START
                         params.x = (params.x + dx.toInt()).coerceIn(0, (screenW - dp(50)).coerceAtLeast(0))
                         params.y = (params.y + dy.toInt()).coerceIn(0, (screenH - dp(50)).coerceAtLeast(0))
                         lastBubbleX = params.x
@@ -764,11 +766,16 @@ class XsmmJobRunnerOverlayService : Service() {
                         val screenW = dm.widthPixels
                         val viewW = view.width.takeIf { it > 0 } ?: dp(180)
                         val snapRight = (params.x + viewW / 2) > (screenW / 2)
-                        params.x = if (snapRight) (screenW - viewW) else 0
+                        if (snapRight) {
+                            params.gravity = Gravity.TOP or Gravity.END
+                            params.x = 0
+                            overlayUiState.value = overlayUiState.value.copy(dockedSide = OverlaySide.Right)
+                        } else {
+                            params.gravity = Gravity.TOP or Gravity.START
+                            params.x = 0
+                            overlayUiState.value = overlayUiState.value.copy(dockedSide = OverlaySide.Left)
+                        }
                         lastBubbleX = params.x
-                        overlayUiState.value = overlayUiState.value.copy(
-                            dockedSide = if (snapRight) OverlaySide.Right else OverlaySide.Left
-                        )
                         runCatching { windowManager.updateViewLayout(view, params) }
                     }
                 )
@@ -799,14 +806,17 @@ class XsmmJobRunnerOverlayService : Service() {
             val params = overlayParams ?: return@launch
             params.width = WindowManager.LayoutParams.WRAP_CONTENT
             params.height = WindowManager.LayoutParams.WRAP_CONTENT
-            val dm = resources.displayMetrics
-            if (lastBubbleX < 0) {
-                lastBubbleX = dm.widthPixels - dp(220)
+            val isRight = overlayUiState.value.dockedSide == OverlaySide.Right
+            if (isRight) {
+                params.gravity = Gravity.TOP or Gravity.END
+                params.x = 0
+            } else {
+                params.gravity = Gravity.TOP or Gravity.START
+                params.x = 0
             }
             if (lastBubbleY < 0) {
                 lastBubbleY = dp(150)
             }
-            params.x = lastBubbleX
             params.y = lastBubbleY
             runCatching { windowManager.updateViewLayout(view, params) }
         }
@@ -816,6 +826,7 @@ class XsmmJobRunnerOverlayService : Service() {
         serviceScope.launch(Dispatchers.Main) {
             val view = overlayComposeView ?: return@launch
             val params = overlayParams ?: return@launch
+            params.gravity = Gravity.TOP or Gravity.START
             params.width = WindowManager.LayoutParams.MATCH_PARENT
             params.height = WindowManager.LayoutParams.WRAP_CONTENT
             params.x = 0

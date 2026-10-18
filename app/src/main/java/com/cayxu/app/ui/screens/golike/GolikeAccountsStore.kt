@@ -269,6 +269,7 @@ object GolikeAccountsStore {
     }
 
     fun getApiClient(context: Context): GolikeApiClient {
+        GolikeWasmSigner.init(context)
         return GolikeApiClient(
             authToken = getToken(context),
             tToken = getTToken(context),
@@ -281,7 +282,8 @@ object GolikeAccountsStore {
             webVersion = getWebVersion(context),
             webVersionText = getWebVersionText(context),
             webData = getWebData(context),
-            signingKey = getSigningKey(context)
+            signingKey = getSigningKey(context),
+            context = context
         )
     }
 

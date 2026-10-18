@@ -363,7 +363,7 @@ private fun StatusLabel(text: String, roundLeft: Boolean, roundRight: Boolean) {
         topEnd = if (roundRight) 16.dp else 0.dp, bottomEnd = if (roundRight) 16.dp else 0.dp,
     )
     Row(
-        Modifier.widthIn(max = 240.dp)
+        Modifier.widthIn(min = 50.dp, max = 200.dp)
             .background(Color(0xFF10151F), shape)
             .padding(start = if (roundLeft) 12.dp else 16.dp, end = if (roundRight) 12.dp else 16.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
