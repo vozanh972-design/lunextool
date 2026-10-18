@@ -1,5 +1,6 @@
 package com.cayxu.app.ui.screens.golike
 
+import android.util.Base64
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -8,7 +9,13 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.concurrent.TimeUnit
+import javax.crypto.Cipher
+import javax.crypto.Mac
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 /**
  * Client kết nối 100% chuẩn Golike trích xuất từ GoMax 1.2.2
@@ -25,7 +32,8 @@ class GolikeApiClient(
     var webVersion: String? = null,
     var webVersionText: String? = null,
     var webData: String? = null,
-    var signingKey: String? = null
+    var signingKey: String? = null,
+    var userId: Long? = null
 ) {
     companion object {
         const val BASE_URL = "https://gateway.golike.net/api"
@@ -78,7 +86,8 @@ class GolikeApiClient(
         webVersion: String? = null,
         webVersionText: String? = null,
         webData: String? = null,
-        signingKey: String? = null
+        signingKey: String? = null,
+        userId: Long? = null
     ) {
         this.authToken = if (authToken.startsWith("Bearer ", ignoreCase = true)) authToken else "Bearer $authToken"
         this.tToken = tToken
@@ -92,6 +101,7 @@ class GolikeApiClient(
         this.webVersionText = webVersionText ?: this.webVersionText
         this.webData = webData ?: this.webData
         this.signingKey = signingKey ?: this.signingKey
+        this.userId = userId ?: this.userId
     }
 
     private fun safeHeader(value: String?): String? {
@@ -256,11 +266,16 @@ class GolikeApiClient(
             })
         }
 
-        val req = newRequestBuilder("$SECURITY_URL/token")
-            .post(reqPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
-            .build()
+        val bodyStr = reqPayload.toString()
+        val dynamicGAuth = generateGAuth(bodyStr)
 
-        val res = execute(req)
+        val reqBuilder = newRequestBuilder("$SECURITY_URL/token")
+            .post(bodyStr.toRequestBody(JSON_MEDIA_TYPE))
+        if (!dynamicGAuth.isNullOrBlank()) {
+            reqBuilder.header("g-auth", dynamicGAuth)
+        }
+
+        val res = execute(reqBuilder.build())
         return res?.optString("sig")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
             ?: res?.optString("token")?.takeIf { it.isNotBlank() }
@@ -296,10 +311,102 @@ class GolikeApiClient(
         if (key.isNotBlank()) {
             this.signingKey = key
         }
+        val uid = res?.optLong("uid", 0L) ?: 0L
+        if (uid > 0L) {
+            this.userId = uid
+        }
         return res
     }
 
-    // 3c. Lấy chữ ký Token chứng thực cho complete_job
+    // 3c. Sinh chữ ký g-auth chuẩn HKDF-SHA256 + AES-GCM (Reverse engineered từ Golike Web)
+    private fun generateGAuth(bodyString: String): String? {
+        var keyB64 = signingKey?.takeIf { it.isNotBlank() }
+        if (keyB64.isNullOrBlank()) {
+            createSecuritySession()
+            keyB64 = signingKey?.takeIf { it.isNotBlank() }
+        }
+        if (keyB64.isNullOrBlank()) return null
+
+        return try {
+            val rawKey = Base64.decode(
+                keyB64.replace('-', '+').replace('_', '/'),
+                Base64.DEFAULT
+            )
+            val salt = "glk-sectoken-v31-2026q3".toByteArray(Charsets.UTF_8)
+            val info = "aes-gcm-key-v31".toByteArray(Charsets.UTF_8)
+
+            // 1. HKDF Extract: PRK = HMAC-SHA256(salt, rawKey)
+            val macExtract = Mac.getInstance("HmacSHA256")
+            macExtract.init(SecretKeySpec(salt, "HmacSHA256"))
+            val prk = macExtract.doFinal(rawKey)
+
+            // 2. HKDF Expand: OKM = HMAC-SHA256(prk, info + 0x01) -> lấy 32 bytes AES Key
+            val macExpand = Mac.getInstance("HmacSHA256")
+            macExpand.init(SecretKeySpec(prk, "HmacSHA256"))
+            val infoWithOne = ByteArray(info.size + 1)
+            System.arraycopy(info, 0, infoWithOne, 0, info.size)
+            infoWithOne[info.size] = 1
+            val aesKeyBytes = macExpand.doFinal(infoWithOne).copyOf(32)
+
+            // 3. Chuẩn bị payload bảo mật
+            val sha256 = MessageDigest.getInstance("SHA-256")
+            val bodyHash = sha256.digest(bodyString.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+
+            val timestamp = System.currentTimeMillis()
+            val uId = userId ?: 0L
+            val devId = deviceId.orEmpty().ifBlank { "98ecbe1b-e52d-4537-8cfb-ae5f9d7f0237" }
+
+            // r = SHA256(salt + ":" + timestamp + ":" + userId + ":" + bodyHash)[0..16]
+            sha256.reset()
+            val rHash = sha256.digest("glk-sectoken-v31-2026q3:$timestamp:$uId:$bodyHash".toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+                .substring(0, 16)
+
+            // r2 = SHA256(deviceId + "|POST|/api/v1/security/token|" + salt)[16..40]
+            sha256.reset()
+            val r2Hash = sha256.digest("$devId|POST|/api/v1/security/token|glk-sectoken-v31-2026q3".toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+                .substring(16, 40)
+
+            val randBytes = ByteArray(16)
+            SecureRandom().nextBytes(randBytes)
+            val randHex = Base64.encodeToString(randBytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+
+            val payloadObj = JSONObject().apply {
+                put("t", timestamp)
+                put("x", randHex)
+                put("d", devId)
+                put("u", uId)
+                put("n", "POST")
+                put("k", "/api/v1/security/token")
+                put("q", bodyHash)
+                put("r", rHash)
+                put("r2", r2Hash)
+            }
+            val plaintext = payloadObj.toString().toByteArray(Charsets.UTF_8)
+
+            // 4. Mã hóa AES-GCM 128-bit tag
+            val iv = ByteArray(12)
+            SecureRandom().nextBytes(iv)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            val spec = GCMParameterSpec(128, iv)
+            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(aesKeyBytes, "AES"), spec)
+            val ciphertext = cipher.doFinal(plaintext)
+
+            // 5. Kết hợp IV + Ciphertext (Ciphertext đã bao gồm Tag 16 byte ở cuối)
+            val combined = ByteArray(iv.size + ciphertext.size)
+            System.arraycopy(iv, 0, combined, 0, iv.size)
+            System.arraycopy(ciphertext, 0, combined, iv.size, ciphertext.size)
+
+            Base64.encodeToString(combined, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        } catch (e: Exception) {
+            android.util.Log.e("GolikeSecurity", "Lỗi tạo g-auth: ${e.message}")
+            null
+        }
+    }
+
+    // 3d. Lấy chữ ký Token chứng thực cho complete_job
     fun getSecurityToken(adsId: Any, accountId: Any): String? {
         val bodyObj = JSONObject().apply {
             put("ads_id", adsId)
@@ -326,11 +433,16 @@ class GolikeApiClient(
             })
         }
 
-        val req = newRequestBuilder("$SECURITY_URL/token")
-            .post(reqPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
-            .build()
+        val bodyStr = reqPayload.toString()
+        val dynamicGAuth = generateGAuth(bodyStr)
 
-        val res = execute(req)
+        val reqBuilder = newRequestBuilder("$SECURITY_URL/token")
+            .post(bodyStr.toRequestBody(JSON_MEDIA_TYPE))
+        if (!dynamicGAuth.isNullOrBlank()) {
+            reqBuilder.header("g-auth", dynamicGAuth)
+        }
+
+        val res = execute(reqBuilder.build())
         return res?.optString("sig")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
             ?: res?.optString("token")?.takeIf { it.isNotBlank() }

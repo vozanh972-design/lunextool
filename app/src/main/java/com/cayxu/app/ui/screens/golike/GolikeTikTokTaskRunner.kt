@@ -867,17 +867,15 @@ object GolikeTikTokTaskRunner {
         // BƯỚC 3: CHUYỂN NGAY SANG VÒNG LẶP LÀM JOB CỦA GOLIKE
         val golikeAccId = golikeAccountId.ifBlank { account.id }
 
-        // Khởi tạo security session lấy signing_key chuẩn bị cho việc hoàn thành job
-        if (client.signingKey.isNullOrBlank()) {
-            try {
-                val secRes = client.createSecuritySession()
-                val secKey = secRes?.optString("signing_key").orEmpty()
-                if (secKey.isNotBlank()) {
-                    GolikeAccountsStore.saveSigningKey(context, secKey)
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("GolikeTaskRunner", "Lỗi tạo security session: ${e.message}")
+        // Khởi tạo security session lấy signing_key & userId chuẩn bị cho việc nhận và hoàn thành job
+        try {
+            val secRes = client.createSecuritySession()
+            val secKey = secRes?.optString("signing_key").orEmpty()
+            if (secKey.isNotBlank()) {
+                GolikeAccountsStore.saveSigningKey(context, secKey)
             }
+        } catch (e: Exception) {
+            android.util.Log.w("GolikeTaskRunner", "Lỗi tạo security session: ${e.message}")
         }
 
         GolikeRunningManager.runningAccounts[account.id] = true
