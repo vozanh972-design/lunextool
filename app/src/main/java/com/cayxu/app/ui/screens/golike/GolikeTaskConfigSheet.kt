@@ -4,7 +4,7 @@ package com.cayxu.app.ui.screens.golike
 
 import androidx.compose.animation.AnimatedVisibility
 
-import androidx.compose.animation.core.animateColorAsState
+import androidx.compose.animation.animateColorAsState
 
 import androidx.compose.animation.core.animateDpAsState
 
@@ -58,7 +58,7 @@ import androidx.compose.foundation.text.BasicTextField
 
 import androidx.compose.foundation.text.KeyboardOptions
 
-import androidx.compose.foundation.toggleable
+import androidx.compose.foundation.selection.toggleable
 
 import androidx.compose.runtime.Composable
 
