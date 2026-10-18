@@ -957,31 +957,64 @@ object GolikeTikTokTaskRunner {
                 if (cfg.taskCountTarget > 0 && totalCompletedTasks >= cfg.taskCountTarget) {
                     val finishMsg = "Đã hoàn thành đủ mục tiêu ${cfg.taskCountTarget} nhiệm vụ. Dừng chạy."
                     onStatusChange(finishMsg)
+                    XsmmJobStatusBridge.update(finishMsg)
                     GolikeRunningManager.runningAccounts[account.id] = false
                     GolikeRunningManager.runningAccounts[cleanUsername] = false
                     break
                 }
 
-                // Chờ thời gian lấy job (giây) theo cấu hình
+                // ─────────────────────────────────────────────────────────────
+                // BƯỚC 1: THỜI GIAN LẤY JOB (GIÂY) & LƯỚT TRƯỚC KHI LÀM
+                // ─────────────────────────────────────────────────────────────
                 val getJobDelay = if (cfg.getJobMaxSeconds >= cfg.getJobMinSeconds && cfg.getJobMinSeconds > 0) {
                     (cfg.getJobMinSeconds..cfg.getJobMaxSeconds).random()
                 } else {
                     5
                 }
-                onStatusChange("Chờ lấy nhiệm vụ TikTok (${getJobDelay}s)...")
-                delay(getJobDelay * 1000L)
 
-                // 1. Lấy nhiệm vụ (Get Job)
+                if (cfg.swipeBeforeGetJob && TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
+                    // Nếu bật lướt trước khi làm: Kích hoạt lướt video TikTok trong thời gian chờ lấy job
+                    XsmmTaskAutomationBridge.triggerTask(
+                        taskType = "swipe_feed",
+                        swipeBefore = false,
+                        returnHomeAndSwipe = true,
+                        durationSeconds = getJobDelay
+                    )
+                    val getJobStartTime = System.currentTimeMillis()
+                    val getJobEndTime = getJobStartTime + getJobDelay * 1000L
+                    while (System.currentTimeMillis() < getJobEndTime && isActive && GolikeRunningManager.isRunning(account.id)) {
+                        val secLeft = ((getJobEndTime - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
+                        val msg = "Lướt TikTok chờ lấy job (${secLeft}s)..."
+                        onStatusChange(msg)
+                        XsmmJobStatusBridge.update(msg)
+                        delay(1000L)
+                    }
+                } else {
+                    for (sec in getJobDelay downTo 1) {
+                        if (!GolikeRunningManager.isRunning(account.id) || !isActive) break
+                        val msg = "Chờ lấy nhiệm vụ TikTok (${sec}s)..."
+                        onStatusChange(msg)
+                        XsmmJobStatusBridge.update(msg)
+                        delay(1000L)
+                    }
+                }
+
+                if (!GolikeRunningManager.isRunning(account.id) || !isActive) break
+
+                // Gọi API lấy nhiệm vụ (Get Job)
                 val currentWebData = GolikeAccountsStore.getWebData(context)
                 val jobRes = client.getTikTokJob(golikeAccId, currentWebData)
                 if (jobRes == null || !jobRes.optBoolean("success", false)) {
                     consecutiveFails++
                     val errMsg = jobRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Chưa có nhiệm vụ lúc này"
                     onStatusChange("Golike: $errMsg (Chờ ${cfg.delayMinSeconds}s)")
+                    XsmmJobStatusBridge.update("Golike: $errMsg (Chờ ${cfg.delayMinSeconds}s)")
                     onJobFailed(errMsg)
 
                     if (cfg.autoSwitchOnFail && consecutiveFails >= cfg.failJobCountToSwitchAccount) {
-                        onStatusChange("Tạm dừng: Gặp lỗi liên tiếp $consecutiveFails lần")
+                        val stopMsg = "Tạm dừng: Gặp lỗi liên tiếp $consecutiveFails lần"
+                        onStatusChange(stopMsg)
+                        XsmmJobStatusBridge.update(stopMsg)
                         GolikeRunningManager.runningAccounts[account.id] = false
                         break
                     }
@@ -1001,9 +1034,7 @@ object GolikeTikTokTaskRunner {
                 val jobType = jobData.optString("type", "follow")
                 val link = jobData.optString("link")
                 val objectId = jobData.optString("object_id")
-                val countdown = jobRes.optInt("countdown", cfg.delayMinSeconds).coerceAtLeast(3)
 
-                // 2. Thực thi tương tác TikTok
                 val targetUrl = when {
                     link.isNotBlank() -> link
                     jobType.contains("follow", ignoreCase = true) -> "https://www.tiktok.com/@${objectId.removePrefix("@")}"
@@ -1011,13 +1042,37 @@ object GolikeTikTokTaskRunner {
                 }
 
                 val shortType = if (jobType.contains("follow", ignoreCase = true)) "Follow" else "Tym"
-                onStatusChange("Mở $shortType: ${objectId.ifBlank { targetUrl.takeLast(15) }}")
 
-                // Mở ứng dụng TikTok bằng Deep link ưu tiên và package đích danh
+                // ─────────────────────────────────────────────────────────────
+                // BƯỚC 2: THỜI GIAN LÀM JOB (GIÂY) & BẤM FOLLOW
+                // ─────────────────────────────────────────────────────────────
+                val doJobDelay = if (cfg.doJobMaxSeconds >= cfg.doJobMinSeconds && cfg.doJobMinSeconds > 0) {
+                    (cfg.doJobMinSeconds..cfg.doJobMaxSeconds).random()
+                } else {
+                    8
+                }
+
+                val openMsg = "Mở $shortType: ${objectId.ifBlank { targetUrl.takeLast(15) }}"
+                onStatusChange(openMsg)
+                XsmmJobStatusBridge.update(openMsg)
+
                 openTikTokTarget(context, targetUrl, objectId, variant)
-                delay(1500L)
+                delay(1200L)
 
-                // Kích hoạt Accessibility bấm tương tác nếu có quyền
+                // Đếm ngược trong thời gian làm job trước khi bấm Follow
+                val waitDoStartTime = System.currentTimeMillis()
+                val waitDoEndTime = waitDoStartTime + doJobDelay * 1000L
+                while (System.currentTimeMillis() < waitDoEndTime && isActive && GolikeRunningManager.isRunning(account.id)) {
+                    val secLeft = ((waitDoEndTime - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
+                    val waitMsg = "Đang mở @$objectId | Chờ làm job (${secLeft}s)..."
+                    onStatusChange(waitMsg)
+                    XsmmJobStatusBridge.update(waitMsg)
+                    delay(1000L)
+                }
+
+                if (!GolikeRunningManager.isRunning(account.id) || !isActive) break
+
+                // Bấm tương tác (Follow / Like)
                 var taskActionSuccess = false
                 val isA11yEnabled = TikTokAppLauncher.isAccessibilityServiceEnabled(context)
                 if (isA11yEnabled) {
@@ -1025,22 +1080,25 @@ object GolikeTikTokTaskRunner {
                         taskType = jobType,
                         swipeBefore = false,
                         returnHomeAndSwipe = false,
-                        durationSeconds = countdown
+                        durationSeconds = 3
                     )
 
                     val actionStartTime = System.currentTimeMillis()
-                    val maxWaitTime = (countdown + 20) * 1000L
+                    val maxWaitTime = 15000L // Chờ tối đa 15s cho việc tìm và bấm nút
                     while ((GolikeRunningManager.isRunning(account.id) || GolikeRunningManager.isRunning(cleanUsername)) &&
                            isActive && (System.currentTimeMillis() - actionStartTime) < maxWaitTime) {
                         val res = XsmmTaskAutomationBridge.result.value
                         when (res) {
                             is XsmmTaskActionResult.InProgress -> {
                                 onStatusChange(res.message)
+                                XsmmJobStatusBridge.update(res.message)
                             }
                             is XsmmTaskActionResult.Completed -> {
                                 if (res.actionId == actionId) {
                                     taskActionSuccess = res.success
-                                    onStatusChange(if (taskActionSuccess) "Đã bấm $shortType thành công!" else res.message)
+                                    val doneClickMsg = if (taskActionSuccess) "Đã bấm $shortType thành công!" else res.message
+                                    onStatusChange(doneClickMsg)
+                                    XsmmJobStatusBridge.update(doneClickMsg)
                                     break
                                 }
                             }
@@ -1049,51 +1107,98 @@ object GolikeTikTokTaskRunner {
                         delay(400L)
                     }
                 } else {
-                    onStatusChange("Lỗi: Chưa bật quyền Trợ năng (Accessibility) cho app!")
+                    val errA11y = "Lỗi: Chưa bật quyền Trợ năng (Accessibility) cho app!"
+                    onStatusChange(errA11y)
+                    XsmmJobStatusBridge.update(errA11y)
                     taskActionSuccess = false
                 }
 
-                if (!GolikeRunningManager.isRunning(account.id)) break
+                if (!GolikeRunningManager.isRunning(account.id) || !isActive) break
 
-                // 3. Báo hoàn thành (Chỉ báo cáo nếu đã bấm tương tác thành công!)
+                // ─────────────────────────────────────────────────────────────
+                // BƯỚC 3 & 4: FOLLOW XONG LƯỚT TIN & THỜI GIAN HOÀN THÀNH JOB
+                // ─────────────────────────────────────────────────────────────
                 if (taskActionSuccess) {
-                    // Chờ thời gian hoàn thành job (giây) theo cấu hình trước khi gửi báo cáo
-                    val completeDelay = if (cfg.completeJobMaxSeconds >= cfg.completeJobMinSeconds && cfg.completeJobMinSeconds > 0) {
+                    val completeJobDelay = if (cfg.completeJobMaxSeconds >= cfg.completeJobMinSeconds && cfg.completeJobMinSeconds > 0) {
                         (cfg.completeJobMinSeconds..cfg.completeJobMaxSeconds).random()
                     } else {
-                        15
+                        20
                     }
-                    onStatusChange("Đã bấm $shortType. Chờ hoàn tất (${completeDelay}s)...")
-                    delay(completeDelay * 1000L)
 
-                    onStatusChange("Đang gửi báo cáo hoàn thành...")
+                    // Nếu người dùng BẬT "Follow xong lướt tin": quay lại Home và lướt tin video
+                    if (cfg.swipeAfterFollow && isA11yEnabled) {
+                        XsmmTaskAutomationBridge.triggerTask(
+                            taskType = "swipe_feed",
+                            swipeBefore = false,
+                            returnHomeAndSwipe = true,
+                            durationSeconds = completeJobDelay
+                        )
+                        val compStartTime = System.currentTimeMillis()
+                        val compEndTime = compStartTime + completeJobDelay * 1000L
+                        while (System.currentTimeMillis() < compEndTime && isActive && GolikeRunningManager.isRunning(account.id)) {
+                            val secLeft = ((compEndTime - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
+                            val compMsg = "Đã $shortType | Lướt tin chờ báo cáo (${secLeft}s)..."
+                            onStatusChange(compMsg)
+                            XsmmJobStatusBridge.update(compMsg)
+                            delay(1000L)
+                        }
+                    } else {
+                        // Nếu TẮT: đứng yên đếm ngược đủ thời gian hoàn thành
+                        for (sec in completeJobDelay downTo 1) {
+                            if (!GolikeRunningManager.isRunning(account.id) || !isActive) break
+                            val compMsg = "Đã $shortType | Chờ hoàn tất (${sec}s)..."
+                            onStatusChange(compMsg)
+                            XsmmJobStatusBridge.update(compMsg)
+                            delay(1000L)
+                        }
+                    }
+
+                    if (!GolikeRunningManager.isRunning(account.id) || !isActive) break
+
+                    val reportMsg = "Đang gửi báo cáo hoàn thành..."
+                    onStatusChange(reportMsg)
+                    XsmmJobStatusBridge.update(reportMsg)
+
                     val compRes = client.completeTikTokJob(adsId, golikeAccId)
-
                     if (compRes != null && compRes.optBoolean("success", false)) {
                         totalCompletedTasks++
                         val price = compRes.optJSONObject("data")?.optInt("prices", 35) ?: 35
-                        onStatusChange("Hoàn thành #$totalCompletedTasks (+$price đ) | Nghỉ ${cfg.delayMinSeconds}s")
+                        val succMsg = "Hoàn thành #$totalCompletedTasks (+$price đ) | Nghỉ ${cfg.delayMinSeconds}s"
+                        onStatusChange(succMsg)
+                        XsmmJobStatusBridge.update(succMsg)
                         onJobSuccess(price)
                     } else {
                         val failMsg = compRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Lỗi hoàn thành nhiệm vụ"
                         onStatusChange("Lỗi: $failMsg")
+                        XsmmJobStatusBridge.update("Lỗi: $failMsg")
                         client.skipJob(adsId, objectId, golikeAccId, jobType)
                         onJobFailed(failMsg)
                     }
                 } else {
-                    // Nếu không bấm được Follow (ví dụ nick bị chặn hoặc không tìm thấy nút) -> BỎ QUA NHIỆM VỤ, KHÔNG BÁO HOÀN THÀNH
+                    // Nếu không bấm được Follow (ví dụ nick bị chặn hoặc không tìm thấy nút) -> BỎ QUA NHIỆM VỤ
                     val skipMsg = "Không bấm được $shortType -> Bỏ qua nhiệm vụ"
                     onStatusChange(skipMsg)
+                    XsmmJobStatusBridge.update(skipMsg)
                     client.skipJob(adsId, objectId, golikeAccId, jobType)
                     onJobFailed(skipMsg)
                 }
 
-                // Delay ngẫu nhiên giữa các nhiệm vụ
+                // ─────────────────────────────────────────────────────────────
+                // BƯỚC 5: NGHỈ GIỮA CÁC JOB (GIÂY)
+                // ─────────────────────────────────────────────────────────────
                 val randomDelay = (cfg.delayMinSeconds..cfg.delayMaxSeconds).random()
-                delay(randomDelay * 1000L)
+                for (sec in randomDelay downTo 1) {
+                    if (!GolikeRunningManager.isRunning(account.id) || !isActive) break
+                    val restMsg = "Nghỉ giữa các job (${sec}s)..."
+                    onStatusChange(restMsg)
+                    XsmmJobStatusBridge.update(restMsg)
+                    delay(1000L)
+                }
 
             } catch (e: Exception) {
-                onStatusChange("Lỗi: ${e.message}")
+                val err = "Lỗi: ${e.message}"
+                onStatusChange(err)
+                XsmmJobStatusBridge.update(err)
                 delay(5000L)
             }
         }
