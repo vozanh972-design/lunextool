@@ -108,10 +108,26 @@ object TikTokAppLauncher {
     }
 
     /** Mở link profile / video trên TikTok hoặc trình duyệt */
-    fun openUserProfile(context: Context, url: String): Boolean {
+    fun openUserProfile(context: Context, url: String, variant: TikTokAppVariant? = null): Boolean {
         return try {
             val cleanUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) "https://$url" else url
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)).apply {
+            val uri = Uri.parse(cleanUrl)
+
+            if (variant != null) {
+                val candidates = candidatePackages(variant)
+                for (pkg in candidates) {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                            setPackage(pkg)
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        context.startActivity(intent)
+                        return true
+                    } catch (_: Exception) {}
+                }
+            }
+
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)

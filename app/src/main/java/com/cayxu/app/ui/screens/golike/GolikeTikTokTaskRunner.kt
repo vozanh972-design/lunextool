@@ -940,42 +940,74 @@ object GolikeTikTokTaskRunner {
                 val shortType = if (jobType.contains("follow", ignoreCase = true)) "Follow" else "Tym"
                 onStatusChange("Mở $shortType: ${objectId.ifBlank { targetUrl.takeLast(15) }}")
 
-                TikTokAppLauncher.openUserProfile(context, targetUrl)
-                delay(1200L)
+                TikTokAppLauncher.openUserProfile(context, targetUrl, variant)
+                delay(1500L)
 
                 // Kích hoạt Accessibility bấm tương tác nếu có quyền
-                if (TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
-                    XsmmTaskAutomationBridge.triggerTask(
+                var taskActionSuccess = false
+                val isA11yEnabled = TikTokAppLauncher.isAccessibilityServiceEnabled(context)
+                if (isA11yEnabled) {
+                    val actionId = XsmmTaskAutomationBridge.triggerTask(
                         taskType = jobType,
                         swipeBefore = false,
-                        returnHomeAndSwipe = true,
+                        returnHomeAndSwipe = false,
                         durationSeconds = countdown
                     )
+
+                    val actionStartTime = System.currentTimeMillis()
+                    val maxWaitTime = (countdown + 15) * 1000L
+                    while ((GolikeRunningManager.isRunning(account.id) || GolikeRunningManager.isRunning(cleanUsername)) &&
+                           isActive && (System.currentTimeMillis() - actionStartTime) < maxWaitTime) {
+                        val res = XsmmTaskAutomationBridge.result.value
+                        when (res) {
+                            is XsmmTaskActionResult.InProgress -> {
+                                onStatusChange(res.message)
+                            }
+                            is XsmmTaskActionResult.Completed -> {
+                                if (res.actionId == actionId) {
+                                    taskActionSuccess = res.success
+                                    onStatusChange(if (taskActionSuccess) "Đã bấm $shortType thành công!" else res.message)
+                                    break
+                                }
+                            }
+                            else -> Unit
+                        }
+                        delay(400L)
+                    }
+                } else {
+                    onStatusChange("Chờ bấm $shortType thủ công (${countdown}s)...")
+                    for (sec in countdown downTo 1) {
+                        if (!GolikeRunningManager.isRunning(account.id)) break
+                        onStatusChange("Làm job $shortType | Chờ nhận xu sau ${sec}s...")
+                        delay(1000L)
+                    }
+                    taskActionSuccess = true
                 }
 
-                // Chờ đếm ngược an toàn
-                for (sec in countdown downTo 1) {
-                    if (!GolikeRunningManager.isRunning(account.id)) break
-                    onStatusChange("Làm job $shortType | Chờ nhận xu sau ${sec}s...")
-                    delay(1000L)
-                }
                 if (!GolikeRunningManager.isRunning(account.id)) break
 
-                // 3. Báo hoàn thành (Complete Job)
-                onStatusChange("Đang gửi báo cáo hoàn thành...")
-                val compRes = client.completeTikTokJob(adsId, golikeAccId)
+                // 3. Báo hoàn thành (Chỉ báo cáo nếu đã bấm tương tác thành công!)
+                if (taskActionSuccess) {
+                    delay(1200L)
+                    onStatusChange("Đang gửi báo cáo hoàn thành...")
+                    val compRes = client.completeTikTokJob(adsId, golikeAccId)
 
-                if (compRes != null && compRes.optBoolean("success", false)) {
-                    val price = compRes.optJSONObject("data")?.optInt("prices", 35) ?: 35
-                    onStatusChange("Hoàn thành +$price đ | Nghỉ ${cfg.delayMinSeconds}s")
-                    onJobSuccess(price)
+                    if (compRes != null && compRes.optBoolean("success", false)) {
+                        val price = compRes.optJSONObject("data")?.optInt("prices", 35) ?: 35
+                        onStatusChange("Hoàn thành +$price đ | Nghỉ ${cfg.delayMinSeconds}s")
+                        onJobSuccess(price)
+                    } else {
+                        val failMsg = compRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Lỗi hoàn thành nhiệm vụ"
+                        onStatusChange("Lỗi: $failMsg")
+                        client.skipJob(adsId, objectId, golikeAccId, jobType)
+                        onJobFailed(failMsg)
+                    }
                 } else {
-                    val failMsg = compRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Lỗi hoàn thành nhiệm vụ"
-                    onStatusChange("Lỗi: $failMsg")
-
-                    // Bỏ qua nhiệm vụ (Skip Job)
+                    // Nếu không bấm được Follow (ví dụ nick bị chặn hoặc không tìm thấy nút) -> BỎ QUA NHIỆM VỤ, KHÔNG BÁO HOÀN THÀNH
+                    val skipMsg = "Không tìm thấy nút $shortType -> Bỏ qua nhiệm vụ"
+                    onStatusChange(skipMsg)
                     client.skipJob(adsId, objectId, golikeAccId, jobType)
-                    onJobFailed(failMsg)
+                    onJobFailed(skipMsg)
                 }
 
                 // Delay ngẫu nhiên giữa các nhiệm vụ
