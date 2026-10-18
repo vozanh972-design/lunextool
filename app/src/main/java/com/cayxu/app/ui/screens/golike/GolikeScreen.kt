@@ -119,9 +119,7 @@ fun GolikeScreen(
 }
 
 /* ───────────────────────────── Khối dùng chung trong file này ───────────────────────────── */
-
-val GolikeOrange = Color(0xFFF59E0B)
-val GolikeOrangeSoft = Color(0xFFFFF7ED)
+// GolikeOrange và GolikeOrangeSoft dùng chung từ GolikeAccountsScreen.kt trong cùng package
 
 private val IconBack = listOf("M19 12H5M11 6l-6 6 6 6")
 private val IconLoginArrow = listOf("M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-4M10 17l5-5-5-5M15 12H3")

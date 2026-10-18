@@ -829,17 +829,19 @@ fun GolikeAccountScreen(navController: NavController) {
                             }
                         )
                         withContext(Dispatchers.Main) {
-                            if (linkResult.success) {
+                            if (linkResult.isSuccess) {
+                                val linkedAcc = linkResult.getOrNull()
                                 val updatedAcc = acc.copy(
                                     isGolikeLinked = true,
-                                    golikeAccountId = linkResult.accountId.orEmpty(),
+                                    golikeAccountId = linkedAcc?.golikeAccountId.orEmpty(),
                                     lastStatus = "Đã liên kết Golike • Sẵn sàng"
                                 )
                                 GolikeAccountsStore.addOrUpdateAccount(context, updatedAcc)
                                 reloadAccounts()
                                 Toast.makeText(context, "Đã liên kết @" + cleanHandle + " thành công!", Toast.LENGTH_SHORT).show()
                             } else {
-                                Toast.makeText(context, "Liên kết thất bại: " + linkResult.message, Toast.LENGTH_LONG).show()
+                                val err = linkResult.exceptionOrNull()?.message ?: "Thất bại"
+                                Toast.makeText(context, "Liên kết thất bại: " + err, Toast.LENGTH_LONG).show()
                             }
                         }
                     } catch (e: Exception) {
