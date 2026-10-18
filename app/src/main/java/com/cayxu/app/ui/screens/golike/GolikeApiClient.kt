@@ -64,6 +64,12 @@ class GolikeApiClient(
         this.signingKey = signingKey ?: this.signingKey
     }
 
+    private fun safeHeader(value: String?): String? {
+        if (value.isNullOrBlank()) return null
+        val filtered = value.filter { it.code in 0x20..0x7E }.trim()
+        return filtered.ifBlank { null }
+    }
+
     private fun newRequestBuilder(url: String): Request.Builder {
         val builder = Request.Builder()
             .url(url)
@@ -74,13 +80,13 @@ class GolikeApiClient(
             .header("Content-Type", "application/json;charset=utf-8")
 
         // Bộ token xác thực
-        authToken?.let { builder.header("Authorization", if (it.startsWith("Bearer ", ignoreCase = true)) it else "Bearer $it") }
-        tToken?.let { if (it.isNotBlank()) builder.header("t", it) }
+        safeHeader(authToken)?.let { builder.header("Authorization", if (it.startsWith("Bearer ", ignoreCase = true)) it else "Bearer $it") }
+        safeHeader(tToken)?.let { builder.header("t", it) }
 
         // Bộ headers định danh của Golike (chuẩn GoMax)
-        deviceId?.let { if (it.isNotBlank()) builder.header("g-device-id", it) }
-        username?.let { if (it.isNotBlank()) builder.header("g-username", it) }
-        gAuth?.let { if (it.isNotBlank()) builder.header("g-auth", it) }
+        safeHeader(deviceId)?.let { builder.header("g-device-id", it) }
+        safeHeader(username)?.let { builder.header("g-username", it) }
+        safeHeader(gAuth)?.let { builder.header("g-auth", it) }
 
         // BỔ SUNG CÁC HEADERS VERSION BẮT BUỘC (Tránh lỗi cập nhật phiên bản):
         val finalVersion = webVersionText?.takeIf { it.isNotBlank() }
@@ -89,9 +95,9 @@ class GolikeApiClient(
             ?: "26.09.17.1"
         val finalClient = client?.takeIf { it.isNotBlank() } ?: "web"
         val finalScheme = scheme?.takeIf { it.isNotBlank() } ?: "https"
-        builder.header("g-version", finalVersion)
-        builder.header("g-client", finalClient)
-        builder.header("g-scheme", finalScheme)
+        safeHeader(finalVersion)?.let { builder.header("g-version", it) }
+        safeHeader(finalClient)?.let { builder.header("g-client", it) }
+        safeHeader(finalScheme)?.let { builder.header("g-scheme", it) }
 
         return builder
     }

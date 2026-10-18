@@ -528,8 +528,9 @@ object GolikeTikTokTaskRunner {
         onJobSuccess: (earned: Int) -> Unit,
         onJobFailed: (reason: String) -> Unit
     ) = withContext(Dispatchers.IO) {
-        val cfg = GolikeRunConfigStore.get(context, "tiktok")
-        val cleanUsername = account.id.ifBlank { account.username }.trim().removePrefix("@").lowercase()
+        try {
+            val cfg = GolikeRunConfigStore.get(context, "tiktok")
+            val cleanUsername = account.id.ifBlank { account.username }.trim().removePrefix("@").lowercase()
 
         // ── Nạp đầy đủ 100% session và headers phiên bản từ SharedPreferences vào client trước khi gọi API ──
         val token = GolikeAccountsStore.getToken(context).orEmpty()
@@ -974,6 +975,16 @@ object GolikeTikTokTaskRunner {
             } catch (e: Exception) {
                 onStatusChange("Lỗi: ${e.message}")
                 delay(5000L)
+            }
+        }
+        } catch (t: Throwable) {
+            if (t !is kotlinx.coroutines.CancellationException) {
+                android.util.Log.e("GolikeTaskRunner", "Lỗi ngoại lệ trong runTikTokTaskLoop: ${t.message}", t)
+                val errMsg = "Golike: ${t.message ?: "Đã dừng nhiệm vụ"}"
+                onStatusChange(errMsg)
+                XsmmJobStatusBridge.update(errMsg)
+                onJobFailed(errMsg)
+                GolikeRunningManager.runningAccounts[account.id] = false
             }
         }
     }

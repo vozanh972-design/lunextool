@@ -426,7 +426,7 @@ private fun LogoBadge(doneTasks: Int) {
         contentAlignment = Alignment.Center,
     ) {
         androidx.compose.foundation.Image(
-            painter = androidx.compose.ui.res.painterResource(id = com.cayxu.app.R.mipmap.ic_launcher),
+            painter = androidx.compose.ui.res.painterResource(id = com.cayxu.app.R.drawable.ic_app_logo),
             contentDescription = "App Icon",
             modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp))
         )

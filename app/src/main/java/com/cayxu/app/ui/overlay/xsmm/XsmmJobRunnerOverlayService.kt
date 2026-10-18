@@ -571,114 +571,121 @@ class XsmmJobRunnerOverlayService : Service() {
     private fun startGolikeAutomationRunner(variant: TikTokAppVariant) {
         runnerJob?.cancel()
         runnerJob = serviceScope.launch(Dispatchers.IO) {
-            val token = GolikeAccountsStore.getToken(applicationContext)
-            if (token.isNullOrBlank() || !GolikeAccountsStore.isLoggedIn(applicationContext)) {
-                XsmmJobStatusBridge.update("Lỗi: Chưa đăng nhập Golike")
-                return@launch
-            }
-            val client = GolikeAccountsStore.getApiClient(applicationContext)
+            try {
+                val token = GolikeAccountsStore.getToken(applicationContext)
+                if (token.isNullOrBlank() || !GolikeAccountsStore.isLoggedIn(applicationContext)) {
+                    XsmmJobStatusBridge.update("Lỗi: Chưa đăng nhập Golike")
+                    return@launch
+                }
+                val client = GolikeAccountsStore.getApiClient(applicationContext)
 
-            val activeList = accountHandles.ifEmpty { listOf("") }
-            val config = GolikeRunConfigStore.get(applicationContext, "tiktok")
+                val activeList = accountHandles.ifEmpty { listOf("") }
+                val config = GolikeRunConfigStore.get(applicationContext, "tiktok")
 
-            activeList.forEach { handle ->
-                val clean = handle.trim().removePrefix("@").lowercase()
-                GolikeRunningManager.runningAccounts[clean] = true
-            }
-
-            XsmmJobStatusBridge.update("Bắt đầu chạy Golike TikTok...")
-
-            while (isActive) {
-                for (handle in activeList) {
-                    if (!isActive) break
-
-                    // Kiểm tra giới hạn số lượng hoàn thành
-                    if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) {
-                        XsmmJobStatusBridge.update("Đã đạt mục tiêu $totalCompleted nhiệm vụ. Hoàn thành!")
-                        return@launch
-                    }
-
-                    checkPauseWait()
-
-                    val cleanHandle = handle.trim().removePrefix("@").lowercase()
-                    val currentAccounts = GolikeAccountsStore.getAccounts(applicationContext, "tiktok")
-                    var matchedAcc = currentAccounts.firstOrNull {
-                        it.username.trim().removePrefix("@").equals(cleanHandle, ignoreCase = true) || it.id.equals(cleanHandle, ignoreCase = true)
-                    } ?: GolikeAccount(
-                        id = cleanHandle,
-                        platform = "tiktok",
-                        username = cleanHandle,
-                        avatar = "",
-                        isLive = true,
-                        isGolikeLinked = false,
-                        lastStatus = "Sẵn sàng"
-                    )
-
-                    // Tự động kiểm tra và gắn golikeAccountId từ cache hoặc server Golike
-                    var resolvedId = GolikeAccountsStore.getTikTokAccountIdFromMap(applicationContext, cleanHandle).orEmpty()
-                    if (resolvedId.isBlank() && matchedAcc.golikeAccountId.isNotBlank()) {
-                        resolvedId = matchedAcc.golikeAccountId
-                    }
-                    if (resolvedId.isBlank()) {
-                        val serverId = GolikeTikTokTaskRunner.findExistingTikTokAccountId(client, cleanHandle)
-                        if (!serverId.isNullOrBlank()) {
-                            resolvedId = serverId
-                            GolikeAccountsStore.saveTikTokMapping(applicationContext, cleanHandle, resolvedId)
-                        }
-                    }
-                    if (resolvedId.isNotBlank()) {
-                        matchedAcc = matchedAcc.copy(golikeAccountId = resolvedId, isGolikeLinked = true)
-                    }
-
-                    GolikeRunningManager.runningAccounts[matchedAcc.id] = true
-                    launch(Dispatchers.Main) {
-                        updateProgressDisplay()
-                    }
-
-                    // Tự động thu nhỏ màn nổi khi bắt đầu chạy để không che màn hình
-                    launch(Dispatchers.Main) {
-                        if (!isPaused) showMiniBubble()
-                    }
-
-                    GolikeTikTokTaskRunner.runTikTokTaskLoop(
-                        context = applicationContext,
-                        account = matchedAcc,
-                        client = client,
-                        variant = variant,
-                        onStatusChange = { newStatus ->
-                            XsmmJobStatusBridge.update(newStatus)
-                            GolikeRunningManager.statusMap[matchedAcc.id] = newStatus
-                            GolikeAccountsStore.updateAccountProgress(applicationContext, "tiktok", matchedAcc.id, newStatus)
-                        },
-                        onJobSuccess = { earned ->
-                            totalCompleted++
-                            totalEarnedPoints += earned
-                            val curSucc = (GolikeRunningManager.successCountMap[matchedAcc.id] ?: matchedAcc.successCount) + 1
-                            GolikeRunningManager.successCountMap[matchedAcc.id] = curSucc
-
-                            val newBal = GolikeAccountsStore.getBalance(applicationContext) + earned
-                            GolikeAccountsStore.updateBalance(applicationContext, newBal)
-                            GolikeSession.balance.value = newBal
-
-                            GolikeAccountsStore.updateAccountProgress(applicationContext, "tiktok", matchedAcc.id, "Thành công +$earned đ", isSuccess = true)
-                            launch(Dispatchers.Main) {
-                                updateProgressDisplay()
-                            }
-                            XsmmJobStatusBridge.update("+$earned đ (Xong $totalCompleted NV)")
-                        },
-                        onJobFailed = { reason ->
-                            val curErr = (GolikeRunningManager.errorCountMap[matchedAcc.id] ?: matchedAcc.errorCount) + 1
-                            GolikeRunningManager.errorCountMap[matchedAcc.id] = curErr
-                            GolikeRunningManager.lastErrorDetailMap[matchedAcc.id] = reason
-                            GolikeAccountsStore.updateAccountProgress(applicationContext, "tiktok", matchedAcc.id, "Lỗi: $reason", isSuccess = false, errorDetail = reason)
-                            XsmmJobStatusBridge.update("Lỗi: $reason")
-                        }
-                    )
-
-                    checkPauseWait()
+                activeList.forEach { handle ->
+                    val clean = handle.trim().removePrefix("@").lowercase()
+                    GolikeRunningManager.runningAccounts[clean] = true
                 }
 
-                delay(2000L)
+                XsmmJobStatusBridge.update("Bắt đầu chạy Golike TikTok...")
+
+                while (isActive) {
+                    for (handle in activeList) {
+                        if (!isActive) break
+
+                        // Kiểm tra giới hạn số lượng hoàn thành
+                        if (config.taskCountTarget > 0 && totalCompleted >= config.taskCountTarget) {
+                            XsmmJobStatusBridge.update("Đã đạt mục tiêu $totalCompleted nhiệm vụ. Hoàn thành!")
+                            return@launch
+                        }
+
+                        checkPauseWait()
+
+                        val cleanHandle = handle.trim().removePrefix("@").lowercase()
+                        val currentAccounts = GolikeAccountsStore.getAccounts(applicationContext, "tiktok")
+                        var matchedAcc = currentAccounts.firstOrNull {
+                            it.username.trim().removePrefix("@").equals(cleanHandle, ignoreCase = true) || it.id.equals(cleanHandle, ignoreCase = true)
+                        } ?: GolikeAccount(
+                            id = cleanHandle,
+                            platform = "tiktok",
+                            username = cleanHandle,
+                            avatar = "",
+                            isLive = true,
+                            isGolikeLinked = false,
+                            lastStatus = "Sẵn sàng"
+                        )
+
+                        // Tự động kiểm tra và gắn golikeAccountId từ cache hoặc server Golike
+                        var resolvedId = GolikeAccountsStore.getTikTokAccountIdFromMap(applicationContext, cleanHandle).orEmpty()
+                        if (resolvedId.isBlank() && matchedAcc.golikeAccountId.isNotBlank()) {
+                            resolvedId = matchedAcc.golikeAccountId
+                        }
+                        if (resolvedId.isBlank()) {
+                            val serverId = GolikeTikTokTaskRunner.findExistingTikTokAccountId(client, cleanHandle)
+                            if (!serverId.isNullOrBlank()) {
+                                resolvedId = serverId
+                                GolikeAccountsStore.saveTikTokMapping(applicationContext, cleanHandle, resolvedId)
+                            }
+                        }
+                        if (resolvedId.isNotBlank()) {
+                            matchedAcc = matchedAcc.copy(golikeAccountId = resolvedId, isGolikeLinked = true)
+                        }
+
+                        GolikeRunningManager.runningAccounts[matchedAcc.id] = true
+                        launch(Dispatchers.Main) {
+                            updateProgressDisplay()
+                        }
+
+                        // Tự động thu nhỏ màn nổi khi bắt đầu chạy để không che màn hình
+                        launch(Dispatchers.Main) {
+                            if (!isPaused) showMiniBubble()
+                        }
+
+                        GolikeTikTokTaskRunner.runTikTokTaskLoop(
+                            context = applicationContext,
+                            account = matchedAcc,
+                            client = client,
+                            variant = variant,
+                            onStatusChange = { newStatus ->
+                                XsmmJobStatusBridge.update(newStatus)
+                                GolikeRunningManager.statusMap[matchedAcc.id] = newStatus
+                                GolikeAccountsStore.updateAccountProgress(applicationContext, "tiktok", matchedAcc.id, newStatus)
+                            },
+                            onJobSuccess = { earned ->
+                                totalCompleted++
+                                totalEarnedPoints += earned
+                                val curSucc = (GolikeRunningManager.successCountMap[matchedAcc.id] ?: matchedAcc.successCount) + 1
+                                GolikeRunningManager.successCountMap[matchedAcc.id] = curSucc
+
+                                val newBal = GolikeAccountsStore.getBalance(applicationContext) + earned
+                                GolikeAccountsStore.updateBalance(applicationContext, newBal)
+                                GolikeSession.balance.value = newBal
+
+                                GolikeAccountsStore.updateAccountProgress(applicationContext, "tiktok", matchedAcc.id, "Thành công +$earned đ", isSuccess = true)
+                                launch(Dispatchers.Main) {
+                                    updateProgressDisplay()
+                                }
+                                XsmmJobStatusBridge.update("+$earned đ (Xong $totalCompleted NV)")
+                            },
+                            onJobFailed = { reason ->
+                                val curErr = (GolikeRunningManager.errorCountMap[matchedAcc.id] ?: matchedAcc.errorCount) + 1
+                                GolikeRunningManager.errorCountMap[matchedAcc.id] = curErr
+                                GolikeRunningManager.lastErrorDetailMap[matchedAcc.id] = reason
+                                GolikeAccountsStore.updateAccountProgress(applicationContext, "tiktok", matchedAcc.id, "Lỗi: $reason", isSuccess = false, errorDetail = reason)
+                                XsmmJobStatusBridge.update("Lỗi: $reason")
+                            }
+                        )
+
+                        checkPauseWait()
+                    }
+
+                    delay(2000L)
+                }
+            } catch (t: Throwable) {
+                if (t !is kotlinx.coroutines.CancellationException) {
+                    android.util.Log.e("GolikeRunner", "Lỗi trong startGolikeAutomationRunner", t)
+                    XsmmJobStatusBridge.update("Golike: ${t.message ?: "Đã dừng"}")
+                }
             }
         }
     }
