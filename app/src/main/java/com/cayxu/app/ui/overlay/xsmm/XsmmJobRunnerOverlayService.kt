@@ -744,6 +744,32 @@ class XsmmJobRunnerOverlayService : Service() {
                     onPauseResume = { togglePause() },
                     onDockSideChange = { side ->
                         overlayUiState.value = overlayUiState.value.copy(dockedSide = side)
+                    },
+                    onBubbleDragDelta = { dx, dy ->
+                        val view = overlayComposeView ?: return@RunningOverlayWindow
+                        val params = overlayParams ?: return@RunningOverlayWindow
+                        val dm = resources.displayMetrics
+                        val screenW = dm.widthPixels
+                        val screenH = dm.heightPixels
+                        params.x = (params.x + dx.toInt()).coerceIn(0, (screenW - dp(50)).coerceAtLeast(0))
+                        params.y = (params.y + dy.toInt()).coerceIn(0, (screenH - dp(50)).coerceAtLeast(0))
+                        lastBubbleX = params.x
+                        lastBubbleY = params.y
+                        runCatching { windowManager.updateViewLayout(view, params) }
+                    },
+                    onBubbleDragEnd = {
+                        val view = overlayComposeView ?: return@RunningOverlayWindow
+                        val params = overlayParams ?: return@RunningOverlayWindow
+                        val dm = resources.displayMetrics
+                        val screenW = dm.widthPixels
+                        val viewW = view.width.takeIf { it > 0 } ?: dp(180)
+                        val snapRight = (params.x + viewW / 2) > (screenW / 2)
+                        params.x = if (snapRight) (screenW - viewW) else 0
+                        lastBubbleX = params.x
+                        overlayUiState.value = overlayUiState.value.copy(
+                            dockedSide = if (snapRight) OverlaySide.Right else OverlaySide.Left
+                        )
+                        runCatching { windowManager.updateViewLayout(view, params) }
                     }
                 )
             }
@@ -768,25 +794,39 @@ class XsmmJobRunnerOverlayService : Service() {
 
     private fun showMiniBubble() {
         overlayUiState.value = overlayUiState.value.copy(expanded = false)
-        serviceScope.launch {
-            delay(160L) // Đợi hoạt ảnh thu nhỏ (140ms) hoàn tất trước khi thu hẹp khung window
-            updateOverlayWindowSize(false)
+        serviceScope.launch(Dispatchers.Main) {
+            val view = overlayComposeView ?: return@launch
+            val params = overlayParams ?: return@launch
+            params.width = WindowManager.LayoutParams.WRAP_CONTENT
+            params.height = WindowManager.LayoutParams.WRAP_CONTENT
+            val dm = resources.displayMetrics
+            if (lastBubbleX < 0) {
+                lastBubbleX = dm.widthPixels - dp(220)
+            }
+            if (lastBubbleY < 0) {
+                lastBubbleY = dp(150)
+            }
+            params.x = lastBubbleX
+            params.y = lastBubbleY
+            runCatching { windowManager.updateViewLayout(view, params) }
         }
     }
 
     private fun showFullPanel() {
-        updateOverlayWindowSize(true) // Mở rộng khung window trước để không bị cắt xén khi bung thẻ
-        overlayUiState.value = overlayUiState.value.copy(expanded = true)
+        serviceScope.launch(Dispatchers.Main) {
+            val view = overlayComposeView ?: return@launch
+            val params = overlayParams ?: return@launch
+            params.width = WindowManager.LayoutParams.MATCH_PARENT
+            params.height = WindowManager.LayoutParams.WRAP_CONTENT
+            params.x = 0
+            params.y = dp(120)
+            runCatching { windowManager.updateViewLayout(view, params) }
+            overlayUiState.value = overlayUiState.value.copy(expanded = true)
+        }
     }
 
     private fun updateOverlayWindowSize(expanded: Boolean) {
-        val view = overlayComposeView ?: return
-        val params = overlayParams ?: return
-        val targetH = if (expanded) dp(500) else dp(380)
-        if (params.height != targetH) {
-            params.height = targetH
-            runCatching { windowManager.updateViewLayout(view, params) }
-        }
+        if (expanded) showFullPanel() else showMiniBubble()
     }
 
     override fun onDestroy() {

@@ -1,5 +1,8 @@
 package com.cayxu.app.ui.screens.golike
 
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -31,9 +34,36 @@ class GolikeApiClient(
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 
+    private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
+
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
+        .cookieJar(object : CookieJar {
+            override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+                val host = url.host
+                synchronized(cookieStore) {
+                    val existing = cookieStore.getOrPut(host) { mutableListOf() }
+                    for (cookie in cookies) {
+                        existing.removeAll { it.name == cookie.name }
+                        existing.add(cookie)
+                    }
+                }
+            }
+
+            override fun loadForRequest(url: HttpUrl): List<Cookie> {
+                val host = url.host
+                synchronized(cookieStore) {
+                    val result = mutableListOf<Cookie>()
+                    cookieStore.forEach { (savedHost, cookies) ->
+                        if (host.endsWith(savedHost) || savedHost.endsWith(host) || (savedHost.contains("golike.net") && host.contains("golike.net"))) {
+                            result.addAll(cookies)
+                        }
+                    }
+                    return result
+                }
+            }
+        })
         .build()
 
     fun updateSession(
@@ -77,7 +107,15 @@ class GolikeApiClient(
             .header("Origin", "https://app.golike.net")
             .header("Referer", "https://app.golike.net/")
             .header("Accept", "application/json, text/plain, */*")
+            .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
             .header("Content-Type", "application/json;charset=utf-8")
+            .header("priority", "u=1, i")
+            .header("sec-ch-ua", "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"")
+            .header("sec-ch-ua-mobile", "?1")
+            .header("sec-ch-ua-platform", "\"iOS\"")
+            .header("sec-fetch-dest", "empty")
+            .header("sec-fetch-mode", "cors")
+            .header("sec-fetch-site", "same-site")
 
         // Bộ token xác thực
         safeHeader(authToken)?.let { builder.header("Authorization", if (it.startsWith("Bearer ", ignoreCase = true)) it else "Bearer $it") }
@@ -94,7 +132,7 @@ class GolikeApiClient(
             ?: webVersion?.takeIf { it.isNotBlank() }
             ?: "26.09.17.1"
         val finalClient = client?.takeIf { it.isNotBlank() } ?: "web"
-        val finalScheme = scheme?.takeIf { it.isNotBlank() } ?: "https"
+        val finalScheme = scheme?.takeIf { it.isNotBlank() } ?: "gweb-v3"
         safeHeader(finalVersion)?.let { builder.header("g-version", it) }
         safeHeader(finalClient)?.let { builder.header("g-client", it) }
         safeHeader(finalScheme)?.let { builder.header("g-scheme", it) }
@@ -102,7 +140,21 @@ class GolikeApiClient(
         return builder
     }
 
-    // 0. Đồng bộ Protocol Golike (Chuẩn GoMax bắt buộc sau khi đăng nhập)
+    // 0a. Lấy realtime ticket (theo cURL iOS)
+    fun getRealtimeTicket(): JSONObject? {
+        val req = newRequestBuilder("https://api.golike.net/api/v1/realtime/ticket")
+            .post("{}".toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        return execute(req)
+    }
+
+    // 0b. Lấy config filters (theo cURL iOS)
+    fun getConfigFilters(): JSONObject? {
+        val req = newRequestBuilder("$BASE_URL/config/filters").get().build()
+        return execute(req)
+    }
+
+    // 0c. Đồng bộ Protocol Golike (Chuẩn GoMax bắt buộc sau khi đăng nhập)
     fun syncProtocol(): JSONObject? {
         val req = newRequestBuilder("$BASE_URL/app/golike-protocol").get().build()
         return execute(req)
@@ -181,12 +233,51 @@ class GolikeApiClient(
     }
 
     // 3. Lấy nhiệm vụ (Get Job)
+    fun getSecurityTokenForGetJob(accountId: String, customWebData: String? = null): String? {
+        val effectiveData = customWebData?.takeIf { it.isNotBlank() }
+            ?: webData?.takeIf { it.isNotBlank() && it != "null" }
+            ?: "null"
+        val reqPayload = JSONObject().apply {
+            put("plt", "tiktok")
+            put("act", "get_job")
+            put("req", JSONObject().apply {
+                put("method", "GET")
+                put("path", "/api/advertising/publishers/tiktok/jobs")
+                put("query", "account_id=$accountId&data=$effectiveData")
+                put("body", "")
+            })
+            put("tel", JSONObject().apply {
+                put("trg", "click")
+                put("aut", 0)
+                put("idle", (90..130).random())
+                put("iev", (6..12).random())
+                put("vis", 1)
+                put("foc", 1)
+            })
+        }
+
+        val req = newRequestBuilder("$SECURITY_URL/token")
+            .post(reqPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        val res = execute(req)
+        return res?.optString("sig")?.takeIf { it.isNotBlank() }
+            ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+            ?: res?.optString("token")?.takeIf { it.isNotBlank() }
+            ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
+    }
+
     fun getTikTokJob(accountId: String, customWebData: String? = null): JSONObject? {
         val effectiveData = customWebData?.takeIf { it.isNotBlank() }
             ?: webData?.takeIf { it.isNotBlank() && it != "null" }
             ?: "null"
+        val sigToken = getSecurityTokenForGetJob(accountId, effectiveData)
         val url = "$BASE_URL/advertising/publishers/tiktok/jobs?account_id=$accountId&data=$effectiveData"
-        return execute(newRequestBuilder(url).get().build())
+        val reqBuilder = newRequestBuilder(url)
+        if (!sigToken.isNullOrBlank()) {
+            reqBuilder.header("sig", sigToken)
+        }
+        return execute(reqBuilder.get().build())
     }
 
     fun getInstagramJob(accountId: String): JSONObject? =
@@ -197,17 +288,7 @@ class GolikeApiClient(
 
     // 3b. Khởi tạo Security Session (Lấy signing_key chuẩn gweb-v3)
     fun createSecuritySession(): JSONObject? {
-        val req = Request.Builder()
-            .url("$SECURITY_URL/session")
-            .header("User-Agent", USER_AGENT)
-            .header("Origin", "https://app.golike.net")
-            .header("Referer", "https://app.golike.net/")
-            .header("Accept", "application/json, text/plain, */*")
-            .header("Content-Type", "application/json;charset=UTF-8")
-            .header("g-scheme", scheme?.takeIf { it.isNotBlank() } ?: "gweb-v3")
-            .apply {
-                authToken?.let { header("Authorization", if (it.startsWith("Bearer ", ignoreCase = true)) it else "Bearer $it") }
-            }
+        val req = newRequestBuilder("$SECURITY_URL/session")
             .post("{}".toRequestBody(JSON_MEDIA_TYPE))
             .build()
         val res = execute(req)
@@ -245,22 +326,15 @@ class GolikeApiClient(
             })
         }
 
-        val builder = Request.Builder()
-            .url("$SECURITY_URL/token")
-            .header("User-Agent", USER_AGENT)
-            .header("Origin", "https://app.golike.net")
-            .header("Referer", "https://app.golike.net/")
-            .header("Accept", "application/json, text/plain, */*")
-            .header("Content-Type", "application/json;charset=UTF-8")
-            .apply {
-                authToken?.let { header("Authorization", if (it.startsWith("Bearer ", ignoreCase = true)) it else "Bearer $it") }
-                gAuth?.let { if (it.isNotBlank()) header("g-auth", it) }
-            }
+        val req = newRequestBuilder("$SECURITY_URL/token")
             .post(reqPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
-        val res = execute(builder)
-        return res?.optString("token")?.takeIf { it.isNotBlank() }
+        val res = execute(req)
+        return res?.optString("sig")?.takeIf { it.isNotBlank() }
+            ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+            ?: res?.optString("token")?.takeIf { it.isNotBlank() }
+            ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
     }
 
     // 4. Hoàn thành nhiệm vụ (Complete Job)

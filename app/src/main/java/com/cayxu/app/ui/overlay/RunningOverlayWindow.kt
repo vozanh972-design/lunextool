@@ -142,26 +142,21 @@ fun RunningOverlayWindow(
     onClose: () -> Unit,
     onPauseResume: () -> Unit,
     onDockSideChange: (OverlaySide) -> Unit,
+    onBubbleDragDelta: ((Float, Float) -> Unit)? = null,
+    onBubbleDragEnd: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val t = remember(state.language) { OverlayStrings.of(state.language) }
     val scope = rememberCoroutineScope()
 
-    BoxWithConstraints(modifier.fillMaxSize()) {
-        val maxWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
-        val maxHeightPx = with(LocalDensity.current) { maxHeight.toPx() }
-
+    if (state.expanded) {
         val cardDragX = remember { Animatable(0f) }
         val cardDragY = remember { Animatable(0f) }
 
-        AnimatedVisibility(
-            visible = state.expanded,
-            enter = fadeIn(tween(180)) + scaleIn(tween(180, easing = EaseOutSoft), initialScale = 0.92f),
-            exit = fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.92f),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 150.dp, start = 16.dp, end = 16.dp)
+        Box(
+            modifier = modifier
                 .fillMaxWidth()
+                .padding(horizontal = 16.dp)
                 .offset { IntOffset(cardDragX.value.roundToInt(), cardDragY.value.roundToInt()) }
                 .pointerInput(Unit) {
                     detectDragGestures(
@@ -170,7 +165,6 @@ fun RunningOverlayWindow(
                             val dx = cardDragX.value
                             val dy = cardDragY.value
                             scope.launch {
-                                // Khi đè kéo tự do, nếu kéo di chuyển thì tự động thu nhỏ lại và hít gọn vô mép màn hình
                                 if (kotlin.math.abs(dx) > 25f || kotlin.math.abs(dy) > 25f) {
                                     val goRight = dx >= 0
                                     onDockSideChange(if (goRight) OverlaySide.Right else OverlaySide.Left)
@@ -189,28 +183,26 @@ fun RunningOverlayWindow(
                     ) { change, dragAmount ->
                         change.consume()
                         scope.launch {
-                            // Giới hạn biên an toàn: cho phép kéo tự do khắp màn hình nhưng luôn giữ lại mép thẻ, không bao giờ bị mất
-                            val maxLimitX = maxWidthPx * 0.70f
-                            val newX = (cardDragX.value + dragAmount.x).coerceIn(-maxLimitX, maxLimitX)
+                            val newX = (cardDragX.value + dragAmount.x).coerceIn(-300f, 300f)
                             val newY = (cardDragY.value + dragAmount.y).coerceIn(-130f, 250f)
                             cardDragX.snapTo(newX)
                             cardDragY.snapTo(newY)
                         }
                     }
-                },
+                }
         ) {
             ExpandedCard(state, t, onReposition, onCollapse, onClose, onPauseResume)
         }
-
-        AnimatedVisibility(
-            visible = !state.expanded,
-            enter = fadeIn(tween(180)) + scaleIn(tween(180, easing = EaseOutSoft), initialScale = 0.75f),
-            exit = fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.75f),
-            modifier = Modifier
-                .align(if (state.dockedSide == OverlaySide.Right) Alignment.TopEnd else Alignment.TopStart)
-                .padding(top = 150.dp),
-        ) {
-            CollapsedBubble(state, t, maxWidthPx, maxHeightPx, onExpand, onDockSideChange)
+    } else {
+        Box(modifier = modifier.wrapContentSize()) {
+            CollapsedBubble(
+                state = state,
+                t = t,
+                onExpand = onExpand,
+                onDockSideChange = onDockSideChange,
+                onDragDelta = onBubbleDragDelta,
+                onDragEndSnap = onBubbleDragEnd
+            )
         }
     }
 }
@@ -315,20 +307,12 @@ private val BubbleOverhang = 0.dp   // Không đẩy lọt mép, toàn bộ icon
 private fun CollapsedBubble(
     state: RunningOverlayUiState,
     t: OverlayStrings,
-    maxWidthPx: Float,
-    maxHeightPx: Float,
     onExpand: () -> Unit,
     onDockSideChange: (OverlaySide) -> Unit,
+    onDragDelta: ((Float, Float) -> Unit)? = null,
+    onDragEndSnap: (() -> Unit)? = null,
 ) {
-    val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
     val right = state.dockedSide == OverlaySide.Right
-    val overhangPx = with(density) { BubbleOverhang.toPx() }
-
-    val dragX = remember { Animatable(0f) }
-    val dragY = remember { Animatable(0f) }
-    var bubbleWidthPx by remember { mutableFloatStateOf(140f) }
-    var bubbleHeightPx by remember { mutableFloatStateOf(56f) }
     var dragging by remember { mutableStateOf(false) }
 
     val pressSource = remember { MutableInteractionSource() }
@@ -338,53 +322,21 @@ private fun CollapsedBubble(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .onSizeChanged {
-                bubbleWidthPx = it.width.toFloat()
-                bubbleHeightPx = it.height.toFloat()
-            }
-            .offset {
-                IntOffset(
-                    (dragX.value + if (right) overhangPx else -overhangPx).roundToInt(),
-                    dragY.value.roundToInt()
-                )
-            }
+            .wrapContentSize()
             .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { dragging = true },
                     onDragEnd = {
                         dragging = false
-                        scope.launch {
-                            val anchorPx = if (right) maxWidthPx - bubbleWidthPx else 0f
-                            val currentLeftPx = anchorPx + dragX.value
-                            val bubbleCenterPx = currentLeftPx + bubbleWidthPx / 2f
-                            val goRight = bubbleCenterPx > maxWidthPx / 2f
-                            val targetAnchorPx = if (goRight) maxWidthPx - bubbleWidthPx else 0f
-                            val targetDragX = targetAnchorPx - anchorPx
-                            dragX.animateTo(targetDragX, tween(260, easing = EaseOutSoft))
-                            if (goRight != right) onDockSideChange(if (goRight) OverlaySide.Right else OverlaySide.Left)
-                            dragX.snapTo(0f)
-                        }
+                        onDragEndSnap?.invoke()
                     },
                     onDragCancel = {
                         dragging = false
-                        scope.launch {
-                            dragX.animateTo(0f, tween(200))
-                        }
-                    },
+                    }
                 ) { change, dragAmount ->
                     change.consume()
-                    scope.launch {
-                        // Kéo tự do ngang và dọc có giới hạn biên an toàn - Không bao giờ bị mất khỏi màn hình
-                        val anchorPx = if (right) maxWidthPx - bubbleWidthPx else 0f
-                        val newX = dragX.value + dragAmount.x
-                        val clampedNewX = newX.coerceIn(-anchorPx, maxWidthPx - bubbleWidthPx - anchorPx)
-                        dragX.snapTo(clampedNewX)
-
-                        val newY = dragY.value + dragAmount.y
-                        val clampedNewY = newY.coerceIn(-130f, (maxHeightPx - bubbleHeightPx - 160f).coerceAtLeast(0f))
-                        dragY.snapTo(clampedNewY)
-                    }
+                    onDragDelta?.invoke(dragAmount.x, dragAmount.y)
                 }
             }
             .clickable(interactionSource = pressSource, indication = null, role = Role.Button, onClick = onExpand),
