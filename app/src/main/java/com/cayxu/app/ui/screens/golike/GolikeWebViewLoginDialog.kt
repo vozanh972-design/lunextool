@@ -47,6 +47,7 @@ fun GolikeWebViewLoginDialog(
     val isCaptured = remember { AtomicBoolean(false) }
     var loadingProgress by remember { mutableIntStateOf(0) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
 
     // BƯỚC 2: Polling định kỳ mỗi 1.2s từ Android ép web gọi /api/users/me và quét session
     LaunchedEffect(webViewInstance) {
@@ -154,6 +155,30 @@ fun GolikeWebViewLoginDialog(
                     Divider(color = Color(0xFFEEF1F5), thickness = 1.dp)
                 }
 
+                // Thanh thông báo tiến trình nạp Session / chuyển tab nhiệm vụ
+                statusMessage?.let { msg ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFEFF6FF))
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(15.dp),
+                            strokeWidth = 2.dp,
+                            color = Color(0xFF2563EB)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = msg,
+                            fontSize = 12.5.sp,
+                            color = Color(0xFF1D4ED8),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
                 // Thanh thông báo nếu có lỗi mạng / lỗi nạp trang
                 loadError?.let { err ->
                     Row(
@@ -241,21 +266,40 @@ fun GolikeWebViewLoginDialog(
 
                                             // BƯỚC 3: CẬP NHẬT GOLIKE SESSION, ĐỒNG BỘ ĐẦY ĐỦ VÀ ĐÓNG WEBVIEW TRÊN MAIN THREAD
                                             scope.launch(Dispatchers.Main) {
-                                                // Chờ 1.5s để web hoàn tất nạp trang chủ, trích xuất trọn vẹn webData & signingKey
+                                                statusMessage = "Đã nhận nick @$resolvedUsername. Đang chuyển sang tab nhiệm vụ..."
+
+                                                // 1. Tự động chuyển WebView sang tab nhiệm vụ TikTok (/jobs/tiktok) để kích hoạt Security Session & signing_key
+                                                try {
+                                                    webViewInstance?.loadUrl("https://app.golike.net/jobs/tiktok")
+                                                } catch (_: Exception) {}
+
+                                                delay(2000L) // Chờ web load route /jobs/tiktok
+
+                                                statusMessage = "Tải lại 1 nhịp để nạp trọn bộ Session & Token..."
+                                                try {
+                                                    webViewInstance?.reload()
+                                                } catch (_: Exception) {}
+
+                                                delay(1800L) // Chờ reload xong để Vue store và API security session kích hoạt
+
+                                                // Kích hoạt trích xuất trọn vẹn session store
                                                 try {
                                                     webViewInstance?.evaluateJavascript(
                                                         "if(window.goMaxCaptureSessionStore) window.goMaxCaptureSessionStore();",
                                                         null
                                                     )
-                                                } catch (_: Exception) {}
-                                                delay(1200L)
-                                                try {
                                                     webViewInstance?.evaluateJavascript(
-                                                        "if(window.goMaxCaptureSessionStore) window.goMaxCaptureSessionStore();",
+                                                        """
+                                                        (function() {
+                                                          try {
+                                                            if (window.fetch) window.fetch('/api/users/me').catch(function(){});
+                                                          } catch(e) {}
+                                                        })();
+                                                        """.trimIndent(),
                                                         null
                                                     )
                                                 } catch (_: Exception) {}
-                                                delay(300L)
+                                                delay(500L)
 
                                                 val latestWebData = GolikeAccountsStore.getWebData(context).ifBlank { webData }
                                                 val latestSigningKey = GolikeAccountsStore.getSigningKey(context).ifBlank { signingKey }
@@ -273,7 +317,7 @@ fun GolikeWebViewLoginDialog(
                                                     userId = userId,
                                                     webData = latestWebData
                                                 )
-                                                Toast.makeText(context, "Đã liên kết Golike: @$resolvedUsername", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Đã liên kết Golike: @$resolvedUsername (Session sẵn sàng)", Toast.LENGTH_SHORT).show()
                                                 onLoginSuccess(resolvedUsername)
                                                 onDismiss()
                                             }
