@@ -499,13 +499,65 @@ fun GolikeAccountScreen(navController: NavController) {
         )
     }
 
-    // Modal BottomSheet Cấu hình
+    // Modal BottomSheet Cấu hình nhiệm vụ Golike (Chuẩn thiết kế mới)
     if (showConfigSheet) {
-        GolikeConfigBottomSheet(
-            platform = selectedPlatform,
+        val currentConfig = remember(showConfigSheet, selectedPlatform) {
+            GolikeRunConfigStore.get(context, selectedPlatform)
+        }
+        var configUiState by remember(showConfigSheet, selectedPlatform) {
+            mutableStateOf(
+                GolikeTaskConfigUiState(
+                    platformLabel = selectedPlatform.replaceFirstChar { it.uppercase() },
+                    breakMinSeconds = currentConfig.delayMinSeconds.toString(),
+                    breakMaxSeconds = currentConfig.delayMaxSeconds.toString(),
+                    goalTaskCount = currentConfig.taskCountTarget.toString(),
+                    getJobMinSeconds = currentConfig.getJobMinSeconds.toString(),
+                    getJobMaxSeconds = currentConfig.getJobMaxSeconds.toString(),
+                    completeJobMinSeconds = currentConfig.completeJobMinSeconds.toString(),
+                    completeJobMaxSeconds = currentConfig.completeJobMaxSeconds.toString(),
+                    autoSwapOnError = currentConfig.autoSwitchOnFail,
+                    errorSwapCount = currentConfig.failJobCountToSwitchAccount.toString()
+                )
+            )
+        }
+
+        GolikeTaskConfigSheet(
+            state = configUiState,
             onDismiss = { showConfigSheet = false },
-            onConfigSaved = {
-                // Đã lưu cấu hình thành công
+            onBreakMinChange = { configUiState = configUiState.copy(breakMinSeconds = it) },
+            onBreakMaxChange = { configUiState = configUiState.copy(breakMaxSeconds = it) },
+            onGoalTaskCountChange = { configUiState = configUiState.copy(goalTaskCount = it) },
+            onGetJobMinChange = { configUiState = configUiState.copy(getJobMinSeconds = it) },
+            onGetJobMaxChange = { configUiState = configUiState.copy(getJobMaxSeconds = it) },
+            onCompleteJobMinChange = { configUiState = configUiState.copy(completeJobMinSeconds = it) },
+            onCompleteJobMaxChange = { configUiState = configUiState.copy(completeJobMaxSeconds = it) },
+            onAutoSwapOnErrorChange = { configUiState = configUiState.copy(autoSwapOnError = it) },
+            onErrorSwapCountChange = { configUiState = configUiState.copy(errorSwapCount = it) },
+            onSave = {
+                val bMin = configUiState.breakMinSeconds.toIntOrNull() ?: 8
+                val bMax = configUiState.breakMaxSeconds.toIntOrNull() ?: 15
+                val goal = configUiState.goalTaskCount.toIntOrNull() ?: 0
+                val gMin = configUiState.getJobMinSeconds.toIntOrNull() ?: 5
+                val gMax = configUiState.getJobMaxSeconds.toIntOrNull() ?: 12
+                val cMin = configUiState.completeJobMinSeconds.toIntOrNull() ?: 20
+                val cMax = configUiState.completeJobMaxSeconds.toIntOrNull() ?: 40
+                val errCnt = configUiState.errorSwapCount.toIntOrNull() ?: 5
+
+                val newCfg = GolikeRunConfig(
+                    platform = selectedPlatform,
+                    delayMinSeconds = minOf(bMin, bMax).coerceAtLeast(1),
+                    delayMaxSeconds = maxOf(bMin, bMax).coerceAtLeast(1),
+                    taskCountTarget = goal.coerceAtLeast(0),
+                    getJobMinSeconds = minOf(gMin, gMax).coerceAtLeast(1),
+                    getJobMaxSeconds = maxOf(gMin, gMax).coerceAtLeast(1),
+                    completeJobMinSeconds = minOf(cMin, cMax).coerceAtLeast(1),
+                    completeJobMaxSeconds = maxOf(cMin, cMax).coerceAtLeast(1),
+                    failJobCountToSwitchAccount = errCnt.coerceAtLeast(1),
+                    autoSwitchOnFail = configUiState.autoSwapOnError
+                )
+                GolikeRunConfigStore.save(context, newCfg)
+                Toast.makeText(context, "Đã lưu cấu hình làm nhiệm vụ", Toast.LENGTH_SHORT).show()
+                showConfigSheet = false
             }
         )
     }

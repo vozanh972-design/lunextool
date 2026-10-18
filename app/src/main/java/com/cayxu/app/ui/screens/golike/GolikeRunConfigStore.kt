@@ -3,13 +3,22 @@ package com.cayxu.app.ui.screens.golike
 import android.content.Context
 
 /**
- * Cấu hình chạy nhiệm vụ Golike (Delay, số lượng job, tự đổi nick khi lỗi).
+ * Cấu hình chạy nhiệm vụ Golike:
+ * - Thời gian nghỉ giữa các nhiệm vụ (delayMin, delayMax)
+ * - Số lượng nhiệm vụ tối đa (taskCountTarget, 0 = không giới hạn)
+ * - Thời gian lấy job (getJobMin, getJobMax)
+ * - Thời gian hoàn thành job (completeJobMin, completeJobMax)
+ * - Tự động đổi tài khoản khi gặp lỗi liên tiếp (autoSwitchOnFail, failJobCountToSwitchAccount)
  */
 data class GolikeRunConfig(
     val platform: String = "tiktok",
     val delayMinSeconds: Int = 8,
     val delayMaxSeconds: Int = 15,
     val taskCountTarget: Int = 0, // 0 = Không giới hạn
+    val getJobMinSeconds: Int = 5,
+    val getJobMaxSeconds: Int = 12,
+    val completeJobMinSeconds: Int = 20,
+    val completeJobMaxSeconds: Int = 40,
     val failJobCountToSwitchAccount: Int = 5,
     val autoSwitchOnFail: Boolean = true
 )
@@ -20,6 +29,10 @@ object GolikeRunConfigStore {
     private const val KEY_DELAY_MIN = "golike_delay_min"
     private const val KEY_DELAY_MAX = "golike_delay_max"
     private const val KEY_TASK_TARGET = "golike_task_target"
+    private const val KEY_GET_JOB_MIN = "golike_get_job_min"
+    private const val KEY_GET_JOB_MAX = "golike_get_job_max"
+    private const val KEY_COMPLETE_JOB_MIN = "golike_complete_job_min"
+    private const val KEY_COMPLETE_JOB_MAX = "golike_complete_job_max"
     private const val KEY_FAIL_SWITCH = "golike_fail_switch"
     private const val KEY_AUTO_SWITCH = "golike_auto_switch"
 
@@ -34,6 +47,10 @@ object GolikeRunConfigStore {
             delayMinSeconds = p.getInt("${prefix}${KEY_DELAY_MIN}", p.getInt(KEY_DELAY_MIN, 8)),
             delayMaxSeconds = p.getInt("${prefix}${KEY_DELAY_MAX}", p.getInt(KEY_DELAY_MAX, 15)),
             taskCountTarget = p.getInt("${prefix}${KEY_TASK_TARGET}", p.getInt(KEY_TASK_TARGET, 0)),
+            getJobMinSeconds = p.getInt("${prefix}${KEY_GET_JOB_MIN}", p.getInt(KEY_GET_JOB_MIN, 5)),
+            getJobMaxSeconds = p.getInt("${prefix}${KEY_GET_JOB_MAX}", p.getInt(KEY_GET_JOB_MAX, 12)),
+            completeJobMinSeconds = p.getInt("${prefix}${KEY_COMPLETE_JOB_MIN}", p.getInt(KEY_COMPLETE_JOB_MIN, 20)),
+            completeJobMaxSeconds = p.getInt("${prefix}${KEY_COMPLETE_JOB_MAX}", p.getInt(KEY_COMPLETE_JOB_MAX, 40)),
             failJobCountToSwitchAccount = p.getInt("${prefix}${KEY_FAIL_SWITCH}", p.getInt(KEY_FAIL_SWITCH, 5)),
             autoSwitchOnFail = p.getBoolean("${prefix}${KEY_AUTO_SWITCH}", p.getBoolean(KEY_AUTO_SWITCH, true))
         )
@@ -47,8 +64,12 @@ object GolikeRunConfigStore {
             .putInt("${prefix}${KEY_DELAY_MIN}", config.delayMinSeconds)
             .putInt("${prefix}${KEY_DELAY_MAX}", config.delayMaxSeconds)
             .putInt("${prefix}${KEY_TASK_TARGET}", config.taskCountTarget)
+            .putInt("${prefix}${KEY_GET_JOB_MIN}", config.getJobMinSeconds)
+            .putInt("${prefix}${KEY_GET_JOB_MAX}", config.getJobMaxSeconds)
+            .putInt("${prefix}${KEY_COMPLETE_JOB_MIN}", config.completeJobMinSeconds)
+            .putInt("${prefix}${KEY_COMPLETE_JOB_MAX}", config.completeJobMaxSeconds)
             .putInt("${prefix}${KEY_FAIL_SWITCH}", config.failJobCountToSwitchAccount)
             .putBoolean("${prefix}${KEY_AUTO_SWITCH}", config.autoSwitchOnFail)
-            .commit()
+            .apply()
     }
 }

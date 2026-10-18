@@ -1,6 +1,8 @@
 package com.cayxu.app.ui.screens.golike
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.automation.tiktok.XsmmTaskActionResult
 import com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge
@@ -516,6 +518,60 @@ object GolikeTikTokTaskRunner {
     }
 
     /**
+     * Mở đối tượng TikTok (profile người dùng hoặc video) bằng Deep link chuyên biệt trước,
+     * tự động gắn đích danh package TikTok để mở ngay trong app thật, không nhảy ra trình duyệt.
+     */
+    private fun openTikTokTarget(context: Context, targetUrl: String, objectId: String, variant: TikTokAppVariant): Boolean {
+        val cleanUser = objectId.trim().removePrefix("@")
+        val candidates = TikTokAppLauncher.candidatePackages(variant)
+
+        // 1. Thử Deep link nội bộ của TikTok để nhảy thẳng vào màn hình profile
+        val deepLinks = listOf(
+            "snssdk1233://user/profile/$cleanUser",
+            "snssdk1128://user/profile/$cleanUser",
+            "tiktok://user/profile?unique_id=$cleanUser"
+        )
+        for (scheme in deepLinks) {
+            val uri = Uri.parse(scheme)
+            for (pkg in candidates) {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                        setPackage(pkg)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                    return true
+                } catch (_: Exception) {}
+            }
+        }
+
+        // 2. Fallback: Dùng URL web mở đích danh package app TikTok
+        val webUrl = if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) targetUrl else "https://www.tiktok.com/@$cleanUser"
+        val webUri = Uri.parse(webUrl)
+        for (pkg in candidates) {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, webUri).apply {
+                    setPackage(pkg)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+                return true
+            } catch (_: Exception) {}
+        }
+
+        // 3. Fallback cuối: Mở Intent ACTION_VIEW mặc định
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, webUri).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
      * Vòng lặp nhận và thực thi nhiệm vụ TikTok độc lập cho một tài khoản.
      * TUYỆT ĐỐI KHÔNG ĐƯỢC LẤY JOB KHI CHƯA ĐÚNG NICK HOẶC CHƯA CẤU HÌNH THÀNH CÔNG.
      */
@@ -681,7 +737,7 @@ object GolikeTikTokTaskRunner {
                 onStatusChange("Mở follow nick cấu hình @$targetConfigUser...")
                 XsmmJobStatusBridge.update("Mở follow nick cấu hình @$targetConfigUser...")
 
-                TikTokAppLauncher.openUserProfile(context, "https://www.tiktok.com/@$targetConfigUser")
+                openTikTokTarget(context, "https://www.tiktok.com/@$targetConfigUser", targetConfigUser, variant)
                 delay(1200L) // Chờ TikTok load trang cá nhân
 
                 if (TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
@@ -893,10 +949,27 @@ object GolikeTikTokTaskRunner {
         GolikeRunningManager.runningAccounts[account.id] = true
         GolikeRunningManager.runningAccounts[cleanUsername] = true
         var consecutiveFails = 0
+        var totalCompletedTasks = 0
 
         while ((GolikeRunningManager.isRunning(account.id) || GolikeRunningManager.isRunning(cleanUsername)) && isActive) {
             try {
-                onStatusChange("Đang lấy nhiệm vụ TikTok...")
+                // Kiểm tra mục tiêu số lượng nhiệm vụ tối đa
+                if (cfg.taskCountTarget > 0 && totalCompletedTasks >= cfg.taskCountTarget) {
+                    val finishMsg = "Đã hoàn thành đủ mục tiêu ${cfg.taskCountTarget} nhiệm vụ. Dừng chạy."
+                    onStatusChange(finishMsg)
+                    GolikeRunningManager.runningAccounts[account.id] = false
+                    GolikeRunningManager.runningAccounts[cleanUsername] = false
+                    break
+                }
+
+                // Chờ thời gian lấy job (giây) theo cấu hình
+                val getJobDelay = if (cfg.getJobMaxSeconds >= cfg.getJobMinSeconds && cfg.getJobMinSeconds > 0) {
+                    (cfg.getJobMinSeconds..cfg.getJobMaxSeconds).random()
+                } else {
+                    5
+                }
+                onStatusChange("Chờ lấy nhiệm vụ TikTok (${getJobDelay}s)...")
+                delay(getJobDelay * 1000L)
 
                 // 1. Lấy nhiệm vụ (Get Job)
                 val currentWebData = GolikeAccountsStore.getWebData(context)
@@ -940,7 +1013,8 @@ object GolikeTikTokTaskRunner {
                 val shortType = if (jobType.contains("follow", ignoreCase = true)) "Follow" else "Tym"
                 onStatusChange("Mở $shortType: ${objectId.ifBlank { targetUrl.takeLast(15) }}")
 
-                TikTokAppLauncher.openUserProfile(context, targetUrl, variant)
+                // Mở ứng dụng TikTok bằng Deep link ưu tiên và package đích danh
+                openTikTokTarget(context, targetUrl, objectId, variant)
                 delay(1500L)
 
                 // Kích hoạt Accessibility bấm tương tác nếu có quyền
@@ -955,7 +1029,7 @@ object GolikeTikTokTaskRunner {
                     )
 
                     val actionStartTime = System.currentTimeMillis()
-                    val maxWaitTime = (countdown + 15) * 1000L
+                    val maxWaitTime = (countdown + 20) * 1000L
                     while ((GolikeRunningManager.isRunning(account.id) || GolikeRunningManager.isRunning(cleanUsername)) &&
                            isActive && (System.currentTimeMillis() - actionStartTime) < maxWaitTime) {
                         val res = XsmmTaskAutomationBridge.result.value
@@ -975,26 +1049,30 @@ object GolikeTikTokTaskRunner {
                         delay(400L)
                     }
                 } else {
-                    onStatusChange("Chờ bấm $shortType thủ công (${countdown}s)...")
-                    for (sec in countdown downTo 1) {
-                        if (!GolikeRunningManager.isRunning(account.id)) break
-                        onStatusChange("Làm job $shortType | Chờ nhận xu sau ${sec}s...")
-                        delay(1000L)
-                    }
-                    taskActionSuccess = true
+                    onStatusChange("Lỗi: Chưa bật quyền Trợ năng (Accessibility) cho app!")
+                    taskActionSuccess = false
                 }
 
                 if (!GolikeRunningManager.isRunning(account.id)) break
 
                 // 3. Báo hoàn thành (Chỉ báo cáo nếu đã bấm tương tác thành công!)
                 if (taskActionSuccess) {
-                    delay(1200L)
+                    // Chờ thời gian hoàn thành job (giây) theo cấu hình trước khi gửi báo cáo
+                    val completeDelay = if (cfg.completeJobMaxSeconds >= cfg.completeJobMinSeconds && cfg.completeJobMinSeconds > 0) {
+                        (cfg.completeJobMinSeconds..cfg.completeJobMaxSeconds).random()
+                    } else {
+                        15
+                    }
+                    onStatusChange("Đã bấm $shortType. Chờ hoàn tất (${completeDelay}s)...")
+                    delay(completeDelay * 1000L)
+
                     onStatusChange("Đang gửi báo cáo hoàn thành...")
                     val compRes = client.completeTikTokJob(adsId, golikeAccId)
 
                     if (compRes != null && compRes.optBoolean("success", false)) {
+                        totalCompletedTasks++
                         val price = compRes.optJSONObject("data")?.optInt("prices", 35) ?: 35
-                        onStatusChange("Hoàn thành +$price đ | Nghỉ ${cfg.delayMinSeconds}s")
+                        onStatusChange("Hoàn thành #$totalCompletedTasks (+$price đ) | Nghỉ ${cfg.delayMinSeconds}s")
                         onJobSuccess(price)
                     } else {
                         val failMsg = compRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Lỗi hoàn thành nhiệm vụ"
@@ -1004,7 +1082,7 @@ object GolikeTikTokTaskRunner {
                     }
                 } else {
                     // Nếu không bấm được Follow (ví dụ nick bị chặn hoặc không tìm thấy nút) -> BỎ QUA NHIỆM VỤ, KHÔNG BÁO HOÀN THÀNH
-                    val skipMsg = "Không tìm thấy nút $shortType -> Bỏ qua nhiệm vụ"
+                    val skipMsg = "Không bấm được $shortType -> Bỏ qua nhiệm vụ"
                     onStatusChange(skipMsg)
                     client.skipJob(adsId, objectId, golikeAccId, jobType)
                     onJobFailed(skipMsg)
