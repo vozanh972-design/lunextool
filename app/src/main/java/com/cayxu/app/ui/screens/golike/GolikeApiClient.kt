@@ -274,10 +274,41 @@ class GolikeApiClient(
         }
 
         val res = execute(reqBuilder.build())
-        return res?.optString("token")?.takeIf { it.isNotBlank() }
+        val directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
             ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+
+        if (directToken != null) {
+            return directToken
+        }
+
+        // Tự động giải ngầm nếu gặp yêu cầu xác minh Captcha
+        val action = res?.optString("action")
+        val reason = res?.optString("reason")
+        if (action == "captcha" || reason == "captcha") {
+            android.util.Log.w("GolikeApi", "Gặp yêu cầu Captcha khi lấy Token Job. Đang tự động giải ngầm...")
+            val solved = solveCaptchaChallenge()
+            if (solved) {
+                android.util.Log.i("GolikeApi", "Đã giải Captcha ngầm thành công! Đang yêu cầu lại token sig...")
+                val retryBodyStr = reqPayload.toString()
+                val retryGAuth = generateGAuth(retryBodyStr, path = "/api/v1/security/token")
+                val retryReqBuilder = newRequestBuilder("$SECURITY_URL/token")
+                    .post(retryBodyStr.toRequestBody(JSON_MEDIA_TYPE))
+                if (!retryGAuth.isNullOrBlank()) {
+                    retryReqBuilder.header("g-auth", retryGAuth)
+                }
+                val retryRes = execute(retryReqBuilder.build())
+                return retryRes?.optString("token")?.takeIf { it.isNotBlank() }
+                    ?: retryRes?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
+                    ?: retryRes?.optString("sig")?.takeIf { it.isNotBlank() }
+                    ?: retryRes?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+            } else {
+                android.util.Log.e("GolikeApi", "Giải Captcha ngầm không thành công.")
+            }
+        }
+
+        return null
     }
 
     suspend fun getTikTokJob(accountId: Any, customWebData: String? = null): JSONObject? {
@@ -322,7 +353,7 @@ class GolikeApiClient(
     }
 
     // 3c. Sinh chữ ký g-auth chuẩn WebAssembly (WASM sign_v3 của Golike Web)
-    private suspend fun generateGAuth(bodyString: String): String? {
+    private suspend fun generateGAuth(bodyString: String, path: String = "/api/v1/security/token"): String? {
         val ctx = context ?: return null
         var keyB64 = signingKey?.takeIf { it.isNotBlank() }
         if (keyB64.isNullOrBlank()) {
@@ -372,16 +403,107 @@ class GolikeApiClient(
                 deviceId = devId,
                 userId = uId,
                 method = "POST",
-                path = "/api/v1/security/token",
+                path = path,
                 bodyHash = bodyHash
             )
         } catch (e: Exception) {
-            android.util.Log.e("GolikeSecurity", "Lỗi tạo g-auth WASM: ${e.message}")
+            android.util.Log.e("GolikeSecurity", "Lỗi tạo g-auth WASM cho $path: ${e.message}")
             null
         }
     }
 
-    // 3d. Lấy chữ ký Token chứng thực cho complete_job
+    // 3d. Tự động giải Captcha kéo thả của Golike qua API ngầm (WASM + Bézier trajectory)
+    suspend fun solveCaptchaChallenge(): Boolean {
+        try {
+            android.util.Log.d("GolikeCaptcha", "Bắt đầu lấy challenge captcha kéo thả...")
+            val emptyBody = "{}"
+            val challengeGAuth = generateGAuth(emptyBody, path = "/api/v1/security/captcha/challenge")
+            val challengeReqBuilder = newRequestBuilder("$SECURITY_URL/captcha/challenge")
+                .post(emptyBody.toRequestBody(JSON_MEDIA_TYPE))
+            if (!challengeGAuth.isNullOrBlank()) {
+                challengeReqBuilder.header("g-auth", challengeGAuth)
+            }
+            val challengeRes = execute(challengeReqBuilder.build()) ?: return false
+            val challengeObj = challengeRes.optJSONObject("challenge") ?: return false
+            val kind = challengeObj.optString("kind")
+            val challengeId = challengeObj.optString("challengeId")
+            if (kind != "drag" || challengeId.isBlank()) {
+                android.util.Log.w("GolikeCaptcha", "Thử thách không phải drag hoặc thiếu challengeId: kind=$kind, id=$challengeId")
+                return false
+            }
+
+            val geometry = challengeObj.optJSONObject("geometry") ?: return false
+            val startObj = geometry.optJSONObject("start") ?: return false
+            val targetObj = geometry.optJSONObject("target") ?: return false
+            val waypointObj = geometry.optJSONObject("waypoint")
+                ?: geometry.optJSONArray("waypoints")?.optJSONObject(0)
+                ?: return false
+
+            val startX = startObj.optDouble("x", 0.0)
+            val startY = startObj.optDouble("y", 0.0)
+            val targetX = targetObj.optDouble("x", 0.0)
+            val targetY = targetObj.optDouble("y", 0.0)
+            val waypointX = waypointObj.optDouble("x", 0.0)
+            val waypointY = waypointObj.optDouble("y", 0.0)
+
+            android.util.Log.d("GolikeCaptcha", "Tọa độ giải: start=($startX, $startY), waypoint=($waypointX, $waypointY), target=($targetX, $targetY)")
+
+            // Tính điểm kiểm soát Bézier bậc 2 (Quadratic Bézier đi xuyên qua tâm waypoint tại u = 0.5)
+            val bx = 2 * waypointX - 0.5 * startX - 0.5 * targetX
+            val by = 2 * waypointY - 0.5 * startY - 0.5 * targetY
+
+            val totalDuration = (720..820).random().toDouble()
+            val steps = (24..28).random()
+            val pointsArr = org.json.JSONArray()
+
+            for (i in 0..steps) {
+                val s = i.toDouble() / steps
+                // Smoothstep easing: nhanh ở giữa, chậm ở 2 đầu
+                val u = s * s * (3.0 - 2.0 * s)
+                val t = kotlin.math.round(s * totalDuration * 100.0) / 100.0
+
+                var x = (1.0 - u) * (1.0 - u) * startX + 2.0 * (1.0 - u) * u * bx + u * u * targetX
+                var y = (1.0 - u) * (1.0 - u) * startY + 2.0 * (1.0 - u) * u * by + u * u * targetY
+
+                if (i in 1 until steps) {
+                    val jitterX = (java.util.concurrent.ThreadLocalRandom.current().nextDouble() - 0.5) * 0.6
+                    val jitterY = (java.util.concurrent.ThreadLocalRandom.current().nextDouble() - 0.5) * 0.6
+                    x += jitterX
+                    y += jitterY
+                }
+
+                val point = org.json.JSONArray().apply {
+                    put(t)
+                    put(kotlin.math.round(x * 100.0) / 100.0)
+                    put(kotlin.math.round(y * 100.0) / 100.0)
+                }
+                pointsArr.put(point)
+            }
+
+            // Gửi xác thực: POST /api/v1/security/captcha/verify
+            val verifyPayload = JSONObject().apply {
+                put("challengeId", challengeId)
+                put("points", pointsArr)
+            }
+            val verifyBodyStr = verifyPayload.toString()
+            val verifyGAuth = generateGAuth(verifyBodyStr, path = "/api/v1/security/captcha/verify")
+            val verifyReqBuilder = newRequestBuilder("$SECURITY_URL/captcha/verify")
+                .post(verifyBodyStr.toRequestBody(JSON_MEDIA_TYPE))
+            if (!verifyGAuth.isNullOrBlank()) {
+                verifyReqBuilder.header("g-auth", verifyGAuth)
+            }
+
+            val verifyRes = execute(verifyReqBuilder.build())
+            val isOk = verifyRes?.optBoolean("ok", false) == true || verifyRes?.optBoolean("success", false) == true
+            android.util.Log.d("GolikeCaptcha", "Kết quả verify captcha ngầm: ok=$isOk | Res: $verifyRes")
+            return isOk
+        } catch (e: Exception) {
+            android.util.Log.e("GolikeCaptcha", "Lỗi trong quá trình giải captcha ngầm: ${e.message}", e)
+            return false
+        }
+    }
+
+    // 3e. Lấy chữ ký Token chứng thực cho complete_job
     suspend fun getSecurityToken(adsId: Any, accountId: Any): String? {
         val numAccId = when (accountId) {
             is Number -> accountId
@@ -414,7 +536,7 @@ class GolikeApiClient(
         }
 
         val bodyStr = reqPayload.toString()
-        val dynamicGAuth = generateGAuth(bodyStr)
+        val dynamicGAuth = generateGAuth(bodyStr, path = "/api/v1/security/token")
 
         val reqBuilder = newRequestBuilder("$SECURITY_URL/token")
             .post(bodyStr.toRequestBody(JSON_MEDIA_TYPE))
@@ -423,10 +545,38 @@ class GolikeApiClient(
         }
 
         val res = execute(reqBuilder.build())
-        return res?.optString("token")?.takeIf { it.isNotBlank() }
+        val directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
             ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+
+        if (directToken != null) {
+            return directToken
+        }
+
+        // Tự động giải ngầm nếu gặp yêu cầu xác minh Captcha
+        val action = res?.optString("action")
+        val reason = res?.optString("reason")
+        if (action == "captcha" || reason == "captcha") {
+            android.util.Log.w("GolikeApi", "Gặp yêu cầu Captcha khi hoàn thành Job. Đang tự động giải ngầm...")
+            val solved = solveCaptchaChallenge()
+            if (solved) {
+                val retryBodyStr = reqPayload.toString()
+                val retryGAuth = generateGAuth(retryBodyStr, path = "/api/v1/security/token")
+                val retryReqBuilder = newRequestBuilder("$SECURITY_URL/token")
+                    .post(retryBodyStr.toRequestBody(JSON_MEDIA_TYPE))
+                if (!retryGAuth.isNullOrBlank()) {
+                    retryReqBuilder.header("g-auth", retryGAuth)
+                }
+                val retryRes = execute(retryReqBuilder.build())
+                return retryRes?.optString("token")?.takeIf { it.isNotBlank() }
+                    ?: retryRes?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
+                    ?: retryRes?.optString("sig")?.takeIf { it.isNotBlank() }
+                    ?: retryRes?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+            }
+        }
+
+        return null
     }
 
     // 4. Hoàn thành nhiệm vụ (Complete Job)
