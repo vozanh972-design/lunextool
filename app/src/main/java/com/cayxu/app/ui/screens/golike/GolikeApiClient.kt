@@ -42,7 +42,7 @@ class GolikeApiClient(
     companion object {
         const val BASE_URL = "https://gateway.golike.net/api"
         const val SECURITY_URL = "https://api.golike.net/api/v1/security"
-        const val USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
+        const val USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 
@@ -126,9 +126,6 @@ class GolikeApiClient(
             .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
             .header("Content-Type", "application/json;charset=utf-8")
             .header("priority", "u=1, i")
-            .header("sec-ch-ua", "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"")
-            .header("sec-ch-ua-mobile", "?1")
-            .header("sec-ch-ua-platform", "\"iOS\"")
             .header("sec-fetch-dest", "empty")
             .header("sec-fetch-mode", "cors")
             .header("sec-fetch-site", "same-site")
@@ -255,7 +252,6 @@ class GolikeApiClient(
             ?: "null"
         val reqPayload = JSONObject().apply {
             put("plt", "tiktok")
-            put("clt", "web")
             put("act", "get_job")
             put("req", JSONObject().apply {
                 put("method", "GET")
@@ -623,7 +619,7 @@ class GolikeApiClient(
     }
 
     // 3e. Lấy chữ ký Token chứng thực cho complete_job
-    suspend fun getSecurityToken(adsId: Any, accountId: Any): String? {
+    suspend fun getSecurityToken(adsId: Any, accountId: Any, path: String = "/advertising/publishers/tiktok/complete-jobs"): String? {
         val numAccId = when (accountId) {
             is Number -> accountId
             is String -> accountId.toLongOrNull() ?: accountId
@@ -640,7 +636,7 @@ class GolikeApiClient(
             put("act", "complete_job")
             put("req", JSONObject().apply {
                 put("method", "POST")
-                put("path", "/api/advertising/publishers/tiktok/complete-jobs")
+                put("path", path)
                 put("query", "")
                 put("body", bodyObj.toString())
             })
@@ -705,7 +701,8 @@ class GolikeApiClient(
             is String -> accountId.toLongOrNull() ?: accountId
             else -> accountId
         }
-        val sigToken = getSecurityToken(adsId, numAccId)
+        var currentPath = "/advertising/publishers/tiktok/complete-jobs"
+        var sigToken = getSecurityToken(adsId, numAccId, currentPath)
 
         val body = JSONObject().apply {
             put("ads_id", adsId.toString())
@@ -714,12 +711,26 @@ class GolikeApiClient(
             put("data", JSONObject.NULL)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
 
-        val reqBuilder = newRequestBuilder("$BASE_URL/advertising/publishers/tiktok/complete-jobs")
+        var reqBuilder = newRequestBuilder("$BASE_URL/advertising/publishers/tiktok/complete-jobs")
             .post(body)
         if (!sigToken.isNullOrBlank()) {
             reqBuilder.header("sig", sigToken)
         }
-        return execute(reqBuilder.build())
+        var res = execute(reqBuilder.build())
+        var code = res?.optInt("status", res.optInt("http_code", 0)) ?: 0
+
+        // Fallback sang /api nếu server yêu cầu
+        if (code == 403) {
+            currentPath = "/api/advertising/publishers/tiktok/complete-jobs"
+            val fallbackSig = getSecurityToken(adsId, numAccId, currentPath)
+            if (!fallbackSig.isNullOrBlank()) {
+                reqBuilder = newRequestBuilder("$BASE_URL/advertising/publishers/tiktok/complete-jobs")
+                    .post(body)
+                    .header("sig", fallbackSig)
+                res = execute(reqBuilder.build())
+            }
+        }
+        return res
     }
 
     fun completeInstagramJob(adsId: Long, accountId: String): JSONObject? {
