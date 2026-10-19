@@ -76,6 +76,7 @@ object Routes {
     const val GOLIKE_ACCOUNT = "golike_account"
     const val TUONG_TAC_CHEO = "tuong_tac_cheo"
     const val TUONG_TAC_CHEO_TIKTOK = "tuong_tac_cheo_tiktok"
+    const val CROSS_TTC_LOGIN = "cross_ttc_login"
 
     const val LINK_ACCOUNT = "link_account/{platform}/{iconRes}"
     const val ADD_ACCOUNT = "add_account/{platform}/{iconRes}"
@@ -328,7 +329,10 @@ fun CayXuNavGraph(
                 com.cayxu.app.ui.screens.tasks.TuongTacCheoScreen(navController)
             }
             composable(Routes.TUONG_TAC_CHEO_TIKTOK) {
-                com.cayxu.app.ui.screens.tasks.TuongTacCheoTikTokScreen(navController)
+                com.cayxu.app.ui.crossttc.CrossTTCLoginScreen(navController)
+            }
+            composable(Routes.CROSS_TTC_LOGIN) {
+                com.cayxu.app.ui.crossttc.CrossTTCLoginScreen(navController)
             }
             composable(
                 route = Routes.LINK_ACCOUNT,
