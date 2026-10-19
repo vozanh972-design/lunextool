@@ -40,9 +40,9 @@ class GolikeApiClient(
     var lastTokenError: String? = null
 
     companion object {
-        const val BASE_URL = "https://gateway.golike.net/api"
-        const val SECURITY_URL = "https://api.golike.net/api/v1/security"
-        const val USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1"
+        val BASE_URL: String get() = GolikeNativeBridge.fetchBaseUrl()
+        val SECURITY_URL: String get() = GolikeNativeBridge.fetchSecurityUrl()
+        val USER_AGENT: String get() = GolikeNativeBridge.fetchUserAgent()
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 
@@ -238,7 +238,7 @@ class GolikeApiClient(
     suspend fun getSecurityTokenForGetJob(
         accountId: Any,
         customWebData: String? = null,
-        path: String = "/advertising/publishers/tiktok/jobs",
+        path: String = GolikeNativeBridge.fetchPathGetJob(),
         onStatus: (String) -> Unit = {}
     ): String? {
         lastTokenError = null
@@ -250,6 +250,7 @@ class GolikeApiClient(
         val effectiveData = customWebData?.takeIf { it.isNotBlank() && it != "null" }
             ?: webData?.takeIf { it.isNotBlank() && it != "null" }
             ?: "null"
+        val telPayloadStr = GolikeNativeBridge.fetchTelemetryJson(0)
         val reqPayload = JSONObject().apply {
             put("plt", "tiktok")
             put("act", "get_job")
@@ -259,19 +260,12 @@ class GolikeApiClient(
                 put("query", "account_id=$numAccId&data=$effectiveData")
                 put("body", "")
             })
-            put("tel", JSONObject().apply {
-                put("trg", "click")
-                put("aut", 0)
-                put("idle", (90..130).random())
-                put("iev", (6..12).random())
-                put("vis", 1)
-                put("foc", 1)
-            })
+            put("tel", JSONObject(telPayloadStr))
         }
 
         val bodyStr = reqPayload.toString()
         onStatus("Đang tạo chữ ký WASM...")
-        val dynamicGAuth = generateGAuth(bodyStr, path = "/api/v1/security/token")
+        val dynamicGAuth = generateGAuth(bodyStr, path = GolikeNativeBridge.fetchPathToken())
         if (dynamicGAuth.isNullOrBlank()) {
             val err = "Lỗi tạo chữ ký WASM g-auth (chưa có signing_key hoặc session hết hạn)"
             lastTokenError = err
@@ -389,7 +383,7 @@ class GolikeApiClient(
         } catch (_: Exception) {}
 
         // 2. Lấy chữ ký sig theo đường dẫn chuẩn Golike Web (/advertising/publishers/tiktok/jobs)
-        var currentPath = "/advertising/publishers/tiktok/jobs"
+        var currentPath = GolikeNativeBridge.fetchPathGetJob()
         var sigToken = getSecurityTokenForGetJob(numAccId, effectiveData, currentPath, onStatus)
         if (sigToken.isNullOrBlank()) {
             val err = lastTokenError ?: "Thiếu chữ ký sig (Không lấy được token bảo mật từ Golike)"
@@ -516,7 +510,7 @@ class GolikeApiClient(
             onStatus("Đang lấy thử thách Captcha...")
             android.util.Log.d("GolikeCaptcha", "Bắt đầu lấy challenge captcha kéo thả...")
             val emptyBody = "{}"
-            val challengeGAuth = generateGAuth(emptyBody, path = "/api/v1/security/captcha/challenge")
+            val challengeGAuth = generateGAuth(emptyBody, path = GolikeNativeBridge.fetchPathChallenge())
             val challengeReqBuilder = newRequestBuilder("$SECURITY_URL/captcha/challenge")
                 .post(emptyBody.toRequestBody(JSON_MEDIA_TYPE))
             if (!challengeGAuth.isNullOrBlank()) {
@@ -556,36 +550,35 @@ class GolikeApiClient(
             onStatus("Đang tính quỹ đạo Bézier (${kotlin.math.round(startX).toInt()},${kotlin.math.round(startY).toInt()} -> ${kotlin.math.round(targetX).toInt()},${kotlin.math.round(targetY).toInt()})...")
             android.util.Log.d("GolikeCaptcha", "Tọa độ giải: start=($startX, $startY), waypoint=($waypointX, $waypointY), target=($targetX, $targetY)")
 
-            // Tính điểm kiểm soát Bézier bậc 2 (Quadratic Bézier đi xuyên qua tâm waypoint tại u = 0.5)
-            val bx = 2 * waypointX - 0.5 * startX - 0.5 * targetX
-            val by = 2 * waypointY - 0.5 * startY - 0.5 * targetY
-
-            val totalDuration = (720..820).random().toDouble()
-            val steps = (24..28).random()
-            val pointsArr = org.json.JSONArray()
-
-            for (i in 0..steps) {
-                val s = i.toDouble() / steps
-                // Smoothstep easing: nhanh ở giữa, chậm ở 2 đầu
-                val u = s * s * (3.0 - 2.0 * s)
-                val t = kotlin.math.round(s * totalDuration * 100.0) / 100.0
-
-                var x = (1.0 - u) * (1.0 - u) * startX + 2.0 * (1.0 - u) * u * bx + u * u * targetX
-                var y = (1.0 - u) * (1.0 - u) * startY + 2.0 * (1.0 - u) * u * by + u * u * targetY
-
-                if (i in 1 until steps) {
-                    val jitterX = (java.util.concurrent.ThreadLocalRandom.current().nextDouble() - 0.5) * 0.6
-                    val jitterY = (java.util.concurrent.ThreadLocalRandom.current().nextDouble() - 0.5) * 0.6
-                    x += jitterX
-                    y += jitterY
+            val nativePointsStr = GolikeNativeBridge.fetchBezierPoints(startX, startY, waypointX, waypointY, targetX, targetY)
+            val pointsArr = if (!nativePointsStr.isNullOrBlank()) {
+                org.json.JSONArray(nativePointsStr)
+            } else {
+                // Fallback tính toán nội bộ nếu Native chưa sẵn sàng
+                val bx = 2 * waypointX - 0.5 * startX - 0.5 * targetX
+                val by = 2 * waypointY - 0.5 * startY - 0.5 * targetY
+                val totalDuration = (720..820).random().toDouble()
+                val steps = (24..28).random()
+                val arr = org.json.JSONArray()
+                for (i in 0..steps) {
+                    val s = i.toDouble() / steps
+                    val u = s * s * (3.0 - 2.0 * s)
+                    val t = kotlin.math.round(s * totalDuration * 100.0) / 100.0
+                    var x = (1.0 - u) * (1.0 - u) * startX + 2.0 * (1.0 - u) * u * bx + u * u * targetX
+                    var y = (1.0 - u) * (1.0 - u) * startY + 2.0 * (1.0 - u) * u * by + u * u * targetY
+                    if (i in 1 until steps) {
+                        val jitterX = (java.util.concurrent.ThreadLocalRandom.current().nextDouble() - 0.5) * 0.6
+                        val jitterY = (java.util.concurrent.ThreadLocalRandom.current().nextDouble() - 0.5) * 0.6
+                        x += jitterX
+                        y += jitterY
+                    }
+                    arr.put(org.json.JSONArray().apply {
+                        put(t)
+                        put(kotlin.math.round(x * 100.0) / 100.0)
+                        put(kotlin.math.round(y * 100.0) / 100.0)
+                    })
                 }
-
-                val point = org.json.JSONArray().apply {
-                    put(t)
-                    put(kotlin.math.round(x * 100.0) / 100.0)
-                    put(kotlin.math.round(y * 100.0) / 100.0)
-                }
-                pointsArr.put(point)
+                arr
             }
 
             onStatus("Đang gửi xác minh Captcha (${pointsArr.length()} điểm)...")
@@ -594,7 +587,7 @@ class GolikeApiClient(
                 put("points", pointsArr)
             }
             val verifyBodyStr = verifyPayload.toString()
-            val verifyGAuth = generateGAuth(verifyBodyStr, path = "/api/v1/security/captcha/verify")
+            val verifyGAuth = generateGAuth(verifyBodyStr, path = GolikeNativeBridge.fetchPathVerify())
             val verifyReqBuilder = newRequestBuilder("$SECURITY_URL/captcha/verify")
                 .post(verifyBodyStr.toRequestBody(JSON_MEDIA_TYPE))
             if (!verifyGAuth.isNullOrBlank()) {
@@ -619,7 +612,7 @@ class GolikeApiClient(
     }
 
     // 3e. Lấy chữ ký Token chứng thực cho complete_job
-    suspend fun getSecurityToken(adsId: Any, accountId: Any, path: String = "/advertising/publishers/tiktok/complete-jobs"): String? {
+    suspend fun getSecurityToken(adsId: Any, accountId: Any, path: String = GolikeNativeBridge.fetchPathCompleteJob()): String? {
         val numAccId = when (accountId) {
             is Number -> accountId
             is String -> accountId.toLongOrNull() ?: accountId
@@ -631,6 +624,7 @@ class GolikeApiClient(
             put("async", true)
             put("data", JSONObject.NULL)
         }
+        val telPayloadStr = GolikeNativeBridge.fetchTelemetryJson(1)
         val reqPayload = JSONObject().apply {
             put("plt", "tiktok")
             put("act", "complete_job")
@@ -640,18 +634,11 @@ class GolikeApiClient(
                 put("query", "")
                 put("body", bodyObj.toString())
             })
-            put("tel", JSONObject().apply {
-                put("trg", "click")
-                put("aut", 0)
-                put("idle", (70..110).random())
-                put("iev", (12..18).random())
-                put("vis", 1)
-                put("foc", 1)
-            })
+            put("tel", JSONObject(telPayloadStr))
         }
 
         val bodyStr = reqPayload.toString()
-        val dynamicGAuth = generateGAuth(bodyStr, path = "/api/v1/security/token")
+        val dynamicGAuth = generateGAuth(bodyStr, path = GolikeNativeBridge.fetchPathToken())
 
         val reqBuilder = newRequestBuilder("$SECURITY_URL/token")
             .post(bodyStr.toRequestBody(JSON_MEDIA_TYPE))
@@ -677,7 +664,7 @@ class GolikeApiClient(
             val solved = solveCaptchaChallenge()
             if (solved) {
                 val retryBodyStr = reqPayload.toString()
-                val retryGAuth = generateGAuth(retryBodyStr, path = "/api/v1/security/token")
+                val retryGAuth = generateGAuth(retryBodyStr, path = GolikeNativeBridge.fetchPathToken())
                 val retryReqBuilder = newRequestBuilder("$SECURITY_URL/token")
                     .post(retryBodyStr.toRequestBody(JSON_MEDIA_TYPE))
                 if (!retryGAuth.isNullOrBlank()) {
@@ -701,7 +688,7 @@ class GolikeApiClient(
             is String -> accountId.toLongOrNull() ?: accountId
             else -> accountId
         }
-        var currentPath = "/advertising/publishers/tiktok/complete-jobs"
+        var currentPath = GolikeNativeBridge.fetchPathCompleteJob()
         var sigToken = getSecurityToken(adsId, numAccId, currentPath)
 
         val body = JSONObject().apply {

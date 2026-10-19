@@ -70,6 +70,20 @@
     native <methods>;
     *;
 }
+-keep class com.cayxu.app.ui.screens.golike.GolikeNativeBridge {
+    native <methods>;
+    *;
+}
+
+# Giữ nguyên các hàm kết nối JavaScript trong WebView của Golike và toàn hệ thống
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# Giữ nguyên các Model dữ liệu Golike khi parse JSON / SharedPreferences
+-keep class com.cayxu.app.ui.screens.golike.GolikeSession { *; }
+-keep class com.cayxu.app.ui.screens.golike.GolikeAccount { *; }
+-keep class com.cayxu.app.ui.screens.golike.GolikeAccountItem { *; }
 
 # WorkManager & Android Components (Activities, Services, Accessibility, Receivers)
 -keep class * extends androidx.work.ListenableWorker { *; }

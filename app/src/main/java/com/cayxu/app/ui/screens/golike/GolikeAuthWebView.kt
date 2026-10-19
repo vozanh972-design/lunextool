@@ -229,6 +229,7 @@ object GolikeAuthWebView {
         )
     }
 
+    @androidx.annotation.Keep
     class JsBridge(
         private val context: Context?,
         private val callback: AuthCallback

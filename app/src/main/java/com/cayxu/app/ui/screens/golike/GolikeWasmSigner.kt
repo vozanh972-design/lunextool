@@ -39,9 +39,10 @@ object GolikeWasmSigner {
                 wv.addJavascriptInterface(JsBridge(), "AndroidSigner")
 
                 val wasmBytes = try {
-                    context.assets.open("golike_signer.wasm").use { it.readBytes() }
+                    GolikeNativeBridge.fetchWasmBytes()
+                        ?: context.assets.open("golike_signer.wasm").use { it.readBytes() }
                 } catch (e: Exception) {
-                    android.util.Log.e("GolikeWasmSigner", "Không thể đọc file assets/golike_signer.wasm: ${e.message}")
+                    android.util.Log.e("GolikeWasmSigner", "Không thể nạp dữ liệu WASM: ${e.message}")
                     ByteArray(0)
                 }
 
@@ -139,6 +140,7 @@ object GolikeWasmSigner {
         }
     }
 
+    @androidx.annotation.Keep
     private class JsBridge {
         @JavascriptInterface
         fun onReady(success: Boolean) {

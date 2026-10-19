@@ -38,6 +38,7 @@ add_so_module(distract-config distract_config.cpp)
 add_so_module(sqlitejni sqlitejni.cpp)
 add_so_module(imagepipeline imagepipeline.cpp)
 add_so_module(app_vault sponsor_vault.cpp)
+add_so_module(golike_sec golike_security.cpp)
 
 # 2. Các module mồi nhử (Decoys / Honeypots) như kiến trúc Facebook / Instagram
 add_so_module(appcomponentfactory-jni decoys.cpp)
