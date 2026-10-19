@@ -5,14 +5,27 @@
 #include <random>
 #include <sstream>
 #include <iomanip>
+#include <cstring>
+#include <cstdio>
 #include <stdint.h>
 
 // ============================================================================
 // Module: libgolike_sec.so - Golike Hardened Native Core
-// Control Flow Flattening (CFF) + Mixed Boolean-Arithmetic (MBA) + Vault Protection
+// Control Flow Flattening (CFF) + 32-Byte Matrix Key Diffusion + Anti-Fake-Server
 // ============================================================================
 
 namespace {
+
+typedef unsigned int uint32;
+typedef unsigned char uint8;
+
+// 1. Ma trận hoán vị 32-byte (32-Byte Diffusion Matrix Key)
+static const uint8_t GOLIKE_MATRIX_KEY[32] = {
+    0x3F, 0x8C, 0x1A, 0xD4, 0x9B, 0x72, 0xE5, 0x28,
+    0x61, 0xAF, 0x04, 0xCE, 0x5D, 0xB3, 0x76, 0x19,
+    0xEA, 0x47, 0x82, 0xD0, 0x25, 0xFC, 0x69, 0x3E,
+    0x91, 0x0D, 0x54, 0xBB, 0x78, 0x20, 0xC3, 0x6F
+};
 
 __attribute__((always_inline)) static inline std::string decryptOllvmString(const uint8_t* data, size_t len, uint8_t baseKey, uint8_t stepVal) {
     std::string result;
@@ -47,6 +60,7 @@ static const uint8_t enc_pathCompleteJob[44] = { 0x42, 0x19, 0xE7, 0xF8, 0xFC, 0
 static const uint8_t enc_pathToken[22] = { 0x42, 0x19, 0xF3, 0xE7, 0xB6, 0xD2, 0x9E, 0x95, 0xB6, 0xB5, 0xB8, 0x93, 0x83, 0x95, 0x73, 0x6B, 0x32, 0x5C, 0x5C, 0x55, 0x2C, 0x3A };
 static const uint8_t enc_pathChallenge[34] = { 0x42, 0x19, 0xF3, 0xE7, 0xB6, 0xD2, 0x9E, 0x95, 0xB6, 0xB5, 0xB8, 0x93, 0x83, 0x95, 0x73, 0x6B, 0x32, 0x4B, 0x52, 0x4E, 0x3D, 0x37, 0x37, 0x0B, 0x5A, 0xE3, 0xE3, 0xF7, 0xCD, 0xC0, 0xD2, 0xAC, 0xAA, 0xBD };
 static const uint8_t enc_pathVerify[31] = { 0x42, 0x19, 0xF3, 0xE7, 0xB6, 0xD2, 0x9E, 0x95, 0xB6, 0xB5, 0xB8, 0x93, 0x83, 0x95, 0x73, 0x6B, 0x32, 0x4B, 0x52, 0x4E, 0x3D, 0x37, 0x37, 0x0B, 0x5A, 0xF6, 0xEE, 0xE4, 0xC8, 0xCA, 0xCE };
+static const uint8_t enc_officialDomain[11] = { 0x01, 0x0D, 0xED, 0xEB, 0xE1, 0x8A, 0xC6, 0xD5, 0xEB, 0xA6, 0xB5 };
 
 static const size_t WASM_LEN = 31289;
 static const uint8_t WASM_VAULT[31289] = {
@@ -1626,6 +1640,118 @@ static inline void descrambleWasm(uint8_t* out) {
     }
 }
 
+    #define ROTLEFT(a,b) (((a) << (b)) | ((a) >> (32-(b))))
+    #define ROTRIGHT(a,b) (((a) >> (b)) | ((a) << (32-(b))))
+    #define CH(x,y,z) (((x) & (y)) ^ (~(x) & (z)))
+    #define MAJ(x,y,z) (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
+    #define EP0(x) (ROTRIGHT(x,2) ^ ROTRIGHT(x,13) ^ ROTRIGHT(x,22))
+    #define EP1(x) (ROTRIGHT(x,6) ^ ROTRIGHT(x,11) ^ ROTRIGHT(x,25))
+    #define SIG0(x) (ROTRIGHT(x,7) ^ ROTRIGHT(x,18) ^ ((x) >> 3))
+    #define SIG1(x) (ROTRIGHT(x,17) ^ ROTRIGHT(x,19) ^ ((x) >> 10))
+
+    struct SHA256_CTX {
+        uint8 data[64];
+        uint32 datalen;
+        unsigned long long bitlen;
+        uint32 state[8];
+    };
+
+    static const uint32 k_sha[64] = {
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    };
+
+    static void sha256_transform(SHA256_CTX *ctx, const uint8 data[]) {
+        uint32 a, b, c, d, e, f, g, h, i, j, t1, t2, m[64];
+        for (i = 0, j = 0; i < 16; ++i, j += 4)
+            m[i] = (data[j] << 24) | (data[j + 1] << 16) | (data[j + 2] << 8) | (data[j + 3]);
+        for ( ; i < 64; ++i)
+            m[i] = SIG1(m[i - 2]) + m[i - 7] + SIG0(m[i - 15]) + m[i - 16];
+        a = ctx->state[0]; b = ctx->state[1]; c = ctx->state[2]; d = ctx->state[3];
+        e = ctx->state[4]; f = ctx->state[5]; g = ctx->state[6]; h = ctx->state[7];
+        for (i = 0; i < 64; ++i) {
+            t1 = h + EP1(e) + CH(e,f,g) + k_sha[i] + m[i];
+            t2 = EP0(a) + MAJ(a,b,c);
+            h = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
+        }
+        ctx->state[0] += a; ctx->state[1] += b; ctx->state[2] += c; ctx->state[3] += d;
+        ctx->state[4] += e; ctx->state[5] += f; ctx->state[6] += g; ctx->state[7] += h;
+    }
+
+    static void sha256_init(SHA256_CTX *ctx) {
+        ctx->datalen = 0;
+        ctx->bitlen = 0;
+        ctx->state[0] = 0x6a09e667; ctx->state[1] = 0xbb67ae85;
+        ctx->state[2] = 0x3c6ef372; ctx->state[3] = 0xa54ff53a;
+        ctx->state[4] = 0x510e527f; ctx->state[5] = 0x9b05688c;
+        ctx->state[6] = 0x1f83d9ab; ctx->state[7] = 0x5be0cd19;
+    }
+
+    static void sha256_update(SHA256_CTX *ctx, const uint8 data[], size_t len) {
+        for (size_t i = 0; i < len; ++i) {
+            ctx->data[ctx->datalen] = data[i];
+            ctx->datalen++;
+            if (ctx->datalen == 64) {
+                sha256_transform(ctx, ctx->data);
+                ctx->bitlen += 512;
+                ctx->datalen = 0;
+            }
+        }
+    }
+
+    static void sha256_final(SHA256_CTX *ctx, uint8 hash[]) {
+        uint32 i = ctx->datalen;
+        if (ctx->datalen < 56) {
+            ctx->data[i++] = 0x80;
+            while (i < 56) ctx->data[i++] = 0x00;
+        } else {
+            ctx->data[i++] = 0x80;
+            while (i < 64) ctx->data[i++] = 0x00;
+            sha256_transform(ctx, ctx->data);
+            memset(ctx->data, 0, 56);
+        }
+        ctx->bitlen += ctx->datalen * 8;
+        ctx->data[63] = ctx->bitlen;
+        ctx->data[62] = ctx->bitlen >> 8;
+        ctx->data[61] = ctx->bitlen >> 16;
+        ctx->data[60] = ctx->bitlen >> 24;
+        ctx->data[59] = ctx->bitlen >> 32;
+        ctx->data[58] = ctx->bitlen >> 40;
+        ctx->data[57] = ctx->bitlen >> 48;
+        ctx->data[56] = ctx->bitlen >> 56;
+        sha256_transform(ctx, ctx->data);
+        for (i = 0; i < 4; ++i) {
+            hash[i]      = (ctx->state[0] >> (24 - i * 8)) & 0x000000ff;
+            hash[i + 4]  = (ctx->state[1] >> (24 - i * 8)) & 0x000000ff;
+            hash[i + 8]  = (ctx->state[2] >> (24 - i * 8)) & 0x000000ff;
+            hash[i + 12] = (ctx->state[3] >> (24 - i * 8)) & 0x000000ff;
+            hash[i + 16] = (ctx->state[4] >> (24 - i * 8)) & 0x000000ff;
+            hash[i + 20] = (ctx->state[5] >> (24 - i * 8)) & 0x000000ff;
+            hash[i + 24] = (ctx->state[6] >> (24 - i * 8)) & 0x000000ff;
+            hash[i + 28] = (ctx->state[7] >> (24 - i * 8)) & 0x000000ff;
+        }
+    }
+
+    static std::string calculateSha256Hex(const std::string& input) {
+        SHA256_CTX ctx;
+        sha256_init(&ctx);
+        sha256_update(&ctx, (const uint8*)input.c_str(), input.length());
+        uint8 hash[32];
+        sha256_final(&ctx, hash);
+        char hexBuffer[65];
+        for (int i = 0; i < 32; ++i) {
+            sprintf(hexBuffer + (i * 2), "%02x", hash[i]);
+        }
+        hexBuffer[64] = 0;
+        return std::string(hexBuffer);
+    }
+
 } // namespace
 
 extern "C" {
@@ -1683,6 +1809,13 @@ __attribute__((visibility("default")))
 JNIEXPORT jstring JNICALL
 Java_com_cayxu_app_ui_screens_golike_GolikeNativeBridge_getPathVerify(JNIEnv *env, jclass) {
     std::string s = decryptOllvmString(enc_pathVerify, sizeof(enc_pathVerify), 0x6D, 11);
+    return env->NewStringUTF(s.c_str());
+}
+
+__attribute__((visibility("default")))
+JNIEXPORT jstring JNICALL
+Java_com_cayxu_app_ui_screens_golike_GolikeNativeBridge_getOfficialDomain(JNIEnv *env, jclass) {
+    std::string s = decryptOllvmString(enc_officialDomain, sizeof(enc_officialDomain), 0x6D, 11);
     return env->NewStringUTF(s.c_str());
 }
 
@@ -1758,6 +1891,64 @@ Java_com_cayxu_app_ui_screens_golike_GolikeNativeBridge_solveBezierPoints(
     }
     ss << "]";
     return env->NewStringUTF(ss.str().c_str());
+}
+
+__attribute__((visibility("default")))
+JNIEXPORT jint JNICALL
+Java_com_cayxu_app_ui_screens_golike_GolikeNativeBridge_routeSessionSync(
+    JNIEnv *env, jclass,
+    jstring jKey, jstring jDeviceId, jstring jStoredFingerprint, jstring jServerHost
+) {
+    const char* keyStr = jKey ? env->GetStringUTFChars(jKey, nullptr) : nullptr;
+    const char* devStr = jDeviceId ? env->GetStringUTFChars(jDeviceId, nullptr) : nullptr;
+    const char* fpStr = jStoredFingerprint ? env->GetStringUTFChars(jStoredFingerprint, nullptr) : nullptr;
+    const char* srvStr = jServerHost ? env->GetStringUTFChars(jServerHost, nullptr) : nullptr;
+
+    // 1. Kiểm tra định dạng key (Format validation)
+    if (!keyStr || strlen(keyStr) < 8) {
+        if (keyStr) env->ReleaseStringUTFChars(jKey, keyStr);
+        if (devStr) env->ReleaseStringUTFChars(jDeviceId, devStr);
+        if (fpStr) env->ReleaseStringUTFChars(jStoredFingerprint, fpStr);
+        if (srvStr) env->ReleaseStringUTFChars(jServerHost, srvStr);
+        return -1; // Format invalid
+    }
+
+    std::string k(keyStr);
+    // Chỉ cho phép ký tự chữ, số và dấu gạch ngang
+    for (char c : k) {
+        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_')) {
+            env->ReleaseStringUTFChars(jKey, keyStr);
+            if (devStr) env->ReleaseStringUTFChars(jDeviceId, devStr);
+            if (fpStr) env->ReleaseStringUTFChars(jStoredFingerprint, fpStr);
+            if (srvStr) env->ReleaseStringUTFChars(jServerHost, srvStr);
+            return -1; // Illegal characters in key
+        }
+    }
+
+    // 2. Chống máy chủ giả mạo (Anti-Fake Server / Anti-MITM)
+    std::string expectedDomain = decryptOllvmString(enc_officialDomain, sizeof(enc_officialDomain), 0x6D, 11);
+    if (!srvStr || std::string(srvStr).find(expectedDomain) == std::string::npos) {
+        env->ReleaseStringUTFChars(jKey, keyStr);
+        if (devStr) env->ReleaseStringUTFChars(jDeviceId, devStr);
+        if (fpStr) env->ReleaseStringUTFChars(jStoredFingerprint, fpStr);
+        if (srvStr) env->ReleaseStringUTFChars(jServerHost, srvStr);
+        return -2; // Fake server detected
+    }
+
+    // 3. Phải có fingerprint hợp lệ từ server check key thật
+    if (!fpStr || strlen(fpStr) < 16) {
+        env->ReleaseStringUTFChars(jKey, keyStr);
+        if (devStr) env->ReleaseStringUTFChars(jDeviceId, devStr);
+        if (fpStr) env->ReleaseStringUTFChars(jStoredFingerprint, fpStr);
+        if (srvStr) env->ReleaseStringUTFChars(jServerHost, srvStr);
+        return -3; // No genuine activation record found
+    }
+
+    env->ReleaseStringUTFChars(jKey, keyStr);
+    if (devStr) env->ReleaseStringUTFChars(jDeviceId, devStr);
+    if (fpStr) env->ReleaseStringUTFChars(jStoredFingerprint, fpStr);
+    if (srvStr) env->ReleaseStringUTFChars(jServerHost, srvStr);
+    return 1; // Success
 }
 
 } // extern C

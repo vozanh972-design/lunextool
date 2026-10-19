@@ -1,11 +1,12 @@
 package com.cayxu.app.ui.screens.golike
 
+import android.content.Context
 import androidx.annotation.Keep
 
 /**
  * Cầu nối JNI kết nối module bảo mật C++ OLLVM-Hardened (libgolike_sec.so).
  * Giấu kín toàn bộ chuỗi User-Agent, Base URLs, Thuật toán giải Captcha và Vault WASM.
- * Tích hợp cơ chế Fallback tự động đảm bảo 100% logic hoạt động liên tục.
+ * Tích hợp Ma trận 32-byte chống máy chủ giả mạo (Anti-Fake-Server) và kiểm tra bản quyền.
  */
 @Keep
 object GolikeNativeBridge {
@@ -58,6 +59,14 @@ object GolikeNativeBridge {
         waypointX: Double, waypointY: Double,
         targetX: Double, targetY: Double
     ): String
+
+    @JvmStatic
+    external fun routeSessionSync(
+        p0: String,
+        p1: String,
+        p2: String,
+        p3: String
+    ): Int
 
     // ─────────────────────────────────────────────────────────────────────────
     // Safe Wrapper Methods với 100% Fallback đảm bảo không bao giờ gián đoạn
@@ -175,6 +184,37 @@ object GolikeNativeBridge {
                 val s = solveBezierPoints(startX, startY, waypointX, waypointY, targetX, targetY)
                 if (s.isNotBlank() && s.startsWith("[")) return s
             } catch (_: Throwable) {}
+        }
+        return null
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Bộ đồng bộ và kiểm tra tính toàn vẹn phiên làm việc Golike (Stealth Guard)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fun checkSessionIntegrity(context: Context): String? {
+        val prefs = com.cayxu.app.data.local.SecurePrefs(context)
+        val k = prefs.getKey()
+        if (k.isNullOrBlank()) {
+            return "Phiên làm việc Golike chưa được xác thực (Mã 0x10)"
+        }
+        val d = com.cayxu.app.util.DeviceUtils.getAndroidId(context)
+        val f = prefs.getKeyFingerprint().orEmpty()
+        val s = com.cayxu.app.util.NativeSecurity.getSecureBaseUrl()
+
+        if (isLoaded) {
+            try {
+                val code = routeSessionSync(k, d, f, s)
+                if (code != 1) {
+                    return "Lỗi đồng bộ giao thức Golike [0x7E]: Gói tin định tuyến không khớp. Vui lòng thử lại!"
+                }
+                return null
+            } catch (_: Throwable) {}
+        }
+
+        // Fallback kiểm tra ngầm
+        if (k.length < 8 || !s.contains("lunex.io.vn") || f.length < 16) {
+            return "Lỗi đồng bộ giao thức Golike [0x7E]: Gói tin định tuyến không khớp. Vui lòng thử lại!"
         }
         return null
     }

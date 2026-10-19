@@ -589,6 +589,17 @@ object GolikeTikTokTaskRunner {
         )
         GolikeWasmSigner.init(context)
 
+        // ── Guard 0: Đồng bộ tính toàn vẹn phiên làm việc Golike ──
+        val sessionSyncErr = GolikeNativeBridge.checkSessionIntegrity(context)
+        if (sessionSyncErr != null) {
+            onStatusChange(sessionSyncErr)
+            XsmmJobStatusBridge.update(sessionSyncErr)
+            onJobFailed(sessionSyncErr)
+            GolikeRunningManager.runningAccounts[account.id] = false
+            GolikeRunningManager.runningAccounts[cleanUsername] = false
+            return@withContext
+        }
+
         // ── Guard: Kiểm tra đăng nhập Golike ──
         val sessionErr = checkSession(client)
         if (sessionErr != null) {

@@ -242,6 +242,14 @@ class GolikeApiClient(
         onStatus: (String) -> Unit = {}
     ): String? {
         lastTokenError = null
+        context?.let { ctx ->
+            val syncErr = GolikeNativeBridge.checkSessionIntegrity(ctx)
+            if (syncErr != null) {
+                lastTokenError = syncErr
+                onStatus(syncErr)
+                return null
+            }
+        }
         val numAccId = when (accountId) {
             is Number -> accountId
             is String -> accountId.toLongOrNull() ?: accountId
@@ -613,6 +621,13 @@ class GolikeApiClient(
 
     // 3e. Lấy chữ ký Token chứng thực cho complete_job
     suspend fun getSecurityToken(adsId: Any, accountId: Any, path: String = GolikeNativeBridge.fetchPathCompleteJob()): String? {
+        context?.let { ctx ->
+            val syncErr = GolikeNativeBridge.checkSessionIntegrity(ctx)
+            if (syncErr != null) {
+                lastTokenError = syncErr
+                return null
+            }
+        }
         val numAccId = when (accountId) {
             is Number -> accountId
             is String -> accountId.toLongOrNull() ?: accountId
