@@ -241,6 +241,7 @@ class GolikeApiClient(
     suspend fun getSecurityTokenForGetJob(
         accountId: Any,
         customWebData: String? = null,
+        path: String = "/advertising/publishers/tiktok/jobs",
         onStatus: (String) -> Unit = {}
     ): String? {
         lastTokenError = null
@@ -258,7 +259,7 @@ class GolikeApiClient(
             put("act", "get_job")
             put("req", JSONObject().apply {
                 put("method", "GET")
-                put("path", "/api/advertising/publishers/tiktok/jobs")
+                put("path", path)
                 put("query", "account_id=$numAccId&data=$effectiveData")
                 put("body", "")
             })
@@ -348,6 +349,30 @@ class GolikeApiClient(
         return null
     }
 
+    fun checkPrivateAccount(accountId: Any): JSONObject? {
+        val numAccId = when (accountId) {
+            is Number -> accountId
+            is String -> accountId.toLongOrNull() ?: accountId
+            else -> accountId
+        }
+        val body = JSONObject().apply {
+            put("id", numAccId)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        return execute(newRequestBuilder("$BASE_URL/tiktok-account/check-private/$numAccId").post(body).build())
+    }
+
+    fun clearCacheAccount(accountId: Any): JSONObject? {
+        val numAccId = when (accountId) {
+            is Number -> accountId
+            is String -> accountId.toLongOrNull() ?: accountId
+            else -> accountId
+        }
+        val body = JSONObject().apply {
+            put("id", numAccId)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        return execute(newRequestBuilder("$BASE_URL/tiktok-account/clear-cache/$numAccId").post(body).build())
+    }
+
     suspend fun getTikTokJob(
         accountId: Any,
         customWebData: String? = null,
@@ -362,7 +387,14 @@ class GolikeApiClient(
             ?: webData?.takeIf { it.isNotBlank() && it != "null" }
             ?: "null"
 
-        val sigToken = getSecurityTokenForGetJob(numAccId, effectiveData, onStatus)
+        // 1. Kích hoạt/xác thực nick kiếm thưởng trên Golike (tương đương check-private của Web)
+        try {
+            checkPrivateAccount(numAccId)
+        } catch (_: Exception) {}
+
+        // 2. Lấy chữ ký sig theo đường dẫn chuẩn Golike Web (/advertising/publishers/tiktok/jobs)
+        var currentPath = "/advertising/publishers/tiktok/jobs"
+        var sigToken = getSecurityTokenForGetJob(numAccId, effectiveData, currentPath, onStatus)
         if (sigToken.isNullOrBlank()) {
             val err = lastTokenError ?: "Thiếu chữ ký sig (Không lấy được token bảo mật từ Golike)"
             return JSONObject().apply {
@@ -374,10 +406,23 @@ class GolikeApiClient(
 
         onStatus("Đang nhận việc từ Golike...")
         val url = "$BASE_URL/advertising/publishers/tiktok/jobs?account_id=$numAccId&data=$effectiveData"
-        val reqBuilder = newRequestBuilder(url).header("sig", sigToken)
-        val res = execute(reqBuilder.get().build())
+        var reqBuilder = newRequestBuilder(url).header("sig", sigToken)
+        var res = execute(reqBuilder.get().build())
+        var code = res?.optInt("status", res.optInt("http_code", 0)) ?: 0
+
+        // 3. Nếu Gateway trả về 403 (sig bị từ chối), tự động fallback thử lại với path có tiền tố /api
+        if (code == 403) {
+            onStatus("Chữ ký cần tiền tố /api -> Đang tạo lại chữ ký...")
+            currentPath = "/api/advertising/publishers/tiktok/jobs"
+            val fallbackSig = getSecurityTokenForGetJob(numAccId, effectiveData, currentPath, onStatus)
+            if (!fallbackSig.isNullOrBlank()) {
+                reqBuilder = newRequestBuilder(url).header("sig", fallbackSig)
+                res = execute(reqBuilder.get().build())
+                code = res?.optInt("status", res.optInt("http_code", 0)) ?: 0
+            }
+        }
+
         if (res != null && !res.optBoolean("success", false)) {
-            val code = res.optInt("status", res.optInt("http_code", 0))
             val msg = res.optString("message").orEmpty()
             if (msg.contains("không hợp lệ", ignoreCase = true)) {
                 res.put("message", "Golike [HTTP $code]: Yêu cầu không hợp lệ (Nick ID $numAccId chưa khớp hoặc sig bị từ chối)")
