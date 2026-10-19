@@ -1479,10 +1479,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         val isStats = text.any { it.isDigit() } || desc.any { it.isDigit() }
 
         if (!isStats) {
-            val isDirectMatch = text.contains("nhắn tin") || desc.contains("nhắn tin") ||
-                    text.contains("tin nhắn") || desc.contains("tin nhắn") ||
-                    text.contains("message") || desc.contains("message") ||
-                    text.contains("đang follow") || desc.contains("đang follow") ||
+            val isDirectMatch = text.contains("đang follow") || desc.contains("đang follow") ||
                     text.contains("following") || desc.contains("following") ||
                     text.contains("đang theo dõi") || desc.contains("đang theo dõi") ||
                     text.contains("đã follow") || desc.contains("đã follow") ||
@@ -1531,7 +1528,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         xsmmTaskJob = scope.launch {
             try {
                 // Nhánh chuyên biệt: Cấu hình liên kết tài khoản Golike (@gosen.vietnam hoặc nick chỉ định)
-                if (action.taskType.contains("golike", ignoreCase = true)) {
+                if (action.taskType.contains("golike_config", ignoreCase = true)) {
                     val targetUser = "gosen.vietnam"
                     XsmmTaskAutomationBridge.updateProgress("Kiểm tra trang cá nhân @$targetUser...")
                     delay(1200)
@@ -1541,23 +1538,21 @@ class TikTokAccessibilityService : AccessibilityService() {
                     for (i in 0 until maxTries) {
                         val root = findTikTokRoot()
                         if (root != null) {
-                            // TRƯỜNG HỢP 1: ĐÃ FOLLOW RỒI (Có "Nhắn tin", "Message", "Đang theo dõi", "Following", "Bạn bè", icon quản lý bạn bè...)
+                            val followNode = findFollowButtonNode(root)
+                            if (followNode != null) {
+                                XsmmTaskAutomationBridge.updateProgress("Đang bấm Follow @$targetUser...")
+                                clickNode(followNode)
+                                delay(1800) // Chờ 1.5 - 2s cho TikTok cập nhật sang trạng thái Đang follow
+                                XsmmTaskAutomationBridge.updateProgress("Tài khoản đã Follow @$targetUser. Đang gửi xác thực lên Golike...")
+                                alreadyFollowed = true
+                                break
+                            }
+
                             val alreadyNode = findAlreadyFollowingNode(root)
                             if (alreadyNode != null) {
                                 alreadyFollowed = true
                                 XsmmTaskAutomationBridge.updateProgress("Tài khoản đã Follow @$targetUser. Đang gửi xác thực lên Golike...")
                                 delay(600)
-                                break
-                            }
-
-                            // TRƯỜNG HỢP 2: CHƯA FOLLOW (Có nút "Follow", "Theo dõi", "Follow lại" và KHÔNG có nút "Nhắn tin")
-                            val followNode = findFollowButtonNode(root)
-                            if (followNode != null) {
-                                XsmmTaskAutomationBridge.updateProgress("Đang bấm Follow @$targetUser...")
-                                clickNode(followNode)
-                                delay(1800) // Chờ 1.5 - 2s cho TikTok cập nhật sang trạng thái Đang follow / Nhắn tin
-                                XsmmTaskAutomationBridge.updateProgress("Tài khoản đã Follow @$targetUser. Đang gửi xác thực lên Golike...")
-                                alreadyFollowed = true
                                 break
                             }
                         }
@@ -1596,19 +1591,19 @@ class TikTokAccessibilityService : AccessibilityService() {
                     for (i in 0 until maxTries) {
                         val root = findTikTokRoot()
                         if (root != null) {
-                            // Kiểm tra nếu đã follow rồi
-                            val alreadyNode = findAlreadyFollowingNode(root)
-                            if (alreadyNode != null) {
-                                XsmmTaskAutomationBridge.updateProgress("Đã follow từ trước!")
-                                taskSuccess = true
-                                break
-                            }
-
                             val followNode = findFollowButtonNode(root)
                             if (followNode != null) {
                                 XsmmTaskAutomationBridge.updateProgress("Đã thấy nút Follow, đang bấm...")
                                 clickNode(followNode)
                                 delay(1200)
+                                taskSuccess = true
+                                break
+                            }
+
+                            // Chỉ khi KHÔNG thấy nút Follow mới kiểm tra xem đã follow từ trước chưa
+                            val alreadyNode = findAlreadyFollowingNode(root)
+                            if (alreadyNode != null) {
+                                XsmmTaskAutomationBridge.updateProgress("Đã follow từ trước!")
                                 taskSuccess = true
                                 break
                             }

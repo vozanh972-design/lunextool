@@ -1093,24 +1093,11 @@ object GolikeTikTokTaskRunner {
                 onStatusChange(openMsg)
                 XsmmJobStatusBridge.update(openMsg)
 
-                // Mở trực tiếp bằng URL thật do Golike cấp qua package TikTok đích danh
-                openTikTokTarget(context, realUrl, variant)
+                // Mở trực tiếp bằng URL thật do Golike cấp qua package TikTok đích danh (chuẩn XSMM)
+                TikTokAppLauncher.openUserProfile(context, realUrl, variant)
                 delay(1200L)
 
-                // Đếm ngược trong thời gian làm job trước khi bấm Follow / Thả tim
-                val waitDoStartTime = System.currentTimeMillis()
-                val waitDoEndTime = waitDoStartTime + doJobDelay * 1000L
-                while (System.currentTimeMillis() < waitDoEndTime && isActive && GolikeRunningManager.isRunning(account.id)) {
-                    val secLeft = ((waitDoEndTime - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
-                    val waitMsg = "Đang mở $displayTarget | Chờ làm job (${secLeft}s)..."
-                    onStatusChange(waitMsg)
-                    XsmmJobStatusBridge.update(waitMsg)
-                    delay(1000L)
-                }
-
-                if (!GolikeRunningManager.isRunning(account.id) || !isActive) break
-
-                // Bấm tương tác (Follow hoặc Thả tim liên tục)
+                // Bấm tương tác (Follow hoặc Thả tim liên tục) chuẩn XSMM
                 var taskActionSuccess = false
                 val isA11yEnabled = TikTokAppLauncher.isAccessibilityServiceEnabled(context)
                 if (isA11yEnabled) {
@@ -1118,11 +1105,11 @@ object GolikeTikTokTaskRunner {
                         taskType = normalizedJobType,
                         swipeBefore = false,
                         returnHomeAndSwipe = false,
-                        durationSeconds = 3
+                        durationSeconds = doJobDelay
                     )
 
                     val actionStartTime = System.currentTimeMillis()
-                    val maxWaitTime = 15000L // Chờ tối đa 15s cho việc tìm và bấm nút / thả tim
+                    val maxWaitTime = (doJobDelay + 15) * 1000L
                     while ((GolikeRunningManager.isRunning(account.id) || GolikeRunningManager.isRunning(cleanUsername)) &&
                            isActive && (System.currentTimeMillis() - actionStartTime) < maxWaitTime) {
                         val res = XsmmTaskAutomationBridge.result.value
