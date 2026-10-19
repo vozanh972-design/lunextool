@@ -1037,7 +1037,8 @@ object GolikeTikTokTaskRunner {
                     continue
                 }
 
-                val adsId = jobData.optLong("ads_id", jobData.optLong("id", 0L))
+                val rawAdsId = jobData.optString("ads_id").ifBlank { jobData.optString("id") }
+                val adsId = rawAdsId.ifBlank { jobData.optLong("ads_id", jobData.optLong("id", 0L)).toString() }
                 val rawType = jobData.optString("type", "follow").lowercase()
                 val link = jobData.optString("link").trim()
                 val objectId = jobData.optString("object_id").trim()
@@ -1047,11 +1048,12 @@ object GolikeTikTokTaskRunner {
                 val normalizedJobType = if (isLikeJob) "like" else "follow"
                 val shortType = if (isLikeJob) "Tym" else "Follow"
 
-                // 1. URL THẬT do Golike cấp (dùng để mở thẳng trong ứng dụng TikTok)
+                // 1. URL THẬT do Golike cấp (dùng để mở thẳng trong ứng dụng TikTok, không gán ID số vào URL profile)
                 val realUrl = when {
                     link.isNotBlank() -> link
-                    isFollowJob -> "https://www.tiktok.com/@${objectId.removePrefix("@")}"
-                    else -> "https://www.tiktok.com/@user/video/$objectId"
+                    isFollowJob && !objectId.all { it.isDigit() } && objectId.isNotBlank() -> "https://www.tiktok.com/@${objectId.removePrefix("@")}"
+                    isLikeJob && objectId.isNotBlank() -> "https://www.tiktok.com/@user/video/$objectId"
+                    else -> link.ifBlank { "https://www.tiktok.com" }
                 }
 
                 // 2. Tên hiển thị chuẩn xác và thân thiện trên Màn nổi (Overlay)
@@ -1208,6 +1210,7 @@ object GolikeTikTokTaskRunner {
                         val failMsg = compRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Lỗi hoàn thành nhiệm vụ"
                         onStatusChange("Lỗi: $failMsg")
                         XsmmJobStatusBridge.update("Lỗi: $failMsg")
+                        try { client.sendReport(adsId, golikeAccId, description = failMsg) } catch (_: Exception) {}
                         client.skipJob(adsId, objectId, golikeAccId, normalizedJobType)
                         onJobFailed(failMsg)
                     }
@@ -1216,6 +1219,7 @@ object GolikeTikTokTaskRunner {
                     val skipMsg = "Không bấm được $shortType -> Bỏ qua nhiệm vụ"
                     onStatusChange(skipMsg)
                     XsmmJobStatusBridge.update(skipMsg)
+                    try { client.sendReport(adsId, golikeAccId, description = skipMsg) } catch (_: Exception) {}
                     client.skipJob(adsId, objectId, golikeAccId, normalizedJobType)
                     onJobFailed(skipMsg)
                 }

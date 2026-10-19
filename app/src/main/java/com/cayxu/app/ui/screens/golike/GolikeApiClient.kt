@@ -133,16 +133,12 @@ class GolikeApiClient(
 
         // Bộ token xác thực
         safeHeader(authToken)?.let { builder.header("Authorization", if (it.startsWith("Bearer ", ignoreCase = true)) it else "Bearer $it") }
-        safeHeader(tToken)?.let { builder.header("t", it) }
 
-        // Bộ headers định danh của Golike Web
-        safeHeader(deviceId)?.let { builder.header("g-device-id", it) }
-        safeHeader(username)?.let { builder.header("g-username", it) }
-        safeHeader(gAuth)?.let { builder.header("g-auth", it) }
-
-        // Chuẩn scheme gweb-v3 của Golike Web
-        val finalScheme = scheme?.takeIf { it.isNotBlank() } ?: "gweb-v3"
-        safeHeader(finalScheme)?.let { builder.header("g-scheme", it) }
+        // CHỈ gửi g-scheme khi tạo session bảo mật
+        if (url.contains("/security/session")) {
+            val finalScheme = scheme?.takeIf { it.isNotBlank() } ?: "gweb-v3"
+            safeHeader(finalScheme)?.let { builder.header("g-scheme", it) }
+        }
 
         return builder
     }
@@ -240,8 +236,13 @@ class GolikeApiClient(
     }
 
     // 3. Lấy nhiệm vụ (Get Job)
-    suspend fun getSecurityTokenForGetJob(accountId: String, customWebData: String? = null): String? {
-        val effectiveData = customWebData?.takeIf { it.isNotBlank() }
+    suspend fun getSecurityTokenForGetJob(accountId: Any, customWebData: String? = null): String? {
+        val numAccId = when (accountId) {
+            is Number -> accountId
+            is String -> accountId.toLongOrNull() ?: accountId
+            else -> accountId
+        }
+        val effectiveData = customWebData?.takeIf { it.isNotBlank() && it != "null" }
             ?: webData?.takeIf { it.isNotBlank() && it != "null" }
             ?: "null"
         val reqPayload = JSONObject().apply {
@@ -250,7 +251,7 @@ class GolikeApiClient(
             put("req", JSONObject().apply {
                 put("method", "GET")
                 put("path", "/api/advertising/publishers/tiktok/jobs")
-                put("query", "account_id=$accountId&data=$effectiveData")
+                put("query", "account_id=$numAccId&data=$effectiveData")
                 put("body", "")
             })
             put("tel", JSONObject().apply {
@@ -273,18 +274,23 @@ class GolikeApiClient(
         }
 
         val res = execute(reqBuilder.build())
-        return res?.optString("sig")?.takeIf { it.isNotBlank() }
-            ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
-            ?: res?.optString("token")?.takeIf { it.isNotBlank() }
+        return res?.optString("token")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
+            ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
+            ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
     }
 
-    suspend fun getTikTokJob(accountId: String, customWebData: String? = null): JSONObject? {
-        val effectiveData = customWebData?.takeIf { it.isNotBlank() }
+    suspend fun getTikTokJob(accountId: Any, customWebData: String? = null): JSONObject? {
+        val numAccId = when (accountId) {
+            is Number -> accountId
+            is String -> accountId.toLongOrNull() ?: accountId
+            else -> accountId
+        }
+        val effectiveData = customWebData?.takeIf { it.isNotBlank() && it != "null" }
             ?: webData?.takeIf { it.isNotBlank() && it != "null" }
             ?: "null"
-        val sigToken = getSecurityTokenForGetJob(accountId, effectiveData)
-        val url = "$BASE_URL/advertising/publishers/tiktok/jobs?account_id=$accountId&data=$effectiveData"
+        val sigToken = getSecurityTokenForGetJob(numAccId, effectiveData)
+        val url = "$BASE_URL/advertising/publishers/tiktok/jobs?account_id=$numAccId&data=$effectiveData"
         val reqBuilder = newRequestBuilder(url)
         if (!sigToken.isNullOrBlank()) {
             reqBuilder.header("sig", sigToken)
@@ -377,9 +383,14 @@ class GolikeApiClient(
 
     // 3d. Lấy chữ ký Token chứng thực cho complete_job
     suspend fun getSecurityToken(adsId: Any, accountId: Any): String? {
+        val numAccId = when (accountId) {
+            is Number -> accountId
+            is String -> accountId.toLongOrNull() ?: accountId
+            else -> accountId
+        }
         val bodyObj = JSONObject().apply {
-            put("ads_id", adsId)
-            put("account_id", accountId)
+            put("ads_id", adsId.toString())
+            put("account_id", numAccId)
             put("async", true)
             put("data", JSONObject.NULL)
         }
@@ -412,10 +423,10 @@ class GolikeApiClient(
         }
 
         val res = execute(reqBuilder.build())
-        return res?.optString("sig")?.takeIf { it.isNotBlank() }
-            ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
-            ?: res?.optString("token")?.takeIf { it.isNotBlank() }
+        return res?.optString("token")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
+            ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
+            ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
     }
 
     // 4. Hoàn thành nhiệm vụ (Complete Job)
@@ -428,7 +439,7 @@ class GolikeApiClient(
         val sigToken = getSecurityToken(adsId, numAccId)
 
         val body = JSONObject().apply {
-            put("ads_id", adsId)
+            put("ads_id", adsId.toString())
             put("account_id", numAccId)
             put("async", true)
             put("data", JSONObject.NULL)
@@ -455,19 +466,42 @@ class GolikeApiClient(
         val body = JSONObject().apply {
             put("ads_id", adsId)
             put("fb_id", fbId)
+            put("async", true)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         return execute(newRequestBuilder("$BASE_URL/advertising/publishers/complete-jobs-2026").post(body).build())
     }
 
     // 5. Bỏ qua nhiệm vụ (Skip Job)
-    fun skipJob(adsId: Long, objectId: String, accountId: String, type: String): JSONObject? {
+    fun skipJob(adsId: Any, objectId: String, accountId: Any, type: String): JSONObject? {
+        val numAccId = when (accountId) {
+            is Number -> accountId
+            is String -> accountId.toLongOrNull() ?: accountId
+            else -> accountId
+        }
         val body = JSONObject().apply {
-            put("ads_id", adsId)
+            put("ads_id", adsId.toString())
             put("object_id", objectId)
-            put("account_id", accountId)
+            put("account_id", numAccId)
             put("type", type)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
-        return execute(newRequestBuilder("$BASE_URL/advertising/publishers/skip-jobs").post(body).build())
+        return execute(newRequestBuilder("$BASE_URL/advertising/publishers/tiktok/skip-jobs").post(body).build())
+    }
+
+    // 6. Gửi báo cáo lỗi nhiệm vụ (Send Report)
+    fun sendReport(adsId: Any, accountId: Any, description: String = "Job đủ số lượng", provider: String = "tiktok", type: String = "ads"): JSONObject? {
+        val numAccId = when (accountId) {
+            is Number -> accountId
+            is String -> accountId.toLongOrNull() ?: accountId
+            else -> accountId
+        }
+        val body = JSONObject().apply {
+            put("description", description)
+            put("users_advertising_id", adsId.toString())
+            put("type", type)
+            put("provider", provider)
+            put("fb_id", numAccId)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        return execute(newRequestBuilder("$BASE_URL/report/send").post(body).build())
     }
 
     private fun execute(request: Request): JSONObject? {
