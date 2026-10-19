@@ -165,7 +165,7 @@ object GolikeWasmSigner {
     ): String? = withContext(Dispatchers.IO) {
         init(context)
         if (!isWasmReady) {
-            withTimeoutOrNull(4000L) { readyDeferred.await() }
+            withTimeoutOrNull(8000L) { readyDeferred.await() }
         }
         if (!isWasmReady) {
             android.util.Log.w("GolikeWasmSigner", "WASM chưa sẵn sàng sau khi chờ!")
@@ -185,6 +185,6 @@ object GolikeWasmSigner {
             webView?.evaluateJavascript(script, null)
         }
 
-        withTimeoutOrNull(4000L) { deferred.await() }?.takeIf { it.isNotBlank() }
+        withTimeoutOrNull(8000L) { deferred.await() }?.takeIf { it.isNotBlank() }
     }
 }

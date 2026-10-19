@@ -325,13 +325,33 @@ class GolikeApiClient(
         }
         if (keyB64.isNullOrBlank()) return null
 
+        // Đảm bảo userId luôn hợp lệ (> 0) trước khi sinh chữ ký WASM
+        var uId = userId ?: 0L
+        if (uId <= 0L) {
+            val savedUid = GolikeAccountsStore.getUserId(ctx).toLongOrNull() ?: 0L
+            if (savedUid > 0L) {
+                uId = savedUid
+                this.userId = savedUid
+            } else {
+                try {
+                    val meRes = getMe()
+                    val fetchedUid = meRes?.optJSONObject("data")?.optLong("id", 0L)
+                        ?: meRes?.optLong("id", 0L) ?: 0L
+                    if (fetchedUid > 0L) {
+                        uId = fetchedUid
+                        this.userId = fetchedUid
+                        GolikeAccountsStore.saveUserId(ctx, fetchedUid.toString())
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
         return try {
             val sha256 = MessageDigest.getInstance("SHA-256")
             val bodyHash = sha256.digest(bodyString.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it) }
 
             val timestamp = System.currentTimeMillis()
-            val uId = userId ?: 0L
             val devId = deviceId.orEmpty().ifBlank { "98ecbe1b-e52d-4537-8cfb-ae5f9d7f0237" }
 
             val randBytes = ByteArray(16)

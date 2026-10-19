@@ -213,7 +213,9 @@ object GolikeTikTokTaskRunner {
             webVersion = GolikeAccountsStore.getWebVersion(context),
             webVersionText = GolikeAccountsStore.getWebVersionText(context),
             webData = GolikeAccountsStore.getWebData(context),
-            signingKey = GolikeAccountsStore.getSigningKey(context)
+            signingKey = GolikeAccountsStore.getSigningKey(context),
+            userId = GolikeAccountsStore.getUserId(context).toLongOrNull(),
+            context = context
         )
 
         // ── Guard: Kiểm tra đủ 5 trường session bắt buộc của Golike Gateway ──
@@ -582,6 +584,7 @@ object GolikeTikTokTaskRunner {
             webVersionText = GolikeAccountsStore.getWebVersionText(context),
             webData = GolikeAccountsStore.getWebData(context),
             signingKey = GolikeAccountsStore.getSigningKey(context),
+            userId = GolikeAccountsStore.getUserId(context).toLongOrNull(),
             context = context
         )
         GolikeWasmSigner.init(context)
@@ -912,7 +915,19 @@ object GolikeTikTokTaskRunner {
                 GolikeAccountsStore.saveTikTokMapping(context, cleanUsername, finalNumericId)
             }
         }
-        val golikeAccId = finalNumericId.ifBlank { account.id }
+
+        // BẢO VỆ CHẶT CHẼ: BẮT BUỘC account_id PHẢI LÀ ID SỐ CỦA GOLIKE (KHÔNG ĐƯỢC LÀ USERNAME DẠNG CHỮ)
+        val numericId = finalNumericId.toLongOrNull()
+        if (numericId == null) {
+            val errNotLinked = "Golike: Nick @$cleanUsername chưa có ID số trên Golike. Vui lòng vào app.golike.net liên kết nick trước!"
+            onStatusChange(errNotLinked)
+            XsmmJobStatusBridge.update(errNotLinked)
+            onJobFailed(errNotLinked)
+            GolikeRunningManager.runningAccounts[account.id] = false
+            GolikeRunningManager.runningAccounts[cleanUsername] = false
+            return@withContext
+        }
+        val golikeAccId = numericId.toString()
 
         // Khởi tạo security session lấy signing_key & userId chuẩn bị cho việc nhận và hoàn thành job
         try {
@@ -923,6 +938,19 @@ object GolikeTikTokTaskRunner {
             }
         } catch (e: Exception) {
             android.util.Log.w("GolikeTaskRunner", "Lỗi tạo security session: ${e.message}")
+        }
+
+        // Đảm bảo client luôn có userId hợp lệ trước khi vào vòng lặp
+        if ((client.userId ?: 0L) <= 0L) {
+            try {
+                val me = client.getMe()
+                val uid = me?.optJSONObject("data")?.optLong("id", 0L)
+                    ?: me?.optLong("id", 0L) ?: 0L
+                if (uid > 0L) {
+                    client.userId = uid
+                    GolikeAccountsStore.saveUserId(context, uid.toString())
+                }
+            } catch (_: Exception) {}
         }
 
         GolikeRunningManager.runningAccounts[account.id] = true

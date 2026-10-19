@@ -128,6 +128,12 @@ object GolikeAccountsStore {
         }
     }
 
+    fun saveUserId(context: Context, userId: String) {
+        if (userId.isNotBlank()) {
+            prefs(context).edit().putString(KEY_USER_ID, userId.trim()).commit()
+        }
+    }
+
     fun saveLogin(
         context: Context,
         token: String,
@@ -283,6 +289,7 @@ object GolikeAccountsStore {
             webVersionText = getWebVersionText(context),
             webData = getWebData(context),
             signingKey = getSigningKey(context),
+            userId = getUserId(context).toLongOrNull(),
             context = context
         )
     }
