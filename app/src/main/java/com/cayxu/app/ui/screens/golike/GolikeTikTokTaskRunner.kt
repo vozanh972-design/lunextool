@@ -931,13 +931,23 @@ object GolikeTikTokTaskRunner {
 
         // Khởi tạo security session lấy signing_key & userId chuẩn bị cho việc nhận và hoàn thành job
         try {
+            onStatusChange("Khởi tạo phiên bảo mật Golike...")
+            XsmmJobStatusBridge.update("Khởi tạo phiên bảo mật Golike...")
             val secRes = client.createSecuritySession()
             val secKey = secRes?.optString("signing_key").orEmpty()
             if (secKey.isNotBlank()) {
+                client.signingKey = secKey
                 GolikeAccountsStore.saveSigningKey(context, secKey)
+            } else {
+                val httpCode = secRes?.optInt("http_code", 0) ?: 0
+                val msg = secRes?.optString("message")?.ifBlank { "Không có signing_key" }
+                val warnMsg = "Cảnh báo bảo mật: HTTP $httpCode - $msg"
+                onStatusChange(warnMsg)
+                XsmmJobStatusBridge.update(warnMsg)
             }
         } catch (e: Exception) {
             android.util.Log.w("GolikeTaskRunner", "Lỗi tạo security session: ${e.message}")
+            onStatusChange("Lỗi kết nối bảo mật: ${e.message}")
         }
 
         // Đảm bảo client luôn có userId hợp lệ trước khi vào vòng lặp
@@ -1010,12 +1020,25 @@ object GolikeTikTokTaskRunner {
 
                 // Gọi API lấy nhiệm vụ (Get Job)
                 val currentWebData = GolikeAccountsStore.getWebData(context)
-                val jobRes = client.getTikTokJob(golikeAccId, currentWebData)
+                val jobRes = client.getTikTokJob(golikeAccId, currentWebData) { statusText ->
+                    onStatusChange("Golike: $statusText")
+                    XsmmJobStatusBridge.update("Golike: $statusText")
+                }
                 if (jobRes == null || !jobRes.optBoolean("success", false)) {
                     consecutiveFails++
-                    val errMsg = jobRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Chưa có nhiệm vụ lúc này"
-                    onStatusChange("Golike: $errMsg (Chờ ${cfg.delayMinSeconds}s)")
-                    XsmmJobStatusBridge.update("Golike: $errMsg (Chờ ${cfg.delayMinSeconds}s)")
+                    val httpCode = jobRes?.optInt("http_code", 0)?.takeIf { it > 0 }
+                        ?: jobRes?.optInt("status", 0)?.takeIf { it > 0 } ?: 0
+                    val rawMsg = jobRes?.optString("message").orEmpty()
+                    val rawErr = jobRes?.optString("error").orEmpty()
+                    val errMsg = when {
+                        rawMsg.isNotBlank() && httpCode > 0 && !rawMsg.contains("HTTP") -> "[$httpCode] $rawMsg"
+                        rawMsg.isNotBlank() -> rawMsg
+                        rawErr.isNotBlank() -> rawErr
+                        else -> "Chưa có nhiệm vụ lúc này"
+                    }
+                    val displayError = "Golike: $errMsg (Chờ ${cfg.delayMinSeconds}s)"
+                    onStatusChange(displayError)
+                    XsmmJobStatusBridge.update(displayError)
                     onJobFailed(errMsg)
 
                     if (cfg.autoSwitchOnFail && consecutiveFails >= cfg.failJobCountToSwitchAccount) {

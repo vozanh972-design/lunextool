@@ -37,6 +37,8 @@ class GolikeApiClient(
     var userId: Long? = null,
     var context: Context? = null
 ) {
+    var lastTokenError: String? = null
+
     companion object {
         const val BASE_URL = "https://gateway.golike.net/api"
         const val SECURITY_URL = "https://api.golike.net/api/v1/security"
@@ -236,7 +238,12 @@ class GolikeApiClient(
     }
 
     // 3. Lấy nhiệm vụ (Get Job)
-    suspend fun getSecurityTokenForGetJob(accountId: Any, customWebData: String? = null): String? {
+    suspend fun getSecurityTokenForGetJob(
+        accountId: Any,
+        customWebData: String? = null,
+        onStatus: (String) -> Unit = {}
+    ): String? {
+        lastTokenError = null
         val numAccId = when (accountId) {
             is Number -> accountId
             is String -> accountId.toLongOrNull() ?: accountId
@@ -247,6 +254,7 @@ class GolikeApiClient(
             ?: "null"
         val reqPayload = JSONObject().apply {
             put("plt", "tiktok")
+            put("clt", "web")
             put("act", "get_job")
             put("req", JSONObject().apply {
                 put("method", "GET")
@@ -265,15 +273,23 @@ class GolikeApiClient(
         }
 
         val bodyStr = reqPayload.toString()
-        val dynamicGAuth = generateGAuth(bodyStr)
+        onStatus("Đang tạo chữ ký WASM...")
+        val dynamicGAuth = generateGAuth(bodyStr, path = "/api/v1/security/token")
+        if (dynamicGAuth.isNullOrBlank()) {
+            val err = "Lỗi tạo chữ ký WASM g-auth (chưa có signing_key hoặc session hết hạn)"
+            lastTokenError = err
+            onStatus(err)
+            android.util.Log.e("GolikeApi", err)
+            return null
+        }
 
         val reqBuilder = newRequestBuilder("$SECURITY_URL/token")
             .post(bodyStr.toRequestBody(JSON_MEDIA_TYPE))
-        if (!dynamicGAuth.isNullOrBlank()) {
-            reqBuilder.header("g-auth", dynamicGAuth)
-        }
+            .header("g-auth", dynamicGAuth)
 
+        onStatus("Đang lấy token nhận nhiệm vụ (sig)...")
         val res = execute(reqBuilder.build())
+        val httpCode = res?.optInt("http_code", 0) ?: 0
         val directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
             ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
@@ -286,10 +302,13 @@ class GolikeApiClient(
         // Tự động giải ngầm nếu gặp yêu cầu xác minh Captcha
         val action = res?.optString("action")
         val reason = res?.optString("reason")
-        if (action == "captcha" || reason == "captcha") {
+        val message = res?.optString("message").orEmpty()
+        if (action == "captcha" || reason == "captcha" || message.contains("xác minh", ignoreCase = true)) {
+            onStatus("🛡️ Golike yêu cầu giải Captcha -> Đang tự động kích hoạt giải ngầm...")
             android.util.Log.w("GolikeApi", "Gặp yêu cầu Captcha khi lấy Token Job. Đang tự động giải ngầm...")
-            val solved = solveCaptchaChallenge()
+            val solved = solveCaptchaChallenge(onStatus)
             if (solved) {
+                onStatus("🟢 Giải Captcha OK TRUE -> Đang lấy lại chữ ký sig...")
                 android.util.Log.i("GolikeApi", "Đã giải Captcha ngầm thành công! Đang yêu cầu lại token sig...")
                 val retryBodyStr = reqPayload.toString()
                 val retryGAuth = generateGAuth(retryBodyStr, path = "/api/v1/security/token")
@@ -299,19 +318,41 @@ class GolikeApiClient(
                     retryReqBuilder.header("g-auth", retryGAuth)
                 }
                 val retryRes = execute(retryReqBuilder.build())
-                return retryRes?.optString("token")?.takeIf { it.isNotBlank() }
+                val retryToken = retryRes?.optString("token")?.takeIf { it.isNotBlank() }
                     ?: retryRes?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
                     ?: retryRes?.optString("sig")?.takeIf { it.isNotBlank() }
                     ?: retryRes?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+                if (retryToken != null) {
+                    onStatus("🟢 Đã có chữ ký sig hợp lệ! Chuẩn bị nhận việc...")
+                    return retryToken
+                }
+                val retryErr = retryRes?.optString("message")?.ifBlank { "HTTP ${retryRes.optInt("http_code", 0)}" }
+                lastTokenError = "Lỗi cấp chữ ký sig sau khi giải Captcha: $retryErr"
+                onStatus(lastTokenError.orEmpty())
             } else {
+                lastTokenError = "Lỗi: Server từ chối xác minh Captcha hoặc giải thất bại"
+                onStatus(lastTokenError.orEmpty())
                 android.util.Log.e("GolikeApi", "Giải Captcha ngầm không thành công.")
             }
+        } else {
+            val errDetail = when {
+                message.isNotBlank() && httpCode > 0 -> "HTTP $httpCode: $message"
+                message.isNotBlank() -> message
+                httpCode > 0 -> "HTTP $httpCode"
+                else -> "Server không phản hồi token (HTTP $httpCode)"
+            }
+            lastTokenError = "Thiếu chữ ký sig: $errDetail (Không thể gọi job khi chưa có sig)"
+            onStatus(lastTokenError.orEmpty())
         }
 
         return null
     }
 
-    suspend fun getTikTokJob(accountId: Any, customWebData: String? = null): JSONObject? {
+    suspend fun getTikTokJob(
+        accountId: Any,
+        customWebData: String? = null,
+        onStatus: (String) -> Unit = {}
+    ): JSONObject? {
         val numAccId = when (accountId) {
             is Number -> accountId
             is String -> accountId.toLongOrNull() ?: accountId
@@ -320,13 +361,29 @@ class GolikeApiClient(
         val effectiveData = customWebData?.takeIf { it.isNotBlank() && it != "null" }
             ?: webData?.takeIf { it.isNotBlank() && it != "null" }
             ?: "null"
-        val sigToken = getSecurityTokenForGetJob(numAccId, effectiveData)
-        val url = "$BASE_URL/advertising/publishers/tiktok/jobs?account_id=$numAccId&data=$effectiveData"
-        val reqBuilder = newRequestBuilder(url)
-        if (!sigToken.isNullOrBlank()) {
-            reqBuilder.header("sig", sigToken)
+
+        val sigToken = getSecurityTokenForGetJob(numAccId, effectiveData, onStatus)
+        if (sigToken.isNullOrBlank()) {
+            val err = lastTokenError ?: "Thiếu chữ ký sig (Không lấy được token bảo mật từ Golike)"
+            return JSONObject().apply {
+                put("success", false)
+                put("status", 400)
+                put("message", err)
+            }
         }
-        return execute(reqBuilder.get().build())
+
+        onStatus("Đang nhận việc từ Golike...")
+        val url = "$BASE_URL/advertising/publishers/tiktok/jobs?account_id=$numAccId&data=$effectiveData"
+        val reqBuilder = newRequestBuilder(url).header("sig", sigToken)
+        val res = execute(reqBuilder.get().build())
+        if (res != null && !res.optBoolean("success", false)) {
+            val code = res.optInt("status", res.optInt("http_code", 0))
+            val msg = res.optString("message").orEmpty()
+            if (msg.contains("không hợp lệ", ignoreCase = true)) {
+                res.put("message", "Golike [HTTP $code]: Yêu cầu không hợp lệ (Nick ID $numAccId chưa khớp hoặc sig bị từ chối)")
+            }
+        }
+        return res
     }
 
     fun getInstagramJob(accountId: String): JSONObject? =
@@ -413,8 +470,9 @@ class GolikeApiClient(
     }
 
     // 3d. Tự động giải Captcha kéo thả của Golike qua API ngầm (WASM + Bézier trajectory)
-    suspend fun solveCaptchaChallenge(): Boolean {
+    suspend fun solveCaptchaChallenge(onStatus: (String) -> Unit = {}): Boolean {
         try {
+            onStatus("Đang lấy thử thách Captcha...")
             android.util.Log.d("GolikeCaptcha", "Bắt đầu lấy challenge captcha kéo thả...")
             val emptyBody = "{}"
             val challengeGAuth = generateGAuth(emptyBody, path = "/api/v1/security/captcha/challenge")
@@ -423,11 +481,19 @@ class GolikeApiClient(
             if (!challengeGAuth.isNullOrBlank()) {
                 challengeReqBuilder.header("g-auth", challengeGAuth)
             }
-            val challengeRes = execute(challengeReqBuilder.build()) ?: return false
-            val challengeObj = challengeRes.optJSONObject("challenge") ?: return false
+            val challengeRes = execute(challengeReqBuilder.build()) ?: run {
+                onStatus("Lỗi kết nối tải Captcha")
+                return false
+            }
+            val challengeObj = challengeRes.optJSONObject("challenge") ?: run {
+                val msg = challengeRes.optString("message").ifBlank { "Không có dữ liệu challenge" }
+                onStatus("Lỗi Captcha: $msg")
+                return false
+            }
             val kind = challengeObj.optString("kind")
             val challengeId = challengeObj.optString("challengeId")
             if (kind != "drag" || challengeId.isBlank()) {
+                onStatus("Thử thách không hỗ trợ: $kind")
                 android.util.Log.w("GolikeCaptcha", "Thử thách không phải drag hoặc thiếu challengeId: kind=$kind, id=$challengeId")
                 return false
             }
@@ -446,6 +512,7 @@ class GolikeApiClient(
             val waypointX = waypointObj.optDouble("x", 0.0)
             val waypointY = waypointObj.optDouble("y", 0.0)
 
+            onStatus("Đang tính quỹ đạo Bézier (${kotlin.math.round(startX).toInt()},${kotlin.math.round(startY).toInt()} -> ${kotlin.math.round(targetX).toInt()},${kotlin.math.round(targetY).toInt()})...")
             android.util.Log.d("GolikeCaptcha", "Tọa độ giải: start=($startX, $startY), waypoint=($waypointX, $waypointY), target=($targetX, $targetY)")
 
             // Tính điểm kiểm soát Bézier bậc 2 (Quadratic Bézier đi xuyên qua tâm waypoint tại u = 0.5)
@@ -480,7 +547,7 @@ class GolikeApiClient(
                 pointsArr.put(point)
             }
 
-            // Gửi xác thực: POST /api/v1/security/captcha/verify
+            onStatus("Đang gửi xác minh Captcha (${pointsArr.length()} điểm)...")
             val verifyPayload = JSONObject().apply {
                 put("challengeId", challengeId)
                 put("points", pointsArr)
@@ -495,9 +562,16 @@ class GolikeApiClient(
 
             val verifyRes = execute(verifyReqBuilder.build())
             val isOk = verifyRes?.optBoolean("ok", false) == true || verifyRes?.optBoolean("success", false) == true
+            if (isOk) {
+                onStatus("✅ Xác minh Captcha thành công!")
+            } else {
+                val err = verifyRes?.optString("message") ?: "Xác minh chưa thành công"
+                onStatus("❌ Captcha không đạt: $err")
+            }
             android.util.Log.d("GolikeCaptcha", "Kết quả verify captcha ngầm: ok=$isOk | Res: $verifyRes")
             return isOk
         } catch (e: Exception) {
+            onStatus("Lỗi giải Captcha: ${e.message}")
             android.util.Log.e("GolikeCaptcha", "Lỗi trong quá trình giải captcha ngầm: ${e.message}", e)
             return false
         }
