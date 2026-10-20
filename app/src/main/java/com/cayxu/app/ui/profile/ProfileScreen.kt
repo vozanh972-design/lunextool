@@ -175,18 +175,31 @@ fun ProfileScreen(
 
         Membership(state, Modifier.padding(top = 20.dp))
 
+        Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicText(Str.profileCoinHistory, Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
+            SeeAll(onSeeAllHistory)
+        }
         if (state.recent.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText("Lịch sử xu", Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
-                SeeAll(onSeeAllHistory)
+            PressBox(onClick = onSeeAllHistory, modifier = Modifier.padding(top = 12.dp)) {
+                CoinEntryCard {
+                    val today = remember { java.time.LocalDate.now() }
+                    state.recent.forEachIndexed { i, e -> CoinEntryRow(e, relativeTime(e.atMillis, today), divider = i > 0) }
+                }
             }
-            CoinEntryCard(Modifier.padding(top = 12.dp)) {
-                val today = remember { java.time.LocalDate.now() }
-                state.recent.forEachIndexed { i, e -> CoinEntryRow(e, relativeTime(e.atMillis, today), divider = i > 0) }
+        } else {
+            PressBox(onClick = onSeeAllHistory, modifier = Modifier.padding(top = 12.dp)) {
+                Card {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        BasicText(Str.profileNoCoinHistory, style = type(13.5f, FontWeight.Medium, Alx.Muted))
+                    }
+                }
             }
         }
 
-        SectionTitle("Tài khoản & hỗ trợ")
+        SectionTitle(Str.profileAccountSupport)
         Card(Modifier.padding(top = 12.dp)) {
             SettingRow(Str.profileSettings, Sliders, divider = false) { onAction(ProfileAction.Settings) }
             SettingRow(Str.profileLanguage, Globe, divider = true, value = state.language.nativeName) { sheet = ProfileSheet.Language }
@@ -480,7 +493,7 @@ private fun SeeAll(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        BasicText("Tất cả", style = type(13f, FontWeight.Bold, Alx.Blue))
+        BasicText(Str.profileSeeAll, style = type(13f, FontWeight.Bold, Alx.Blue))
         SvgIcon(Chevron, 13.dp, Alx.Blue, 2.2f)
     }
 }
