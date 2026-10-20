@@ -190,8 +190,8 @@ fun ProfileScreen(
         Card(Modifier.padding(top = 12.dp)) {
             SettingRow(Str.profileSettings, Sliders, divider = false) { onAction(ProfileAction.Settings) }
             SettingRow(Str.profileLanguage, Globe, divider = true, value = state.language.nativeName) { sheet = ProfileSheet.Language }
-            SettingRow(Str.profileSupport, Help, divider = true) { sheet = ProfileSheet.Contact }
-            SettingRow(Str.profileTerms, Doc, divider = true) { onAction(ProfileAction.Terms) }
+            SettingRow(Str.profileContactSupport, Help, divider = true) { sheet = ProfileSheet.Contact }
+            SettingRow(Str.profileTermsPolicies, Doc, divider = true) { onAction(ProfileAction.Terms) }
             SettingRow(Str.profileLogout, Logout, divider = true, danger = true) { onAction(ProfileAction.Logout) }
         }
 
@@ -361,7 +361,7 @@ fun ProfileScreen(
                         .clickable { showLogoutDialog = false }
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
-                    BasicText(Str.profileLogoutCancel, style = type(14f, FontWeight.Bold, Alx.Ink))
+                    BasicText(Str.profileCancel, style = type(14f, FontWeight.Bold, Alx.Ink))
                 }
             }
         )
