@@ -74,8 +74,8 @@ data class CrossTTCAccount(
 )
 
 data class CrossTTCAccountsUiState(
-    val username: String,
-    val exchangedCount: Int,
+    val username: String = "",
+    val coins: Long = 0L,
     val accounts: List<CrossTTCAccount> = emptyList(),
     val selectedAccountIds: Set<String> = emptySet(),
 )
@@ -246,16 +246,19 @@ private fun AccountSummaryCard(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        val firstLetter = state.username.firstOrNull()?.uppercaseChar()?.toString() ?: "T"
         Box(Modifier.size(48.dp).background(TtcDarkSoft, CircleShape), contentAlignment = Alignment.Center) {
-            BasicText(state.username.firstOrNull()?.uppercaseChar()?.toString() ?: "T", style = type(18f, FontWeight.ExtraBold, TtcDark))
+            BasicText(firstLetter, style = type(18f, FontWeight.ExtraBold, TtcDark))
         }
         Column(Modifier.weight(1f)) {
             BasicText(
-                state.username, style = type(15f, FontWeight.ExtraBold, Alx.Ink, lineHeight = 1.25f),
+                state.username.ifBlank { "Tài khoản TTC" },
+                style = type(15f, FontWeight.ExtraBold, Alx.Ink, lineHeight = 1.25f),
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
+            val coinsFormatted = java.text.NumberFormat.getNumberInstance(java.util.Locale.US).format(state.coins)
             BasicText(
-                "${state.exchangedCount} lượt đã trao đổi",
+                "$coinsFormatted xu",
                 Modifier.padding(top = 2.dp),
                 style = type(13f, FontWeight.ExtraBold, TtcDark, lineHeight = 1.3f),
             )
@@ -402,35 +405,20 @@ private fun PressBox(
     ) { content() }
 }
 
-/* ───────────────────────────── Dữ liệu mẫu + Preview ───────────────────────────── */
-
-val SampleCrossTTCAccounts = listOf(
-    CrossTTCAccount("t1", "@theanh_mkt", "https://i.pravatar.cc/88?img=12", "11.2K followers · 2.0K tim", "03/05/2026"),
-    CrossTTCAccount("t2", "@linh.daily", "https://i.pravatar.cc/88?img=47", "4.8K followers · 980 tim", "21/06/2026"),
-    CrossTTCAccount("t3", "@duy.store99", "https://i.pravatar.cc/88?img=33", "920 followers · 310 tim", "09/09/2026"),
-)
+/* ───────────────────────────── Preview ───────────────────────────── */
 
 @Preview(widthDp = 390, heightDp = 844, showBackground = true)
 @Composable
 private fun CrossTTCAccountsScreenPreview() {
     CrossTTCAccountsScreen(
         state = CrossTTCAccountsUiState(
-            username = "theanh_mkt",
-            exchangedCount = 128,
-            accounts = SampleCrossTTCAccounts,
-            selectedAccountIds = setOf("t1"),
+            username = "mimi10001",
+            coins = 41905L,
+            accounts = emptyList(),
+            selectedAccountIds = emptySet(),
         ),
         onBack = {}, onRefreshSummary = {}, onLogout = {}, onToggleSelectAll = {},
         onToggleAccount = {}, onRefreshAccount = {}, onAddAccount = {}, onOpenConfig = {}, onRun = {},
     )
 }
 
-@Preview(widthDp = 390, heightDp = 844, showBackground = true)
-@Composable
-private fun CrossTTCAccountsScreenEmptyPreview() {
-    CrossTTCAccountsScreen(
-        state = CrossTTCAccountsUiState(username = "theanh_mkt", exchangedCount = 0),
-        onBack = {}, onRefreshSummary = {}, onLogout = {}, onToggleSelectAll = {},
-        onToggleAccount = {}, onRefreshAccount = {}, onAddAccount = {}, onOpenConfig = {}, onRun = {},
-    )
-}

@@ -2,8 +2,14 @@ package com.cayxu.app.ui.crossttc
 
 import android.content.Intent
 import android.net.Uri
+import android.view.ViewGroup
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,10 +38,14 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import com.cayxu.app.data.local.TikTokAccountsStore
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -88,31 +98,133 @@ private val External = listOf("M7 17L17 7M8 7h9v9")
 @Composable
 fun CrossTTCLoginScreen(navController: NavController) {
     val context = LocalContext.current
-    var token by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    var token by remember { mutableStateOf(CrossTTCStore.getToken(context)) }
     var isLoading by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var loggedIn by remember { mutableStateOf(false) }
+    var showWebView by remember { mutableStateOf(false) }
 
     var accountsState by remember {
         mutableStateOf(
             CrossTTCAccountsUiState(
-                username = "theanh_mkt",
-                exchangedCount = 128,
-                accounts = SampleCrossTTCAccounts,
-                selectedAccountIds = setOf("t1"),
+                username = CrossTTCStore.getUsername(context),
+                coins = CrossTTCStore.getCoins(context),
+                accounts = emptyList(),
+                selectedAccountIds = emptySet(),
             )
         )
     }
     var toastText by remember { mutableStateOf<String?>(null) }
+
+    fun buildAccountsList(ttcAccounts: List<CrossTTCTikTokAccountInfo>): List<CrossTTCAccount> {
+        val deviceTikToks = TikTokAccountsStore.getAccounts(context)
+        val list = mutableListOf<CrossTTCAccount>()
+
+        // 1. Nạp danh sách tài khoản TikTok trên máy (độc lập trong app)
+        deviceTikToks.forEach { tk ->
+            val h = if (tk.handle.startsWith("@")) tk.handle else "@${tk.handle}"
+            list.add(
+                CrossTTCAccount(
+                    id = tk.uid,
+                    handle = h,
+                    avatarUrl = tk.avatarUrl.ifBlank { "https://i.pravatar.cc/88" },
+                    statLine = "${tk.followerCount} followers · ${tk.heartCount} tim",
+                    createdAt = tk.createDateFormatted.ifBlank { "Thiết bị" },
+                    linked = tk.isLive,
+                )
+            )
+        }
+
+        // 2. Thêm các tài khoản TikTok đã cấu hình trên TTC web nếu có
+        ttcAccounts.forEach { tt ->
+            val cleanName = tt.username.removePrefix("@")
+            val already = list.any { it.handle.removePrefix("@").equals(cleanName, ignoreCase = true) }
+            if (!already) {
+                list.add(
+                    CrossTTCAccount(
+                        id = tt.id,
+                        handle = "@$cleanName",
+                        avatarUrl = "https://i.pravatar.cc/88",
+                        statLine = if (tt.isActive) "Đang đặt làm nick chạy trên TTC" else "Tài khoản TikTok TTC",
+                        createdAt = "TTC Web",
+                        linked = true,
+                    )
+                )
+            }
+        }
+
+        return list
+    }
+
+    fun performLogin(tokenToUse: String) {
+        val trimmed = tokenToUse.trim()
+        if (trimmed.isBlank()) {
+            errorText = "Vui lòng nhập hoặc dán Access Token"
+            return
+        }
+        isLoading = true
+        errorText = null
+
+        scope.launch {
+            val res = CrossTTCApi.loginWithToken(trimmed)
+            if (res.isSuccess) {
+                CrossTTCStore.saveToken(context, trimmed)
+                CrossTTCStore.saveSession(context, res.username, res.coins)
+
+                val ttcTikToks = CrossTTCApi.getTtcTikTokAccounts(res.sessionCookie)
+                val finalAccounts = buildAccountsList(ttcTikToks)
+
+                accountsState = CrossTTCAccountsUiState(
+                    username = res.username,
+                    coins = res.coins,
+                    accounts = finalAccounts,
+                    selectedAccountIds = finalAccounts.map { it.id }.toSet(),
+                )
+                loggedIn = true
+            } else {
+                errorText = res.errorMessage.ifBlank { "Đăng nhập thất bại" }
+            }
+            isLoading = false
+        }
+    }
+
+    // Tự động khôi phục phiên nếu đã có token từ trước
+    LaunchedEffect(Unit) {
+        val savedToken = CrossTTCStore.getToken(context)
+        if (savedToken.isNotBlank()) {
+            performLogin(savedToken)
+        }
+    }
+
+    if (showWebView) {
+        CrossTTCWebViewDialog(onDismiss = { showWebView = false })
+    }
 
     if (loggedIn) {
         CrossTTCAccountsScreen(
             state = accountsState,
             onBack = { navController.popBackStack() },
             onRefreshSummary = {
-                toastText = "Đã làm mới thông tin trao đổi chéo"
+                scope.launch {
+                    val res = CrossTTCApi.loginWithToken(token)
+                    if (res.isSuccess) {
+                        CrossTTCStore.saveSession(context, res.username, res.coins)
+                        val ttcTikToks = CrossTTCApi.getTtcTikTokAccounts(res.sessionCookie)
+                        val updatedAccounts = buildAccountsList(ttcTikToks)
+                        accountsState = accountsState.copy(
+                            username = res.username,
+                            coins = res.coins,
+                            accounts = updatedAccounts,
+                        )
+                        toastText = "Đã làm mới số dư: ${res.coins} xu"
+                    } else {
+                        toastText = "Không thể làm mới: ${res.errorMessage}"
+                    }
+                }
             },
             onLogout = {
+                CrossTTCStore.clearToken(context)
                 loggedIn = false
                 token = ""
             },
@@ -152,19 +264,11 @@ fun CrossTTCLoginScreen(navController: NavController) {
             token = token,
             onTokenChange = { token = it; errorText = null },
             onLogin = {
-                if (token.isBlank()) {
-                    errorText = "Vui lòng nhập hoặc dán Access Token"
-                } else {
-                    // Nhận token đăng nhập thành công, chuyển sang màn hình danh sách tài khoản
-                    loggedIn = true
-                }
+                performLogin(token)
             },
             onBack = { navController.popBackStack() },
             onOpenSite = {
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://tuongtaccheo.com"))
-                    context.startActivity(intent)
-                } catch (_: Exception) {}
+                showWebView = true
             },
             loading = isLoading,
             errorText = errorText,
@@ -385,6 +489,105 @@ private fun PressBox(
             .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick),
         contentAlignment = contentAlignment,
     ) { content() }
+}
+
+@Composable
+private fun CrossTTCWebViewDialog(
+    onDismiss: () -> Unit,
+    url: String = "https://tuongtaccheo.com",
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+        var pageTitle by remember { mutableStateOf("tuongtaccheo.com") }
+
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(Alx.Bg)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+        ) {
+            // Thanh điều hướng trên
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Alx.White)
+                    .border(1.dp, Alx.Line)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                PressBox(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(38.dp).background(Alx.Bg, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    SvgIcon(Back, 18.dp, Alx.Ink, 2f)
+                }
+                Column(Modifier.weight(1f)) {
+                    BasicText(
+                        pageTitle,
+                        style = type(15f, FontWeight.Bold, Alx.Ink),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                    BasicText(
+                        "Đăng nhập & copy Access Token",
+                        style = type(12f, FontWeight.Medium, Alx.Muted)
+                    )
+                }
+                PressBox(
+                    onClick = { webViewInstance?.reload() },
+                    modifier = Modifier.size(38.dp).background(Alx.Bg, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    BasicText("Tải lại", style = type(12.5f, FontWeight.Bold, TtcDark))
+                }
+                PressBox(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .background(TtcDark, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    BasicText("Đóng", style = type(12.5f, FontWeight.Bold, Alx.White))
+                }
+            }
+
+            // WebView hiển thị trực tiếp trang web
+            AndroidView(
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            databaseEnabled = true
+                            useWideViewPort = true
+                            loadWithOverviewMode = true
+                            userAgentString = "Mozilla/5.0 (Linux; Android 14; SM-A556B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36"
+                        }
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                super.onPageFinished(view, url)
+                                val t = view?.title
+                                if (!t.isNullOrBlank()) pageTitle = t
+                            }
+                        }
+                        loadUrl(url)
+                        webViewInstance = this
+                    }
+                },
+                modifier = Modifier.fillMaxSize().weight(1f)
+            )
+        }
+    }
 }
 
 /* ───────────────────────────── Preview (chỉ để xem bố cục) ───────────────────────────── */
