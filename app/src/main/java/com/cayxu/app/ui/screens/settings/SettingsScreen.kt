@@ -287,9 +287,19 @@ fun SettingsScreen(
 @Composable
 fun KeepScreenOn(enabled: Boolean) {
     val view = LocalView.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     DisposableEffect(view, enabled) {
         view.keepScreenOn = enabled
-        onDispose { view.keepScreenOn = false }
+        val window = (context as? android.app.Activity)?.window
+        if (enabled) {
+            window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            view.keepScreenOn = false
+            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 }
 

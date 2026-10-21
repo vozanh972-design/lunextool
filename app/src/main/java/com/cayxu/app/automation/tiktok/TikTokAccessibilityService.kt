@@ -1004,10 +1004,29 @@ class TikTokAccessibilityService : AccessibilityService() {
      * ra được - bấm tay thì ăn nhưng gọi ACTION_CLICK qua node thì im re, đúng hiện tượng đã
      * gặp. Chạm thật mô phỏng đúng một cú chạm ngón tay nên chắc ăn hơn nhiều.
      */
+    /**
+     * Bấm an toàn: tự động kiểm tra nếu bong bóng nổi đang che chữ/nút,
+     * thì dời bong bóng sang chỗ khác rồi mới thực hiện click.
+     */
+    private suspend fun safeClickNode(node: AccessibilityNodeInfo) {
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        if (bounds.width() > 0 && bounds.height() > 0) {
+            val moved = com.cayxu.app.ui.crossttc.CrossTTCOverlayService.instance?.checkAndAvoidCollision(bounds) == true
+            if (moved) {
+                XsmmTaskAutomationBridge.updateProgress("Bong bóng che nút, đang dời sang chỗ khác...")
+                delay(400)
+                node.getBoundsInScreen(bounds)
+            }
+        }
+        clickNode(node)
+    }
+
     private fun clickNode(node: AccessibilityNodeInfo) {
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
         if (bounds.width() > 0 && bounds.height() > 0) {
+            com.cayxu.app.ui.crossttc.CrossTTCOverlayService.instance?.checkAndAvoidCollision(bounds)
             tapAt(bounds.exactCenterX(), bounds.exactCenterY())
         }
         var target: AccessibilityNodeInfo? = node
@@ -1594,8 +1613,32 @@ class TikTokAccessibilityService : AccessibilityService() {
                             val followNode = findFollowButtonNode(root)
                             if (followNode != null) {
                                 XsmmTaskAutomationBridge.updateProgress("Đã thấy nút Follow, đang bấm...")
-                                clickNode(followNode)
+                                safeClickNode(followNode)
                                 delay(1200)
+
+                                // BƯỚC XÁC NHẬN NGẦM: Kiểm tra xem giao diện có đổi thật hay chưa
+                                var verifiedFollow = false
+                                val verifyRoot = findTikTokRoot()
+                                if (verifyRoot != null) {
+                                    val alreadyNode = findAlreadyFollowingNode(verifyRoot)
+                                    val stillFollowNode = findFollowButtonNode(verifyRoot)
+                                    if (alreadyNode != null || stillFollowNode == null) {
+                                        verifiedFollow = true
+                                    }
+                                }
+
+                                if (!verifiedFollow) {
+                                    // Giao diện chưa đổi (bấm nhanh quá chưa ăn hoặc lag máy)
+                                    XsmmTaskAutomationBridge.updateProgress("Giao diện chưa đổi, đang kiểm tra và bấm lại...")
+                                    delay(800)
+                                    val retryRoot = findTikTokRoot()
+                                    val retryFollowNode = retryRoot?.let { findFollowButtonNode(it) }
+                                    if (retryFollowNode != null) {
+                                        safeClickNode(retryFollowNode)
+                                        delay(1200)
+                                    }
+                                }
+
                                 taskSuccess = true
                                 break
                             }
@@ -1716,7 +1759,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                             }
                             if (foundTargetRow != null) {
                                 XsmmTaskAutomationBridge.updateProgress("Chọn @$target...")
-                                clickNode(foundTargetRow)
+                                safeClickNode(foundTargetRow)
                                 delay(2500)
                                 XsmmTaskAutomationBridge.completeTask(action.actionId, true, "Đã chuyển sang tài khoản @$target")
                                 return@launch
@@ -1773,7 +1816,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                     val xsmmPkg = action.variant.let { TikTokAppLauncher.packageNameOf(it) }
                     if (settingsMenuNode != null && isMenuDrawer) {
                         XsmmTaskAutomationBridge.updateProgress("Mở Cài đặt...")
-                        clickNode(settingsMenuNode)
+                        safeClickNode(settingsMenuNode)
                         // Quét 1s/lần: chờ 10s, chưa hiện đợi tiếp 10s nữa (tối đa 3 phút). Hiện Cài đặt là chạy tiếp luôn!
                         waitForCondition(xsmmPkg, onWaitingMore = { elapsed ->
                             XsmmTaskAutomationBridge.updateProgress("Đợi Cài đặt (${elapsed}s)...")
@@ -1789,7 +1832,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                     val switchRowNode = findNodeByText(root, SWITCH_SHEET_TITLE, exact = false)
                     if (switchRowNode != null && addAccountNode == null) {
                         XsmmTaskAutomationBridge.updateProgress("Bấm Chuyển đổi nick...")
-                        clickNode(switchRowNode)
+                        safeClickNode(switchRowNode)
                         // Quét 1s/lần: chờ 10s, chưa hiện đợi tiếp 10s nữa (tối đa 3 phút). Hiện Sheet là quét luôn!
                         waitForCondition(xsmmPkg, onWaitingMore = { elapsed ->
                             XsmmTaskAutomationBridge.updateProgress("Đợi danh sách nick (${elapsed}s)...")
@@ -1813,7 +1856,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                         }
                         if (foundNode != null) {
                             XsmmTaskAutomationBridge.updateProgress("Bấm Chuyển đổi nick...")
-                            clickNode(foundNode)
+                            safeClickNode(foundNode)
                             waitForCondition(xsmmPkg, onWaitingMore = { elapsed ->
                                 XsmmTaskAutomationBridge.updateProgress("Đợi danh sách nick (${elapsed}s)...")
                             }) { currentRoot ->
@@ -1860,7 +1903,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                                     XsmmTaskAutomationBridge.updateProgress("Đổi @$currentHandle sang @$target...")
                                     val menuNode = findMenuIcon(root)
                                     if (menuNode != null) {
-                                        clickNode(menuNode)
+                                        safeClickNode(menuNode)
                                         menuTapAttempts++
                                         delay(1000)
                                     } else {
@@ -1883,7 +1926,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                                 val menuNode = findMenuIcon(root)
                                 if (menuNode != null && menuTapAttempts < 3) {
                                     XsmmTaskAutomationBridge.updateProgress("Đang mở menu (☰) tìm Chuyển đổi...")
-                                    clickNode(menuNode)
+                                    safeClickNode(menuNode)
                                     menuTapAttempts++
                                     delay(1000)
                                 } else if (menuTapAttempts >= 3) {

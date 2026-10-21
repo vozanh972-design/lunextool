@@ -53,7 +53,13 @@ class CrossTTCOverlayService : Service() {
         const val EXTRA_ACCOUNT_HANDLES = "extra_account_handles"
         const val EXTRA_SESSION_COOKIE = "extra_session_cookie"
         const val EXTRA_ACCESS_TOKEN = "extra_access_token"
+
+        @Volatile
+        var instance: CrossTTCOverlayService? = null
+            private set
     }
+
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
 
     private lateinit var windowManager: WindowManager
     private var overlayComposeView: ComposeView? = null
@@ -90,6 +96,7 @@ class CrossTTCOverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        instance = this
         sessionCookie = intent?.getStringExtra(EXTRA_SESSION_COOKIE).orEmpty()
         accessToken = intent?.getStringExtra(EXTRA_ACCESS_TOKEN).orEmpty()
         accountHandles = intent?.getStringExtra(EXTRA_ACCOUNT_HANDLES)
@@ -513,11 +520,20 @@ class CrossTTCOverlayService : Service() {
         val lifecycleOwner = OverlayLifecycleOwner().apply { onCreate() }
         overlayLifecycleOwner = lifecycleOwner
 
+        val keepAwake = runCatching {
+            com.cayxu.app.data.AppSettingsStore(applicationContext).settings.value.keepAwake
+        }.getOrDefault(false)
+
+        var initialFlags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        if (keepAwake) {
+            initialFlags = initialFlags or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        }
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             overlayType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            initialFlags,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
@@ -582,6 +598,93 @@ class CrossTTCOverlayService : Service() {
 
         windowManager.addView(composeView, params)
         overlayComposeView = composeView
+        setupKeepScreenOnObserver()
+    }
+
+    private fun setupKeepScreenOnObserver() {
+        val settingsStore = com.cayxu.app.data.AppSettingsStore(applicationContext)
+        serviceScope.launch {
+            settingsStore.settings.collect { settings ->
+                val keep = settings.keepAwake
+                val p = overlayParams
+                val view = overlayComposeView
+                if (p != null && view != null) {
+                    if (keep) {
+                        p.flags = p.flags or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                    } else {
+                        p.flags = p.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON.inv()
+                    }
+                    runCatching { windowManager.updateViewLayout(view, p) }
+                }
+                if (keep) {
+                    acquireWakeLock()
+                } else {
+                    releaseWakeLock()
+                }
+            }
+        }
+    }
+
+    private fun acquireWakeLock() {
+        if (wakeLock == null) {
+            val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+            wakeLock = pm?.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "cayxu:crossttc_wakelock")
+        }
+        if (wakeLock?.isHeld == false) {
+            runCatching { wakeLock?.acquire(24 * 60 * 60 * 1000L) }
+        }
+    }
+
+    private fun releaseWakeLock() {
+        runCatching {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        }
+    }
+
+    /**
+     * Tự động kiểm tra và di chuyển bong bóng nổi nếu đang che khuất vùng [targetBounds] của nút/chữ.
+     * Trả về true nếu đã phát hiện che và di chuyển sang vị trí an toàn khác.
+     */
+    fun checkAndAvoidCollision(targetBounds: Rect): Boolean {
+        val view = overlayComposeView ?: return false
+        val p = overlayParams ?: return false
+        val loc = IntArray(2)
+        view.getLocationOnScreen(loc)
+        val bubbleBounds = Rect(loc[0], loc[1], loc[0] + view.width, loc[1] + view.height)
+
+        val expandedTarget = Rect(targetBounds)
+        expandedTarget.inset(-dp(10), -dp(10))
+
+        if (Rect.intersects(bubbleBounds, expandedTarget)) {
+            val currentDock = overlayUiState.value.dockedSide
+            val nextDock = if (currentDock == OverlaySide.Right) OverlaySide.Left else OverlaySide.Right
+            val dm = resources.displayMetrics
+
+            if (nextDock == OverlaySide.Left) {
+                p.gravity = Gravity.TOP or Gravity.START
+                p.x = 0
+            } else {
+                p.gravity = Gravity.TOP or Gravity.END
+                p.x = 0
+            }
+
+            // Nếu trục Y vẫn đè lên nút, nhảy lên trên hoặc xuống dưới 120dp
+            if (Math.abs(p.y - targetBounds.centerY()) < dp(80)) {
+                if (p.y > dm.heightPixels / 2) {
+                    p.y = (p.y - dp(120)).coerceAtLeast(dp(60))
+                } else {
+                    p.y = (p.y + dp(120)).coerceAtMost(dm.heightPixels - dp(150))
+                }
+                lastBubbleY = p.y
+            }
+
+            overlayUiState.value = overlayUiState.value.copy(dockedSide = nextDock)
+            runCatching { windowManager.updateViewLayout(view, p) }
+            return true
+        }
+        return false
     }
 
     private fun togglePause() {
@@ -633,6 +736,10 @@ class CrossTTCOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (instance === this) {
+            instance = null
+        }
+        releaseWakeLock()
         runnerJob?.cancel()
         serviceScope.cancel()
         overlayComposeView?.let { runCatching { windowManager.removeView(it) } }
