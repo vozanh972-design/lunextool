@@ -117,21 +117,36 @@ fun CrossTTCLoginScreen(navController: NavController) {
     }
     var toastText by remember { mutableStateOf<String?>(null) }
 
+    fun formatStatCount(count: Long): String {
+        return when {
+            count >= 1_000_000 -> String.format(java.util.Locale.US, "%.1fM", count / 1_000_000.0)
+            count >= 1_000 -> String.format(java.util.Locale.US, "%.1fK", count / 1_000.0)
+            else -> count.toString()
+        }
+    }
+
     fun buildAccountsList(ttcAccounts: List<CrossTTCTikTokAccountInfo>): List<CrossTTCAccount> {
         val deviceTikToks = TikTokAccountsStore.getAccounts(context)
         val list = mutableListOf<CrossTTCAccount>()
 
         // 1. Nạp danh sách tài khoản TikTok trên máy (độc lập trong app)
         deviceTikToks.forEach { tk ->
+            val cleanHandle = tk.handle.removePrefix("@")
+            val isLinked = ttcAccounts.any { it.username.removePrefix("@").equals(cleanHandle, ignoreCase = true) }
             val h = if (tk.handle.startsWith("@")) tk.handle else "@${tk.handle}"
+            val statList = mutableListOf<String>()
+            if (tk.followerCount > 0) statList.add("${formatStatCount(tk.followerCount)} followers")
+            if (tk.heartCount > 0) statList.add("${formatStatCount(tk.heartCount)} tim")
+            val statLine = if (statList.isNotEmpty()) statList.joinToString(" • ") else ""
+
             list.add(
                 CrossTTCAccount(
                     id = tk.uid,
                     handle = h,
-                    avatarUrl = tk.avatarUrl.ifBlank { "https://i.pravatar.cc/88" },
-                    statLine = "${tk.followerCount} followers · ${tk.heartCount} tim",
+                    avatarUrl = tk.avatarUrl,
+                    statLine = statLine,
                     createdAt = tk.createDateFormatted.ifBlank { "Thiết bị" },
-                    linked = tk.isLive,
+                    linked = isLinked,
                 )
             )
         }
@@ -145,8 +160,8 @@ fun CrossTTCLoginScreen(navController: NavController) {
                     CrossTTCAccount(
                         id = tt.id,
                         handle = "@$cleanName",
-                        avatarUrl = "https://i.pravatar.cc/88",
-                        statLine = if (tt.isActive) "Đang đặt làm nick chạy trên TTC" else "Tài khoản TikTok TTC",
+                        avatarUrl = "",
+                        statLine = if (tt.isActive) "Đang đặt làm nick chạy" else "",
                         createdAt = "TTC Web",
                         linked = true,
                     )
@@ -255,6 +270,20 @@ fun CrossTTCLoginScreen(navController: NavController) {
                     toastText = "Đang chạy $count tài khoản TikTok TTC"
                 } else {
                     toastText = "Vui lòng chọn ít nhất 1 tài khoản"
+                }
+            },
+            onDeleteSelected = {
+                val toDelete = accountsState.selectedAccountIds
+                if (toDelete.isNotEmpty()) {
+                    toDelete.forEach { uid ->
+                        TikTokAccountsStore.removeAccount(context, uid)
+                    }
+                    val remaining = accountsState.accounts.filterNot { it.id in toDelete }
+                    accountsState = accountsState.copy(
+                        accounts = remaining,
+                        selectedAccountIds = emptySet()
+                    )
+                    toastText = "Đã xoá ${toDelete.size} tài khoản đã chọn"
                 }
             },
             toastText = toastText,

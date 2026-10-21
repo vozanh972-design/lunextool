@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -80,18 +83,32 @@ data class CrossTTCAccountsUiState(
     val selectedAccountIds: Set<String> = emptySet(),
 )
 
+/* Cờ cung (arc flags) luôn viết cách nhau vì PathParser của Android không đọc dạng dính */
+private fun circle(cx: Float, cy: Float, r: Float) =
+    "M${cx - r} ${cy}a$r $r 0 1 0 ${2 * r} 0a$r $r 0 1 0 ${-2 * r} 0"
+
 private val Back = listOf("M19 12H5M11 6l-6 6 6 6")
-private val Refresh = listOf("M21 12a9 9 0 11-3-6.7M21 4v5h-5")
-private val Logout = listOf("M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9")
+private val Refresh = listOf(
+    "M21 12a9 9 0 1 1 -9 -9c2.52 0 4.93 1 6.74 2.74L21 8",
+    "M21 3v5h-5"
+)
+private val Logout = listOf("M9 21H5a2 2 0 0 1 -2 -2V5a2 2 0 0 1 2 -2h4M16 17l5-5-5-5M21 12H9")
 private val Plus = listOf("M12 5v14M5 12h14")
 private val CrossSwap = listOf("M17 3l4 4-4 4M21 7H8M7 21l-4-4 4-4M3 17h13")
 private val Check = listOf("M5 12.5l4.5 4.5L19 7.5")
 private val Gear = listOf(
-    "M12 15a3 3 0 100-6 3 3 0 000 6z",
-    "M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z",
+    circle(12f, 12f, 3f),
+    "M19.4 15 a1.65 1.65 0 0 0 0.33 1.82 l0.06 0.06 a2 2 0 0 1 0 2.83 a2 2 0 0 1 -2.83 0 l-0.06 -0.06 a1.65 1.65 0 0 0 -1.82 -0.33 a1.65 1.65 0 0 0 -1 1.51 V21 a2 2 0 0 1 -2 2 a2 2 0 0 1 -2 -2 v-0.09 a1.65 1.65 0 0 0 -1 -1.51 a1.65 1.65 0 0 0 -1.82 0.33 l-0.06 0.06 a2 2 0 0 1 -2.83 0 a2 2 0 0 1 0 -2.83 l0.06 -0.06 a1.65 1.65 0 0 0 0.33 -1.82 a1.65 1.65 0 0 0 -1.51 -1 H3 a2 2 0 0 1 -2 -2 a2 2 0 0 1 2 -2 h0.09 a1.65 1.65 0 0 0 1.51 -1 a1.65 1.65 0 0 0 -0.33 -1.82 l-0.06 -0.06 a2 2 0 0 1 0 -2.83 a2 2 0 0 1 2.83 0 l0.06 0.06 a1.65 1.65 0 0 0 1.82 0.33 H9 a1.65 1.65 0 0 0 1 -1.51 V3 a2 2 0 0 1 2 -2 a2 2 0 0 1 2 2 v0.09 a1.65 1.65 0 0 0 1 1.51 a1.65 1.65 0 0 0 1.82 -0.33 l0.06 -0.06 a2 2 0 0 1 2.83 0 a2 2 0 0 1 0 2.83 l-0.06 0.06 a1.65 1.65 0 0 0 -0.33 1.82 V9 a1.65 1.65 0 0 0 1.51 1 H21 a2 2 0 0 1 2 2 a2 2 0 0 1 -2 2 h-0.09 a1.65 1.65 0 0 0 -1.51 1 z"
 )
 private val Play = listOf("M7 4.5v15l12-7.5z")
 private val EmptyPeople = listOf("M17 3l4 4-4 4", "M21 7H8", "M7 21l-4-4 4-4", "M3 17h13")
+private val Trash = listOf(
+    "M3 6h18",
+    "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
+    "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
+    "M10 11v6",
+    "M14 11v6"
+)
 
 /**
  * @param state             dữ liệu hiển thị hiện tại (tên tài khoản TTC, danh sách tài khoản TikTok…).
@@ -104,6 +121,7 @@ private val EmptyPeople = listOf("M17 3l4 4-4 4", "M21 7H8", "M7 21l-4-4 4-4", "
  * @param onAddAccount      bấm nút (+) hoặc thẻ rỗng — mở CrossTTCLoginScreen để thêm tài khoản TikTok.
  * @param onOpenConfig      bấm "Cấu hình" ở thanh dưới.
  * @param onRun             bấm "Chạy" — chạy trao đổi chéo cho các tài khoản đã chọn.
+ * @param onDeleteSelected  bấm icon thùng rác — xoá các tài khoản TikTok đã chọn.
  */
 @Composable
 fun CrossTTCAccountsScreen(
@@ -119,6 +137,7 @@ fun CrossTTCAccountsScreen(
     onRun: () -> Unit,
     modifier: Modifier = Modifier,
     toastText: String? = null,
+    onDeleteSelected: (() -> Unit)? = null,
 ) {
     val allSelected = state.accounts.isNotEmpty() && state.accounts.all { it.id in state.selectedAccountIds }
     val selectedCount = state.accounts.count { it.id in state.selectedAccountIds }
@@ -154,12 +173,19 @@ fun CrossTTCAccountsScreen(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PressBox(onClick = onToggleSelectAll, contentAlignment = Alignment.CenterStart) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Checkbox(allSelected)
                             BasicText("Tất cả", style = type(13f, FontWeight.SemiBold, Alx.Muted))
                         }
+                    }
+                    if (state.selectedAccountIds.isNotEmpty() && onDeleteSelected != null) {
+                        PressBox(
+                            onClick = onDeleteSelected,
+                            modifier = Modifier.size(40.dp).background(Alx.DangerBg, CircleShape).border(1.dp, Alx.Danger.copy(alpha = 0.35f), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) { SvgIcon(Trash, 18.dp, Alx.Danger, 2f) }
                     }
                     PressBox(
                         onClick = onAddAccount,
@@ -302,7 +328,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
     }
 }
 
-/** Dòng tài khoản: checkbox + avatar ẢNH thật + handle in đậm + pill "Đã liên kết" + dòng thống kê + ngày tạo + nút làm mới riêng. */
+/** Dòng tài khoản: checkbox + avatar HD hoặc ký tự đầu + handle in đậm (weight fill=false chống rớt dòng badge) + pill "Đã liên kết" / "Chưa liên kết" + dòng thống kê + ngày tạo + nút làm mới riêng. */
 @Composable
 private fun AccountRow(
     account: CrossTTCAccount,
@@ -311,49 +337,108 @@ private fun AccountRow(
     onRefresh: () -> Unit,
 ) {
     val shape = RoundedCornerShape(20.dp)
-    Row(
-        Modifier.fillMaxWidth()
+    PressBox(
+        onClick = onToggle,
+        modifier = Modifier.fillMaxWidth()
             .background(Alx.White, shape)
-            .border(1.dp, Alx.Line, shape)
+            .border(1.dp, if (selected) Alx.Blue else Alx.Line, shape)
             .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(11.dp),
+        contentAlignment = Alignment.CenterStart,
     ) {
-        PressBox(onClick = onToggle) { Checkbox(selected) }
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Checkbox(selected)
 
-        AsyncImage(
-            model = account.avatarUrl,
-            contentDescription = null,
-            modifier = Modifier.size(42.dp).clip(CircleShape).background(TtcDarkSoft),
-        )
-
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                BasicText(
-                    account.handle,
-                    style = type(14.5f, FontWeight.ExtraBold, Alx.Ink),
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-                if (account.linked) {
-                    Row(
-                        Modifier.background(TtcGreenSoft, RoundedCornerShape(999.dp)).padding(start = 6.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        SvgIcon(Check, 9.dp, TtcGreen, 3.6f)
-                        BasicText("Đã liên kết", style = type(10.5f, FontWeight.ExtraBold, TtcGreen))
-                    }
+            Box(
+                Modifier.size(44.dp).clip(CircleShape).background(Alx.Chip),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (account.avatarUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = account.avatarUrl,
+                        contentDescription = "Avatar",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    BasicText(
+                        account.handle.removePrefix("@").firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "T",
+                        style = type(15f, FontWeight.ExtraBold, Alx.ChipText),
+                    )
                 }
             }
-            BasicText(account.statLine, Modifier.padding(top = 4.dp), style = type(12.5f, FontWeight.ExtraBold, TtcDark))
-            BasicText("Tạo: ${account.createdAt}", Modifier.padding(top = 2.dp), style = type(11.5f, FontWeight.SemiBold, Color(0xFF94A3B8)))
-        }
 
-        PressBox(
-            onClick = onRefresh,
-            modifier = Modifier.size(36.dp).background(Alx.Bg, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) { SvgIcon(Refresh, 16.dp, Alx.Muted, 2f) }
+            Column(Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    BasicText(
+                        account.handle,
+                        style = type(14.5f, FontWeight.Bold, Alx.Ink),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (account.linked) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF16A34A).copy(alpha = 0.12f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Box(Modifier.size(5.dp).clip(CircleShape).background(Color(0xFF16A34A)))
+                            Spacer(Modifier.width(4.dp))
+                            BasicText(
+                                "Đã liên kết",
+                                style = type(10f, FontWeight.ExtraBold, Color(0xFF16A34A)),
+                            )
+                        }
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Alx.Blue.copy(alpha = 0.12f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Box(Modifier.size(5.dp).clip(CircleShape).background(Alx.Blue))
+                            Spacer(Modifier.width(4.dp))
+                            BasicText(
+                                "Chưa liên kết",
+                                style = type(10f, FontWeight.ExtraBold, Alx.Blue),
+                            )
+                        }
+                    }
+                }
+
+                if (account.statLine.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    BasicText(
+                        account.statLine,
+                        style = type(11.5f, FontWeight.SemiBold, Color(0xFFE1306C)),
+                    )
+                }
+
+                if (account.createdAt.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    BasicText(
+                        "Tạo: ${account.createdAt}",
+                        style = type(11f, FontWeight.Medium, Alx.Muted),
+                    )
+                }
+            }
+
+            PressBox(
+                onClick = onRefresh,
+                modifier = Modifier.size(36.dp).background(Alx.Bg, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { SvgIcon(Refresh, 16.dp, Alx.Muted, 2f) }
+        }
     }
 }
 
