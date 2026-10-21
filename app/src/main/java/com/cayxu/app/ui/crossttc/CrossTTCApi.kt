@@ -297,7 +297,7 @@ object CrossTTCApi {
         accessToken: String,
         jobType: String = "subcheo",
     ): List<CrossTTCTaskJob> = withContext(Dispatchers.IO) {
-        val path = if (jobType.contains("tim", ignoreCase = true) || jobType.contains("like", ignoreCase = true)) "cheotim" else "subcheo"
+        val path = if (jobType.contains("vip", ignoreCase = true)) "subcheovip" else if (jobType.contains("tim", ignoreCase = true) || jobType.contains("like", ignoreCase = true)) "cheotim" else "subcheo"
         val url = "$BASE_URL/tiktok/kiemtien/$path/getpost.php"
         // Referer chuẩn trên web TTC không chứa access_token trong query param
         val referer = "$BASE_URL/tiktok/kiemtien/$path/"
@@ -351,7 +351,7 @@ object CrossTTCApi {
     }
 
     /**
-     * Nhận xu thưởng sau khi hoàn thành nhiệm vụ TikTok trên TTC (POST /tiktok/kiemtien/subcheo/nhantien.php).
+     * Nhận xu thưởng sau khi hoàn thành nhiệm vụ TikTok trên TTC (POST /tiktok/kiemtien/subcheo/nhantien.php hoặc subcheovip/nhantien.php).
      * Hỗ trợ nhận gom nhiều nhiệm vụ theo format web TTC: id=id1,id2,id3...
      */
     suspend fun claimTikTokJobReward(
@@ -363,7 +363,7 @@ object CrossTTCApi {
         if (jobIds.isEmpty()) {
             return@withContext CrossTTCClaimResult(false, 0L, 0L, "Danh sách nhiệm vụ rỗng")
         }
-        val path = if (jobType.contains("tim", ignoreCase = true) || jobType.contains("like", ignoreCase = true)) "cheotim" else "subcheo"
+        val path = if (jobType.contains("vip", ignoreCase = true)) "subcheovip" else if (jobType.contains("tim", ignoreCase = true) || jobType.contains("like", ignoreCase = true)) "cheotim" else "subcheo"
         val url = "$BASE_URL/tiktok/kiemtien/$path/nhantien.php"
         val referer = "$BASE_URL/tiktok/kiemtien/$path/"
         val idPayload = jobIds.joinToString(",")

@@ -68,7 +68,7 @@ class CrossTTCOverlayService : Service() {
             earnedCoins = 0L,
             statusText = "Đang khởi động...",
             paused = false,
-            expanded = true,
+            expanded = false,
             dockedSide = OverlaySide.Right,
             language = LanguageState.language,
             appVersion = "v1.0.5"
@@ -122,7 +122,7 @@ class CrossTTCOverlayService : Service() {
             earnedCoins = totalEarnedPoints,
             statusText = "Đang chuẩn bị...",
             paused = isPaused,
-            expanded = true,
+            expanded = false,
             dockedSide = OverlaySide.Right,
             language = LanguageState.language,
             appVersion = if (appV.isNotBlank()) "v$appV" else "v1.0.5"
@@ -256,11 +256,12 @@ class CrossTTCOverlayService : Service() {
                     var currentSessionCookie = sessionCookie
                     val pendingBatchJobIds = mutableListOf<String>()
 
-                    suspend fun flushBatchClaim(): Boolean {
+                    suspend fun flushBatchClaim(jobType: String): Boolean {
                         if (pendingBatchJobIds.isEmpty()) return true
                         val batchCount = pendingBatchJobIds.size
-                        setStatus("Gom nhận xu cho $batchCount nhiệm vụ đã làm...")
-                        val claimRes = CrossTTCApi.claimTikTokJobReward(currentSessionCookie, accessToken, "subcheo", pendingBatchJobIds.toList())
+                        val typeName = if (jobType.contains("vip", ignoreCase = true)) "Follow VIP" else "Follow Thường"
+                        setStatus("Gom nhận xu $batchCount NV $typeName...")
+                        val claimRes = CrossTTCApi.claimTikTokJobReward(currentSessionCookie, accessToken, jobType, pendingBatchJobIds.toList())
                         if (claimRes.isSuccess) {
                             totalCompleted += batchCount
                             val pts = claimRes.earnedCoins.takeIf { it > 0 } ?: (batchCount * 500L)
@@ -328,48 +329,63 @@ class CrossTTCOverlayService : Service() {
                         delay(400L)
                     }
 
+                    // Danh sách các loại nhiệm vụ người dùng đã chọn
+                    val enabledTypes = mutableListOf<String>()
+                    if (config.jobTypeFollowNormal) enabledTypes.add("subcheo")
+                    if (config.jobTypeFollowVip) enabledTypes.add("subcheovip")
+                    if (enabledTypes.isEmpty()) enabledTypes.add("subcheo")
+
+                    // Ngẫu nhiên chọn loại nhiệm vụ bắt đầu nếu chọn cả hai
+                    var currentJobType = enabledTypes.random()
+
                     // BƯỚC 3: VÒNG LẶP LÀM NHIỆM VỤ CHO TÀI KHOẢN NÀY
                     var failedJobsThisAccount = 0
                     while (isActive) {
                         checkPauseWait()
                         if (config.goalTaskCount > 0 && totalCompleted >= config.goalTaskCount) {
-                            flushBatchClaim()
+                            flushBatchClaim(currentJobType)
                             setStatus("Đã đạt mục tiêu $totalCompleted nhiệm vụ. Hoàn thành!")
                             return@launch
                         }
 
                         if (config.autoSwapOnError && failedJobsThisAccount >= config.errorSwapCount) {
-                            flushBatchClaim()
+                            flushBatchClaim(currentJobType)
                             setStatus("Nick @$cleanHandle bị lỗi $failedJobsThisAccount lần -> Đổi nick...")
                             delay(2000L)
                             break
                         }
 
+                        val typeName = if (currentJobType == "subcheovip") "Follow VIP" else "Follow Thường"
+
                         // 1. Đếm ngược từng giây trước khi lấy đợt nhiệm vụ mới
                         val waitGetJob = (config.getJobMinSeconds..config.getJobMaxSeconds).random().coerceAtLeast(1)
-                        countdownWait(waitGetJob) { s -> "Đợi lấy nhiệm vụ sau ${s}s..." }
+                        countdownWait(waitGetJob) { s -> "Đợi lấy NV $typeName sau ${s}s..." }
                         checkPauseWait()
 
                         // 2. Gọi API TTC
-                        setStatus("Đang tìm kiếm nhiệm vụ TikTok TTC...")
-                        var jobs = CrossTTCApi.getTikTokJobs(currentSessionCookie, accessToken, "subcheo")
+                        setStatus("Đang tìm kiếm nhiệm vụ $typeName...")
+                        var jobs = CrossTTCApi.getTikTokJobs(currentSessionCookie, accessToken, currentJobType)
                         if (jobs.isEmpty() && accessToken.isNotBlank()) {
                             val reLogin = CrossTTCApi.loginWithToken(accessToken)
                             if (reLogin.isSuccess && reLogin.sessionCookie.isNotBlank()) {
                                 currentSessionCookie = reLogin.sessionCookie
-                                jobs = CrossTTCApi.getTikTokJobs(currentSessionCookie, accessToken, "subcheo")
+                                jobs = CrossTTCApi.getTikTokJobs(currentSessionCookie, accessToken, currentJobType)
                             }
                         }
 
                         if (jobs.isEmpty()) {
-                            flushBatchClaim()
-                            countdownWait(8) { s -> "Tạm thời hết nhiệm vụ, đang chờ (${s}s)..." }
+                            flushBatchClaim(currentJobType)
+                            countdownWait(8) { s -> "Tạm hết NV $typeName, đang chờ (${s}s)..." }
+                            // Nếu chọn cả 2: lần sau chuyển sang loại kia
+                            if (enabledTypes.size > 1) {
+                                currentJobType = if (currentJobType == "subcheo") "subcheovip" else "subcheo"
+                            }
                             continue
                         }
 
                         // 3. Thông báo số lượng job tìm thấy theo đúng số lượng thực tế
                         val totalJobs = jobs.size
-                        setStatus("Đã tìm thấy $totalJobs nhiệm vụ!")
+                        setStatus("Đã tìm thấy $totalJobs NV $typeName!")
                         delay(1200L)
 
                         // 4. Thực hiện từng nhiệm vụ trong danh sách đã tải về
@@ -430,7 +446,7 @@ class CrossTTCOverlayService : Service() {
                                     val waitComplete = (config.completeJobMinSeconds..config.completeJobMaxSeconds).random().coerceAtLeast(2)
                                     countdownWait(waitComplete) { s -> "Đủ 8 NV! Đợi nhận xu (${s}s)..." }
                                     checkPauseWait()
-                                    val claimed = flushBatchClaim()
+                                    val claimed = flushBatchClaim(currentJobType)
                                     if (!claimed) {
                                         failedJobsThisAccount++
                                     }
@@ -452,16 +468,21 @@ class CrossTTCOverlayService : Service() {
                         }
 
                         // Khi làm hết sạch toàn bộ totalJobs của đợt này
-                        setStatus("Đã hoàn thành toàn bộ $totalJobs nhiệm vụ đợt này!")
+                        setStatus("Đã hoàn thành toàn bộ $totalJobs NV $typeName!")
                         delay(1200L)
 
                         // Nếu còn sót job chưa gom nhận xu, nhận nốt
                         if (pendingBatchJobIds.isNotEmpty()) {
-                            flushBatchClaim()
+                            flushBatchClaim(currentJobType)
+                        }
+
+                        // Nếu chọn cả 2 loại: lần tiếp theo chuyển sang loại kia
+                        if (enabledTypes.size > 1) {
+                            currentJobType = if (currentJobType == "subcheo") "subcheovip" else "subcheo"
                         }
                     }
                     // Đổi sang nick khác: gom nốt xu nếu còn
-                    flushBatchClaim()
+                    flushBatchClaim(currentJobType)
                 }
                 delay(2000L)
             }
@@ -493,15 +514,15 @@ class CrossTTCOverlayService : Service() {
         overlayLifecycleOwner = lifecycleOwner
 
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            dp(460),
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
             overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
+            gravity = Gravity.TOP or Gravity.END
             x = 0
-            y = 0
+            y = dp(150)
         }
         overlayParams = params
 

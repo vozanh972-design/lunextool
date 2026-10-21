@@ -9,6 +9,8 @@ import android.content.SharedPreferences
  */
 
 data class CrossTTCRunConfig(
+    val jobTypeFollowNormal: Boolean = true,
+    val jobTypeFollowVip: Boolean = true,
     val getJobMinSeconds: Int = 5,
     val getJobMaxSeconds: Int = 12,
     val swipeBeforeGetJob: Boolean = true,
@@ -27,6 +29,8 @@ data class CrossTTCRunConfig(
 object CrossTTCRunConfigStore {
     private const val PREFS_NAME = "cross_ttc_run_config"
 
+    private const val KEY_JOB_TYPE_FOLLOW_NORMAL = "job_type_follow_normal"
+    private const val KEY_JOB_TYPE_FOLLOW_VIP = "job_type_follow_vip"
     private const val KEY_GET_JOB_MIN = "get_job_min"
     private const val KEY_GET_JOB_MAX = "get_job_max"
     private const val KEY_SWIPE_BEFORE_GET_JOB = "swipe_before_get_job"
@@ -47,6 +51,8 @@ object CrossTTCRunConfigStore {
     fun get(context: Context): CrossTTCRunConfig {
         val p = getPrefs(context)
         return CrossTTCRunConfig(
+            jobTypeFollowNormal = p.getBoolean(KEY_JOB_TYPE_FOLLOW_NORMAL, true),
+            jobTypeFollowVip = p.getBoolean(KEY_JOB_TYPE_FOLLOW_VIP, true),
             getJobMinSeconds = p.getInt(KEY_GET_JOB_MIN, 5),
             getJobMaxSeconds = p.getInt(KEY_GET_JOB_MAX, 12),
             swipeBeforeGetJob = p.getBoolean(KEY_SWIPE_BEFORE_GET_JOB, true),
@@ -65,6 +71,8 @@ object CrossTTCRunConfigStore {
 
     fun save(context: Context, config: CrossTTCRunConfig) {
         getPrefs(context).edit()
+            .putBoolean(KEY_JOB_TYPE_FOLLOW_NORMAL, config.jobTypeFollowNormal)
+            .putBoolean(KEY_JOB_TYPE_FOLLOW_VIP, config.jobTypeFollowVip)
             .putInt(KEY_GET_JOB_MIN, config.getJobMinSeconds)
             .putInt(KEY_GET_JOB_MAX, config.getJobMaxSeconds)
             .putBoolean(KEY_SWIPE_BEFORE_GET_JOB, config.swipeBeforeGetJob)

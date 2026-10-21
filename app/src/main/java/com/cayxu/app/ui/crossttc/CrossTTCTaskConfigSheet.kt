@@ -62,6 +62,8 @@ private val Settings = listOf(
 
 data class CrossTTCTaskConfigUiState(
     val platformLabel: String = "TikTok",
+    val jobTypeFollowNormal: Boolean = true,
+    val jobTypeFollowVip: Boolean = true,
     val getJobMinSeconds: String = "5",
     val getJobMaxSeconds: String = "12",
     val swipeBeforeGetJob: Boolean = true,
@@ -81,6 +83,8 @@ data class CrossTTCTaskConfigUiState(
 fun CrossTTCTaskConfigSheet(
     state: CrossTTCTaskConfigUiState,
     onDismiss: () -> Unit,
+    onJobTypeFollowNormalChange: (Boolean) -> Unit,
+    onJobTypeFollowVipChange: (Boolean) -> Unit,
     onGetJobMinChange: (String) -> Unit,
     onGetJobMaxChange: (String) -> Unit,
     onSwipeBeforeGetJobChange: (Boolean) -> Unit,
@@ -152,6 +156,24 @@ fun CrossTTCTaskConfigSheet(
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = 20.dp, vertical = 8.dp)
                     ) {
+                        // ── 0. LOẠI NHIỆM VỤ (CHỌN 1 HOẶC CẢ 2) ──
+                        SectionLabel("LOẠI NHIỆM VỤ (CHỌN 1 HOẶC CẢ 2)")
+                        ToggleRow(
+                            title = "Follow Thường (subcheo)",
+                            subtitle = "Nhiệm vụ follow thông thường trên TTC",
+                            checked = state.jobTypeFollowNormal,
+                            onCheckedChange = onJobTypeFollowNormalChange,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        ToggleRow(
+                            title = "Follow VIP (subcheovip)",
+                            subtitle = "Nhiệm vụ follow VIP nhiều xu hơn",
+                            checked = state.jobTypeFollowVip,
+                            onCheckedChange = onJobTypeFollowVipChange,
+                        )
+
+                        Spacer(Modifier.height(18.dp))
+
                         // ── 1. THỜI GIAN LẤY JOB (GIÂY) ──
                         SectionLabel("1. THỜI GIAN LẤY JOB (GIÂY)")
                         MinMaxRow(state.getJobMinSeconds, onGetJobMinChange, state.getJobMaxSeconds, onGetJobMaxChange)

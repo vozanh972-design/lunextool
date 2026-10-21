@@ -280,6 +280,8 @@ fun CrossTTCLoginScreen(navController: NavController) {
             mutableStateOf(
                 CrossTTCTaskConfigUiState(
                     platformLabel = "TikTok",
+                    jobTypeFollowNormal = currentConfig.jobTypeFollowNormal,
+                    jobTypeFollowVip = currentConfig.jobTypeFollowVip,
                     getJobMinSeconds = currentConfig.getJobMinSeconds.toString(),
                     getJobMaxSeconds = currentConfig.getJobMaxSeconds.toString(),
                     swipeBeforeGetJob = currentConfig.swipeBeforeGetJob,
@@ -300,6 +302,22 @@ fun CrossTTCLoginScreen(navController: NavController) {
         CrossTTCTaskConfigSheet(
             state = configUiState,
             onDismiss = { showConfigSheet = false },
+            onJobTypeFollowNormalChange = { checked ->
+                // Đảm bảo ít nhất 1 loại được bật
+                if (!checked && !configUiState.jobTypeFollowVip) {
+                    toastText = "Phải chọn ít nhất 1 loại nhiệm vụ"
+                } else {
+                    configUiState = configUiState.copy(jobTypeFollowNormal = checked)
+                }
+            },
+            onJobTypeFollowVipChange = { checked ->
+                // Đảm bảo ít nhất 1 loại được bật
+                if (!checked && !configUiState.jobTypeFollowNormal) {
+                    toastText = "Phải chọn ít nhất 1 loại nhiệm vụ"
+                } else {
+                    configUiState = configUiState.copy(jobTypeFollowVip = checked)
+                }
+            },
             onGetJobMinChange = { configUiState = configUiState.copy(getJobMinSeconds = it) },
             onGetJobMaxChange = { configUiState = configUiState.copy(getJobMaxSeconds = it) },
             onSwipeBeforeGetJobChange = { configUiState = configUiState.copy(swipeBeforeGetJob = it) },
@@ -326,6 +344,8 @@ fun CrossTTCLoginScreen(navController: NavController) {
                 val errCnt = configUiState.errorSwapCount.toIntOrNull() ?: 5
 
                 val newCfg = CrossTTCRunConfig(
+                    jobTypeFollowNormal = configUiState.jobTypeFollowNormal,
+                    jobTypeFollowVip = configUiState.jobTypeFollowVip,
                     getJobMinSeconds = minOf(gMin, gMax),
                     getJobMaxSeconds = maxOf(gMin, gMax),
                     swipeBeforeGetJob = configUiState.swipeBeforeGetJob,
