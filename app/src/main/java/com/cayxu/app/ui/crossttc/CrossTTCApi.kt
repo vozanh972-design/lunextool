@@ -298,7 +298,8 @@ object CrossTTCApi {
     ): List<CrossTTCTaskJob> = withContext(Dispatchers.IO) {
         val path = if (jobType.contains("tim", ignoreCase = true) || jobType.contains("like", ignoreCase = true)) "cheotim" else "subcheo"
         val url = "$BASE_URL/tiktok/kiemtien/$path/getpost.php"
-        val referer = "$BASE_URL/tiktok/kiemtien/$path/?access_token=$accessToken"
+        // Referer chuẩn trên web TTC không chứa access_token trong query param
+        val referer = "$BASE_URL/tiktok/kiemtien/$path/"
         try {
             val req = Request.Builder()
                 .url(url)
@@ -319,7 +320,7 @@ object CrossTTCApi {
                     val arr = JSONArray(resStr)
                     for (i in 0 until arr.length()) {
                         val obj = arr.getJSONObject(i)
-                        val id = obj.optString("id").ifBlank { obj.optString("idpost") }
+                        val id = obj.optString("idpost").ifBlank { obj.optString("id") }
                         val link = obj.optString("link").ifBlank { obj.optString("uid") }
                         if (id.isNotBlank() && link.isNotBlank()) {
                             list.add(CrossTTCTaskJob(id, link, if (path == "cheotim") "like" else "follow"))
@@ -331,7 +332,7 @@ object CrossTTCApi {
                     if (arr != null) {
                         for (i in 0 until arr.length()) {
                             val obj = arr.getJSONObject(i)
-                            val id = obj.optString("id").ifBlank { obj.optString("idpost") }
+                            val id = obj.optString("idpost").ifBlank { obj.optString("id") }
                             val link = obj.optString("link").ifBlank { obj.optString("uid") }
                             if (id.isNotBlank() && link.isNotBlank()) {
                                 list.add(CrossTTCTaskJob(id, link, if (path == "cheotim") "like" else "follow"))
@@ -348,19 +349,24 @@ object CrossTTCApi {
 
     /**
      * Nhận xu thưởng sau khi hoàn thành nhiệm vụ TikTok trên TTC (POST /tiktok/kiemtien/subcheo/nhantien.php).
+     * Hỗ trợ nhận gom nhiều nhiệm vụ theo format web TTC: id=id1,id2,id3...
      */
     suspend fun claimTikTokJobReward(
         sessionCookie: String,
         accessToken: String,
         jobType: String = "subcheo",
-        jobId: String,
+        jobIds: List<String>,
     ): CrossTTCClaimResult = withContext(Dispatchers.IO) {
+        if (jobIds.isEmpty()) {
+            return@withContext CrossTTCClaimResult(false, 0L, 0L, "Danh sách nhiệm vụ rỗng")
+        }
         val path = if (jobType.contains("tim", ignoreCase = true) || jobType.contains("like", ignoreCase = true)) "cheotim" else "subcheo"
         val url = "$BASE_URL/tiktok/kiemtien/$path/nhantien.php"
-        val referer = "$BASE_URL/tiktok/kiemtien/$path/?access_token=$accessToken"
+        val referer = "$BASE_URL/tiktok/kiemtien/$path/"
+        val idPayload = jobIds.joinToString(",")
         try {
             val formBody = FormBody.Builder()
-                .add("id", jobId)
+                .add("id", idPayload)
                 .build()
 
             val req = Request.Builder()
@@ -374,7 +380,7 @@ object CrossTTCApi {
 
             httpClient.newCall(req).execute().use { res ->
                 val resStr = res.body?.string().orEmpty().trim()
-                val isOk = res.isSuccessful && (resStr.contains("\"success\"") || resStr.contains("\"status\":\"success\"") || resStr.contains("Thành công") || resStr.contains("thành công"))
+                val isOk = res.isSuccessful && (resStr.contains("\"success\"") || resStr.contains("\"status\":\"success\"") || resStr.contains("Thành công") || resStr.contains("thành công") || resStr.contains("xu"))
                 var earned = 0L
                 var sodu = 0L
                 var msg = resStr

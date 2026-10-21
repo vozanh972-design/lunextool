@@ -177,15 +177,46 @@ class CrossTTCOverlayService : Service() {
 
                     checkPauseWait()
 
+                    var currentSessionCookie = sessionCookie
+                    val pendingBatchJobIds = mutableListOf<String>()
+
+                    suspend fun flushBatchClaim(): Boolean {
+                        if (pendingBatchJobIds.isEmpty()) return true
+                        val batchCount = pendingBatchJobIds.size
+                        setStatus("Gom nhận xu cho $batchCount nhiệm vụ đã làm...")
+                        val claimRes = CrossTTCApi.claimTikTokJobReward(currentSessionCookie, accessToken, "subcheo", pendingBatchJobIds.toList())
+                        if (claimRes.isSuccess) {
+                            totalCompleted += batchCount
+                            val pts = claimRes.earnedCoins.takeIf { it > 0 } ?: (batchCount * 500L)
+                            totalEarnedPoints += pts
+                            launch(Dispatchers.Main) { updateProgressDisplay() }
+                            setStatus("+$pts xu (Đã nhận $batchCount NV, Tổng: $totalCompleted)")
+                            pendingBatchJobIds.clear()
+                            delay(1200L)
+                            return true
+                        } else {
+                            setStatus("Lỗi nhận xu: ${claimRes.message}")
+                            delay(1500L)
+                            return false
+                        }
+                    }
+
                     // BƯỚC 1: ĐẶT NICK CHẠY MẶC ĐỊNH TRÊN TTC WEB (POST /cauhinh/datnick.php iddat[]=uid&loai=tt)
                     setStatus("Đặt @$cleanHandle làm nick chạy TTC...")
-                    val ttcAccounts = CrossTTCApi.getTtcTikTokAccounts(sessionCookie)
+                    var ttcAccounts = CrossTTCApi.getTtcTikTokAccounts(currentSessionCookie)
+                    if (ttcAccounts.isEmpty() && accessToken.isNotBlank()) {
+                        val reLogin = CrossTTCApi.loginWithToken(accessToken)
+                        if (reLogin.isSuccess && reLogin.sessionCookie.isNotBlank()) {
+                            currentSessionCookie = reLogin.sessionCookie
+                            ttcAccounts = CrossTTCApi.getTtcTikTokAccounts(currentSessionCookie)
+                        }
+                    }
                     val matchedTtc = ttcAccounts.firstOrNull {
                         it.username.trim().removePrefix("@").equals(cleanHandle, ignoreCase = true)
                     }
                     val ttcUid = matchedTtc?.id.orEmpty().ifBlank { cleanHandle }
 
-                    val setDefaultRes = CrossTTCApi.setDefaultTikTokAccount(sessionCookie, ttcUid)
+                    val setDefaultRes = CrossTTCApi.setDefaultTikTokAccount(currentSessionCookie, ttcUid)
                     if (!setDefaultRes.isSuccess) {
                         setStatus("Lỗi đặt nick: ${setDefaultRes.message} -> Thử nick khác...")
                         delay(2500L)
@@ -226,11 +257,13 @@ class CrossTTCOverlayService : Service() {
                     while (isActive) {
                         checkPauseWait()
                         if (config.goalTaskCount > 0 && totalCompleted >= config.goalTaskCount) {
+                            flushBatchClaim()
                             setStatus("Đã đạt mục tiêu $totalCompleted nhiệm vụ. Hoàn thành!")
                             return@launch
                         }
 
                         if (config.autoSwapOnError && failedJobsThisAccount >= config.errorSwapCount) {
+                            flushBatchClaim()
                             setStatus("Nick @$cleanHandle bị lỗi $failedJobsThisAccount lần -> Đổi nick...")
                             delay(2000L)
                             break
@@ -243,8 +276,17 @@ class CrossTTCOverlayService : Service() {
                         checkPauseWait()
 
                         setStatus("Lấy nhiệm vụ TikTok TTC...")
-                        val jobs = CrossTTCApi.getTikTokJobs(sessionCookie, accessToken, "subcheo")
+                        var jobs = CrossTTCApi.getTikTokJobs(currentSessionCookie, accessToken, "subcheo")
+                        if (jobs.isEmpty() && accessToken.isNotBlank()) {
+                            val reLogin = CrossTTCApi.loginWithToken(accessToken)
+                            if (reLogin.isSuccess && reLogin.sessionCookie.isNotBlank()) {
+                                currentSessionCookie = reLogin.sessionCookie
+                                jobs = CrossTTCApi.getTikTokJobs(currentSessionCookie, accessToken, "subcheo")
+                            }
+                        }
+
                         if (jobs.isEmpty()) {
+                            flushBatchClaim()
                             setStatus("Tạm thời hết nhiệm vụ, đang chờ (8s)...")
                             delay(8000L)
                             continue
@@ -293,24 +335,21 @@ class CrossTTCOverlayService : Service() {
                             }
 
                             if (taskSuccess) {
-                                // Thời gian chờ trước khi nhận xu
-                                val waitComplete = (config.completeJobMinSeconds..config.completeJobMaxSeconds).random().coerceAtLeast(2)
-                                setStatus("Chờ ${waitComplete}s gửi nhận xu $jobPosText...")
-                                delay(waitComplete * 1000L)
-                                checkPauseWait()
+                                pendingBatchJobIds.add(job.id)
+                                failedJobsThisAccount = 0
+                                val curBatch = pendingBatchJobIds.size
+                                setStatus("Xong $jobPosText [Đã gom $curBatch/8 NV]")
 
-                                setStatus("Gửi nhận xu $jobPosText...")
-                                val claimRes = CrossTTCApi.claimTikTokJobReward(sessionCookie, accessToken, "subcheo", job.id)
-                                if (claimRes.isSuccess) {
-                                    totalCompleted++
-                                    val pts = claimRes.earnedCoins.takeIf { it > 0 } ?: 500L
-                                    totalEarnedPoints += pts
-                                    launch(Dispatchers.Main) { updateProgressDisplay() }
-                                    setStatus("+$pts xu (Xong $totalCompleted NV)")
-                                    failedJobsThisAccount = 0
-                                } else {
-                                    failedJobsThisAccount++
-                                    setStatus("Lỗi nhận xu ($failedJobsThisAccount/${config.errorSwapCount}): ${claimRes.message}")
+                                // Đủ 8 nhiệm vụ thì gom nhận xu 1 lần theo cơ chế web TTC
+                                if (curBatch >= 8) {
+                                    val waitComplete = (config.completeJobMinSeconds..config.completeJobMaxSeconds).random().coerceAtLeast(2)
+                                    setStatus("Đủ 8 NV! Đợi ${waitComplete}s gom nhận xu...")
+                                    delay(waitComplete * 1000L)
+                                    checkPauseWait()
+                                    val claimed = flushBatchClaim()
+                                    if (!claimed) {
+                                        failedJobsThisAccount++
+                                    }
                                 }
                             } else {
                                 failedJobsThisAccount++
@@ -325,7 +364,14 @@ class CrossTTCOverlayService : Service() {
                             val breakTime = (config.breakMinSeconds..config.breakMaxSeconds).random().coerceAtLeast(1)
                             delay(breakTime * 1000L)
                         }
+
+                        // Nếu hết đợt job này mà còn job chưa gom nhận xu, nhận nốt
+                        if (pendingBatchJobIds.isNotEmpty()) {
+                            flushBatchClaim()
+                        }
                     }
+                    // Đổi sang nick khác: gom nốt xu nếu còn
+                    flushBatchClaim()
                 }
                 delay(2000L)
             }

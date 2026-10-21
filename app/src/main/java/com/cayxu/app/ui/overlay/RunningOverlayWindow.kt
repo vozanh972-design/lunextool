@@ -150,7 +150,7 @@ fun RunningOverlayWindow(
     onBubbleDragEnd: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val t = remember(state.language) { OverlayStrings.of(state.language) }
+    val t = remember(state.language, state.mode) { OverlayStrings.of(state.language, state.mode) }
     val scope = rememberCoroutineScope()
 
     if (state.expanded) {
@@ -449,17 +449,20 @@ class OverlayStrings private constructor(
     fun earnedCoins(n: Long) = coinUnit(n)
 
     companion object {
-        fun of(language: AppLanguage): OverlayStrings = when (language) {
-            AppLanguage.VI -> OverlayStrings(
-                modeLabel = "Chế độ", accountLabel = "Tài khoản", noAccount = "Chưa chọn tài khoản", doneLabel = "Đã làm",
-                pause = "Tạm dừng", resume = "Tiếp tục", running = "Đang chạy…",
-                doneUnit = { n -> "$n NV" }, coinUnit = { n -> "+$n đ" },
-            )
-            AppLanguage.EN -> OverlayStrings(
-                modeLabel = "Mode", accountLabel = "Account", noAccount = "No account selected", doneLabel = "Done",
-                pause = "Pause", resume = "Resume", running = "Running…",
-                doneUnit = { n -> "$n tasks" }, coinUnit = { n -> "+$n coins" },
-            )
+        fun of(language: AppLanguage, mode: String = ""): OverlayStrings {
+            val isCoinMode = mode.contains("TTC", ignoreCase = true) || mode.contains("XSMM", ignoreCase = true)
+            return when (language) {
+                AppLanguage.VI -> OverlayStrings(
+                    modeLabel = "Chế độ", accountLabel = "Tài khoản", noAccount = "Chưa chọn tài khoản", doneLabel = "Đã làm",
+                    pause = "Tạm dừng", resume = "Tiếp tục", running = "Đang chạy…",
+                    doneUnit = { n -> "$n NV" }, coinUnit = { n -> if (isCoinMode) "+$n xu" else "+$n đ" },
+                )
+                AppLanguage.EN -> OverlayStrings(
+                    modeLabel = "Mode", accountLabel = "Account", noAccount = "No account selected", doneLabel = "Done",
+                    pause = "Pause", resume = "Resume", running = "Running…",
+                    doneUnit = { n -> "$n tasks" }, coinUnit = { n -> if (isCoinMode) "+$n xu" else "+$n coins" },
+                )
+            }
         }
     }
 }
