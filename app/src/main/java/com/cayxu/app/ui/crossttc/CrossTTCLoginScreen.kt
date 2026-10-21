@@ -95,28 +95,84 @@ fun CrossTTCLoginScreen(navController: NavController) {
     var errorText by remember { mutableStateOf<String?>(null) }
     var loggedIn by remember { mutableStateOf(false) }
 
-    CrossTTCLoginScreen(
-        token = token,
-        onTokenChange = { token = it; errorText = null },
-        onLogin = {
-            if (token.isBlank()) {
-                errorText = "Vui lòng nhập hoặc dán Access Token"
-            } else {
-                // Nhận token đăng nhập thành công
-                loggedIn = true
-            }
-        },
-        onBack = { navController.popBackStack() },
-        onOpenSite = {
-            try {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://tuongtaccheo.net"))
-                context.startActivity(intent)
-            } catch (_: Exception) {}
-        },
-        loading = isLoading,
-        errorText = errorText,
-        loggedIn = loggedIn,
-    )
+    var accountsState by remember {
+        mutableStateOf(
+            CrossTTCAccountsUiState(
+                username = "theanh_mkt",
+                exchangedCount = 128,
+                accounts = SampleCrossTTCAccounts,
+                selectedAccountIds = setOf("t1"),
+            )
+        )
+    }
+    var toastText by remember { mutableStateOf<String?>(null) }
+
+    if (loggedIn) {
+        CrossTTCAccountsScreen(
+            state = accountsState,
+            onBack = { navController.popBackStack() },
+            onRefreshSummary = {
+                toastText = "Đã làm mới thông tin trao đổi chéo"
+            },
+            onLogout = {
+                loggedIn = false
+                token = ""
+            },
+            onToggleSelectAll = {
+                val allSelected = accountsState.accounts.isNotEmpty() &&
+                    accountsState.accounts.all { it.id in accountsState.selectedAccountIds }
+                accountsState = accountsState.copy(
+                    selectedAccountIds = if (allSelected) emptySet() else accountsState.accounts.map { it.id }.toSet()
+                )
+            },
+            onToggleAccount = { acc ->
+                val current = accountsState.selectedAccountIds.toMutableSet()
+                if (acc.id in current) current.remove(acc.id) else current.add(acc.id)
+                accountsState = accountsState.copy(selectedAccountIds = current)
+            },
+            onRefreshAccount = { acc ->
+                toastText = "Đang làm mới ${acc.handle}..."
+            },
+            onAddAccount = {
+                loggedIn = false
+            },
+            onOpenConfig = {
+                toastText = "Mở cấu hình tương tác chéo"
+            },
+            onRun = {
+                val count = accountsState.selectedAccountIds.size
+                if (count > 0) {
+                    toastText = "Đang chạy $count tài khoản TikTok TTC"
+                } else {
+                    toastText = "Vui lòng chọn ít nhất 1 tài khoản"
+                }
+            },
+            toastText = toastText,
+        )
+    } else {
+        CrossTTCLoginScreen(
+            token = token,
+            onTokenChange = { token = it; errorText = null },
+            onLogin = {
+                if (token.isBlank()) {
+                    errorText = "Vui lòng nhập hoặc dán Access Token"
+                } else {
+                    // Nhận token đăng nhập thành công, chuyển sang màn hình danh sách tài khoản
+                    loggedIn = true
+                }
+            },
+            onBack = { navController.popBackStack() },
+            onOpenSite = {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://tuongtaccheo.net"))
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            },
+            loading = isLoading,
+            errorText = errorText,
+            loggedIn = loggedIn,
+        )
+    }
 }
 
 /**
