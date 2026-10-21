@@ -42,8 +42,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.cayxu.app.data.local.TikTokAccountsStore
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
@@ -104,6 +108,8 @@ fun CrossTTCLoginScreen(navController: NavController) {
     var errorText by remember { mutableStateOf<String?>(null) }
     var loggedIn by remember { mutableStateOf(false) }
     var showWebView by remember { mutableStateOf(false) }
+    var showAddTikTokSheet by remember { mutableStateOf(false) }
+    var sessionCookie by remember { mutableStateOf("") }
 
     var accountsState by remember {
         mutableStateOf(
@@ -172,6 +178,39 @@ fun CrossTTCLoginScreen(navController: NavController) {
         return list
     }
 
+    fun reloadAccounts() {
+        scope.launch {
+            val ttcTikToks = if (sessionCookie.isNotBlank()) {
+                CrossTTCApi.getTtcTikTokAccounts(sessionCookie)
+            } else {
+                val currentToken = CrossTTCStore.getToken(context)
+                if (currentToken.isNotBlank()) {
+                    val res = CrossTTCApi.loginWithToken(currentToken)
+                    if (res.isSuccess) {
+                        sessionCookie = res.sessionCookie
+                        CrossTTCApi.getTtcTikTokAccounts(res.sessionCookie)
+                    } else emptyList()
+                } else emptyList()
+            }
+            val updatedAccounts = buildAccountsList(ttcTikToks)
+            accountsState = accountsState.copy(
+                accounts = updatedAccounts,
+            )
+        }
+    }
+
+    // Tự động cập nhật danh sách khi người dùng quay lại từ app TikTok
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && loggedIn) {
+                reloadAccounts()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     fun performLogin(tokenToUse: String) {
         val trimmed = tokenToUse.trim()
         if (trimmed.isBlank()) {
@@ -184,6 +223,7 @@ fun CrossTTCLoginScreen(navController: NavController) {
         scope.launch {
             val res = CrossTTCApi.loginWithToken(trimmed)
             if (res.isSuccess) {
+                sessionCookie = res.sessionCookie
                 CrossTTCStore.saveToken(context, trimmed)
                 CrossTTCStore.saveSession(context, res.username, res.coins)
 
@@ -214,6 +254,18 @@ fun CrossTTCLoginScreen(navController: NavController) {
 
     if (showWebView) {
         CrossTTCWebViewDialog(onDismiss = { showWebView = false })
+    }
+
+    if (showAddTikTokSheet) {
+        CrossTTCTiktokCheckSheet(
+            onDismiss = {
+                showAddTikTokSheet = false
+                reloadAccounts()
+            },
+            onAccountAdded = {
+                reloadAccounts()
+            }
+        )
     }
 
     if (loggedIn) {
@@ -259,7 +311,7 @@ fun CrossTTCLoginScreen(navController: NavController) {
                 toastText = "Đang làm mới ${acc.handle}..."
             },
             onAddAccount = {
-                loggedIn = false
+                showAddTikTokSheet = true
             },
             onOpenConfig = {
                 toastText = "Mở cấu hình tương tác chéo"
