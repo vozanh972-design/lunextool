@@ -22,8 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cayxu.app.data.local.InstagramAccount
 import com.cayxu.app.data.local.InstagramAccountsStore
-import com.cayxu.app.data.local.LinkedAccountsStore
-import com.cayxu.app.instagram.GoMaxInstagramEngine
+import com.cayxu.app.automation.instagram.IgTaToolClient
 import com.cayxu.app.instagram.InstagramApiClient
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
@@ -33,10 +32,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Giao diện thêm tài khoản Instagram chuẩn GoMax Engine:
- * - Ô 1: Nhập Cookie Instagram (Bắt buộc - chứa sessionid, ds_user_id, csrftoken)
- * - Ô 2: Proxy (Tùy chọn - IP:Port hoặc IP:Port:User:Pass)
- * - Bỏ hẳn toàn bộ các nút chọn trường UID/Pass/2FA
+ * Giao diện thêm tài khoản Instagram:
+ * - Nhập Cookie Instagram (Chứa sessionid, ds_user_id, csrftoken)
+ * - Tùy chọn kèm Proxy (IP:Port hoặc IP:Port:User:Pass)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,7 +90,7 @@ fun InstagramCookieBottomSheet(
                         color = TextPrimary
                     )
                     Text(
-                        "Chuẩn GoMax: Định dạng Cookie hoặc Cookie|Proxy",
+                        "Định dạng: Cookie hoặc Cookie|Proxy",
                         fontSize = 11.5.sp,
                         color = TextSecondary
                     )
@@ -209,33 +207,38 @@ fun InstagramCookieBottomSheet(
                                         continue
                                     }
 
-                                    val engine = GoMaxInstagramEngine.create(proxyStr)
-                                    val igAccount = engine.checkLiveCookie(rawCookie, proxyStr)
+                                    val client = IgTaToolClient.buildClient(proxyStr)
+                                    val info = IgTaToolClient.checkCookieIg(client, rawCookie)
 
-                                    if (igAccount != null && igAccount.isLive) {
-                                        val dev = InstagramApiClient.getDeviceProfileFor(igAccount.userId)
+                                    if (info.isLive && info.username.isNotBlank()) {
+                                        val tokens = IgTaToolClient.extractPageTokens(
+                                            client = client,
+                                            cookie = rawCookie,
+                                            targetUrl = "https://www.instagram.com/"
+                                        )
+                                        val dev = InstagramApiClient.getDeviceProfileFor(info.userId)
                                         val pic = try {
-                                            InstagramApiClient.fetchProfilePic(igAccount.username, rawCookie, proxyStr)
+                                            InstagramApiClient.fetchProfilePic(info.username, rawCookie, proxyStr)
                                         } catch (_: Exception) { null }
 
                                         withContext(Dispatchers.Main) {
                                             InstagramAccountsStore.addAccount(
                                                 context,
                                                 InstagramAccount(
-                                                    username = igAccount.username,
-                                                    userId = igAccount.userId,
-                                                    cookie = igAccount.cookie,
+                                                    username = info.username,
+                                                    userId = info.userId,
+                                                    cookie = rawCookie,
                                                     userAgent = dev.userAgent,
                                                     proxy = proxyStr.orEmpty(),
-                                                    fullName = igAccount.username,
+                                                    fullName = info.username,
                                                     avatar = pic.orEmpty(),
-                                                    fbDtsg = igAccount.fbDtsg.orEmpty(),
-                                                    lsd = igAccount.lsd.orEmpty(),
+                                                    fbDtsg = tokens.dtsg,
+                                                    lsd = tokens.lsd,
                                                     isLive = true
                                                 )
                                             )
-                                            LinkedAccountsStore.addAccount(context, "Instagram", igAccount.username)
-                                            addedAccounts.add(igAccount.username)
+                                            com.cayxu.app.data.local.LinkedAccountsStore.addAccount(context, "Instagram", info.username)
+                                            addedAccounts.add(info.username)
                                         }
                                     } else {
                                         hasCheckpointOrDie = true

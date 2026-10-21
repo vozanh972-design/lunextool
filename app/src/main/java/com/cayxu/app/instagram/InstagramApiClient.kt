@@ -473,6 +473,25 @@ class InstagramApiClient(
         // Lấy nguyên bản từ Instagram Engine (App Instagram 447 Android APK)
         // ========================================================================
 
+        private const val SHORTCODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+        fun shortcodeToMediaId(shortcode: String): String? {
+            if (shortcode.isBlank()) return null
+            var id = java.math.BigInteger.ZERO
+            val base = java.math.BigInteger.valueOf(64)
+            for (c in shortcode) {
+                val idx = SHORTCODE_ALPHABET.indexOf(c)
+                if (idx == -1) return null
+                id = id.multiply(base).add(java.math.BigInteger.valueOf(idx.toLong()))
+            }
+            return id.toString()
+        }
+
+        fun extractShortcode(url: String): String? {
+            val m = Pattern.compile("/(?:p|reel|tv)/([A-Za-z0-9_-]+)").matcher(url)
+            return if (m.find()) m.group(1) else null
+        }
+
         private fun executeFollow(
             session: InstagramSession,
             targetId: String,
@@ -481,17 +500,18 @@ class InstagramApiClient(
         ): IgActionResult {
             if (targetId.isBlank()) return IgActionResult(false, "Lỗi Target ID")
             val proxyStr = proxyConfig?.let { "${it.host}:${it.port}:${it.username.orEmpty()}:${it.password.orEmpty()}" }
-            val engine = GoMaxInstagramEngine.create(proxyStr, timeoutSec = 20L)
-            val igAcc = IgAccount(
-                userId = session.actorId,
-                username = "",
-                cookie = session.cookie,
-                proxy = proxyStr,
-                fbDtsg = session.fbDtsg.takeIf { it.isNotBlank() },
-                lsd = session.lsd.takeIf { it.isNotBlank() }
+            val client = com.cayxu.app.automation.instagram.IgTaToolClient.buildClient(proxyStr)
+            val resBody = com.cayxu.app.automation.instagram.IgTaToolClient.follow(
+                client = client,
+                rawCookie = session.cookie,
+                targetId = targetId,
+                profileUrl = profileUrl,
+                cachedDtsg = session.fbDtsg,
+                cachedLsd = session.lsd,
+                userId = session.actorId
             )
-            val followRes = engine.follow(igAcc, targetId, profileUrl)
-            return if (followRes.isSuccess) IgActionResult(true, "Theo dõi thành công", "ok") else IgActionResult(false, followRes.errorMessage ?: "Lỗi gửi Follow", "")
+            val isSuccess = resBody.contains("\"following\":true") || resBody.contains("xdt_create_friendship") || resBody.contains("\"status\":\"ok\"")
+            return if (isSuccess) IgActionResult(true, "Theo dõi thành công", resBody) else IgActionResult(false, "Lỗi gửi Follow", resBody)
         }
 
         private fun executeTym(
@@ -502,25 +522,26 @@ class InstagramApiClient(
         ): IgActionResult {
             var finalId = mediaId.trim()
             if (!finalId.all { it.isDigit() }) {
-                val shortcode = GoMaxInstagramEngine.extractShortcode(linkJob.ifBlank { finalId })
-                val decoded = shortcode?.let { GoMaxInstagramEngine.shortcodeToMediaId(it) }
+                val shortcode = extractShortcode(linkJob.ifBlank { finalId })
+                val decoded = shortcode?.let { shortcodeToMediaId(it) }
                 if (!decoded.isNullOrBlank()) {
                     finalId = decoded
                 }
             }
             if (finalId.isBlank()) return IgActionResult(false, "Lỗi Media ID")
             val proxyStr = proxyConfig?.let { "${it.host}:${it.port}:${it.username.orEmpty()}:${it.password.orEmpty()}" }
-            val engine = GoMaxInstagramEngine.create(proxyStr, timeoutSec = 20L)
-            val igAcc = IgAccount(
-                userId = session.actorId,
-                username = "",
-                cookie = session.cookie,
-                proxy = proxyStr,
-                fbDtsg = session.fbDtsg.takeIf { it.isNotBlank() },
-                lsd = session.lsd.takeIf { it.isNotBlank() }
+            val client = com.cayxu.app.automation.instagram.IgTaToolClient.buildClient(proxyStr)
+            val resBody = com.cayxu.app.automation.instagram.IgTaToolClient.tym(
+                client = client,
+                rawCookie = session.cookie,
+                mediaId = finalId,
+                linkJob = linkJob,
+                cachedDtsg = session.fbDtsg,
+                cachedLsd = session.lsd,
+                userId = session.actorId
             )
-            val ok = engine.likeMedia(igAcc, finalId)
-            return if (ok) IgActionResult(true, "Thả tim thành công", "ok") else IgActionResult(false, "Lỗi gửi Tym", "")
+            val isSuccess = resBody.contains("\"status\":\"ok\"") || resBody.contains("xdt_like_media") || resBody.contains("\"viewer_has_liked\":true")
+            return if (isSuccess) IgActionResult(true, "Thả tim thành công", resBody) else IgActionResult(false, "Lỗi gửi Tym", resBody)
         }
 
         private fun executeCmt(
@@ -532,25 +553,27 @@ class InstagramApiClient(
         ): IgActionResult {
             var finalId = mediaId.trim()
             if (!finalId.all { it.isDigit() }) {
-                val shortcode = GoMaxInstagramEngine.extractShortcode(linkJob.ifBlank { finalId })
-                val decoded = shortcode?.let { GoMaxInstagramEngine.shortcodeToMediaId(it) }
+                val shortcode = extractShortcode(linkJob.ifBlank { finalId })
+                val decoded = shortcode?.let { shortcodeToMediaId(it) }
                 if (!decoded.isNullOrBlank()) {
                     finalId = decoded
                 }
             }
             if (finalId.isBlank()) return IgActionResult(false, "Lỗi Media ID")
             val proxyStr = proxyConfig?.let { "${it.host}:${it.port}:${it.username.orEmpty()}:${it.password.orEmpty()}" }
-            val engine = GoMaxInstagramEngine.create(proxyStr, timeoutSec = 20L)
-            val igAcc = IgAccount(
-                userId = session.actorId,
-                username = "",
-                cookie = session.cookie,
-                proxy = proxyStr,
-                fbDtsg = session.fbDtsg.takeIf { it.isNotBlank() },
-                lsd = session.lsd.takeIf { it.isNotBlank() }
+            val client = com.cayxu.app.automation.instagram.IgTaToolClient.buildClient(proxyStr)
+            val resBody = com.cayxu.app.automation.instagram.IgTaToolClient.cmt(
+                client = client,
+                rawCookie = session.cookie,
+                mediaId = finalId,
+                text = text,
+                linkJob = linkJob,
+                cachedDtsg = session.fbDtsg,
+                cachedLsd = session.lsd,
+                userId = session.actorId
             )
-            val ok = engine.comment(igAcc, finalId, text)
-            return if (ok) IgActionResult(true, "Bình luận thành công", "ok") else IgActionResult(false, "Lỗi gửi CMT", "")
+            val isSuccess = resBody.contains("\"status\":\"ok\"") || resBody.contains("PolarisPostComment") || resBody.contains("comment")
+            return if (isSuccess) IgActionResult(true, "Bình luận thành công", resBody) else IgActionResult(false, "Lỗi gửi CMT", resBody)
         }
 
         // ========================================================================
@@ -816,28 +839,32 @@ class InstagramApiClient(
         }
 
         /**
-         * KIỂM TRA ĐỘ SỐNG CỦA COOKIE THEO GOMAX INSTAGRAM ENGINE:
-         * 1. Kiểm tra 3 trường bắt buộc: sessionid, ds_user_id, csrftoken
-         * 2. Quét trang chủ phát hiện Live / Checkpoint / Die
-         * 3. Trích xuất username, fb_dtsg, lsd và lấy thông tin chi tiết qua App REST API
+         * KIỂM TRA ĐỘ SỐNG CỦA COOKIE THEO IgTaToolClient (WEB API /web_form_data/):
+         * 1. Kiểm tra cookie qua endpoint Web API chính thức
+         * 2. Bóc tách username, userId, fb_dtsg, lsd chuẩn xác 100%
          */
         fun checkCookieIg(cookie: String, proxy: String? = null): CookieCheckResult {
             val unquoted = normalizeToIosCookie(unquoteCookie(cookie))
             val proxyCfg = parseProxy(proxy)
-            val engine = GoMaxInstagramEngine.create(proxy, timeoutSec = 20L)
-            val igAcc = engine.checkLiveCookie(unquoted, proxy)
-            if (igAcc == null || !igAcc.isLive) {
+            val client = buildOkHttpClient(proxyCfg, timeoutSec = 20L)
+            val info = com.cayxu.app.automation.instagram.IgTaToolClient.checkCookieIg(client, unquoted)
+            if (!info.isLive || info.username.isBlank()) {
                 val actorId = extractActorId(unquoted)
                 return CookieCheckResult(isLive = false, userId = actorId, rawJson = "Cookie không hợp lệ hoặc tài khoản bị Checkpoint")
             }
 
-            val session = getOrCreateSession(unquoted, proxyConfig = proxyCfg, initialFbDtsg = igAcc.fbDtsg, initialLsd = igAcc.lsd)
-            if (!igAcc.fbDtsg.isNullOrBlank()) session.fbDtsg = igAcc.fbDtsg
-            if (!igAcc.lsd.isNullOrBlank()) session.lsd = igAcc.lsd
+            val pageTokens = com.cayxu.app.automation.instagram.IgTaToolClient.extractPageTokens(
+                client = client,
+                cookie = unquoted,
+                targetUrl = "https://www.instagram.com/"
+            )
+            val session = getOrCreateSession(unquoted, proxyConfig = proxyCfg, initialFbDtsg = pageTokens.dtsg, initialLsd = pageTokens.lsd)
+            if (pageTokens.dtsg.isNotBlank()) session.fbDtsg = pageTokens.dtsg
+            if (pageTokens.lsd.isNotBlank()) session.lsd = pageTokens.lsd
 
             // Fetch extra user details (fullName, avatar, counts) for UI display
-            val actorId = igAcc.userId
-            var username = igAcc.username
+            val actorId = info.userId
+            var username = info.username
             var fullName = ""
             var bio = ""
             var pic = ""
@@ -986,9 +1013,9 @@ class InstagramApiClient(
         fun resolveMediaId(linkJob: String, proxy: String? = null): String? {
             if (linkJob.isBlank()) return null
 
-            // 1. Trích xuất shortcode và giải mã trực tiếp bằng BigInteger (GoMax Core)
-            val shortcode = GoMaxInstagramEngine.extractShortcode(linkJob)
-            val decodedId = shortcode?.let { GoMaxInstagramEngine.shortcodeToMediaId(it) }
+            // 1. Trích xuất shortcode và giải mã trực tiếp bằng BigInteger
+            val shortcode = extractShortcode(linkJob)
+            val decodedId = shortcode?.let { shortcodeToMediaId(it) }
             if (!decodedId.isNullOrBlank()) return decodedId
 
             // 2. Tra cứu qua HTML nếu link dạng khác

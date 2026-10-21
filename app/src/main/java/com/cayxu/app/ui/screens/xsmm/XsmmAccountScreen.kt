@@ -62,7 +62,7 @@ import com.cayxu.app.data.local.InstagramAccount
 import com.cayxu.app.data.local.InstagramAccountsStore
 import com.cayxu.app.data.local.LinkedAccountsStore
 import com.cayxu.app.facebook.FacebookAccountManager
-import com.cayxu.app.instagram.GoMaxInstagramEngine
+import com.cayxu.app.automation.instagram.IgTaToolClient
 import com.cayxu.app.instagram.InstagramApiClient
 import com.example.facebooktoken.FacebookToken
 import com.cayxu.app.data.repository.XsmmLoginResult
@@ -654,33 +654,38 @@ fun XsmmAccountScreen(navController: NavController) {
                                 continue
                             }
 
-                            val engine = GoMaxInstagramEngine.create(proxyStr)
-                            val igAccount = engine.checkLiveCookie(rawCookie, proxyStr)
+                            val client = IgTaToolClient.buildClient(proxyStr)
+                            val info = IgTaToolClient.checkCookieIg(client, rawCookie)
 
-                            if (igAccount != null && igAccount.isLive) {
-                                val dev = InstagramApiClient.getDeviceProfileFor(igAccount.userId)
+                            if (info.isLive && info.username.isNotBlank()) {
+                                val tokens = IgTaToolClient.extractPageTokens(
+                                    client = client,
+                                    cookie = rawCookie,
+                                    targetUrl = "https://www.instagram.com/"
+                                )
+                                val dev = InstagramApiClient.getDeviceProfileFor(info.userId)
                                 val pic = try {
-                                    InstagramApiClient.fetchProfilePic(igAccount.username, rawCookie, proxyStr)
+                                    InstagramApiClient.fetchProfilePic(info.username, rawCookie, proxyStr)
                                 } catch (_: Exception) { null }
 
                                 withContext(Dispatchers.Main) {
                                     InstagramAccountsStore.addAccount(
                                         context,
                                         InstagramAccount(
-                                            username = igAccount.username,
-                                            userId = igAccount.userId,
-                                            cookie = igAccount.cookie,
+                                            username = info.username,
+                                            userId = info.userId,
+                                            cookie = rawCookie,
                                             userAgent = dev.userAgent,
                                             proxy = proxyStr.orEmpty(),
-                                            fullName = igAccount.username,
+                                            fullName = info.username,
                                             avatar = pic.orEmpty(),
-                                            fbDtsg = igAccount.fbDtsg.orEmpty(),
-                                            lsd = igAccount.lsd.orEmpty(),
+                                            fbDtsg = tokens.dtsg,
+                                            lsd = tokens.lsd,
                                             isLive = true
                                         )
                                     )
-                                    LinkedAccountsStore.addAccount(context, "Instagram", igAccount.username)
-                                    addedAccounts.add(igAccount.username)
+                                    LinkedAccountsStore.addAccount(context, "Instagram", info.username)
+                                    addedAccounts.add(info.username)
                                 }
                             }
                         }
