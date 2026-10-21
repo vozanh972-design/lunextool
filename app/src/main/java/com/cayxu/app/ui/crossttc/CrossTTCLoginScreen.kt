@@ -139,7 +139,8 @@ fun CrossTTCLoginScreen(navController: NavController) {
         // 1. Nạp danh sách tài khoản TikTok trên máy (độc lập trong app)
         deviceTikToks.forEach { tk ->
             val cleanHandle = tk.handle.removePrefix("@")
-            val isLinked = ttcAccounts.any { it.username.removePrefix("@").equals(cleanHandle, ignoreCase = true) }
+            val matchedTtc = ttcAccounts.firstOrNull { it.username.removePrefix("@").equals(cleanHandle, ignoreCase = true) }
+            val isLinked = matchedTtc != null
             val h = if (tk.handle.startsWith("@")) tk.handle else "@${tk.handle}"
             val statList = mutableListOf<String>()
             if (tk.followerCount > 0) statList.add("${formatStatCount(tk.followerCount)} followers")
@@ -154,6 +155,7 @@ fun CrossTTCLoginScreen(navController: NavController) {
                     statLine = statLine,
                     createdAt = tk.createDateFormatted.ifBlank { "Thiết bị" },
                     linked = isLinked,
+                    ttcId = matchedTtc?.id.orEmpty(),
                 )
             )
         }
@@ -171,6 +173,7 @@ fun CrossTTCLoginScreen(navController: NavController) {
                         statLine = if (tt.isActive) "Đang đặt làm nick chạy" else "",
                         createdAt = "TTC Web",
                         linked = true,
+                        ttcId = tt.id,
                     )
                 )
             }
@@ -393,12 +396,19 @@ fun CrossTTCLoginScreen(navController: NavController) {
                 showConfigSheet = true
             },
             onRun = {
-                val count = accountsState.selectedAccountIds.size
-                if (count > 0) {
-                    toastText = "Đang chạy $count tài khoản TikTok TTC"
-                } else {
-                    toastText = "Vui lòng chọn ít nhất 1 tài khoản"
+                val selectedAccs = accountsState.accounts.filter { it.id in accountsState.selectedAccountIds }
+                if (selectedAccs.isEmpty()) {
+                    toastText = "Vui lòng chọn ít nhất 1 tài khoản để chạy"
+                    return@CrossTTCAccountsScreen
                 }
+                val handles = selectedAccs.map { it.handle.trim().removePrefix("@") }
+                val currentToken = CrossTTCStore.getToken(context)
+                CrossTTCJobRunnerLink.startTTCJobRunner(
+                    context = context,
+                    accountHandles = handles,
+                    sessionCookie = sessionCookie,
+                    accessToken = currentToken,
+                )
             },
             onDeleteSelected = {
                 val toDelete = accountsState.selectedAccountIds

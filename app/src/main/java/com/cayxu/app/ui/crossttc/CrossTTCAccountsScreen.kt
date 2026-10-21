@@ -76,6 +76,7 @@ data class CrossTTCAccount(
     val createdAt: String,    // vd "03/05/2026"
     val linked: Boolean = true,
     val isLinking: Boolean = false,
+    val ttcId: String = "",
 )
 
 data class CrossTTCAccountsUiState(

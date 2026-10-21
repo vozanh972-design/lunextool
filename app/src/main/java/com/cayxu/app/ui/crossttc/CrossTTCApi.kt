@@ -6,6 +6,7 @@ import okhttp3.FormBody
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
@@ -26,6 +27,19 @@ data class CrossTTCTikTokAccountInfo(
 
 data class CrossTTCLinkResult(
     val isSuccess: Boolean,
+    val message: String = "",
+)
+
+data class CrossTTCTaskJob(
+    val id: String,
+    val link: String,
+    val type: String = "follow",
+)
+
+data class CrossTTCClaimResult(
+    val isSuccess: Boolean,
+    val earnedCoins: Long = 0L,
+    val totalCoins: Long = 0L,
     val message: String = "",
 )
 
@@ -233,6 +247,150 @@ object CrossTTCApi {
             }
         } catch (e: Exception) {
             CrossTTCLinkResult(false, "Lỗi kết nối: ${e.localizedMessage ?: "Vui lòng thử lại"}")
+        }
+    }
+
+    /**
+     * Đặt nick TikTok làm nick chạy mặc định trên TTC (POST /cauhinh/datnick.php với iddat[]=uid & loai=tt).
+     */
+    suspend fun setDefaultTikTokAccount(sessionCookie: String, uid: String): CrossTTCLinkResult = withContext(Dispatchers.IO) {
+        val cleanUid = uid.trim()
+        if (cleanUid.isBlank()) {
+            return@withContext CrossTTCLinkResult(false, "UID tài khoản TikTok không hợp lệ")
+        }
+        try {
+            val formBody = FormBody.Builder()
+                .add("iddat[]", cleanUid)
+                .add("loai", "tt")
+                .build()
+
+            val req = Request.Builder()
+                .url("$BASE_URL/cauhinh/datnick.php")
+                .headers(buildHeaders(sessionCookie))
+                .header("Referer", "$BASE_URL/cauhinh/tiktok.php")
+                .header("X-Requested-With", "XMLHttpRequest")
+                .post(formBody)
+                .build()
+
+            httpClient.newCall(req).execute().use { res ->
+                val resStr = res.body?.string().orEmpty().trim()
+                val isSuccess = res.isSuccessful && (resStr == "1" || resStr.contains("\"status\":1") || resStr.contains("Thành công") || resStr.contains("thành công") || resStr.contains("Cấu hình thành công"))
+                val msg = when {
+                    isSuccess -> "Đặt nick chạy mặc định thành công"
+                    resStr == "2" || resStr.contains("chưa thêm") -> "Nick chưa được liên kết trên TTC, vui lòng liên kết trước"
+                    resStr == "-1" || resStr.contains("chậm lại") -> "Thao tác quá nhanh, vui lòng thử lại sau vài giây"
+                    else -> resStr.ifBlank { "Lỗi cấu hình nick mặc định" }
+                }
+                CrossTTCLinkResult(isSuccess, msg)
+            }
+        } catch (e: Exception) {
+            CrossTTCLinkResult(false, "Lỗi kết nối đặt nick: ${e.localizedMessage ?: "Vui lòng thử lại"}")
+        }
+    }
+
+    /**
+     * Lấy danh sách nhiệm vụ TikTok từ TTC (GET /tiktok/kiemtien/subcheo/getpost.php).
+     */
+    suspend fun getTikTokJobs(
+        sessionCookie: String,
+        accessToken: String,
+        jobType: String = "subcheo",
+    ): List<CrossTTCTaskJob> = withContext(Dispatchers.IO) {
+        val path = if (jobType.contains("tim", ignoreCase = true) || jobType.contains("like", ignoreCase = true)) "cheotim" else "subcheo"
+        val url = "$BASE_URL/tiktok/kiemtien/$path/getpost.php"
+        val referer = "$BASE_URL/tiktok/kiemtien/$path/?access_token=$accessToken"
+        try {
+            val req = Request.Builder()
+                .url(url)
+                .headers(buildHeaders(sessionCookie))
+                .header("Referer", referer)
+                .header("Accept", "application/json, text/javascript, */*; q=0.01")
+                .header("X-Requested-With", "XMLHttpRequest")
+                .get()
+                .build()
+
+            httpClient.newCall(req).execute().use { res ->
+                val resStr = res.body?.string().orEmpty().trim()
+                if (resStr.contains("Hết Job") || resStr.contains("countdown") || resStr.contains("\"error\"") || resStr.isBlank()) {
+                    return@withContext emptyList()
+                }
+                val list = mutableListOf<CrossTTCTaskJob>()
+                if (resStr.startsWith("[")) {
+                    val arr = JSONArray(resStr)
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.getJSONObject(i)
+                        val id = obj.optString("id").ifBlank { obj.optString("idpost") }
+                        val link = obj.optString("link").ifBlank { obj.optString("uid") }
+                        if (id.isNotBlank() && link.isNotBlank()) {
+                            list.add(CrossTTCTaskJob(id, link, if (path == "cheotim") "like" else "follow"))
+                        }
+                    }
+                } else if (resStr.startsWith("{")) {
+                    val j = JSONObject(resStr)
+                    val arr = j.optJSONArray("data") ?: j.optJSONArray("posts")
+                    if (arr != null) {
+                        for (i in 0 until arr.length()) {
+                            val obj = arr.getJSONObject(i)
+                            val id = obj.optString("id").ifBlank { obj.optString("idpost") }
+                            val link = obj.optString("link").ifBlank { obj.optString("uid") }
+                            if (id.isNotBlank() && link.isNotBlank()) {
+                                list.add(CrossTTCTaskJob(id, link, if (path == "cheotim") "like" else "follow"))
+                            }
+                        }
+                    }
+                }
+                list
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * Nhận xu thưởng sau khi hoàn thành nhiệm vụ TikTok trên TTC (POST /tiktok/kiemtien/subcheo/nhantien.php).
+     */
+    suspend fun claimTikTokJobReward(
+        sessionCookie: String,
+        accessToken: String,
+        jobType: String = "subcheo",
+        jobId: String,
+    ): CrossTTCClaimResult = withContext(Dispatchers.IO) {
+        val path = if (jobType.contains("tim", ignoreCase = true) || jobType.contains("like", ignoreCase = true)) "cheotim" else "subcheo"
+        val url = "$BASE_URL/tiktok/kiemtien/$path/nhantien.php"
+        val referer = "$BASE_URL/tiktok/kiemtien/$path/?access_token=$accessToken"
+        try {
+            val formBody = FormBody.Builder()
+                .add("id", jobId)
+                .build()
+
+            val req = Request.Builder()
+                .url(url)
+                .headers(buildHeaders(sessionCookie))
+                .header("Referer", referer)
+                .header("Accept", "application/json, text/javascript, */*; q=0.01")
+                .header("X-Requested-With", "XMLHttpRequest")
+                .post(formBody)
+                .build()
+
+            httpClient.newCall(req).execute().use { res ->
+                val resStr = res.body?.string().orEmpty().trim()
+                val isOk = res.isSuccessful && (resStr.contains("\"success\"") || resStr.contains("\"status\":\"success\"") || resStr.contains("Thành công") || resStr.contains("thành công"))
+                var earned = 0L
+                var sodu = 0L
+                var msg = resStr
+                if (resStr.startsWith("{")) {
+                    try {
+                        val j = JSONObject(resStr)
+                        earned = j.optLong("xu", j.optLong("xu_them", 0L))
+                        val rawSodu = j.optString("sodu", "0").replace(",", "").replace(".", "").trim()
+                        sodu = rawSodu.toLongOrNull() ?: 0L
+                        msg = j.optString("mess").ifBlank { j.optString("message", resStr) }
+                    } catch (_: Exception) {}
+                }
+                CrossTTCClaimResult(isOk, earned, sodu, msg)
+            }
+        } catch (e: Exception) {
+            CrossTTCClaimResult(false, 0L, 0L, "Lỗi nhận xu: ${e.localizedMessage ?: "Vui lòng thử lại"}")
         }
     }
 }
