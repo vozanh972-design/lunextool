@@ -24,6 +24,11 @@ data class CrossTTCTikTokAccountInfo(
     val isActive: Boolean = false,
 )
 
+data class CrossTTCLinkResult(
+    val isSuccess: Boolean,
+    val message: String = "",
+)
+
 /**
  * Client kết nối mạng độc lập cho Tương tác chéo TikTok.
  * Chỉ phục vụ riêng module TikTok TTC, không chia sẻ hay phụ thuộc vào module khác.
@@ -179,6 +184,55 @@ object CrossTTCApi {
             }
         } catch (_: Exception) {
             emptyList()
+        }
+    }
+
+    /**
+     * Thêm / liên kết nick TikTok thật vào Tương tác chéo (POST /cauhinh/nhapnick.php).
+     */
+    suspend fun linkTikTokAccount(sessionCookie: String, handle: String): CrossTTCLinkResult = withContext(Dispatchers.IO) {
+        val cleanHandle = handle.trim().removePrefix("@")
+        if (cleanHandle.isBlank()) {
+            return@withContext CrossTTCLinkResult(false, "Username TikTok không hợp lệ")
+        }
+        try {
+            val formBody = FormBody.Builder()
+                .add("link", cleanHandle)
+                .add("loainick", "tiktok")
+                .add("recaptcha", "1")
+                .build()
+
+            val req = Request.Builder()
+                .url("$BASE_URL/cauhinh/nhapnick.php")
+                .headers(buildHeaders(sessionCookie))
+                .header("Referer", "$BASE_URL/cauhinh/tiktok.php")
+                .post(formBody)
+                .build()
+
+            httpClient.newCall(req).execute().use { res ->
+                val resStr = res.body?.string().orEmpty().trim()
+                var msg = resStr
+                var isOk = false
+                if (resStr.startsWith("{")) {
+                    try {
+                        val json = JSONObject(resStr)
+                        val status = json.optInt("status", -1)
+                        msg = json.optString("mess").ifBlank { json.optString("message", resStr) }
+                        isOk = status == 1 || resStr.contains("Thành công") || resStr.contains("thành công")
+                    } catch (_: Exception) {}
+                } else {
+                    isOk = resStr.contains("Thành công") || resStr.contains("thành công") || resStr == "1"
+                }
+
+                if (isOk) {
+                    CrossTTCLinkResult(true, if (msg.isNotBlank()) msg else "Thêm nick thành công")
+                } else {
+                    val errMsg = if (msg.isNotBlank()) msg else "Không thể liên kết nick TikTok trên TTC"
+                    CrossTTCLinkResult(false, errMsg)
+                }
+            }
+        } catch (e: Exception) {
+            CrossTTCLinkResult(false, "Lỗi kết nối: ${e.localizedMessage ?: "Vui lòng thử lại"}")
         }
     }
 }

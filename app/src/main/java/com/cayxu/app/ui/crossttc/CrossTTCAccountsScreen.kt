@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -74,6 +75,7 @@ data class CrossTTCAccount(
     val statLine: String,     // vd "11.2K followers · 2.0K tim"
     val createdAt: String,    // vd "03/05/2026"
     val linked: Boolean = true,
+    val isLinking: Boolean = false,
 )
 
 data class CrossTTCAccountsUiState(
@@ -122,6 +124,7 @@ private val Trash = listOf(
  * @param onOpenConfig      bấm "Cấu hình" ở thanh dưới.
  * @param onRun             bấm "Chạy" — chạy trao đổi chéo cho các tài khoản đã chọn.
  * @param onDeleteSelected  bấm icon thùng rác — xoá các tài khoản TikTok đã chọn.
+ * @param onLinkAccount     bấm vào badge "Chưa liên kết" — gọi liên kết tài khoản vào TTC.
  */
 @Composable
 fun CrossTTCAccountsScreen(
@@ -138,6 +141,7 @@ fun CrossTTCAccountsScreen(
     modifier: Modifier = Modifier,
     toastText: String? = null,
     onDeleteSelected: (() -> Unit)? = null,
+    onLinkAccount: ((CrossTTCAccount) -> Unit)? = null,
 ) {
     val allSelected = state.accounts.isNotEmpty() && state.accounts.all { it.id in state.selectedAccountIds }
     val selectedCount = state.accounts.count { it.id in state.selectedAccountIds }
@@ -205,6 +209,7 @@ fun CrossTTCAccountsScreen(
                             selected = acc.id in state.selectedAccountIds,
                             onToggle = { onToggleAccount(acc) },
                             onRefresh = { onRefreshAccount(acc) },
+                            onLinkAccount = onLinkAccount?.let { { it(acc) } },
                         )
                     }
                 }
@@ -335,6 +340,7 @@ private fun AccountRow(
     selected: Boolean,
     onToggle: () -> Unit,
     onRefresh: () -> Unit,
+    onLinkAccount: (() -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(20.dp)
     PressBox(
@@ -399,19 +405,32 @@ private fun AccountRow(
                             )
                         }
                     } else {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                        PressBox(
+                            onClick = { onLinkAccount?.invoke() },
+                            enabled = !account.isLinking,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(Alx.Blue.copy(alpha = 0.12f))
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                         ) {
-                            Box(Modifier.size(5.dp).clip(CircleShape).background(Alx.Blue))
-                            Spacer(Modifier.width(4.dp))
-                            BasicText(
-                                "Chưa liên kết",
-                                style = type(10f, FontWeight.ExtraBold, Alx.Blue),
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                if (account.isLinking) {
+                                    CircularProgressIndicator(
+                                        color = Alx.Blue,
+                                        strokeWidth = 1.5.dp,
+                                        modifier = Modifier.size(9.dp),
+                                    )
+                                } else {
+                                    Box(Modifier.size(5.dp).clip(CircleShape).background(Alx.Blue))
+                                }
+                                BasicText(
+                                    if (account.isLinking) "Đang liên kết..." else "Chưa liên kết",
+                                    style = type(10f, FontWeight.ExtraBold, Alx.Blue),
+                                )
+                            }
                         }
                     }
                 }

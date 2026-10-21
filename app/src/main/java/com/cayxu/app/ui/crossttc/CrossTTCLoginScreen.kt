@@ -109,6 +109,7 @@ fun CrossTTCLoginScreen(navController: NavController) {
     var loggedIn by remember { mutableStateOf(false) }
     var showWebView by remember { mutableStateOf(false) }
     var showAddTikTokSheet by remember { mutableStateOf(false) }
+    var showConfigSheet by remember { mutableStateOf(false) }
     var sessionCookie by remember { mutableStateOf("") }
 
     var accountsState by remember {
@@ -268,6 +269,81 @@ fun CrossTTCLoginScreen(navController: NavController) {
         )
     }
 
+    if (showConfigSheet) {
+        val currentConfig = remember(showConfigSheet) {
+            CrossTTCRunConfigStore.get(context)
+        }
+        var configUiState by remember(showConfigSheet) {
+            mutableStateOf(
+                CrossTTCTaskConfigUiState(
+                    platformLabel = "TikTok",
+                    getJobMinSeconds = currentConfig.getJobMinSeconds.toString(),
+                    getJobMaxSeconds = currentConfig.getJobMaxSeconds.toString(),
+                    swipeBeforeGetJob = currentConfig.swipeBeforeGetJob,
+                    doJobMinSeconds = currentConfig.doJobMinSeconds.toString(),
+                    doJobMaxSeconds = currentConfig.doJobMaxSeconds.toString(),
+                    swipeAfterFollow = currentConfig.swipeAfterFollow,
+                    completeJobMinSeconds = currentConfig.completeJobMinSeconds.toString(),
+                    completeJobMaxSeconds = currentConfig.completeJobMaxSeconds.toString(),
+                    breakMinSeconds = currentConfig.breakMinSeconds.toString(),
+                    breakMaxSeconds = currentConfig.breakMaxSeconds.toString(),
+                    goalTaskCount = currentConfig.goalTaskCount.toString(),
+                    autoSwapOnError = currentConfig.autoSwapOnError,
+                    errorSwapCount = currentConfig.errorSwapCount.toString(),
+                )
+            )
+        }
+
+        CrossTTCTaskConfigSheet(
+            state = configUiState,
+            onDismiss = { showConfigSheet = false },
+            onGetJobMinChange = { configUiState = configUiState.copy(getJobMinSeconds = it) },
+            onGetJobMaxChange = { configUiState = configUiState.copy(getJobMaxSeconds = it) },
+            onSwipeBeforeGetJobChange = { configUiState = configUiState.copy(swipeBeforeGetJob = it) },
+            onDoJobMinChange = { configUiState = configUiState.copy(doJobMinSeconds = it) },
+            onDoJobMaxChange = { configUiState = configUiState.copy(doJobMaxSeconds = it) },
+            onSwipeAfterFollowChange = { configUiState = configUiState.copy(swipeAfterFollow = it) },
+            onCompleteJobMinChange = { configUiState = configUiState.copy(completeJobMinSeconds = it) },
+            onCompleteJobMaxChange = { configUiState = configUiState.copy(completeJobMaxSeconds = it) },
+            onBreakMinChange = { configUiState = configUiState.copy(breakMinSeconds = it) },
+            onBreakMaxChange = { configUiState = configUiState.copy(breakMaxSeconds = it) },
+            onGoalTaskCountChange = { configUiState = configUiState.copy(goalTaskCount = it) },
+            onAutoSwapOnErrorChange = { configUiState = configUiState.copy(autoSwapOnError = it) },
+            onErrorSwapCountChange = { configUiState = configUiState.copy(errorSwapCount = it) },
+            onSave = {
+                val gMin = configUiState.getJobMinSeconds.toIntOrNull() ?: 5
+                val gMax = configUiState.getJobMaxSeconds.toIntOrNull() ?: 12
+                val dMin = configUiState.doJobMinSeconds.toIntOrNull() ?: 8
+                val dMax = configUiState.doJobMaxSeconds.toIntOrNull() ?: 15
+                val cMin = configUiState.completeJobMinSeconds.toIntOrNull() ?: 20
+                val cMax = configUiState.completeJobMaxSeconds.toIntOrNull() ?: 40
+                val bMin = configUiState.breakMinSeconds.toIntOrNull() ?: 8
+                val bMax = configUiState.breakMaxSeconds.toIntOrNull() ?: 15
+                val goal = configUiState.goalTaskCount.toIntOrNull() ?: 0
+                val errCnt = configUiState.errorSwapCount.toIntOrNull() ?: 5
+
+                val newCfg = CrossTTCRunConfig(
+                    getJobMinSeconds = minOf(gMin, gMax),
+                    getJobMaxSeconds = maxOf(gMin, gMax),
+                    swipeBeforeGetJob = configUiState.swipeBeforeGetJob,
+                    doJobMinSeconds = minOf(dMin, dMax),
+                    doJobMaxSeconds = maxOf(dMin, dMax),
+                    swipeAfterFollow = configUiState.swipeAfterFollow,
+                    completeJobMinSeconds = minOf(cMin, cMax),
+                    completeJobMaxSeconds = maxOf(cMin, cMax),
+                    breakMinSeconds = minOf(bMin, bMax),
+                    breakMaxSeconds = maxOf(bMin, bMax),
+                    goalTaskCount = goal.coerceAtLeast(0),
+                    autoSwapOnError = configUiState.autoSwapOnError,
+                    errorSwapCount = errCnt.coerceAtLeast(1),
+                )
+                CrossTTCRunConfigStore.save(context, newCfg)
+                toastText = "Đã lưu cấu hình làm nhiệm vụ"
+                showConfigSheet = false
+            }
+        )
+    }
+
     if (loggedIn) {
         CrossTTCAccountsScreen(
             state = accountsState,
@@ -314,7 +390,7 @@ fun CrossTTCLoginScreen(navController: NavController) {
                 showAddTikTokSheet = true
             },
             onOpenConfig = {
-                toastText = "Mở cấu hình tương tác chéo"
+                showConfigSheet = true
             },
             onRun = {
                 val count = accountsState.selectedAccountIds.size
@@ -336,6 +412,58 @@ fun CrossTTCLoginScreen(navController: NavController) {
                         selectedAccountIds = emptySet()
                     )
                     toastText = "Đã xoá ${toDelete.size} tài khoản đã chọn"
+                }
+            },
+            onLinkAccount = { acc ->
+                if (acc.isLinking || acc.linked) return@CrossTTCAccountsScreen
+                // 1. Chuyển acc sang trạng thái đang liên kết trực tiếp trên UI
+                accountsState = accountsState.copy(
+                    accounts = accountsState.accounts.map {
+                        if (it.id == acc.id) it.copy(isLinking = true) else it
+                    }
+                )
+                scope.launch {
+                    val cookieToUse = if (sessionCookie.isNotBlank()) {
+                        sessionCookie
+                    } else {
+                        val currentToken = CrossTTCStore.getToken(context)
+                        if (currentToken.isNotBlank()) {
+                            val lRes = CrossTTCApi.loginWithToken(currentToken)
+                            if (lRes.isSuccess) {
+                                sessionCookie = lRes.sessionCookie
+                                lRes.sessionCookie
+                            } else ""
+                        } else ""
+                    }
+
+                    if (cookieToUse.isBlank()) {
+                        accountsState = accountsState.copy(
+                            accounts = accountsState.accounts.map {
+                                if (it.id == acc.id) it.copy(isLinking = false) else it
+                            }
+                        )
+                        toastText = "Chưa có phiên TTC, vui lòng đăng nhập lại"
+                        return@launch
+                    }
+
+                    val linkRes = CrossTTCApi.linkTikTokAccount(cookieToUse, acc.handle)
+                    if (linkRes.isSuccess) {
+                        val ttcTikToks = CrossTTCApi.getTtcTikTokAccounts(cookieToUse)
+                        val updatedAccounts = buildAccountsList(ttcTikToks)
+                        accountsState = accountsState.copy(
+                            accounts = updatedAccounts.map {
+                                if (it.id == acc.id) it.copy(linked = true, isLinking = false) else it
+                            }
+                        )
+                        toastText = "Đã liên kết ${acc.handle} vào Tương tác chéo!"
+                    } else {
+                        accountsState = accountsState.copy(
+                            accounts = accountsState.accounts.map {
+                                if (it.id == acc.id) it.copy(isLinking = false) else it
+                            }
+                        )
+                        toastText = linkRes.message.ifBlank { "Không thể liên kết nick này" }
+                    }
                 }
             },
             toastText = toastText,
