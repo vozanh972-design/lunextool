@@ -54,12 +54,12 @@ import kotlinx.coroutines.delay
  * màn độc lập, chỉ có tiktok thôi". Không gọi mạng, không tự tính followers/trạng thái liên kết: mọi dữ
  * liệu hiển thị truyền qua [CrossTTCAccountsUiState], thao tác người dùng báo lại qua callback.
  *
- * Màu nhận diện: hồng-magenta TtcPink/TtcPinkSoft (#C2255C/#FDEAF2) — màu riêng của mục Tương tác chéo.
+ * Màu nhận diện: Đen TikTok `TtcDark`/`TtcDarkSoft` (#0F172A/#F1F5F9).
  * Avatar dùng ẢNH thật qua Coil (AsyncImage).
  */
 
-private val TtcPink = Color(0xFFC2255C)
-private val TtcPinkSoft = Color(0xFFFDEAF2)
+private val TtcDark = Color(0xFF0F172A)
+private val TtcDarkSoft = Color(0xFFF1F5F9)
 private val TtcGreen = Color(0xFF15803D)
 private val TtcGreenSoft = Color(0xFFE7F8EE)
 
@@ -163,7 +163,7 @@ fun CrossTTCAccountsScreen(
                     }
                     PressBox(
                         onClick = onAddAccount,
-                        modifier = Modifier.size(40.dp).background(TtcPink, CircleShape),
+                        modifier = Modifier.size(40.dp).background(TtcDark, CircleShape),
                         contentAlignment = Alignment.Center,
                     ) { SvgIcon(Plus, 18.dp, Alx.White, 2.4f) }
                 }
@@ -246,8 +246,8 @@ private fun AccountSummaryCard(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.size(48.dp).background(TtcPinkSoft, CircleShape), contentAlignment = Alignment.Center) {
-            BasicText(state.username.firstOrNull()?.uppercaseChar()?.toString() ?: "T", style = type(18f, FontWeight.ExtraBold, TtcPink))
+        Box(Modifier.size(48.dp).background(TtcDarkSoft, CircleShape), contentAlignment = Alignment.Center) {
+            BasicText(state.username.firstOrNull()?.uppercaseChar()?.toString() ?: "T", style = type(18f, FontWeight.ExtraBold, TtcDark))
         }
         Column(Modifier.weight(1f)) {
             BasicText(
@@ -257,14 +257,14 @@ private fun AccountSummaryCard(
             BasicText(
                 "${state.exchangedCount} lượt đã trao đổi",
                 Modifier.padding(top = 2.dp),
-                style = type(13f, FontWeight.ExtraBold, TtcPink, lineHeight = 1.3f),
+                style = type(13f, FontWeight.ExtraBold, TtcDark, lineHeight = 1.3f),
             )
         }
         PressBox(
             onClick = onRefresh,
             modifier = Modifier.size(40.dp).background(Alx.Bg, CircleShape),
             contentAlignment = Alignment.Center,
-        ) { SvgIcon(Refresh, 18.dp, TtcPink, 2f) }
+        ) { SvgIcon(Refresh, 18.dp, TtcDark, 2f) }
         PressBox(
             onClick = onLogout,
             modifier = Modifier.size(40.dp).background(Color(0xFFFDECEC), CircleShape),
@@ -283,8 +283,8 @@ private fun EmptyState(modifier: Modifier = Modifier) {
             .padding(horizontal = 24.dp, vertical = 30.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.size(56.dp).background(TtcPinkSoft, CircleShape), contentAlignment = Alignment.Center) {
-            SvgIcon(CrossSwap, 26.dp, TtcPink, 1.8f)
+        Box(Modifier.size(56.dp).background(TtcDarkSoft, CircleShape), contentAlignment = Alignment.Center) {
+            SvgIcon(CrossSwap, 26.dp, TtcDark, 1.8f)
         }
         BasicText(
             "Chưa có tài khoản TikTok nào",
@@ -299,7 +299,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
     }
 }
 
-/** Dòng tài khoản: checkbox + avatar ẢNH thật + handle in đậm + pill "Đã liên kết" + dòng thống kê hồng + ngày tạo + nút làm mới riêng. */
+/** Dòng tài khoản: checkbox + avatar ẢNH thật + handle in đậm + pill "Đã liên kết" + dòng thống kê + ngày tạo + nút làm mới riêng. */
 @Composable
 private fun AccountRow(
     account: CrossTTCAccount,
@@ -321,7 +321,7 @@ private fun AccountRow(
         AsyncImage(
             model = account.avatarUrl,
             contentDescription = null,
-            modifier = Modifier.size(42.dp).clip(CircleShape).background(TtcPinkSoft),
+            modifier = Modifier.size(42.dp).clip(CircleShape).background(TtcDarkSoft),
         )
 
         Column(Modifier.weight(1f)) {
@@ -342,7 +342,7 @@ private fun AccountRow(
                     }
                 }
             }
-            BasicText(account.statLine, Modifier.padding(top = 4.dp), style = type(12.5f, FontWeight.ExtraBold, TtcPink))
+            BasicText(account.statLine, Modifier.padding(top = 4.dp), style = type(12.5f, FontWeight.ExtraBold, TtcDark))
             BasicText("Tạo: ${account.createdAt}", Modifier.padding(top = 2.dp), style = type(11.5f, FontWeight.SemiBold, Color(0xFF94A3B8)))
         }
 
@@ -377,7 +377,7 @@ private fun Checkbox(checked: Boolean) {
     val shape = RoundedCornerShape(7.dp)
     Box(
         Modifier.size(22.dp)
-            .then(if (checked) Modifier.background(TtcPink, shape) else Modifier.background(Alx.White, shape).border(1.8.dp, Color(0xFF94A3B8), shape)),
+            .then(if (checked) Modifier.background(TtcDark, shape) else Modifier.background(Alx.White, shape).border(1.8.dp, Color(0xFF94A3B8), shape)),
         contentAlignment = Alignment.Center,
     ) {
         if (checked) SvgIcon(Check, 12.dp, Alx.White, 3.4f)

@@ -68,21 +68,19 @@ import com.cayxu.app.ui.design.type
  * `com.cayxu.app.ui.xsmm.XsmmLoginScreen` theo đúng yêu cầu "làm Tương tác chéo TikTok giống
  * XSMM" — nhưng là file RIÊNG, package riêng (`com.cayxu.app.ui.crossttc`), không đè lên
  * XsmmLoginScreen.kt. Khác biệt duy nhất là nội dung/nhãn (Tương tác chéo thay vì XSMM, miền
- * tuongtaccheo.net thay vì xsmm.net) và MÀU: hồng-magenta `TtcPink`/`TtcPinkSoft` (màu riêng của
- * Tương tác chéo trong app — xem README mục Trang chủ: "hồng TTC") thay vì xanh dương của XSMM.
+ * tuongtaccheo.com thay vì xsmm.net) và MÀU: Đen TikTok `TtcDark`/`TtcDarkSoft` (#0F172A/#F1F5F9).
  *
  * Không gọi mạng, không kiểm tra token, không lưu token ở đây — màn chỉ nhận giá trị và báo lại
  * sự kiện qua callback, bạn tự nối vào logic đăng nhập Tương tác chéo thật đang có (hoặc sắp viết).
  */
 
-private val TtcPink = Color(0xFFC2255C)
-private val TtcPinkSoft = Color(0xFFFDEAF2)
+private val TtcDark = Color(0xFF0F172A)
+private val TtcDarkSoft = Color(0xFFF1F5F9)
 
 private val Back = listOf("M19 12H5M11 6l-6 6 6 6")
 private val Lock = listOf("M6 11h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2zM8 11V7a4 4 0 0 1 8 0v4")
 private val LoginArrow = listOf("M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3")
 private val External = listOf("M7 17L17 7M8 7h9v9")
-private val CrossSwap = listOf("M17 3l4 4-4 4M21 7H8M7 21l-4-4 4-4M3 17h13")
 
 /**
  * Cổng vào kết nối với NavController.
@@ -164,7 +162,7 @@ fun CrossTTCLoginScreen(navController: NavController) {
             onBack = { navController.popBackStack() },
             onOpenSite = {
                 try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://tuongtaccheo.net"))
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://tuongtaccheo.com"))
                     context.startActivity(intent)
                 } catch (_: Exception) {}
             },
@@ -179,10 +177,10 @@ fun CrossTTCLoginScreen(navController: NavController) {
  * @param token         nội dung ô nhập — bạn giữ ở ViewModel/state cũ rồi truyền vào.
  * @param onTokenChange gọi mỗi khi người dùng gõ hoặc bấm "Dán".
  * @param onLogin       bấm "Đăng nhập" (hoặc phím Xong) — nối vào hàm đăng nhập Tương tác chéo thật.
- * @param onOpenSite    bấm "Mở tuongtaccheo.net để lấy token" — mở trình duyệt tới trang thật.
+ * @param onOpenSite    bấm "Mở tuongtaccheo.com để lấy token" — mở trình duyệt tới trang thật.
  * @param loading       đang gọi đăng nhập: khóa nút và đổi chữ thành "Đang đăng nhập…".
  * @param errorText     thông báo lỗi sẵn có của bạn (null = không hiện).
- * @param loggedIn      đã đăng nhập: thẻ trạng thái hiện "Đã đăng nhập Tương tác chéo" thay vì "Chưa đăng nhập".
+ * @param loggedIn      trạng thái đăng nhập (giữ tương thích).
  */
 @Composable
 fun CrossTTCLoginScreen(
@@ -217,41 +215,16 @@ fun CrossTTCLoginScreen(
             )
         }
 
-        // Thẻ trạng thái
-        Row(
-            Modifier.padding(top = 20.dp).fillMaxWidth()
-                .background(Alx.White, RoundedCornerShape(22.dp))
-                .border(1.dp, Alx.Line, RoundedCornerShape(22.dp))
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(Modifier.size(48.dp).background(TtcPinkSoft, CircleShape), contentAlignment = Alignment.Center) {
-                SvgIcon(CrossSwap, 22.dp, TtcPink, 2f)
-            }
-            Column(Modifier.weight(1f)) {
-                BasicText(
-                    if (loggedIn) "Đã đăng nhập Tương tác chéo" else "Chưa đăng nhập Tương tác chéo",
-                    style = type(14.5f, FontWeight.ExtraBold, Alx.Ink, lineHeight = 1.25f),
-                )
-                BasicText(
-                    if (loggedIn) "Bạn có thể dán token mới để đổi tài khoản" else "Dán Access Token TikTok để bắt đầu",
-                    Modifier.padding(top = 2.dp),
-                    style = type(12f, FontWeight.Medium, Alx.Muted, lineHeight = 1.35f),
-                )
-            }
-        }
-
         // Thẻ Access Token
         Column(
-            Modifier.padding(top = 16.dp).fillMaxWidth()
+            Modifier.padding(top = 20.dp).fillMaxWidth()
                 .background(Alx.White, RoundedCornerShape(22.dp))
                 .border(1.dp, Alx.Line, RoundedCornerShape(22.dp))
                 .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 16.dp),
         ) {
             BasicText("Access Token", style = type(15.5f, FontWeight.ExtraBold, Alx.Ink, lineHeight = 1.2f))
             BasicText(
-                "Lấy token trong tài khoản trên tuongtaccheo.net rồi dán vào đây",
+                "Lấy token trong tài khoản trên tuongtaccheo.com rồi dán vào đây",
                 Modifier.padding(top = 3.dp),
                 style = type(12.5f, FontWeight.Medium, Alx.Muted, lineHeight = 1.4f),
             )
@@ -284,7 +257,7 @@ fun CrossTTCLoginScreen(
             contentAlignment = Alignment.CenterStart,
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                BasicText("Mở tuongtaccheo.net để lấy token", Modifier.weight(1f), style = type(14f, FontWeight.Bold, Alx.Ink))
+                BasicText("Mở tuongtaccheo.com để lấy token", Modifier.weight(1f), style = type(14f, FontWeight.Bold, Alx.Ink))
                 SvgIcon(External, 18.dp, Alx.Muted, 2f)
             }
         }
@@ -315,7 +288,7 @@ private fun TokenField(
     val shape = RoundedCornerShape(16.dp)
     val border = when {
         hasError -> Alx.Danger
-        focused -> TtcPink
+        focused -> TtcDark
         else -> Alx.InputBorder
     }
 
@@ -327,7 +300,7 @@ private fun TokenField(
             singleLine = true,
             interactionSource = source,
             textStyle = type(14.5f, FontWeight.SemiBold, Alx.Ink),
-            cursorBrush = SolidColor(TtcPink),
+            cursorBrush = SolidColor(TtcDark),
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.None,
                 autoCorrect = false,
@@ -341,7 +314,7 @@ private fun TokenField(
                     if (focused) {
                         val g = 5.dp.toPx()
                         drawRoundRect(
-                            TtcPink.copy(alpha = 0.12f),
+                            TtcDark.copy(alpha = 0.12f),
                             topLeft = Offset(-g, -g),
                             size = Size(size.width + 2 * g, size.height + 2 * g),
                             cornerRadius = CornerRadius(16.dp.toPx() + g),
@@ -366,10 +339,10 @@ private fun TokenField(
         PressBox(
             onClick = { clipboard.getText()?.text?.trim()?.let(onValueChange) },
             modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp).height(36.dp)
-                .background(TtcPinkSoft, RoundedCornerShape(10.dp))
+                .background(TtcDarkSoft, RoundedCornerShape(10.dp))
                 .padding(horizontal = 14.dp),
             contentAlignment = Alignment.Center,
-        ) { BasicText("Dán", style = type(13f, FontWeight.ExtraBold, TtcPink)) }
+        ) { BasicText("Dán", style = type(13f, FontWeight.ExtraBold, TtcDark)) }
     }
 }
 
@@ -384,8 +357,8 @@ private fun LoginButton(label: String, enabled: Boolean, onClick: () -> Unit, mo
             .fillMaxWidth()
             .height(56.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.7f }
-            .shadow(12.dp, shape, ambientColor = Color(0x4DC2255C), spotColor = Color(0xB3C2255C))
-            .background(TtcPink, shape)
+            .shadow(12.dp, shape, ambientColor = Color(0x330F172A), spotColor = Color(0x800F172A))
+            .background(TtcDark, shape)
             .clip(shape)
             .clickable(interactionSource = source, indication = null, enabled = enabled, role = Role.Button, onClick = onClick),
         horizontalArrangement = Arrangement.Center,
