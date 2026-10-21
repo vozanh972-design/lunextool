@@ -213,6 +213,16 @@ class CrossTTCOverlayService : Service() {
         return false
     }
 
+    private suspend fun countdownWait(seconds: Int, message: (Int) -> String) {
+        val safeSeconds = seconds.coerceAtLeast(1)
+        for (sec in safeSeconds downTo 1) {
+            checkPauseWait()
+            if (!serviceScope.isActive) break
+            setStatus(message(sec))
+            delay(1000L)
+        }
+    }
+
     private fun startAutomationRunner() {
         runnerJob?.cancel()
         runnerJob = serviceScope.launch(Dispatchers.IO) {
@@ -335,13 +345,13 @@ class CrossTTCOverlayService : Service() {
                             break
                         }
 
-                        // Delay trước khi lấy nhiệm vụ
+                        // 1. Đếm ngược từng giây trước khi lấy đợt nhiệm vụ mới
                         val waitGetJob = (config.getJobMinSeconds..config.getJobMaxSeconds).random().coerceAtLeast(1)
-                        setStatus("Đợi ${waitGetJob}s lấy nhiệm vụ...")
-                        delay(waitGetJob * 1000L)
+                        countdownWait(waitGetJob) { s -> "Đợi lấy nhiệm vụ sau ${s}s..." }
                         checkPauseWait()
 
-                        setStatus("Lấy nhiệm vụ TikTok TTC...")
+                        // 2. Gọi API TTC
+                        setStatus("Đang tìm kiếm nhiệm vụ TikTok TTC...")
                         var jobs = CrossTTCApi.getTikTokJobs(currentSessionCookie, accessToken, "subcheo")
                         if (jobs.isEmpty() && accessToken.isNotBlank()) {
                             val reLogin = CrossTTCApi.loginWithToken(accessToken)
@@ -353,20 +363,24 @@ class CrossTTCOverlayService : Service() {
 
                         if (jobs.isEmpty()) {
                             flushBatchClaim()
-                            setStatus("Tạm thời hết nhiệm vụ, đang chờ (8s)...")
-                            delay(8000L)
+                            countdownWait(8) { s -> "Tạm thời hết nhiệm vụ, đang chờ (${s}s)..." }
                             continue
                         }
 
-                        // Thực hiện từng nhiệm vụ trong danh sách
+                        // 3. Thông báo số lượng job tìm thấy theo đúng số lượng thực tế
+                        val totalJobs = jobs.size
+                        setStatus("Đã tìm thấy $totalJobs nhiệm vụ!")
+                        delay(1200L)
+
+                        // 4. Thực hiện từng nhiệm vụ trong danh sách đã tải về
                         for ((index, job) in jobs.withIndex()) {
                             checkPauseWait()
                             if (!isActive) break
                             if (config.goalTaskCount > 0 && totalCompleted >= config.goalTaskCount) break
 
-                            val jobPosText = "[${index + 1}/${jobs.size}]"
+                            val jobIndex = index + 1
                             val shortTarget = if (job.link.length > 25) job.link.take(22) + "..." else job.link
-                            setStatus("$jobPosText Mở Follow: $shortTarget")
+                            setStatus("Đang làm job [$jobIndex/$totalJobs]: Follow @$shortTarget")
 
                             // Mở trực tiếp bằng Deep link vào app TikTok (chặn hoàn toàn trình duyệt ngoài)
                             val opened = openTikTokDirectDeepLink(applicationContext, job.link, job.uid)
@@ -375,7 +389,7 @@ class CrossTTCOverlayService : Service() {
                             }
                             delay(1400L) // Chờ TikTok chuyển màn hình
 
-                            // Kích hoạt Accessibility tự động bấm Follow
+                            // Kích hoạt Accessibility tự động bấm Follow và lướt bảng tin
                             val doJobDuration = (config.doJobMinSeconds..config.doJobMaxSeconds).random().coerceAtLeast(2)
                             val actionId = XsmmTaskAutomationBridge.triggerTask(
                                 taskType = "follow",
@@ -390,11 +404,12 @@ class CrossTTCOverlayService : Service() {
                             while (isActive && (System.currentTimeMillis() - actionStartTime) < maxWaitTime) {
                                 val res = XsmmTaskAutomationBridge.result.value
                                 when (res) {
-                                    is XsmmTaskActionResult.InProgress -> setStatus(res.message)
+                                    is XsmmTaskActionResult.InProgress -> {
+                                        setStatus("[$jobIndex/$totalJobs] ${res.message}")
+                                    }
                                     is XsmmTaskActionResult.Completed -> {
                                         if (res.actionId == actionId) {
                                             taskSuccess = res.success
-                                            setStatus(res.message)
                                             break
                                         }
                                     }
@@ -407,13 +422,13 @@ class CrossTTCOverlayService : Service() {
                                 pendingBatchJobIds.add(job.id)
                                 failedJobsThisAccount = 0
                                 val curBatch = pendingBatchJobIds.size
-                                setStatus("Xong $jobPosText [Đã gom $curBatch/8 NV]")
+                                setStatus("Đã làm xong job [$jobIndex/$totalJobs] [Đã gom $curBatch/8]")
+                                delay(1000L)
 
-                                // Đủ 8 nhiệm vụ thì gom nhận xu 1 lần theo cơ chế web TTC
+                                // Đủ 8 nhiệm vụ thì đếm ngược và gom nhận xu 1 lần theo cơ chế web TTC
                                 if (curBatch >= 8) {
                                     val waitComplete = (config.completeJobMinSeconds..config.completeJobMaxSeconds).random().coerceAtLeast(2)
-                                    setStatus("Đủ 8 NV! Đợi ${waitComplete}s gom nhận xu...")
-                                    delay(waitComplete * 1000L)
+                                    countdownWait(waitComplete) { s -> "Đủ 8 NV! Đợi nhận xu (${s}s)..." }
                                     checkPauseWait()
                                     val claimed = flushBatchClaim()
                                     if (!claimed) {
@@ -422,19 +437,25 @@ class CrossTTCOverlayService : Service() {
                                 }
                             } else {
                                 failedJobsThisAccount++
-                                setStatus("Nhiệm vụ lỗi ($failedJobsThisAccount/${config.errorSwapCount})")
+                                setStatus("Job [$jobIndex/$totalJobs] lỗi ($failedJobsThisAccount/${config.errorSwapCount})")
                             }
 
                             if (config.autoSwapOnError && failedJobsThisAccount >= config.errorSwapCount) {
                                 break
                             }
 
-                            // Nghỉ ngẫu nhiên giữa các nhiệm vụ
-                            val breakTime = (config.breakMinSeconds..config.breakMaxSeconds).random().coerceAtLeast(1)
-                            delay(breakTime * 1000L)
+                            // 5. Lướt bảng tin & nghỉ ngơi có đếm ngược từng giây trước khi làm job tiếp theo
+                            if (jobIndex < totalJobs) {
+                                val breakTime = (config.breakMinSeconds..config.breakMaxSeconds).random().coerceAtLeast(1)
+                                countdownWait(breakTime) { s -> "Lướt bảng tin & chờ job tiếp theo (${s}s)..." }
+                            }
                         }
 
-                        // Nếu hết đợt job này mà còn job chưa gom nhận xu, nhận nốt
+                        // Khi làm hết sạch toàn bộ totalJobs của đợt này
+                        setStatus("Đã hoàn thành toàn bộ $totalJobs nhiệm vụ đợt này!")
+                        delay(1200L)
+
+                        // Nếu còn sót job chưa gom nhận xu, nhận nốt
                         if (pendingBatchJobIds.isNotEmpty()) {
                             flushBatchClaim()
                         }
