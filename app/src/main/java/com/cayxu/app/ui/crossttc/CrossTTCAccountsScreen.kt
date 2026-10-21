@@ -495,16 +495,17 @@ private fun Checkbox(checked: Boolean) {
 private fun PressBox(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     contentAlignment: Alignment = Alignment.TopStart,
     content: @Composable () -> Unit,
 ) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "press")
+    val scale by animateFloatAsState(if (pressed && enabled) 0.985f else 1f, tween(120), label = "press")
     Box(
         modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick),
+            .clickable(interactionSource = source, indication = null, enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = contentAlignment,
     ) { content() }
 }
