@@ -1,9 +1,11 @@
 package com.cayxu.app.ui.crossttc
 
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.PixelFormat
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
@@ -145,6 +147,70 @@ class CrossTTCOverlayService : Service() {
                 delay(400L)
             }
         }
+    }
+
+    /**
+     * Mở trực tiếp trang cá nhân trên app TikTok qua deep link nội bộ,
+     * tuyệt đối không mở qua trình duyệt ngoài.
+     */
+    private fun openTikTokDirectDeepLink(context: Context, rawTarget: String, uid: String): Boolean {
+        val cleanHandle = rawTarget.trim()
+            .removePrefix("@")
+            .removePrefix("https://www.tiktok.com/@")
+            .removePrefix("http://www.tiktok.com/@")
+            .trim('/')
+
+        val deepLinks = mutableListOf<String>()
+
+        // 1. Ưu tiên schema nội bộ theo UID nếu có (nhanh và chính xác nhất)
+        val cleanUid = uid.trim()
+        if (cleanUid.isNotBlank() && cleanUid.all { it.isDigit() }) {
+            deepLinks.add("snssdk1233://user/profile/$cleanUid")
+            deepLinks.add("snssdk1180://user/profile/$cleanUid")
+        }
+
+        // 2. Schema nội bộ theo username / unique_id
+        if (cleanHandle.isNotBlank()) {
+            deepLinks.add("snssdk1233://user/profile?unique_id=$cleanHandle")
+            deepLinks.add("snssdk1180://user/profile?unique_id=$cleanHandle")
+            deepLinks.add("tiktok://user/profile?unique_id=$cleanHandle")
+            deepLinks.add("https://www.tiktok.com/@$cleanHandle")
+        }
+
+        // Danh sách các package chính thức của TikTok
+        val tikTokPackages = listOf(
+            "com.zhiliaoapp.musically",
+            "com.ss.android.ugc.trill",
+            "com.zhiliaoapp.musically.go"
+        )
+
+        // Cố gắng mở bằng từng package đích danh của TikTok để chặn hoàn toàn trình duyệt ngoài
+        for (pkg in tikTokPackages) {
+            for (uriStr in deepLinks) {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uriStr)).apply {
+                        setPackage(pkg)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    }
+                    context.startActivity(intent)
+                    return true
+                } catch (_: Exception) {}
+            }
+        }
+
+        // Fallback: Thử mở các custom schema (snssdk/tiktok://) mà không gán package
+        // (Chỉ app TikTok mới đăng ký scheme này, trình duyệt như Chrome sẽ không mở được)
+        for (uriStr in deepLinks.filter { it.startsWith("snssdk") || it.startsWith("tiktok://") }) {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uriStr)).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+                context.startActivity(intent)
+                return true
+            } catch (_: Exception) {}
+        }
+
+        return false
     }
 
     private fun startAutomationRunner() {
@@ -302,8 +368,11 @@ class CrossTTCOverlayService : Service() {
                             val shortTarget = if (job.link.length > 25) job.link.take(22) + "..." else job.link
                             setStatus("$jobPosText Mở Follow: $shortTarget")
 
-                            // Mở trang cá nhân trên TikTok
-                            TikTokAppLauncher.openUserProfile(applicationContext, job.link)
+                            // Mở trực tiếp bằng Deep link vào app TikTok (chặn hoàn toàn trình duyệt ngoài)
+                            val opened = openTikTokDirectDeepLink(applicationContext, job.link, job.uid)
+                            if (!opened) {
+                                TikTokAppLauncher.launch(applicationContext, TikTokAppVariant.STANDARD)
+                            }
                             delay(1400L) // Chờ TikTok chuyển màn hình
 
                             // Kích hoạt Accessibility tự động bấm Follow

@@ -34,6 +34,7 @@ data class CrossTTCTaskJob(
     val id: String,
     val link: String,
     val type: String = "follow",
+    val uid: String = "",
 )
 
 data class CrossTTCClaimResult(
@@ -322,8 +323,9 @@ object CrossTTCApi {
                         val obj = arr.getJSONObject(i)
                         val id = obj.optString("idpost").ifBlank { obj.optString("id") }
                         val link = obj.optString("link").ifBlank { obj.optString("uid") }
+                        val uid = obj.optString("uid")
                         if (id.isNotBlank() && link.isNotBlank()) {
-                            list.add(CrossTTCTaskJob(id, link, if (path == "cheotim") "like" else "follow"))
+                            list.add(CrossTTCTaskJob(id, link, if (path == "cheotim") "like" else "follow", uid))
                         }
                     }
                 } else if (resStr.startsWith("{")) {
@@ -334,8 +336,9 @@ object CrossTTCApi {
                             val obj = arr.getJSONObject(i)
                             val id = obj.optString("idpost").ifBlank { obj.optString("id") }
                             val link = obj.optString("link").ifBlank { obj.optString("uid") }
+                            val uid = obj.optString("uid")
                             if (id.isNotBlank() && link.isNotBlank()) {
-                                list.add(CrossTTCTaskJob(id, link, if (path == "cheotim") "like" else "follow"))
+                                list.add(CrossTTCTaskJob(id, link, if (path == "cheotim") "like" else "follow", uid))
                             }
                         }
                     }
