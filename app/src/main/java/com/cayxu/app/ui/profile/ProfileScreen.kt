@@ -79,6 +79,7 @@ import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.update.SampleUpdateNotes
 import com.cayxu.app.ui.update.SystemUpdateScreen
 import com.cayxu.app.ui.update.SystemUpdateUiState
+import com.cayxu.app.ui.update.UpdateNote
 import com.cayxu.app.util.AppUpdateManager
 
 /* ───────────────────────────── Dữ liệu ───────────────────────────── */
