@@ -42,6 +42,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -166,6 +167,11 @@ private val Trash = listOf(
     "M10 11v6",
     "M14 11v6"
 )
+private val Info = listOf(
+    circle(12f, 12f, 9f),
+    "M12 8v.01",
+    "M12 11v5"
+)
 
 /* ───────────────────────────── Màn hình ───────────────────────────── */
 
@@ -204,6 +210,8 @@ fun XsmmAccountsScreen(
     onTogglePage: ((parentAcc: XsmmAccount, page: XsmmPageItem) -> Unit)? = null,
     onTogglePlayPage: ((parentAcc: XsmmAccount, page: XsmmPageItem) -> Unit)? = null,
     onReloadPage: ((parentAcc: XsmmAccount, page: XsmmPageItem) -> Unit)? = null,
+    onOpenInfoAccount: ((XsmmAccount) -> Unit)? = null,
+    onOpenInfoPage: ((parentAcc: XsmmAccount, page: XsmmPageItem) -> Unit)? = null,
 ) {
     val types = accountTypes[state.selectedPlatform].orEmpty()
     val visible = state.visibleAccounts()
@@ -243,13 +251,29 @@ fun XsmmAccountsScreen(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PressBox(onClick = onToggleSelectAll, contentAlignment = Alignment.CenterStart) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Checkbox(allSelected)
-                            BasicText("Tất cả", style = type(13f, FontWeight.SemiBold, Alx.Muted))
+
+                if (state.selectedPlatform == XsmmPlatform.TikTok) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PressBox(onClick = onToggleSelectAll, contentAlignment = Alignment.CenterStart) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Checkbox(allSelected)
+                                BasicText("Tất cả", style = type(13f, FontWeight.SemiBold, Alx.Muted))
+                            }
                         }
+                        if (state.selectedAccountIds.isNotEmpty() && onDeleteSelected != null) {
+                            PressBox(
+                                onClick = onDeleteSelected,
+                                modifier = Modifier.size(40.dp).background(Alx.DangerBg, CircleShape).border(1.dp, Alx.Danger.copy(alpha = 0.35f), CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) { SvgIcon(Trash, 18.dp, Alx.Danger, 2f) }
+                        }
+                        PressBox(
+                            onClick = onAddAccount,
+                            modifier = Modifier.size(40.dp).background(state.selectedPlatform.accent(), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) { SvgIcon(Plus, 18.dp, Alx.White, 2.4f) }
                     }
+                } else {
                     if (state.selectedAccountIds.isNotEmpty() && onDeleteSelected != null) {
                         PressBox(
                             onClick = onDeleteSelected,
@@ -257,11 +281,6 @@ fun XsmmAccountsScreen(
                             contentAlignment = Alignment.Center,
                         ) { SvgIcon(Trash, 18.dp, Alx.Danger, 2f) }
                     }
-                    PressBox(
-                        onClick = onAddAccount,
-                        modifier = Modifier.size(40.dp).background(state.selectedPlatform.accent(), CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) { SvgIcon(Plus, 18.dp, Alx.White, 2.4f) }
                 }
             }
 
@@ -290,6 +309,8 @@ fun XsmmAccountsScreen(
                             onTogglePage = onTogglePage?.let { cb -> { p -> cb(acc, p) } },
                             onTogglePlayPage = onTogglePlayPage?.let { cb -> { p -> cb(acc, p) } },
                             onReloadPage = onReloadPage?.let { cb -> { p -> cb(acc, p) } },
+                            onOpenInfoAccount = onOpenInfoAccount?.let { { it(acc) } },
+                            onOpenInfoPage = onOpenInfoPage?.let { cb -> { p -> cb(acc, p) } },
                             onClick = { onToggleAccount(acc) }
                         )
                     }
@@ -327,27 +348,44 @@ fun XsmmAccountsScreen(
                 }
             }
 
-            // Nút Chạy (Play tam giác) / Dừng (Stop ô vuông đỏ) chung cho cả 3 nền tảng
-            val isRunning = state.isAnyRunning
-            val runBg = if (isRunning) Alx.Danger else state.selectedPlatform.accent()
-            val runCount = state.selectedAccountIds.size
-            val runText = if (isRunning) "Dừng lại" else if (runCount > 1) "Chạy ($runCount)" else "Chạy"
+            // TikTok: nút "Chạy". Facebook/Instagram: KHÔNG có nút "Chạy" ở đáy mà thay bằng checkbox "Tất cả" + nút (+)
+            if (state.selectedPlatform == XsmmPlatform.TikTok) {
+                val isRunning = state.isAnyRunning
+                val runBg = if (isRunning) Alx.Danger else state.selectedPlatform.accent()
+                val runCount = state.selectedAccountIds.size
+                val runText = if (isRunning) "Dừng lại" else if (runCount > 1) "Chạy ($runCount)" else "Chạy"
 
-            PressBox(
-                onClick = onRun,
-                modifier = Modifier.weight(1.25f).height(56.dp).background(runBg, RoundedCornerShape(18.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (isRunning) {
-                        // Ô vuông màu trắng (hoặc ô vuông Stop) để dừng
-                        Box(
-                            Modifier.size(13.dp).clip(RoundedCornerShape(2.5.dp)).background(Alx.White)
-                        )
-                    } else {
-                        SvgIcon(Play, 16.dp, Alx.White, 2f, fill = true)
+                PressBox(
+                    onClick = onRun,
+                    modifier = Modifier.weight(1.25f).height(56.dp).background(runBg, RoundedCornerShape(18.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (isRunning) {
+                            Box(Modifier.size(13.dp).clip(RoundedCornerShape(2.5.dp)).background(Alx.White))
+                        } else {
+                            SvgIcon(Play, 16.dp, Alx.White, 2f, fill = true)
+                        }
+                        BasicText(runText, style = type(15f, FontWeight.Bold, Alx.White))
                     }
-                    BasicText(runText, style = type(15f, FontWeight.Bold, Alx.White))
+                }
+            } else {
+                Row(
+                    Modifier.weight(1.25f).height(56.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    PressBox(onClick = onToggleSelectAll, contentAlignment = Alignment.CenterStart) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Checkbox(allSelected)
+                            BasicText("Tất cả", style = type(13f, FontWeight.SemiBold, Alx.Ink2))
+                        }
+                    }
+                    PressBox(
+                        onClick = onAddAccount,
+                        modifier = Modifier.padding(start = 14.dp).size(44.dp).background(state.selectedPlatform.accent(), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) { SvgIcon(Plus, 18.dp, Alx.White, 2.4f) }
                 }
             }
         }
@@ -548,13 +586,178 @@ private fun AccountRow(
     onTogglePage: ((XsmmPageItem) -> Unit)? = null,
     onTogglePlayPage: ((XsmmPageItem) -> Unit)? = null,
     onReloadPage: ((XsmmPageItem) -> Unit)? = null,
+    onOpenInfoAccount: (() -> Unit)? = null,
+    onOpenInfoPage: ((XsmmPageItem) -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val shape = RoundedCornerShape(18.dp)
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
+
+    if (platform == XsmmPlatform.Facebook) {
+        // Thiết kế chuẩn 100% Ảnh 2 cho Facebook
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Alx.White, shape)
+                .border(1.dp, if (selected) Alx.Blue else Alx.Line, shape)
+                .padding(14.dp)
+        ) {
+            Column(
+                Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Hàng tài khoản Facebook mẹ
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    PressBox(onClick = onClick) {
+                        Checkbox(selected)
+                    }
+
+                    // Avatar mẹ
+                    Box(
+                        Modifier.size(44.dp).clip(CircleShape).background(Alx.Chip),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (account.avatarUrl.isNotBlank()) {
+                            AsyncImage(
+                                model = account.avatarUrl,
+                                contentDescription = "Avatar",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            BasicText(
+                                account.name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "?",
+                                style = type(15f, FontWeight.ExtraBold, Alx.ChipText)
+                            )
+                        }
+                    }
+
+                    Column(Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            BasicText(
+                                account.name,
+                                style = type(15f, FontWeight.Bold, Alx.Ink),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            BasicText("•", style = type(14f, FontWeight.Bold, if (account.isLive) LiveGreen else Alx.Danger))
+                            BasicText(
+                                if (account.isLive) "Live" else "Die",
+                                style = type(14f, FontWeight.Bold, if (account.isLive) LiveGreen else Alx.Danger)
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        BasicText(
+                            "UID: ${account.id}",
+                            style = type(12.5f, FontWeight.Medium, Alx.Muted)
+                        )
+                    }
+
+                    // Cụm nút bên phải: Reload + Nút tròn xanh to Play
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (onReload != null) {
+                            if (account.isReloading) {
+                                CircularProgressIndicator(
+                                    color = Alx.Blue,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else {
+                                PressBox(
+                                    onClick = onReload,
+                                    modifier = Modifier.size(36.dp).clip(CircleShape).background(Color(0xFFF1F5F9)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    SvgIcon(Refresh, 16.dp, Color(0xFF64748B), 2f)
+                                }
+                            }
+                        }
+
+                        if (onTogglePlay != null) {
+                            PressBox(
+                                onClick = onTogglePlay,
+                                modifier = Modifier.size(38.dp).clip(CircleShape)
+                                    .background(if (account.isRunning) Alx.Danger else Alx.Blue),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (account.isRunning) {
+                                    Box(Modifier.size(11.dp).clip(RoundedCornerShape(2.dp)).background(Alx.White))
+                                } else {
+                                    SvgIcon(Play, 14.dp, Alx.White, 2f, fill = true)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Dưới tài khoản mẹ: Danh sách Page hoặc "Tài khoản không có page"
+                if (account.pages.isNotEmpty()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        BasicText(
+                            "Danh sách Page / Profile+ (${account.pages.size}):",
+                            style = type(13.5f, FontWeight.Bold, Alx.Ink)
+                        )
+                        PressBox(
+                            onClick = { onOpenInfoAccount?.invoke() },
+                            modifier = Modifier.size(26.dp).clip(CircleShape).background(Color(0xFFEFF6FF)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            SvgIcon(Info, 14.dp, Alx.Blue, 2f)
+                        }
+                    }
+
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        account.pages.forEach { page ->
+                            val isPageSelected = page.pageId in selectedPageIds || page.displayUid in selectedPageIds
+                            PageRow(
+                                page = page,
+                                selected = isPageSelected,
+                                onToggle = { onTogglePage?.invoke(page) },
+                                onTogglePlay = onTogglePlayPage?.let { cb -> { cb(page) } },
+                                onOpenInfo = { onOpenInfoPage?.invoke(page) }
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        BasicText(
+                            "Tài khoản không có page",
+                            style = type(13f, FontWeight.Medium, Alx.Muted).copy(fontStyle = FontStyle.Italic)
+                        )
+                        PressBox(
+                            onClick = { onOpenInfoAccount?.invoke() },
+                            modifier = Modifier.size(26.dp).clip(CircleShape).background(Color(0xFFF1F5F9)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            SvgIcon(Info, 14.dp, Color(0xFF94A3B8), 2f)
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Cho TikTok / Instagram
         PressBox(
             onClick = onClick,
             modifier = Modifier.fillMaxWidth()
@@ -563,242 +766,132 @@ private fun AccountRow(
                 .padding(12.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Checkbox(selected)
-
-            // Avatar ảnh HD từ API hoặc chữ cái đầu
-            Box(
-                Modifier.size(44.dp).clip(CircleShape).background(Alx.Chip),
-                contentAlignment = Alignment.Center
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (account.avatarUrl.isNotBlank()) {
-                    AsyncImage(
-                        model = account.avatarUrl,
-                        contentDescription = "Avatar",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    BasicText(
-                        account.name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "?",
-                        style = type(15f, FontWeight.ExtraBold, Alx.ChipText)
-                    )
-                }
-            }
+                Checkbox(selected)
 
-            Column(Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).background(Alx.Chip),
+                    contentAlignment = Alignment.Center
                 ) {
-                    BasicText(
-                        account.name,
-                        style = type(14.5f, FontWeight.Bold, Alx.Ink),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-
-                    if (platform == XsmmPlatform.TikTok) {
-                        // Cho TikTok: Thay badge Live bằng logic nút "Chưa liên kết" / badge "Đã liên kết"
-                        if (account.isLinked) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(LiveGreen.copy(alpha = 0.12f))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Box(
-                                    Modifier.size(5.dp).clip(CircleShape).background(LiveGreen)
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                BasicText(
-                                    "Đã liên kết",
-                                    style = type(10f, FontWeight.ExtraBold, LiveGreen)
-                                )
-                            }
-                        } else {
-                            PressBox(
-                                onClick = { onLinkAccount?.invoke() },
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Alx.Blue.copy(alpha = 0.12f))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    if (account.isLinking) {
-                                        CircularProgressIndicator(
-                                            color = Alx.Blue,
-                                            strokeWidth = 1.5.dp,
-                                            modifier = Modifier.size(9.dp)
-                                        )
-                                    } else {
-                                        Box(
-                                            Modifier.size(5.dp).clip(CircleShape).background(Alx.Blue)
-                                        )
-                                    }
-                                    BasicText(
-                                        if (account.isLinking) "Đang liên kết..." else "Chưa liên kết",
-                                        style = type(10f, FontWeight.ExtraBold, Alx.Blue)
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        // Cho Facebook / Instagram: 1. Badge Live / Die tách bạch (chỉ phụ thuộc vào account.isLive)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (account.isLive) LiveGreen.copy(alpha = 0.12f) else Alx.Danger.copy(alpha = 0.12f))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Box(
-                                Modifier.size(5.dp).clip(CircleShape)
-                                    .background(if (account.isLive) LiveGreen else Alx.Danger)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            BasicText(
-                                if (account.isLive) "Live" else "Die",
-                                style = type(10f, FontWeight.ExtraBold, if (account.isLive) LiveGreen else Alx.Danger)
-                            )
-                        }
-
-                        // 2. Trạng thái liên kết XSMM
-                        if (account.isLinked) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(LiveGreen.copy(alpha = 0.12f))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Box(Modifier.size(5.dp).clip(CircleShape).background(LiveGreen))
-                                Spacer(Modifier.width(4.dp))
-                                BasicText("Đã thêm XSMM", style = type(10f, FontWeight.ExtraBold, LiveGreen))
-                            }
-                        } else {
-                            PressBox(
-                                onClick = { onLinkAccount?.invoke() },
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Alx.Blue.copy(alpha = 0.12f))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    if (account.isLinking) {
-                                        CircularProgressIndicator(color = Alx.Blue, strokeWidth = 1.5.dp, modifier = Modifier.size(9.dp))
-                                    } else {
-                                        Box(Modifier.size(5.dp).clip(CircleShape).background(Alx.Blue))
-                                    }
-                                    BasicText(if (account.isLinking) "Đang thêm..." else "Chưa thêm XSMM", style = type(10f, FontWeight.ExtraBold, Alx.Blue))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Dòng thống kê Follower và Tim từ API
-                val stats = buildList {
-                    if (account.followerCount > 0) add("${formatCount(account.followerCount)} followers")
-                    if (account.heartCount > 0) add("${formatCount(account.heartCount)} tim")
-                }
-                if (stats.isNotEmpty()) {
-                    Spacer(Modifier.height(2.dp))
-                    BasicText(
-                        stats.joinToString(" • "),
-                        style = type(11.5f, FontWeight.SemiBold, Color(0xFFE1306C))
-                    )
-                }
-
-                // Dòng Ngày tạo từ API
-                if (account.createDateFormatted.isNotBlank()) {
-                    Spacer(Modifier.height(2.dp))
-                    BasicText(
-                        "Tạo: ${account.createDateFormatted}",
-                        style = type(11f, FontWeight.Medium, Alx.Muted)
-                    )
-                }
-            }
-
-            // Cụm nút thao tác bên phải: Reload + Play tam giác / Dừng ô vuông đỏ
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // Nút làm mới profile qua API
-                if (onReload != null) {
-                    if (account.isReloading) {
-                        CircularProgressIndicator(
-                            color = platform.accent(),
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(20.dp)
+                    if (account.avatarUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = account.avatarUrl,
+                            contentDescription = "Avatar",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
                         )
                     } else {
+                        BasicText(
+                            account.name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "?",
+                            style = type(15f, FontWeight.ExtraBold, Alx.ChipText)
+                        )
+                    }
+                }
+
+                Column(Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        BasicText(
+                            account.name,
+                            style = type(14.5f, FontWeight.Bold, Alx.Ink),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+
+                        if (platform == XsmmPlatform.TikTok) {
+                            if (account.isLinked) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(LiveGreen.copy(alpha = 0.12f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Box(Modifier.size(5.dp).clip(CircleShape).background(LiveGreen))
+                                    Spacer(Modifier.width(4.dp))
+                                    BasicText("Đã liên kết", style = type(10f, FontWeight.ExtraBold, LiveGreen))
+                                }
+                            } else {
+                                PressBox(
+                                    onClick = { onLinkAccount?.invoke() },
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Alx.Blue.copy(alpha = 0.12f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        if (account.isLinking) {
+                                            CircularProgressIndicator(color = Alx.Blue, strokeWidth = 1.5.dp, modifier = Modifier.size(9.dp))
+                                        } else {
+                                            Box(Modifier.size(5.dp).clip(CircleShape).background(Alx.Blue))
+                                        }
+                                        BasicText(if (account.isLinking) "Đang liên kết..." else "Chưa liên kết", style = type(10f, FontWeight.ExtraBold, Alx.Blue))
+                                    }
+                                }
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (account.isLive) LiveGreen.copy(alpha = 0.12f) else Alx.Danger.copy(alpha = 0.12f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Box(Modifier.size(5.dp).clip(CircleShape).background(if (account.isLive) LiveGreen else Alx.Danger))
+                                Spacer(Modifier.width(4.dp))
+                                BasicText(if (account.isLive) "Live" else "Die", style = type(10f, FontWeight.ExtraBold, if (account.isLive) LiveGreen else Alx.Danger))
+                            }
+                        }
+                    }
+
+                    val stats = buildList {
+                        if (account.followerCount > 0) add("${formatCount(account.followerCount)} followers")
+                        if (account.heartCount > 0) add("${formatCount(account.heartCount)} tim")
+                    }
+                    if (stats.isNotEmpty()) {
+                        Spacer(Modifier.height(2.dp))
+                        BasicText(stats.joinToString(" • "), style = type(11.5f, FontWeight.SemiBold, Color(0xFFE1306C)))
+                    }
+
+                    if (account.createDateFormatted.isNotBlank()) {
+                        Spacer(Modifier.height(2.dp))
+                        BasicText("Tạo: ${account.createDateFormatted}", style = type(11f, FontWeight.Medium, Alx.Muted))
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (onReload != null) {
+                        if (account.isReloading) {
+                            CircularProgressIndicator(color = platform.accent(), strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                        } else {
+                            PressBox(
+                                onClick = onReload,
+                                modifier = Modifier.size(34.dp).clip(CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) { SvgIcon(Refresh, 16.dp, Alx.Muted, 2f) }
+                        }
+                    }
+
+                    if (onTogglePlay != null) {
                         PressBox(
-                            onClick = onReload,
-                            modifier = Modifier.size(34.dp).clip(CircleShape),
+                            onClick = onTogglePlay,
+                            modifier = Modifier.size(34.dp).clip(CircleShape).background(if (account.isRunning) Alx.Danger.copy(alpha = 0.12f) else platform.soft()),
                             contentAlignment = Alignment.Center
                         ) {
-                            SvgIcon(Refresh, 16.dp, Alx.Muted, 2f)
+                            if (account.isRunning) {
+                                Box(Modifier.size(11.dp).clip(RoundedCornerShape(2.5.dp)).background(Alx.Danger))
+                            } else {
+                                SvgIcon(Play, 14.dp, platform.accent(), 2f, fill = true)
+                            }
                         }
                     }
-                }
-
-                // Nút Play tam giác (chưa chạy) / Ô vuông màu đỏ (đang chạy để dừng)
-                if (onTogglePlay != null) {
-                    PressBox(
-                        onClick = onTogglePlay,
-                        modifier = Modifier.size(34.dp).clip(CircleShape)
-                            .background(if (account.isRunning) Alx.Danger.copy(alpha = 0.12f) else platform.soft()),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (account.isRunning) {
-                            // Ô vuông màu đỏ để dừng
-                            Box(Modifier.size(11.dp).clip(RoundedCornerShape(2.5.dp)).background(Alx.Danger))
-                        } else {
-                            // Tam giác Play
-                            SvgIcon(Play, 14.dp, platform.accent(), 2f, fill = true)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-        // Hiển thị danh sách Page con nếu có (cho Facebook)
-        if (account.pages.isNotEmpty()) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 28.dp)
-                    .background(Alx.White.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
-                    .border(1.dp, Alx.Line, RoundedCornerShape(16.dp))
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                BasicText(
-                    "Danh sách Page / Profile+ (${account.pages.size}):",
-                    style = type(12f, FontWeight.Bold, Alx.Ink2)
-                )
-
-                account.pages.forEach { page ->
-                    val isPageSelected = page.pageId in selectedPageIds || page.displayUid in selectedPageIds
-                    PageRow(
-                        page = page,
-                        selected = isPageSelected,
-                        onToggle = { onTogglePage?.invoke(page) },
-                        onTogglePlay = onTogglePlayPage?.let { cb -> { cb(page) } },
-                        onReload = onReloadPage?.let { cb -> { cb(page) } }
-                    )
                 }
             }
         }
@@ -814,29 +907,31 @@ private fun PageRow(
     selected: Boolean,
     onToggle: () -> Unit,
     onTogglePlay: (() -> Unit)? = null,
-    onReload: (() -> Unit)? = null
+    onOpenInfo: (() -> Unit)? = null
 ) {
-    val shape = RoundedCornerShape(12.dp)
-    PressBox(
-        onClick = onToggle,
-        modifier = Modifier.fillMaxWidth()
-            .background(Color(0xFFF8FAFC), shape)
-            .border(1.dp, if (selected) Alx.Blue else Color(0xFFE2E8F0), shape)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        contentAlignment = Alignment.CenterStart
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Color(0xFFF8FAFC))
+            .border(1.dp, if (selected) Alx.Blue.copy(alpha = 0.5f) else Color(0xFFF1F5F9), shape)
+            .padding(10.dp)
     ) {
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Checkbox(selected)
+            PressBox(onClick = onToggle) {
+                Checkbox(selected)
+            }
 
             Box(
-                Modifier.size(34.dp).clip(CircleShape).background(Alx.Chip),
+                Modifier.size(38.dp).clip(CircleShape).background(Color(0xFF0D9488)),
                 contentAlignment = Alignment.Center
             ) {
-                if (page.avatarUrl.isNotBlank()) {
+                if (page.avatarUrl.isNotBlank() && !page.avatarUrl.contains("84628273_176159830277856")) {
                     AsyncImage(
                         model = page.avatarUrl,
                         contentDescription = "Avatar Page",
@@ -846,75 +941,50 @@ private fun PageRow(
                 } else {
                     BasicText(
                         page.pageName.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "P",
-                        style = type(13f, FontWeight.ExtraBold, Alx.ChipText)
+                        style = type(14f, FontWeight.ExtraBold, Alx.White)
                     )
                 }
             }
 
             Column(Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    BasicText(
-                        page.pageName,
-                        style = type(13.5f, FontWeight.Bold, Alx.Ink),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-
-                    // Badge Live/Die cho Page
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(if (page.isLive) LiveGreen.copy(alpha = 0.12f) else Alx.Danger.copy(alpha = 0.12f))
-                            .padding(horizontal = 5.dp, vertical = 1.5.dp)
-                    ) {
-                        Box(Modifier.size(4.dp).clip(CircleShape).background(if (page.isLive) LiveGreen else Alx.Danger))
-                        Spacer(Modifier.width(3.dp))
-                        BasicText(if (page.isLive) "Live" else "Die", style = type(9.5f, FontWeight.ExtraBold, if (page.isLive) LiveGreen else Alx.Danger))
-                    }
-                }
-
-                Spacer(Modifier.height(1.dp))
+                BasicText(
+                    "Page: ${page.pageName}",
+                    style = type(14f, FontWeight.Bold, Alx.Ink),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
                 BasicText(
                     "UID: ${page.displayUid.ifBlank { page.pageId }}",
-                    style = type(11f, FontWeight.Medium, Alx.Muted),
-                    maxLines = 1
+                    style = type(12f, FontWeight.Medium, Alx.Muted).copy(fontStyle = FontStyle.Italic),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
-            // Nút reload cho Page
-            if (onReload != null) {
-                if (page.isReloading) {
-                    CircularProgressIndicator(color = Alx.Blue, strokeWidth = 1.5.dp, modifier = Modifier.size(16.dp))
-                } else {
-                    PressBox(
-                        onClick = onReload,
-                        modifier = Modifier.size(28.dp).clip(CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        SvgIcon(Refresh, 14.dp, Alx.Muted, 2f)
-                    }
+            // Nút (i) xem chi tiết / lỗi page
+            if (onOpenInfo != null) {
+                PressBox(
+                    onClick = onOpenInfo,
+                    modifier = Modifier.size(26.dp).clip(CircleShape).background(Color(0xFFEFF6FF)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    SvgIcon(Info, 13.dp, Alx.Blue, 2f)
                 }
             }
 
-            // Nút Play tam giác / Dừng ô vuông đỏ cho Page
+            // Nút tròn to Play / Dừng
             if (onTogglePlay != null) {
                 PressBox(
                     onClick = onTogglePlay,
-                    modifier = Modifier.size(30.dp).clip(CircleShape)
-                        .background(if (page.isRunning) Alx.Danger.copy(alpha = 0.12f) else Alx.BlueSoft),
+                    modifier = Modifier.size(36.dp).clip(CircleShape)
+                        .background(if (page.isRunning) Alx.Danger else Alx.Blue),
                     contentAlignment = Alignment.Center
                 ) {
                     if (page.isRunning) {
-                        // Ô vuông màu đỏ để dừng
-                        Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(Alx.Danger))
+                        Box(Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(Alx.White))
                     } else {
-                        // Tam giác Play
-                        SvgIcon(Play, 12.dp, Alx.Blue, 2f, fill = true)
+                        SvgIcon(Play, 13.dp, Alx.White, 2f, fill = true)
                     }
                 }
             }

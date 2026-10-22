@@ -1102,7 +1102,7 @@ fun XsmmAccountScreen(navController: NavController) {
 
                     XsmmAccount(
                         id = acc.uid,
-                        name = acc.name.ifBlank { "UID: ${acc.uid}" },
+                        name = acc.name.ifBlank { acc.uid },
                         typeId = "facebook",
                         statusLabel = if (!isLinked) "Chưa thêm XSMM" else if (acc.isLive) "Hoạt động" else "Hết hạn",
                         statusOk = isLinked && acc.isLive,
@@ -1555,6 +1555,30 @@ fun XsmmAccountScreen(navController: NavController) {
         onDeleteSelected = {
             if (selectedForRunUids.isNotEmpty()) {
                 showDeleteConfirmSheet = true
+            }
+        },
+        onOpenInfoAccount = { acc ->
+            val fb = facebookAccounts.firstOrNull { it.uid == acc.id }
+            if (fb != null) {
+                selectedFbDetailAccount = fb
+            } else {
+                selectedErrorDetailAccount = acc.id
+            }
+        },
+        onOpenInfoPage = { parentAcc, page ->
+            val fb = facebookAccounts.firstOrNull { it.uid == parentAcc.id }
+            val pageItem = fb?.pages?.firstOrNull {
+                it.pageId == page.pageId || it.displayUid == page.pageId || it.additionalProfileId == page.pageId
+            } ?: com.cayxu.app.data.local.FacebookPageItem(
+                pageId = page.pageId,
+                pageName = page.pageName,
+                additionalProfileId = page.displayUid,
+                avatar = page.avatarUrl
+            )
+            if (fb != null) {
+                selectedFbDetailPage = Pair(fb, pageItem)
+            } else {
+                selectedErrorDetailAccount = page.pageId
             }
         }
     )
