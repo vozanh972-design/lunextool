@@ -38,8 +38,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -122,6 +124,7 @@ data class ProfileUiState(
     val hasUpdate: Boolean = false,
     /** Dòng phụ trong thẻ cập nhật, vd "Autolunex · phiên bản 2.4.0". Không dùng khi [hasUpdate] = false. */
     val updateVersionLabel: String = "",
+    val currentVersion: String = "v1.0.6",
 )
 
 /* Icon: lưới 24×24, cờ cung luôn viết cách nhau vì PathParser không đọc dạng dính. */
@@ -202,6 +205,12 @@ fun ProfileScreen(
         SectionTitle(Str.profileAccountSupport)
         Card(Modifier.padding(top = 12.dp)) {
             SettingRow(Str.profileSettings, Sliders, divider = false) { onAction(ProfileAction.Settings) }
+            SettingRow(
+                if (state.language == AppLanguage.VI) "Cập nhật ứng dụng" else "App Update",
+                UpdateIcon,
+                divider = true,
+                value = if (state.hasUpdate) (if (state.language == AppLanguage.VI) "Có bản mới" else "Update available") else state.currentVersion
+            ) { onAction(ProfileAction.OpenUpdate) }
             SettingRow(Str.profileLanguage, Globe, divider = true, value = state.language.nativeName) { sheet = ProfileSheet.Language }
             SettingRow(Str.profileContactSupport, Help, divider = true) { sheet = ProfileSheet.Contact }
             SettingRow(Str.profileTermsPolicies, Doc, divider = true) { onAction(ProfileAction.Terms) }
@@ -247,12 +256,14 @@ fun ProfileScreen(
     val securePrefs = remember { SecurePrefs(context) }
     val ledger = remember { CoinLedgerProvider.get(context) }
     val recentCoins by ledger.observeRecent(2).collectAsStateWithLifecycle(initialValue = emptyList())
+    val scope = rememberCoroutineScope()
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showUpdate by rememberSaveable { mutableStateOf(false) }
 
     val updateData by AppUpdateManager.updateRequired.collectAsStateWithLifecycle()
     val hasUpdate = updateData != null
     val updateVersionLabel = if (updateData != null) "Autolunex · phiên bản ${updateData?.versionName}" else "Autolunex · phiên bản mới"
+    val currentVersion = "v${com.cayxu.app.BuildConfig.VERSION_NAME}"
 
     val buyerUsername = remember { securePrefs.getBuyerUsername() }
     val daysLeft = remember { securePrefs.getDaysLeft() }
@@ -278,7 +289,7 @@ fun ProfileScreen(
     val currentLang = LanguageState.language
     val planTitle = Str.profileMemberPro
 
-    val state = remember(username, handle, daysLeft, expiryDate, progress, currentLang, recentCoins, planTitle, hasUpdate, updateVersionLabel) {
+    val state = remember(username, handle, daysLeft, expiryDate, progress, currentLang, recentCoins, planTitle, hasUpdate, updateVersionLabel, currentVersion) {
         ProfileUiState(
             username = username,
             handle = handle,
@@ -291,6 +302,7 @@ fun ProfileScreen(
             recent = recentCoins,
             hasUpdate = hasUpdate,
             updateVersionLabel = updateVersionLabel,
+            currentVersion = currentVersion,
         )
     }
 
@@ -321,12 +333,35 @@ fun ProfileScreen(
     )
 
     if (showUpdate) {
+        val releaseNotes = remember(updateData) {
+            val remoteLog = updateData?.changelog.orEmpty()
+            if (remoteLog.isNotBlank()) {
+                val lines = remoteLog.split("\n").map { it.trim() }.filter { it.isNotBlank() }
+                if (lines.isNotEmpty()) {
+                    lines.map { line ->
+                        val parts = line.split(":", limit = 2)
+                        if (parts.size == 2) {
+                            UpdateNote(parts[0].trim(), parts[1].trim())
+                        } else {
+                            UpdateNote("Cập nhật", line)
+                        }
+                    }
+                } else {
+                    SampleUpdateNotes
+                }
+            } else {
+                SampleUpdateNotes
+            }
+        }
+
         SystemUpdateScreen(
             state = SystemUpdateUiState(
                 appName = "Autolunex",
-                versionLabel = if (updateData != null) "Phiên bản ${updateData?.versionName}" else "Phiên bản 2.4.0 · 18 MB",
-                buildLabel = "Build ALX_2.4.0.W18.V0421",
-                notes = SampleUpdateNotes,
+                versionLabel = if (updateData != null) "Phiên bản ${updateData?.versionName}" else "Phiên bản ${com.cayxu.app.BuildConfig.VERSION_NAME}",
+                buildLabel = if (updateData != null) "Mã build: ${updateData?.versionCode}" else "Build ALX_${com.cayxu.app.BuildConfig.VERSION_NAME} (Mới nhất)",
+                notes = releaseNotes,
+                actionButtonText = if (updateData != null) "Cài đặt ngay" else "Kiểm tra bản cập nhật",
+                isLatest = updateData == null,
             ),
             onBack = { showUpdate = false },
             onInstallNow = {
@@ -337,7 +372,13 @@ fun ProfileScreen(
                     }
                     context.startActivity(intent)
                 } else {
-                    Toast.makeText(context, "Đang chuẩn bị bản cài đặt...", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Đang kiểm tra bản cập nhật từ máy chủ...", Toast.LENGTH_SHORT).show()
+                    scope.launch {
+                        val result = AppUpdateManager.checkUpdate(context)
+                        if (result == null) {
+                            Toast.makeText(context, "Bạn đang sử dụng phiên bản mới nhất (${com.cayxu.app.BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             }
         )

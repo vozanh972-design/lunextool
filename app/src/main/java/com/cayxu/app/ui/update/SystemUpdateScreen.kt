@@ -52,6 +52,8 @@ data class SystemUpdateUiState(
     val versionLabel: String = "",     // vd "Phiên bản 2.4.0 · 18 MB"
     val buildLabel: String = "",       // vd "Build ALX_2.4.0.W18.V0421"
     val notes: List<UpdateNote> = emptyList(),
+    val actionButtonText: String = "Cài đặt ngay",
+    val isLatest: Boolean = false,
 )
 
 private val Back = listOf("M19 12H5M11 6l-6 6 6 6")
@@ -93,7 +95,7 @@ fun SystemUpdateScreen(
         }
 
         PrimaryButton(
-            "Cài đặt ngay", onInstallNow,
+            state.actionButtonText, onInstallNow,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
@@ -137,8 +139,8 @@ private fun VersionCard(state: SystemUpdateUiState, modifier: Modifier = Modifie
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BasicText(state.appName, style = type(16f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
                 BasicText(
-                    "MỚI",
-                    Modifier.background(Alx.Blue, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+                    if (state.isLatest) "MỚI NHẤT" else "MỚI",
+                    Modifier.background(if (state.isLatest) Color(0xFF10B981) else Alx.Blue, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
                     style = type(10f, FontWeight.ExtraBold, Color.White, spacing = 0.06f, lineHeight = 1.2f),
                 )
             }
@@ -186,9 +188,9 @@ private fun PressBox(
 /* ───────────────────────────── Dữ liệu mẫu + Preview ───────────────────────────── */
 
 val SampleUpdateNotes = listOf(
-    UpdateNote("Golike", "Thêm trạng thái liên kết tài khoản rõ hơn, sửa lỗi đôi khi hiện sai số dư sau khi làm xong nhiệm vụ."),
-    UpdateNote("XSMM", "Tối ưu tốc độ lấy nhiệm vụ, giảm tỉ lệ bị văng khi chạy nhiều tài khoản Facebook/Instagram cùng lúc."),
-    UpdateNote("Ổn định chung", "Sửa một số lỗi nhỏ khiến ứng dụng đôi khi bị treo khi chuyển tab liên tục."),
+    UpdateNote("Facebook", "Sửa lỗi đăng nhập tài khoản."),
+    UpdateNote("Instagram", "Sửa lỗi đăng nhập tài khoản."),
+    UpdateNote("TikTok", "Thêm tính năng tương tác chéo (tuongtaccheo) TikTok."),
 )
 
 @Preview(widthDp = 390, heightDp = 844, showBackground = true)
