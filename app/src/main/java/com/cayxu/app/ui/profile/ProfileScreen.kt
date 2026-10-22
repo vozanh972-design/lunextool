@@ -336,10 +336,7 @@ fun ProfileScreen(
                     val downloadedApk = AppUpdateManager.getDownloadedApkFile(context)
                     if (downloadedApk.exists() && downloadedApk.length() > 500 * 1024) {
                         downloadProgress = null
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-                            context.packageManager.canRequestPackageInstalls()) {
-                            AppUpdateManager.installApk(context, downloadedApk)
-                        }
+                        AppUpdateManager.installApk(context, downloadedApk)
                     }
                 }
             }
