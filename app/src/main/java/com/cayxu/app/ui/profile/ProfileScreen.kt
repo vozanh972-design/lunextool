@@ -38,12 +38,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -99,17 +98,6 @@ val DefaultSupportContacts = listOf(
     ContactChannel(ContactKind.Zalo, "Zalo", "Nhắn tin qua Zalo", "https://zalo.me/0931006827"),
 )
 
-/** Cấu hình kênh hỗ trợ đa ngôn ngữ. */
-@Composable
-fun defaultSupportContacts(): List<ContactChannel> = listOf(
-    ContactChannel(ContactKind.Telegram, "Telegram", Str.profileMsgTelegram, "https://t.me/thanhgmn"),
-    ContactChannel(ContactKind.Zalo, "Zalo", Str.profileMsgZalo, "https://zalo.me/0931006827"),
-)
-
-/**
- * [membershipProgress] là phần thanh đã dùng/còn lại, 0..1 (thiết kế: 0,58). Tính ở nơi giữ dữ liệu
- * (ví dụ daysLeft / tổng số ngày của gói) rồi truyền vào.
- */
 data class ProfileUiState(
     val username: String,
     val handle: String,
@@ -117,15 +105,13 @@ data class ProfileUiState(
     val planName: String,
     val daysLeft: Int,
     val expiryDate: String,         // đã định dạng, vd "05/11/2026"
-    val membershipProgress: Float,
     val language: AppLanguage,
-    /** Vài dòng mới nhất của sổ xu (thường 2), lấy từ CoinLedger.observeRecent(2). */
+    /** Vài dòng mới nhất của sổ xu (thường 2), lấy từ CoinLedger.observeRecent(2). Rỗng thì ẩn cả mục. */
     val recent: List<CoinEntry> = emptyList(),
-    /** Có bản cập nhật mới hay không. Khi true, thẻ "Có bản cập nhật mới" tự hiện trên cùng và đẩy avatar xuống 18dp. */
-    val hasUpdate: Boolean = false,
+    /** true thì hiện thẻ "Có bản cập nhật mới" phía trên avatar, đẩy khối Identity xuống dưới một chút. */
+    val hasUpdate: Boolean = true,
     /** Dòng phụ trong thẻ cập nhật, vd "Autolunex · phiên bản 2.4.0". Không dùng khi [hasUpdate] = false. */
-    val updateVersionLabel: String = "",
-    val currentVersion: String = "v1.0.6",
+    val updateVersionLabel: String = "Autolunex · phiên bản 2.4.0",
 )
 
 /* Icon: lưới 24×24, cờ cung luôn viết cách nhau vì PathParser không đọc dạng dính. */
@@ -155,7 +141,7 @@ private val RowLine = Color(0xFFEEF1F6)
 fun ProfileScreen(
     state: ProfileUiState,
     modifier: Modifier = Modifier,
-    contacts: List<ContactChannel> = defaultSupportContacts(),
+    contacts: List<ContactChannel> = DefaultSupportContacts,
     onAction: (ProfileAction) -> Unit = {},
     onLanguageChange: (AppLanguage) -> Unit = {},
     onSeeAllHistory: () -> Unit = {},
@@ -176,46 +162,26 @@ fun ProfileScreen(
         } else {
             Identity(state)
         }
-
         Membership(state, Modifier.padding(top = 20.dp))
 
-        Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-            BasicText(Str.profileCoinHistory, Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
-            SeeAll(onSeeAllHistory)
-        }
         if (state.recent.isNotEmpty()) {
-            PressBox(onClick = onSeeAllHistory, modifier = Modifier.padding(top = 12.dp)) {
-                CoinEntryCard {
-                    val today = remember { java.time.LocalDate.now() }
-                    state.recent.forEachIndexed { i, e -> CoinEntryRow(e, relativeTime(e.atMillis, today), divider = i > 0) }
-                }
+            Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText("Lịch sử xu", Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
+                SeeAll(onSeeAllHistory)
             }
-        } else {
-            PressBox(onClick = onSeeAllHistory, modifier = Modifier.padding(top = 12.dp)) {
-                Card {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        BasicText(Str.profileNoCoinHistory, style = type(13.5f, FontWeight.Medium, Alx.Muted))
-                    }
-                }
+            CoinEntryCard(Modifier.padding(top = 12.dp)) {
+                val today = remember { java.time.LocalDate.now() }
+                state.recent.forEachIndexed { i, e -> CoinEntryRow(e, relativeTime(e.atMillis, today), divider = i > 0) }
             }
         }
 
-        SectionTitle(Str.profileAccountSupport)
+        SectionTitle("Tài khoản & hỗ trợ")
         Card(Modifier.padding(top = 12.dp)) {
-            SettingRow(Str.profileSettings, Sliders, divider = false) { onAction(ProfileAction.Settings) }
-            SettingRow(
-                if (state.language == AppLanguage.VI) "Cập nhật ứng dụng" else "App Update",
-                UpdateIcon,
-                divider = true,
-                value = if (state.hasUpdate) (if (state.language == AppLanguage.VI) "Có bản mới" else "Update available") else state.currentVersion
-            ) { onAction(ProfileAction.OpenUpdate) }
-            SettingRow(Str.profileLanguage, Globe, divider = true, value = state.language.nativeName) { sheet = ProfileSheet.Language }
-            SettingRow(Str.profileContactSupport, Help, divider = true) { sheet = ProfileSheet.Contact }
-            SettingRow(Str.profileTermsPolicies, Doc, divider = true) { onAction(ProfileAction.Terms) }
-            SettingRow(Str.profileLogout, Logout, divider = true, danger = true) { onAction(ProfileAction.Logout) }
+            SettingRow("Cài đặt", Sliders, divider = false) { onAction(ProfileAction.Settings) }
+            SettingRow("Ngôn ngữ", Globe, divider = true, value = state.language.nativeName) { sheet = ProfileSheet.Language }
+            SettingRow("Liên hệ hỗ trợ", Help, divider = true) { sheet = ProfileSheet.Contact }
+            SettingRow("Điều khoản & chính sách", Doc, divider = true) { onAction(ProfileAction.Terms) }
+            SettingRow("Đăng xuất", Logout, divider = true, danger = true) { onAction(ProfileAction.Logout) }
         }
 
         Spacer(Modifier.height(DockClearance))
@@ -238,7 +204,7 @@ fun ProfileScreen(
             val uri = LocalUriHandler.current
             SheetHeader("Liên hệ hỗ trợ", "Chọn kênh để nhắn trực tiếp cho chúng tôi")
             Column(Modifier.padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                contacts.forEach { c -> ContactRow(c) { uri.openUri(c.url) } }
+                contacts.forEach { c -> ContactRow(c) { uri.openUri(c.url) } }   // url không hiện ra màn hình
             }
         }
         null -> Unit
@@ -257,21 +223,19 @@ fun ProfileScreen(
     val securePrefs = remember { SecurePrefs(context) }
     val ledger = remember { CoinLedgerProvider.get(context) }
     val recentCoins by ledger.observeRecent(2).collectAsStateWithLifecycle(initialValue = emptyList())
-    val scope = rememberCoroutineScope()
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showUpdate by rememberSaveable { mutableStateOf(false) }
 
     val updateData by AppUpdateManager.updateRequired.collectAsStateWithLifecycle()
-    val hasUpdate = updateData != null
-    val updateVersionLabel = if (updateData != null) "Autolunex · phiên bản ${updateData?.versionName}" else "Autolunex · phiên bản mới"
-    val currentVersion = "v${com.cayxu.app.BuildConfig.VERSION_NAME}"
+    val hasUpdate = true
+    val updateVersionLabel = if (updateData != null) "Autolunex · phiên bản ${updateData?.versionName}" else "Autolunex · phiên bản 2.4.0"
 
     val buyerUsername = remember { securePrefs.getBuyerUsername() }
     val daysLeft = remember { securePrefs.getDaysLeft() }
     val rawExpiresAt = remember { securePrefs.getExpiresAt() }
 
     val username = remember(buyerUsername) {
-        if (!buyerUsername.isNullOrBlank()) buyerUsername.trim() else "username"
+        if (!buyerUsername.isNullOrBlank()) buyerUsername.trim() else "benbenteo10"
     }
     val handle = remember(username) { "@$username" }
 
@@ -279,18 +243,14 @@ fun ProfileScreen(
         if (!rawExpiresAt.isNullOrBlank()) {
             rawExpiresAt.split(" ").firstOrNull() ?: rawExpiresAt
         } else {
-            "05/11/2026"
+            "2026-11-05"
         }
     }
 
-    val progress = remember(daysLeft) {
-        (daysLeft.toFloat() / 30f).coerceIn(0f, 1f)
-    }
-
     val currentLang = LanguageState.language
-    val planTitle = Str.profileMemberPro
+    val planTitle = "Thành viên PRO"
 
-    val state = remember(username, handle, daysLeft, expiryDate, progress, currentLang, recentCoins, planTitle, hasUpdate, updateVersionLabel, currentVersion) {
+    val state = remember(username, handle, daysLeft, expiryDate, currentLang, recentCoins, planTitle, hasUpdate, updateVersionLabel) {
         ProfileUiState(
             username = username,
             handle = handle,
@@ -298,12 +258,10 @@ fun ProfileScreen(
             planName = planTitle,
             daysLeft = daysLeft,
             expiryDate = expiryDate,
-            membershipProgress = progress,
             language = currentLang,
             recent = recentCoins,
             hasUpdate = hasUpdate,
             updateVersionLabel = updateVersionLabel,
-            currentVersion = currentVersion,
         )
     }
 
@@ -334,55 +292,29 @@ fun ProfileScreen(
     )
 
     if (showUpdate) {
-        val releaseNotes = remember(updateData) {
-            val remoteLog = updateData?.changelog.orEmpty()
-            if (remoteLog.isNotBlank()) {
-                val lines = remoteLog.split("\n").map { it.trim() }.filter { it.isNotBlank() }
-                if (lines.isNotEmpty()) {
-                    lines.map { line ->
-                        val parts = line.split(":", limit = 2)
-                        if (parts.size == 2) {
-                            UpdateNote(parts[0].trim(), parts[1].trim())
-                        } else {
-                            UpdateNote("Cập nhật", line)
-                        }
+        Dialog(
+            onDismissRequest = { showUpdate = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        ) {
+            SystemUpdateScreen(
+                state = SystemUpdateUiState(
+                    appName = "Autolunex",
+                    versionLabel = if (updateData != null) "Phiên bản ${updateData?.versionName} · 18 MB" else "Phiên bản 2.4.0 · 18 MB",
+                    buildLabel = "Build ALX_2.4.0.W18.V0421",
+                    notes = SampleUpdateNotes,
+                ),
+                onBack = { showUpdate = false },
+                onInstallNow = {
+                    val apk = updateData?.apkUrl.orEmpty().ifBlank {
+                        "https://github.com/theanh39/lunexapk/raw/main/app-release.apk"
                     }
-                } else {
-                    SampleUpdateNotes
-                }
-            } else {
-                SampleUpdateNotes
-            }
-        }
-
-        SystemUpdateScreen(
-            state = SystemUpdateUiState(
-                appName = "Autolunex",
-                versionLabel = if (updateData != null) "Phiên bản ${updateData?.versionName}" else "Phiên bản ${com.cayxu.app.BuildConfig.VERSION_NAME}",
-                buildLabel = if (updateData != null) "Mã build: ${updateData?.versionCode}" else "Build ALX_${com.cayxu.app.BuildConfig.VERSION_NAME} (Mới nhất)",
-                notes = releaseNotes,
-                actionButtonText = if (updateData != null) "Cài đặt ngay" else "Kiểm tra bản cập nhật",
-                isLatest = updateData == null,
-            ),
-            onBack = { showUpdate = false },
-            onInstallNow = {
-                val apk = updateData?.apkUrl.orEmpty()
-                if (apk.isNotBlank()) {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(apk)).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
-                } else {
-                    Toast.makeText(context, "Đang kiểm tra bản cập nhật từ máy chủ...", Toast.LENGTH_SHORT).show()
-                    scope.launch {
-                        val result = AppUpdateManager.checkUpdate(context)
-                        if (result == null) {
-                            Toast.makeText(context, "Bạn đang sử dụng phiên bản mới nhất (${com.cayxu.app.BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
-                        }
-                    }
                 }
-            }
-        )
+            )
+        }
     }
 
     if (showLogoutDialog) {
@@ -430,6 +362,7 @@ private val AppLanguage.nativeName get() = when (this) {
     AppLanguage.EN -> "English"
 }
 
+/** Thẻ "Có bản cập nhật mới" — chỉ hiện khi [ProfileUiState.hasUpdate] = true, nằm trên cùng, trên cả avatar. */
 @Composable
 private fun UpdateBanner(versionLabel: String, onClick: () -> Unit) {
     val shape = RoundedCornerShape(20.dp)
@@ -481,7 +414,7 @@ private fun Identity(s: ProfileUiState, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Membership(s: ProfileUiState, modifier: Modifier = Modifier) {
+private fun Membership(s: ProfileUiState, modifier: Modifier) {
     val shape = RoundedCornerShape(20.dp)
     Column(
         modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape)
@@ -507,36 +440,40 @@ private fun Membership(s: ProfileUiState, modifier: Modifier = Modifier) {
 
 @Composable
 private fun SectionTitle(text: String) {
-    BasicText(
-        text,
-        Modifier.padding(top = 24.dp, start = 4.dp),
-        style = type(11f, FontWeight.ExtraBold, Alx.Muted, spacing = 0.12f),
-    )
+    BasicText(text, Modifier.padding(top = 24.dp), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
 }
 
 @Composable
-private fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+private fun Card(modifier: Modifier, content: @Composable () -> Unit) {
     val shape = RoundedCornerShape(20.dp)
     Column(
-        modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape).padding(horizontal = 16.dp),
-        content = content,
-    )
+        modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape).clip(shape)
+            .padding(horizontal = 16.dp),
+    ) { content() }
 }
 
+@Composable
+private fun IconTile(paths: List<String>, color: Color, tint: Color, tile: Int, radius: Int, icon: Int) {
+    Box(Modifier.size(tile.dp).background(tint, RoundedCornerShape(radius.dp)), contentAlignment = Alignment.Center) {
+        SvgIcon(paths, icon.dp, color, 1.8f)
+    }
+}
+
+/** "Xem tất cả ›" xanh, cạnh tiêu đề Lịch sử xu. Vùng chạm cao 44dp. */
 @Composable
 private fun SeeAll(onClick: () -> Unit) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "seeAll")
     Row(
-        Modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick),
+        Modifier.height(44.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
+            .padding(start = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        BasicText(Str.profileSeeAll, style = type(13f, FontWeight.Bold, Alx.Blue))
-        SvgIcon(Chevron, 13.dp, Alx.Blue, 2.2f)
+        BasicText("Xem tất cả", style = type(13.5f, FontWeight.Bold, Alx.Blue))
+        SvgIcon(Chevron, 16.dp, Alx.Blue, 2.2f)
     }
 }
 
@@ -551,7 +488,7 @@ private fun SettingRow(
 ) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "row")
+    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "press")
     Column {
         if (divider) Box(Modifier.fillMaxWidth().height(1.dp).background(RowLine))
         Row(
@@ -585,7 +522,7 @@ private fun BottomSheetDialog(onDismiss: () -> Unit, content: @Composable Column
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        (LocalView.current.parent as? DialogWindowProvider)?.window?.setDimAmount(0f)
+        (LocalView.current.parent as? DialogWindowProvider)?.window?.setDimAmount(0f)   // tự vẽ nền mờ, bỏ nền mờ mặc định
         var shown by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { shown = true }
         val scrim by animateFloatAsState(if (shown) 1f else 0f, tween(200), label = "scrim")
@@ -603,7 +540,7 @@ private fun BottomSheetDialog(onDismiss: () -> Unit, content: @Composable Column
                 Column(
                     Modifier.fillMaxWidth()
                         .background(Alx.White, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})  // chạm trong tấm không đóng
                         .navigationBarsPadding()
                         .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 28.dp),
                 ) {
@@ -706,13 +643,12 @@ private fun ProfileScreenPreview() {
         ProfileScreen(
             ProfileUiState(
                 username = "username", handle = "@username", planBadge = "PRO", planName = "Thành viên PRO",
-                daysLeft = 25, expiryDate = "05/11/2026", membershipProgress = 0.58f, language = AppLanguage.VI,
+                daysLeft = 25, expiryDate = "05/11/2026", language = AppLanguage.VI,
+                hasUpdate = true, updateVersionLabel = "Autolunex · phiên bản 2.4.0",
                 recent = listOf(
                     CoinEntry(1, com.cayxu.app.data.CoinEntryKind.Follow, "Theo dõi @linh.daily", 40, now, "preview"),
                     CoinEntry(2, com.cayxu.app.data.CoinEntryKind.Redeem, "Đổi thẻ điện thoại", -1000, now - 86_400_000, "preview"),
                 ),
-                hasUpdate = true,
-                updateVersionLabel = "Autolunex · phiên bản 2.4.0",
             ),
         )
     }

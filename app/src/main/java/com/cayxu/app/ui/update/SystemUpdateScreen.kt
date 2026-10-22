@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
@@ -34,7 +36,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.cayxu.app.ui.design.Alx
-import com.cayxu.app.ui.design.PrimaryButton
 import com.cayxu.app.ui.design.SvgIcon
 import com.cayxu.app.ui.design.type
 
@@ -52,8 +53,6 @@ data class SystemUpdateUiState(
     val versionLabel: String = "",     // vd "Phiên bản 2.4.0 · 18 MB"
     val buildLabel: String = "",       // vd "Build ALX_2.4.0.W18.V0421"
     val notes: List<UpdateNote> = emptyList(),
-    val actionButtonText: String = "Cài đặt ngay",
-    val isLatest: Boolean = false,
 )
 
 private val Back = listOf("M19 12H5M11 6l-6 6 6 6")
@@ -69,14 +68,13 @@ fun SystemUpdateScreen(
 ) {
     Box(modifier.fillMaxSize().background(Alx.Bg)) {
         Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .statusBarsPadding()
-                .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 120.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .statusBarsPadding().padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 120.dp),
         ) {
             Header(onBack)
+
             VersionCard(state, Modifier.padding(top = 20.dp))
+
             BasicText(
                 "NỘI DUNG CẬP NHẬT",
                 Modifier.padding(top = 22.dp, start = 4.dp),
@@ -85,6 +83,7 @@ fun SystemUpdateScreen(
             state.notes.forEachIndexed { i, note ->
                 NoteCard(note, Modifier.padding(top = if (i == 0) 10.dp else 10.dp))
             }
+
             Row(Modifier.padding(top = 18.dp, start = 4.dp, end = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SvgIcon(InfoIcon, 16.dp, Alx.Muted, 2f, Modifier.padding(top = 2.dp))
                 BasicText(
@@ -94,15 +93,37 @@ fun SystemUpdateScreen(
             }
         }
 
-        PrimaryButton(
-            state.actionButtonText, onInstallNow,
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 26.dp)
                 .navigationBarsPadding(),
-        )
+        ) {
+            val shape = RoundedCornerShape(18.dp)
+            val source = remember { MutableInteractionSource() }
+            val pressed by source.collectIsPressedAsState()
+            val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "btn")
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                    .background(Alx.Blue, shape)
+                    .clip(shape)
+                    .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onInstallNow),
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SvgIcon(UpdateIcon, 20.dp, Color.White, 2.2f)
+                    BasicText("Cài đặt ngay", style = type(16f, FontWeight.Bold, Color.White))
+                }
+            }
+        }
     }
 }
 
@@ -113,9 +134,7 @@ private fun Header(onBack: () -> Unit) {
             onClick = onBack,
             modifier = Modifier.size(44.dp).background(Alx.White, CircleShape).border(1.dp, Alx.Line, CircleShape),
             contentAlignment = Alignment.Center,
-        ) {
-            SvgIcon(Back, 20.dp, Alx.Ink, 2f)
-        }
+        ) { SvgIcon(Back, 20.dp, Alx.Ink, 2f) }
         BasicText("Cập nhật hệ thống", style = type(22f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.02f))
     }
 }
@@ -124,10 +143,7 @@ private fun Header(onBack: () -> Unit) {
 private fun VersionCard(state: SystemUpdateUiState, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(22.dp)
     Row(
-        modifier
-            .fillMaxWidth()
-            .background(Alx.White, shape)
-            .border(1.dp, Alx.Line, shape)
+        modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -139,8 +155,8 @@ private fun VersionCard(state: SystemUpdateUiState, modifier: Modifier = Modifie
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BasicText(state.appName, style = type(16f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
                 BasicText(
-                    if (state.isLatest) "MỚI NHẤT" else "MỚI",
-                    Modifier.background(if (state.isLatest) Color(0xFF10B981) else Alx.Blue, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+                    "MỚI",
+                    Modifier.background(Alx.Blue, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
                     style = type(10f, FontWeight.ExtraBold, Color.White, spacing = 0.06f, lineHeight = 1.2f),
                 )
             }
@@ -153,13 +169,7 @@ private fun VersionCard(state: SystemUpdateUiState, modifier: Modifier = Modifie
 @Composable
 private fun NoteCard(note: UpdateNote, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(20.dp)
-    Column(
-        modifier
-            .fillMaxWidth()
-            .background(Alx.White, shape)
-            .border(1.dp, Alx.Line, shape)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
+    Column(modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape).padding(horizontal = 16.dp, vertical = 14.dp)) {
         BasicText(note.title, style = type(14.5f, FontWeight.ExtraBold, Alx.Ink))
         BasicText(note.body, Modifier.padding(top = 6.dp), style = type(13f, FontWeight.Medium, Alx.Muted, lineHeight = 1.55f))
     }
@@ -176,21 +186,18 @@ private fun PressBox(
     val pressed by source.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "press")
     Box(
-        modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale }
+        modifier.graphicsLayer { scaleX = scale; scaleY = scale }
             .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick),
         contentAlignment = contentAlignment,
-    ) {
-        content()
-    }
+    ) { content() }
 }
 
 /* ───────────────────────────── Dữ liệu mẫu + Preview ───────────────────────────── */
 
 val SampleUpdateNotes = listOf(
-    UpdateNote("Facebook", "Sửa lỗi đăng nhập tài khoản."),
-    UpdateNote("Instagram", "Sửa lỗi đăng nhập tài khoản."),
-    UpdateNote("TikTok", "Thêm tính năng tương tác chéo (tuongtaccheo) TikTok."),
+    UpdateNote("Golike", "Thêm trạng thái liên kết tài khoản rõ hơn, sửa lỗi đôi khi hiện sai số dư sau khi làm xong nhiệm vụ."),
+    UpdateNote("XSMM", "Tối ưu tốc độ lấy nhiệm vụ, giảm tỉ lệ bị văng khi chạy nhiều tài khoản Facebook/Instagram cùng lúc."),
+    UpdateNote("Ổn định chung", "Sửa một số lỗi nhỏ khiến ứng dụng đôi khi bị treo khi chuyển tab liên tục."),
 )
 
 @Preview(widthDp = 390, heightDp = 844, showBackground = true)
