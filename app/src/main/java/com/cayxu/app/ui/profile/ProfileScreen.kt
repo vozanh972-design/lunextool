@@ -38,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,6 +58,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.cayxu.app.BuildConfig
 import com.cayxu.app.data.CoinEntry
 import com.cayxu.app.data.CoinLedgerProvider
 import com.cayxu.app.data.local.SecurePrefs
@@ -80,6 +82,7 @@ import com.cayxu.app.ui.update.SystemUpdateScreen
 import com.cayxu.app.ui.update.SystemUpdateUiState
 import com.cayxu.app.ui.update.UpdateNote
 import com.cayxu.app.util.AppUpdateManager
+import kotlinx.coroutines.launch
 
 /* ───────────────────────────── Dữ liệu ───────────────────────────── */
 
@@ -106,12 +109,12 @@ data class ProfileUiState(
     val daysLeft: Int,
     val expiryDate: String,         // đã định dạng, vd "05/11/2026"
     val language: AppLanguage,
-    /** Vài dòng mới nhất của sổ xu (thường 2), lấy từ CoinLedger.observeRecent(2). Rỗng thì ẩn cả mục. */
+    /** Vài dòng mới nhất của sổ xu (thường 2), lấy từ CoinLedger.observeRecent(2). Rỗng thì hiện thẻ Chưa có lịch sử. */
     val recent: List<CoinEntry> = emptyList(),
     /** true thì hiện thẻ "Có bản cập nhật mới" phía trên avatar, đẩy khối Identity xuống dưới một chút. */
     val hasUpdate: Boolean = true,
-    /** Dòng phụ trong thẻ cập nhật, vd "Autolunex · phiên bản 2.4.0". Không dùng khi [hasUpdate] = false. */
-    val updateVersionLabel: String = "Autolunex · phiên bản 2.4.0",
+    /** Dòng phụ trong thẻ cập nhật, vd "Autolunex · phiên bản 1.0.6". Không dùng khi [hasUpdate] = false. */
+    val updateVersionLabel: String = "Autolunex · phiên bản 1.0.6",
 )
 
 /* Icon: lưới 24×24, cờ cung luôn viết cách nhau vì PathParser không đọc dạng dính. */
@@ -164,14 +167,28 @@ fun ProfileScreen(
         }
         Membership(state, Modifier.padding(top = 20.dp))
 
+        // Khối Lịch sử xu: Luôn hiển thị tiêu đề và nút Xem tất cả
+        Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicText("Lịch sử xu", Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
+            SeeAll(onSeeAllHistory)
+        }
         if (state.recent.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText("Lịch sử xu", Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
-                SeeAll(onSeeAllHistory)
+            PressBox(onClick = onSeeAllHistory, modifier = Modifier.padding(top = 12.dp)) {
+                CoinEntryCard {
+                    val today = remember { java.time.LocalDate.now() }
+                    state.recent.forEachIndexed { i, e -> CoinEntryRow(e, relativeTime(e.atMillis, today), divider = i > 0) }
+                }
             }
-            CoinEntryCard(Modifier.padding(top = 12.dp)) {
-                val today = remember { java.time.LocalDate.now() }
-                state.recent.forEachIndexed { i, e -> CoinEntryRow(e, relativeTime(e.atMillis, today), divider = i > 0) }
+        } else {
+            PressBox(onClick = onSeeAllHistory, modifier = Modifier.padding(top = 12.dp)) {
+                Card(Modifier.padding(top = 0.dp)) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        BasicText("Chưa có lịch sử nhận xu", style = type(13.5f, FontWeight.Medium, Alx.Muted))
+                    }
+                }
             }
         }
 
@@ -220,15 +237,30 @@ fun ProfileScreen(
     onAction: ((ProfileAction) -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val securePrefs = remember { SecurePrefs(context) }
     val ledger = remember { CoinLedgerProvider.get(context) }
     val recentCoins by ledger.observeRecent(2).collectAsStateWithLifecycle(initialValue = emptyList())
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showUpdate by rememberSaveable { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf<Int?>(null) }
 
-    val updateData by AppUpdateManager.updateRequired.collectAsStateWithLifecycle()
+    val updateRequiredData by AppUpdateManager.updateRequired.collectAsStateWithLifecycle()
+    val latestUpdateData by AppUpdateManager.latestUpdateData.collectAsStateWithLifecycle()
+    val activeUpdateData = updateRequiredData ?: latestUpdateData
+
+    LaunchedEffect(Unit) {
+        AppUpdateManager.checkUpdate(context)
+    }
+
+    val realVersionName = activeUpdateData?.versionName?.ifBlank { BuildConfig.VERSION_NAME } ?: BuildConfig.VERSION_NAME
+    val realVersionCode = if ((activeUpdateData?.versionCode ?: 0) > 0) (activeUpdateData?.versionCode ?: 0) else BuildConfig.VERSION_CODE
+    val realChangelog = activeUpdateData?.changelog?.ifBlank {
+        "1. Facebook: sửa lỗi đăng nhập\n2. Instagram: sửa lỗi đăng nhập\n3. TikTok: thêm tuongtaccheo tiktok"
+    } ?: "1. Facebook: sửa lỗi đăng nhập\n2. Instagram: sửa lỗi đăng nhập\n3. TikTok: thêm tuongtaccheo tiktok"
+
     val hasUpdate = true
-    val updateVersionLabel = if (updateData != null) "Autolunex · phiên bản ${updateData?.versionName}" else "Autolunex · phiên bản 2.4.0"
+    val updateVersionLabel = "Autolunex · phiên bản $realVersionName"
 
     val buyerUsername = remember { securePrefs.getBuyerUsername() }
     val daysLeft = remember { securePrefs.getDaysLeft() }
@@ -292,26 +324,58 @@ fun ProfileScreen(
     )
 
     if (showUpdate) {
+        val parsedNotes = remember(realChangelog) {
+            val lines = realChangelog.split("\n").map { it.trim() }.filter { it.isNotBlank() }
+            if (lines.isNotEmpty()) {
+                lines.map { line ->
+                    val cleanLine = line.replaceFirst(Regex("^\\d+\\.\\s*"), "")
+                    val parts = cleanLine.split(":", limit = 2)
+                    if (parts.size == 2) {
+                        UpdateNote(parts[0].trim(), parts[1].trim())
+                    } else {
+                        UpdateNote("Cập nhật", cleanLine)
+                    }
+                }
+            } else {
+                SampleUpdateNotes
+            }
+        }
+
         Dialog(
-            onDismissRequest = { showUpdate = false },
+            onDismissRequest = {
+                if (downloadProgress == null) showUpdate = false
+            },
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
         ) {
             SystemUpdateScreen(
                 state = SystemUpdateUiState(
                     appName = "Autolunex",
-                    versionLabel = if (updateData != null) "Phiên bản ${updateData?.versionName} · 18 MB" else "Phiên bản 2.4.0 · 18 MB",
-                    buildLabel = "Build ALX_2.4.0.W18.V0421",
-                    notes = SampleUpdateNotes,
+                    versionLabel = "Phiên bản $realVersionName · 18 MB",
+                    buildLabel = "Build ALX_${realVersionName}.V${realVersionCode}",
+                    notes = parsedNotes,
                 ),
-                onBack = { showUpdate = false },
+                downloadProgress = downloadProgress,
+                onBack = {
+                    if (downloadProgress == null) showUpdate = false
+                },
                 onInstallNow = {
-                    val apk = updateData?.apkUrl.orEmpty().ifBlank {
+                    val apk = activeUpdateData?.apkUrl.orEmpty().ifBlank {
                         "https://github.com/theanh39/lunexapk/raw/main/app-release.apk"
                     }
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(apk)).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    downloadProgress = 0
+                    scope.launch {
+                        AppUpdateManager.downloadAndInstallApk(
+                            context = context,
+                            apkUrl = apk,
+                            onProgress = { p ->
+                                downloadProgress = p
+                            },
+                            onError = { err ->
+                                downloadProgress = null
+                                Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                            }
+                        )
                     }
-                    context.startActivity(intent)
                 }
             )
         }
@@ -444,7 +508,7 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun Card(modifier: Modifier, content: @Composable () -> Unit) {
+private fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val shape = RoundedCornerShape(20.dp)
     Column(
         modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape).clip(shape)
@@ -644,7 +708,7 @@ private fun ProfileScreenPreview() {
             ProfileUiState(
                 username = "username", handle = "@username", planBadge = "PRO", planName = "Thành viên PRO",
                 daysLeft = 25, expiryDate = "05/11/2026", language = AppLanguage.VI,
-                hasUpdate = true, updateVersionLabel = "Autolunex · phiên bản 2.4.0",
+                hasUpdate = true, updateVersionLabel = "Autolunex · phiên bản 1.0.6",
                 recent = listOf(
                     CoinEntry(1, com.cayxu.app.data.CoinEntryKind.Follow, "Theo dõi @linh.daily", 40, now, "preview"),
                     CoinEntry(2, com.cayxu.app.data.CoinEntryKind.Redeem, "Đổi thẻ điện thoại", -1000, now - 86_400_000, "preview"),

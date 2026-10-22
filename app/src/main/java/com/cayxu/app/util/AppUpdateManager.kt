@@ -18,6 +18,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
 data class AppUpdateData(
@@ -33,19 +34,23 @@ object AppUpdateManager {
     private val _updateRequired = MutableStateFlow<AppUpdateData?>(null)
     val updateRequired: StateFlow<AppUpdateData?> = _updateRequired.asStateFlow()
 
+    private val _latestUpdateData = MutableStateFlow<AppUpdateData?>(null)
+    val latestUpdateData: StateFlow<AppUpdateData?> = _latestUpdateData.asStateFlow()
+
     private val _isChecking = MutableStateFlow(false)
     val isChecking: StateFlow<Boolean> = _isChecking.asStateFlow()
 
+    // Mã hóa XOR 0x5B chuỗi: https://raw.githubusercontent.com/theanh39/lunexapk/main/version.json
     private val OBF_UPDATE_URL = byteArrayOf(
         0x33.toByte(), 0x2F.toByte(), 0x2F.toByte(), 0x2B.toByte(), 0x28.toByte(), 0x61.toByte(), 0x74.toByte(), 0x74.toByte(),
         0x29.toByte(), 0x3A.toByte(), 0x2C.toByte(), 0x75.toByte(), 0x3C.toByte(), 0x32.toByte(), 0x2F.toByte(), 0x33.toByte(),
         0x2E.toByte(), 0x39.toByte(), 0x2E.toByte(), 0x28.toByte(), 0x3E.toByte(), 0x29.toByte(), 0x38.toByte(), 0x34.toByte(),
-        0x39.toByte(), 0x25.toByte(), 0x3E.toByte(), 0x75.toByte(), 0x38.toByte(), 0x34.toByte(), 0x74.toByte(), 0x7B.toByte(),
-        0x33.toByte(), 0x3F.toByte(), 0x3E.toByte(), 0x3A.toByte(), 0x35.toByte(), 0x68.toByte(), 0x62.toByte(), 0x74.toByte(),
-        0x37.toByte(), 0x2E.toByte(), 0x35.toByte(), 0x3E.toByte(), 0x23.toByte(), 0x3A.toByte(), 0x2B.toByte(), 0x30.toByte(),
-        0x74.toByte(), 0x36.toByte(), 0x3A.toByte(), 0x32.toByte(), 0x35.toByte(), 0x74.toByte(), 0x2D.toByte(), 0x3E.toByte(),
-        0x29.toByte(), 0x28.toByte(), 0x32.toByte(), 0x34.toByte(), 0x35.toByte(), 0x75.toByte(), 0x31.toByte(), 0x28.toByte(),
-        0x34.toByte(), 0x35.toByte()
+        0x35.toByte(), 0x2F.toByte(), 0x3E.toByte(), 0x35.toByte(), 0x2F.toByte(), 0x75.toByte(), 0x38.toByte(), 0x34.toByte(),
+        0x36.toByte(), 0x74.toByte(), 0x2F.toByte(), 0x33.toByte(), 0x3E.toByte(), 0x3A.toByte(), 0x35.toByte(), 0x33.toByte(),
+        0x68.toByte(), 0x62.toByte(), 0x74.toByte(), 0x37.toByte(), 0x2E.toByte(), 0x35.toByte(), 0x3E.toByte(), 0x23.toByte(),
+        0x3A.toByte(), 0x2B.toByte(), 0x30.toByte(), 0x74.toByte(), 0x36.toByte(), 0x3A.toByte(), 0x32.toByte(), 0x35.toByte(),
+        0x74.toByte(), 0x2D.toByte(), 0x3E.toByte(), 0x29.toByte(), 0x28.toByte(), 0x32.toByte(), 0x34.toByte(), 0x35.toByte(),
+        0x75.toByte(), 0x31.toByte(), 0x28.toByte(), 0x34.toByte(), 0x35.toByte()
     )
 
     fun getUpdateApiEndpoint(): String {
@@ -64,24 +69,27 @@ object AppUpdateManager {
         val prefs = SecurePrefs(context)
         val lastCode = prefs.getLatestKnownVersionCode()
         if (lastCode > BuildConfig.VERSION_CODE && _updateRequired.value == null) {
-            _updateRequired.value = AppUpdateData(
+            val cachedData = AppUpdateData(
                 versionCode = lastCode,
                 versionName = "$lastCode.0",
                 changelog = BuildConfig.UPDATE_CHANGELOG.ifBlank { "Cập nhật và tối ưu hóa hệ thống" },
                 apkUrl = "https://github.com/theanh39/lunexapk/raw/main/app-release.apk",
                 forceUpdate = true
             )
+            _updateRequired.value = cachedData
+            _latestUpdateData.value = cachedData
         }
     }
 
     /**
      * Kiểm tra cập nhật từ máy chủ từ xa.
+     * Cập nhật thông tin bản mới nhất vào [_latestUpdateData].
      * Nếu phát hiện phiên bản máy chủ > BuildConfig.VERSION_CODE:
      * - Lưu version code mới vào SecurePrefs
-     * - Kích hoạt `_updateRequired` để khoá toàn bộ ứng dụng
+     * - Kích hoạt [_updateRequired] để khoá toàn bộ ứng dụng
      */
     suspend fun checkUpdate(context: Context): AppUpdateData? {
-        if (_isChecking.value) return _updateRequired.value
+        if (_isChecking.value) return _latestUpdateData.value ?: _updateRequired.value
         _isChecking.value = true
         return withContext(Dispatchers.IO) {
             try {
@@ -95,8 +103,8 @@ object AppUpdateManager {
                     .header("Cache-Control", "no-cache, no-store")
                     .build()
                 val response = client.newCall(request).execute()
-                if (!response.isSuccessful) return@withContext _updateRequired.value
-                val bodyStr = response.body?.string() ?: return@withContext _updateRequired.value
+                if (!response.isSuccessful) return@withContext _latestUpdateData.value ?: _updateRequired.value
+                val bodyStr = response.body?.string() ?: return@withContext _latestUpdateData.value ?: _updateRequired.value
                 val rootJson = JSONObject(bodyStr)
                 val dataObj = if (rootJson.has("data")) rootJson.optJSONObject("data") ?: rootJson else rootJson
 
@@ -105,7 +113,7 @@ object AppUpdateManager {
                     dataObj.has("versionCode") -> dataObj.optInt("versionCode")
                     rootJson.has("version_code") -> rootJson.optInt("version_code")
                     rootJson.has("versionCode") -> rootJson.optInt("versionCode")
-                    else -> 0
+                    else -> BuildConfig.VERSION_CODE
                 }
 
                 val vName = when {
@@ -114,7 +122,8 @@ object AppUpdateManager {
                     dataObj.has("version") -> dataObj.optString("version")
                     rootJson.has("version_name") -> rootJson.optString("version_name")
                     rootJson.has("versionName") -> rootJson.optString("versionName")
-                    else -> ""
+                    rootJson.has("version") -> rootJson.optString("version")
+                    else -> BuildConfig.VERSION_NAME
                 }
 
                 val rawLog = when {
@@ -124,7 +133,8 @@ object AppUpdateManager {
                     rootJson.has("changelog") -> rootJson.optString("changelog")
                     else -> ""
                 }
-                val finalChangelog = if (rawLog.isNotBlank()) rawLog.trim() else "Cập nhật và tối ưu hóa hệ thống"
+                val defaultLog = "1. Facebook: sửa lỗi đăng nhập\n2. Instagram: sửa lỗi đăng nhập\n3. TikTok: thêm tuongtaccheo tiktok"
+                val finalChangelog = if (rawLog.isNotBlank()) rawLog.trim() else defaultLog
 
                 val possibleUrlKeys = listOf("download_url", "downloadUrl", "apk_url", "apkUrl", "url", "link")
                 var extractedUrl = ""
@@ -133,6 +143,9 @@ object AppUpdateManager {
                     if (u1.isNotBlank()) { extractedUrl = u1; break }
                     val u2 = rootJson.optString(k, "")
                     if (u2.isNotBlank()) { extractedUrl = u2; break }
+                }
+                if (extractedUrl.isBlank()) {
+                    extractedUrl = "https://github.com/theanh39/lunexapk/raw/main/app-release.apk"
                 }
 
                 val forceUpdate = when {
@@ -143,25 +156,105 @@ object AppUpdateManager {
                     else -> true
                 }
 
+                val updateData = AppUpdateData(
+                    versionCode = vCode,
+                    versionName = vName.ifBlank { BuildConfig.VERSION_NAME },
+                    changelog = finalChangelog,
+                    apkUrl = extractedUrl,
+                    forceUpdate = forceUpdate
+                )
+                _latestUpdateData.value = updateData
+
                 if (vCode > BuildConfig.VERSION_CODE) {
-                    val updateData = AppUpdateData(
-                        versionCode = vCode,
-                        versionName = vName.ifBlank { "mới" },
-                        changelog = finalChangelog,
-                        apkUrl = extractedUrl,
-                        forceUpdate = forceUpdate
-                    )
                     // Lưu lại version code lớn hơn này để khoá kể cả khi offline
                     SecurePrefs(context).saveLatestKnownVersionCode(vCode)
                     _updateRequired.value = updateData
                     updateData
                 } else {
-                    null
+                    updateData
                 }
             } catch (e: Exception) {
-                _updateRequired.value
+                _latestUpdateData.value ?: _updateRequired.value
             } finally {
                 _isChecking.value = false
+            }
+        }
+    }
+
+    /**
+     * Tải tệp APK ngầm trong ứng dụng và thông báo tiến độ % qua [onProgress].
+     * Khi tải xong 100%, tự động gọi [installApk] để mở màn hình cài đặt của hệ thống.
+     */
+    suspend fun downloadAndInstallApk(
+        context: Context,
+        apkUrl: String,
+        onProgress: (Int) -> Unit,
+        onError: (String) -> Unit
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val downloadDir = context.getExternalFilesDir("downloads") ?: context.cacheDir
+            if (!downloadDir.exists()) downloadDir.mkdirs()
+            val destFile = File(downloadDir, "app-update.apk")
+            if (destFile.exists()) destFile.delete()
+
+            val client = OkHttpClient.Builder()
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(120, TimeUnit.SECONDS)
+                .build()
+
+            val request = Request.Builder()
+                .url(apkUrl)
+                .header("User-Agent", "Mozilla/5.0 LunexApp")
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                withContext(Dispatchers.Main) {
+                    onError("Tải thất bại (HTTP ${response.code})")
+                }
+                return@withContext
+            }
+
+            val body = response.body ?: run {
+                withContext(Dispatchers.Main) {
+                    onError("Không có dữ liệu phản hồi từ máy chủ")
+                }
+                return@withContext
+            }
+
+            val totalBytes = body.contentLength()
+            val inputStream = body.byteStream()
+            val outputStream = FileOutputStream(destFile)
+
+            val buffer = ByteArray(16 * 1024)
+            var bytesRead: Int
+            var totalRead = 0L
+            var lastReportedPercent = -1
+
+            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                outputStream.write(buffer, 0, bytesRead)
+                totalRead += bytesRead
+                if (totalBytes > 0) {
+                    val percent = ((totalRead * 100) / totalBytes).toInt().coerceIn(0, 100)
+                    if (percent != lastReportedPercent) {
+                        lastReportedPercent = percent
+                        withContext(Dispatchers.Main) {
+                            onProgress(percent)
+                        }
+                    }
+                }
+            }
+            outputStream.flush()
+            outputStream.close()
+            inputStream.close()
+
+            withContext(Dispatchers.Main) {
+                onProgress(100)
+                installApk(context, destFile)
+            }
+        } catch (e: Exception) {
+            withContext(Dispatchers.Main) {
+                onError(e.message ?: "Lỗi tải cập nhật")
             }
         }
     }

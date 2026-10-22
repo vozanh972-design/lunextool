@@ -50,8 +50,8 @@ data class UpdateNote(val title: String, val body: String)
 
 data class SystemUpdateUiState(
     val appName: String = "Autolunex",
-    val versionLabel: String = "",     // vd "Phiên bản 2.4.0 · 18 MB"
-    val buildLabel: String = "",       // vd "Build ALX_2.4.0.W18.V0421"
+    val versionLabel: String = "",     // vd "Phiên bản 1.0.6 · 18 MB"
+    val buildLabel: String = "",       // vd "Build ALX_1.0.6.V7"
     val notes: List<UpdateNote> = emptyList(),
 )
 
@@ -64,6 +64,7 @@ fun SystemUpdateScreen(
     state: SystemUpdateUiState,
     onBack: () -> Unit,
     onInstallNow: () -> Unit,
+    downloadProgress: Int? = null,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier.fillMaxSize().background(Alx.Bg)) {
@@ -105,6 +106,7 @@ fun SystemUpdateScreen(
             val source = remember { MutableInteractionSource() }
             val pressed by source.collectIsPressedAsState()
             val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "btn")
+            val isDownloading = downloadProgress != null
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -112,15 +114,25 @@ fun SystemUpdateScreen(
                     .graphicsLayer { scaleX = scale; scaleY = scale }
                     .background(Alx.Blue, shape)
                     .clip(shape)
-                    .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onInstallNow),
+                    .clickable(
+                        interactionSource = source,
+                        indication = null,
+                        role = Role.Button,
+                        enabled = !isDownloading,
+                        onClick = onInstallNow,
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    SvgIcon(UpdateIcon, 20.dp, Color.White, 2.2f)
-                    BasicText("Cài đặt ngay", style = type(16f, FontWeight.Bold, Color.White))
+                    if (isDownloading) {
+                        BasicText("Đang tải xuống $downloadProgress%", style = type(16f, FontWeight.Bold, Color.White))
+                    } else {
+                        SvgIcon(UpdateIcon, 20.dp, Color.White, 2.2f)
+                        BasicText("Cài đặt ngay", style = type(16f, FontWeight.Bold, Color.White))
+                    }
                 }
             }
         }
@@ -195,9 +207,9 @@ private fun PressBox(
 /* ───────────────────────────── Dữ liệu mẫu + Preview ───────────────────────────── */
 
 val SampleUpdateNotes = listOf(
-    UpdateNote("Golike", "Thêm trạng thái liên kết tài khoản rõ hơn, sửa lỗi đôi khi hiện sai số dư sau khi làm xong nhiệm vụ."),
-    UpdateNote("XSMM", "Tối ưu tốc độ lấy nhiệm vụ, giảm tỉ lệ bị văng khi chạy nhiều tài khoản Facebook/Instagram cùng lúc."),
-    UpdateNote("Ổn định chung", "Sửa một số lỗi nhỏ khiến ứng dụng đôi khi bị treo khi chuyển tab liên tục."),
+    UpdateNote("Facebook", "Sửa lỗi đăng nhập."),
+    UpdateNote("Instagram", "Sửa lỗi đăng nhập."),
+    UpdateNote("TikTok", "Thêm tuongtaccheo tiktok."),
 )
 
 @Preview(widthDp = 390, heightDp = 844, showBackground = true)
@@ -205,8 +217,8 @@ val SampleUpdateNotes = listOf(
 private fun SystemUpdateScreenPreview() {
     SystemUpdateScreen(
         state = SystemUpdateUiState(
-            versionLabel = "Phiên bản 2.4.0 · 18 MB",
-            buildLabel = "Build ALX_2.4.0.W18.V0421",
+            versionLabel = "Phiên bản 1.0.6 · 18 MB",
+            buildLabel = "Build ALX_1.0.6.V7",
             notes = SampleUpdateNotes,
         ),
         onBack = {},
