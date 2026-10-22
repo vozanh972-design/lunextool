@@ -470,6 +470,8 @@ class FacebookAccountManager {
             pageList = pageEngine.getAdminedPages(token)
         } catch (_: Exception) {}
 
+        val isLive = id.isNotBlank() && !id.equals("Token", ignoreCase = true)
+
         return FacebookAccount(
             uid = id.ifBlank { "Token" },
             name = name.ifBlank { id },
@@ -480,7 +482,7 @@ class FacebookAccountManager {
             email = email,
             pages = pageList,
             phone = proxyStr.orEmpty(),
-            isLive = true
+            isLive = isLive
         )
     }
 

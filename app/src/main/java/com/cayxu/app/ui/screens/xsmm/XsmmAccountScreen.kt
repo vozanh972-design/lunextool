@@ -1415,11 +1415,36 @@ fun XsmmAccountScreen(navController: NavController) {
                     if (targetAcc != null) {
                         try {
                             val mgr = com.cayxu.app.facebook.FacebookAccountManager()
-                            val refreshed = if (targetAcc.bio.isNotBlank()) {
-                                mgr.fetchAccountDetailsWithToken(targetAcc.bio, targetAcc.phone.ifBlank { null })
-                            } else if (targetAcc.note.contains("c_user=")) {
-                                mgr.getTokenFromCookie(targetAcc.note, targetAcc.phone.ifBlank { null })
-                            } else null
+                            var refreshed: com.cayxu.app.data.local.FacebookAccount? = null
+
+                            // 1. Kiểm tra qua Cookie trước nếu có
+                            if (targetAcc.note.contains("c_user=")) {
+                                refreshed = mgr.getTokenFromCookie(targetAcc.note, targetAcc.phone.ifBlank { null })
+                            }
+
+                            // 2. Nếu không có hoặc cookie fail, kiểm tra qua Token
+                            if ((refreshed == null || !refreshed.isLive) && targetAcc.bio.isNotBlank()) {
+                                val tokenAcc = mgr.fetchAccountDetailsWithToken(targetAcc.bio, targetAcc.phone.ifBlank { null })
+                                if (tokenAcc.isLive) {
+                                    refreshed = tokenAcc
+                                }
+                            }
+
+                            // 3. Nếu vẫn chưa live mà có Password / 2FA -> Thử xác thực lại bằng Katana Native API
+                            if ((refreshed == null || !refreshed.isLive) && targetAcc.password.isNotBlank() && targetAcc.uid.isNotBlank()) {
+                                try {
+                                    val authRes = com.cayxu.app.facebook.FacebookAuthenticator().login(
+                                        uid = targetAcc.uid,
+                                        pass = targetAcc.password,
+                                        twoFaSecret = targetAcc.link,
+                                        proxyStr = targetAcc.phone.ifBlank { null },
+                                        rawCookie = targetAcc.note.ifBlank { null }
+                                    )
+                                    if (authRes.isSuccess && authRes.account.isLive) {
+                                        refreshed = authRes.account
+                                    }
+                                } catch (_: Exception) {}
+                            }
 
                             withContext(Dispatchers.Main) {
                                 if (refreshed != null && refreshed.isLive) {
@@ -1427,6 +1452,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         name = refreshed.name.ifBlank { targetAcc.name },
                                         avatar = refreshed.avatar.ifBlank { targetAcc.avatar },
                                         bio = refreshed.bio.ifBlank { targetAcc.bio },
+                                        note = refreshed.note.ifBlank { targetAcc.note },
                                         pages = refreshed.pages.ifEmpty { targetAcc.pages },
                                         isLive = true
                                     )
@@ -1434,12 +1460,18 @@ fun XsmmAccountScreen(navController: NavController) {
                                     facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
                                     Toast.makeText(context, "Đã làm mới [${merged.name}] (Live)", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Không thể kết nối hoặc nick đã hết hạn", Toast.LENGTH_SHORT).show()
+                                    val updatedDie = targetAcc.copy(isLive = false)
+                                    com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updatedDie)
+                                    facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                    Toast.makeText(context, "Tài khoản [${targetAcc.name}] DIE hoặc hết hạn", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) {
-                                Toast.makeText(context, "Lỗi làm mới: ${e.message}", Toast.LENGTH_SHORT).show()
+                                val updatedDie = targetAcc.copy(isLive = false)
+                                com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updatedDie)
+                                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                Toast.makeText(context, "Lỗi kiểm tra [${targetAcc.name}]: ${e.message} (Đánh dấu Die)", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }

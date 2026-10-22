@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -506,7 +508,15 @@ fun FacebookAccountDetailSheet(
 }
 
 @Composable
-private fun InfoRowItem(label: String, value: String, onCopy: () -> Unit) {
+private fun InfoRowItem(
+    label: String,
+    value: String,
+    maskable: Boolean = true,
+    onCopy: () -> Unit
+) {
+    var isMasked by remember { mutableStateOf(maskable) }
+    val displayValue = if (isMasked && value.isNotBlank()) "••••••••••••••••" else value
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -515,7 +525,27 @@ private fun InfoRowItem(label: String, value: String, onCopy: () -> Unit) {
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(label, color = TextSecondary, fontSize = 11.5.sp)
-            Text(value, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = displayValue,
+                color = TextPrimary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (maskable) {
+            IconButton(
+                onClick = { isMasked = !isMasked },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = if (isMasked) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = if (isMasked) "Hiện thông tin" else "Ẩn thông tin",
+                    tint = Color(0xFF64748B),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
         IconButton(onClick = onCopy, modifier = Modifier.size(32.dp)) {
             Icon(Icons.Filled.ContentCopy, contentDescription = "Copy", tint = Color(0xFF1877F2), modifier = Modifier.size(16.dp))
@@ -524,7 +554,15 @@ private fun InfoRowItem(label: String, value: String, onCopy: () -> Unit) {
 }
 
 @Composable
-private fun InfoBoxItem(label: String, value: String, onCopy: () -> Unit) {
+private fun InfoBoxItem(
+    label: String,
+    value: String,
+    maskable: Boolean = true,
+    onCopy: () -> Unit
+) {
+    var isMasked by remember { mutableStateOf(maskable) }
+    val displayValue = if (isMasked && value.isNotBlank()) "••••••••••••••••••••••••••••••••••••••••••••••••••••••••" else value
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -539,16 +577,32 @@ private fun InfoBoxItem(label: String, value: String, onCopy: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(label, color = TextSecondary, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
-            IconButton(onClick = onCopy, modifier = Modifier.size(24.dp)) {
-                Icon(Icons.Filled.ContentCopy, contentDescription = "Copy", tint = Color(0xFF1877F2), modifier = Modifier.size(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (maskable) {
+                    IconButton(
+                        onClick = { isMasked = !isMasked },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isMasked) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            contentDescription = if (isMasked) "Hiện" else "Ẩn",
+                            tint = Color(0xFF64748B),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
+                IconButton(onClick = onCopy, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = "Copy", tint = Color(0xFF1877F2), modifier = Modifier.size(14.dp))
+                }
             }
         }
         Spacer(Modifier.height(2.dp))
         Text(
-            text = value,
+            text = displayValue,
             color = TextPrimary,
             fontSize = 11.sp,
-            maxLines = 3,
+            maxLines = if (isMasked) 1 else 3,
             overflow = TextOverflow.Ellipsis,
             lineHeight = 15.sp
         )
@@ -559,7 +613,15 @@ private fun InfoBoxItem(label: String, value: String, onCopy: () -> Unit) {
  * Hiển thị Page: Hiển thị Page UID 615, KHÔNG HIỆN ID PAGE
  */
 @Composable
-private fun PageDetailItem(pageName: String, uid615: String, onCopy: () -> Unit) {
+private fun PageDetailItem(
+    pageName: String,
+    uid615: String,
+    maskable: Boolean = true,
+    onCopy: () -> Unit
+) {
+    var isMasked by remember { mutableStateOf(maskable) }
+    val displayUid = if (isMasked && uid615.isNotBlank()) "••••••••••••••••" else uid615
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -580,7 +642,7 @@ private fun PageDetailItem(pageName: String, uid615: String, onCopy: () -> Unit)
             // Hiển thị Page UID 615 thật, không hiện id page
             if (uid615.isNotBlank()) {
                 Text(
-                    text = "UID: $uid615",
+                    text = "UID: $displayUid",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF1877F2)
@@ -591,6 +653,19 @@ private fun PageDetailItem(pageName: String, uid615: String, onCopy: () -> Unit)
                     fontSize = 10.sp,
                     fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                     color = TextSecondary
+                )
+            }
+        }
+        if (maskable && uid615.isNotBlank()) {
+            IconButton(
+                onClick = { isMasked = !isMasked },
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = if (isMasked) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = if (isMasked) "Hiện UID" else "Ẩn UID",
+                    tint = Color(0xFF64748B),
+                    modifier = Modifier.size(14.dp)
                 )
             }
         }
