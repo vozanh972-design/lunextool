@@ -871,7 +871,6 @@ class InstagramApiClient(
             var followers = 0
             var following = 0
             var posts = 0
-            val client = buildOkHttpClient(proxyCfg, timeoutSec = 15L)
 
             if (actorId.isNotBlank() && actorId != "0") {
                 try {

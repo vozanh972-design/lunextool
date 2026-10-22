@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
