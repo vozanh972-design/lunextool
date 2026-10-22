@@ -90,7 +90,7 @@ class XsmmJobRunnerOverlayService : Service() {
             expanded = true,
             dockedSide = OverlaySide.Right,
             language = LanguageState.language,
-            appVersion = "v1.0.5"
+            appVersion = "v1.0.6"
         )
     )
 
@@ -184,7 +184,7 @@ class XsmmJobRunnerOverlayService : Service() {
             expanded = true,
             dockedSide = OverlaySide.Right,
             language = LanguageState.language,
-            appVersion = if (appV.isNotBlank()) "v$appV" else "v1.0.5"
+            appVersion = if (appV.isNotBlank()) "v$appV" else "v1.0.6"
         )
         initOverlayCompose()
 

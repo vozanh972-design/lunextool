@@ -132,7 +132,7 @@ data class RunningOverlayUiState(
     val expanded: Boolean = true,
     val dockedSide: OverlaySide = OverlaySide.Right,
     val language: AppLanguage = AppLanguage.VI,
-    val appVersion: String = "v1.0.5",
+    val appVersion: String = "v1.0.6",
 )
 
 /* ───────────────────────────── Màn hình nổi ───────────────────────────── */

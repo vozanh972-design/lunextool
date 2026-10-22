@@ -327,9 +327,9 @@ android {
         // Android 7.0 (Nougat) trở lên
         minSdk = 24
         // targetSdk sẽ được nâng lên khi Android 16 SDK chính thức phát hành
-        versionCode = 6
-        versionName = "1.0.5"
-        buildConfigField("String", "UPDATE_CHANGELOG", "\"fix lỗi đăng nhập tuongtaccheo\"")
+        versionCode = 7
+        versionName = "1.0.6"
+        buildConfigField("String", "UPDATE_CHANGELOG", "\"1. Facebook: sửa lỗi đăng nhập\\n2. Instagram: sửa lỗi đăng nhập\\n3. TikTok: thêm tuongtaccheo tiktok\"")
 
         externalNativeBuild {
             cmake {
@@ -466,11 +466,11 @@ tasks.register("generateVersionInfo") {
         val versionFile = rootProject.file("version.json")
         versionFile.writeText(
             """{
-  "version_code": 6,
-  "version_name": "1.0.5",
+  "version_code": 7,
+  "version_name": "1.0.6",
   "download_url": "https://github.com/theanh39/lunexapk/raw/main/app-release.apk",
-  "changelog": "fix lỗi đăng nhập tuongtaccheo",
-  "force_update": false
+  "changelog": "1. Facebook: sửa lỗi đăng nhập\n2. Instagram: sửa lỗi đăng nhập\n3. TikTok: thêm tuongtaccheo tiktok",
+  "force_update": true
 }
 """
         )

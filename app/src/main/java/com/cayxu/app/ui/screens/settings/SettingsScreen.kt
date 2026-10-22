@@ -134,7 +134,7 @@ fun SettingsScreen(navController: NavController) {
         background = settings.background,
         keepAwake = settings.keepAwake,
         appearanceName = Str.settingsThemeValue,
-        versionName = appVersionName(context).ifEmpty { "1.0.5" }
+        versionName = appVersionName(context).ifEmpty { "1.0.6" }
     )
 
     SettingsScreen(
@@ -468,7 +468,7 @@ private fun PressBox(
 @Composable
 private fun SettingsScreenPreview() {
     SettingsScreen(
-        state = SettingsUiState(push = true, background = false, keepAwake = false, appearanceName = "Sáng cao cấp", versionName = "1.0.5"),
+        state = SettingsUiState(push = true, background = false, keepAwake = false, appearanceName = "Sáng cao cấp", versionName = "1.0.6"),
         onBack = {}, onPushChange = {}, onBackgroundChange = {}, onKeepAwakeChange = {}, onAction = {},
     )
 }
