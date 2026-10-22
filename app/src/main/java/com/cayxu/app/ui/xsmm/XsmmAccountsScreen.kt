@@ -772,6 +772,7 @@ private fun AccountRow(
                 }
             }
         }
+    }
 
         // Hiển thị danh sách Page con nếu có (cho Facebook)
         if (account.pages.isNotEmpty()) {
