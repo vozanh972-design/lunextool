@@ -2,6 +2,7 @@ package com.cayxu.app.util
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -259,8 +260,18 @@ object AppUpdateManager {
         }
     }
 
+    fun getDownloadedApkFile(context: Context): File {
+        val downloadDir = context.getExternalFilesDir("downloads") ?: context.cacheDir
+        return File(downloadDir, "app-update.apk")
+    }
+
+    fun isApkDownloaded(context: Context): Boolean {
+        val f = getDownloadedApkFile(context)
+        return f.exists() && f.length() > 500 * 1024
+    }
+
     fun installApk(context: Context, apkFile: File) {
-        if (!apkFile.exists()) {
+        if (!apkFile.exists() || apkFile.length() == 0L) {
             Toast.makeText(context, "Không tìm thấy tệp cài đặt APK", Toast.LENGTH_SHORT).show()
             return
         }
@@ -289,7 +300,16 @@ object AppUpdateManager {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
+
+            // Cấp quyền đọc trực tiếp cho mọi ứng dụng cài đặt hệ thống (đặc biệt Xiaomi/HyperOS)
+            val resInfoList = context.packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            for (resolveInfo in resInfoList) {
+                val packageName = resolveInfo.activityInfo.packageName
+                context.grantUriPermission(packageName, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
             context.startActivity(intent)
         } catch (e: Exception) {
             Toast.makeText(context, "Lỗi khởi chạy cài đặt: ${e.message}", Toast.LENGTH_LONG).show()

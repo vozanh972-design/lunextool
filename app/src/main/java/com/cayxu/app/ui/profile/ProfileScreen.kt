@@ -2,6 +2,7 @@ package com.cayxu.app.ui.profile
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -34,6 +35,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +58,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.cayxu.app.BuildConfig
@@ -323,6 +328,28 @@ fun ProfileScreen(
         }
     )
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (showUpdate) {
+                    val downloadedApk = AppUpdateManager.getDownloadedApkFile(context)
+                    if (downloadedApk.exists() && downloadedApk.length() > 500 * 1024) {
+                        downloadProgress = null
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+                            context.packageManager.canRequestPackageInstalls()) {
+                            AppUpdateManager.installApk(context, downloadedApk)
+                        }
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     if (showUpdate) {
         val parsedNotes = remember(realChangelog) {
             val lines = realChangelog.split("\n").map { it.trim() }.filter { it.isNotBlank() }
@@ -359,22 +386,31 @@ fun ProfileScreen(
                     if (downloadProgress == null) showUpdate = false
                 },
                 onInstallNow = {
-                    val apk = activeUpdateData?.apkUrl.orEmpty().ifBlank {
-                        "https://github.com/theanh39/lunexapk/raw/main/app-release.apk"
-                    }
-                    downloadProgress = 0
-                    scope.launch {
-                        AppUpdateManager.downloadAndInstallApk(
-                            context = context,
-                            apkUrl = apk,
-                            onProgress = { p ->
-                                downloadProgress = p
-                            },
-                            onError = { err ->
-                                downloadProgress = null
-                                Toast.makeText(context, err, Toast.LENGTH_LONG).show()
-                            }
-                        )
+                    val downloadedApk = AppUpdateManager.getDownloadedApkFile(context)
+                    if (downloadedApk.exists() && downloadedApk.length() > 500 * 1024) {
+                        downloadProgress = null
+                        AppUpdateManager.installApk(context, downloadedApk)
+                    } else {
+                        val apk = activeUpdateData?.apkUrl.orEmpty().ifBlank {
+                            "https://github.com/theanh39/lunexapk/raw/main/app-release.apk"
+                        }
+                        downloadProgress = 0
+                        scope.launch {
+                            AppUpdateManager.downloadAndInstallApk(
+                                context = context,
+                                apkUrl = apk,
+                                onProgress = { p ->
+                                    downloadProgress = p
+                                    if (p >= 100) {
+                                        downloadProgress = null
+                                    }
+                                },
+                                onError = { err ->
+                                    downloadProgress = null
+                                    Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                                }
+                            )
+                        }
                     }
                 }
             )
