@@ -455,67 +455,74 @@ class FacebookAuthEngine(
     }
 
     /**
-     * Đăng nhập trực tiếp bằng Cookie theo chuẩn GoMax ar.java
-     * Kiểm tra cookie còn LIVE qua mbasic.facebook.com/me và lấy UID, Tên người dùng
+     * Đăng nhập trực tiếp bằng Cookie qua Katana Native API (getSessionForApp + Graph API /me)
+     * Tuyệt đối KHÔNG sử dụng web scraping (mbasic, www, m.facebook.com)
      */
     fun loginWithCookie(cookieStr: String): LoginResult {
         val cleanCookie = cookieStr.replace("\r", "").replace("\n", "").filter { it.code in 32..126 }.trim()
         val cUserMatcher = Pattern.compile("c_user=(\\d+)").matcher(cleanCookie)
         val uidFromCookie = if (cUserMatcher.find()) cUserMatcher.group(1) ?: "" else ""
 
+        val form = FormBody.Builder()
+            .add("format", "json")
+            .add("generate_session_cookies", "1")
+            .build()
+
         val req = Request.Builder()
-            .url("https://mbasic.facebook.com/me")
+            .url("https://api.facebook.com/method/auth.getSessionForApp")
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("Accept", "*/*")
             .header("Cookie", cleanCookie)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            .header("Accept-Language", "vi-VN,vi;q=0.9,en;q=0.8")
-            .get()
+            .post(form)
             .build()
 
         return try {
             httpClient.newCall(req).execute().use { res ->
-                val finalUrl = res.request.url.toString()
                 val body = res.body?.string() ?: ""
+                val json = try { JSONObject(body) } catch (_: Exception) { null }
 
-                // Nếu bị redirect về /login/ hoặc checkpoint -> Cookie DIE
-                if (finalUrl.contains("/login") || finalUrl.contains("checkpoint") || body.contains("login_form") || body.contains("checkpointSubmitButton")) {
-                    return LoginResult(
+                if (json != null && json.has("access_token")) {
+                    val token = json.getString("access_token")
+                    val uid = if (uidFromCookie.isNotBlank()) uidFromCookie else json.optString("uid", "N/A")
+
+                    var name = uid
+                    val avatar = if (uid != "N/A") "https://graph.facebook.com/v21.0/$uid/picture?type=large" else ""
+
+                    // Lấy profile name qua Graph API /me
+                    try {
+                        val meReq = Request.Builder()
+                            .url("https://graph.facebook.com/v21.0/me?fields=id,name&access_token=$token")
+                            .get()
+                            .build()
+                        httpClient.newCall(meReq).execute().use { meRes ->
+                            val meBody = meRes.body?.string() ?: ""
+                            val meJson = JSONObject(meBody)
+                            val fetchedName = meJson.optString("name", "")
+                            if (fetchedName.isNotBlank()) name = fetchedName
+                        }
+                    } catch (_: Exception) {}
+
+                    LoginResult(
+                        isSuccess = true,
+                        userId = uid,
+                        userName = name,
+                        accessToken = token,
+                        cookies = cleanCookie,
+                        avatarUrl = avatar,
+                        message = "Đăng nhập Cookie thành công",
+                        rawResponse = body
+                    )
+                } else {
+                    val errMsg = json?.optString("error_msg")
+                        ?: json?.optJSONObject("error")?.optString("message")
+                        ?: "Cookie đã hết hạn hoặc tài khoản bị Checkpoint"
+                    LoginResult(
                         isSuccess = false,
-                        message = "Cookie đã hết hạn hoặc tài khoản bị Checkpoint!",
+                        message = errMsg,
                         rawResponse = body
                     )
                 }
-
-                // Lấy UID thực tế
-                val realUid = when {
-                    uidFromCookie.isNotBlank() -> uidFromCookie
-                    finalUrl.contains("profile.php?id=") -> finalUrl.substringAfter("id=").substringBefore("&")
-                    finalUrl.contains("facebook.com/") -> finalUrl.substringAfter("facebook.com/").substringBefore("?").substringBefore("/")
-                    else -> "N/A"
-                }
-
-                // Lấy tên từ thẻ <title> hoặc og:title
-                var name = realUid
-                val titleMatcher = Pattern.compile("<title>(.*?)</title>", Pattern.CASE_INSENSITIVE).matcher(body)
-                if (titleMatcher.find()) {
-                    val rawTitle = titleMatcher.group(1)?.replace("| Facebook", "")?.replace("- Facebook", "")?.trim() ?: ""
-                    if (rawTitle.isNotBlank() && !rawTitle.lowercase().contains("facebook") && !rawTitle.lowercase().contains("đăng nhập")) {
-                        name = rawTitle
-                    }
-                }
-
-                val avatar = if (realUid != "N/A") "https://graph.facebook.com/v21.0/$realUid/picture?type=large" else ""
-
-                LoginResult(
-                    isSuccess = true,
-                    userId = realUid,
-                    userName = name,
-                    accessToken = null,
-                    cookies = cleanCookie,
-                    avatarUrl = avatar,
-                    message = "Đăng nhập Cookie thành công",
-                    rawResponse = body
-                )
             }
         } catch (e: Exception) {
             LoginResult(false, null, null, null, null, null, e.message ?: "Lỗi kiểm tra Cookie", "")
