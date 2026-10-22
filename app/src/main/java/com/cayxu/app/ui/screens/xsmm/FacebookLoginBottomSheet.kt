@@ -339,15 +339,16 @@ fun FacebookLoginBottomSheet(
                                         }
 
                                         // 5. Mặc định: Ghi nhận tài khoản không Live
-                                        val fallbackUid = uidFromLine ?: cookie?.let { c ->
-                                            Regex("""c_user=(\d+)""").find(c)?.groupValues?.get(1)
-                                        } ?: parts.getOrNull(0)?.takeIf { it.matches(Regex("""\d+""")) } ?: "N/A"
+                                        val fallbackUid = parts.getOrNull(0)?.takeIf { it.matches(Regex("""\d+""")) }
+                                            ?: cookiePart?.let { c ->
+                                                Regex("""c_user=(\d+)""").find(c)?.groupValues?.get(1)
+                                            } ?: "N/A"
 
                                         return@async FacebookAccount(
                                             uid = fallbackUid,
                                             name = fallbackUid,
-                                            note = cookie.orEmpty(),
-                                            bio = directToken ?: token.orEmpty(),
+                                            note = cookiePart.orEmpty(),
+                                            bio = directToken.orEmpty(),
                                             phone = proxy.orEmpty(),
                                             isLive = false
                                         )
