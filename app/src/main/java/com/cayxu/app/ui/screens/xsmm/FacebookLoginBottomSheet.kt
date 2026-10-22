@@ -29,7 +29,6 @@ import com.cayxu.app.facebook.FacebookAccountManager
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
-import com.example.facebooktoken.FacebookToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -299,31 +298,25 @@ fun FacebookLoginBottomSheet(
                                             } catch (_: Exception) {}
                                         }
 
-                                        // 2. Nếu là UID|PASS|... -> Chạy qua FacebookToken.process từ test để get Token EAAAA
-                                        var token: String? = null
-                                        var cookie: String? = cookiePart
-                                        var uidFromLine: String? = null
+                                        // 2. Nếu là UID|PASS|2FA... -> Đăng nhập bằng Katana Native API (b-graph.facebook.com)
+                                        if (parts.size >= 2 && !parts[0].startsWith("EAA") && !parts[0].contains("c_user=")) {
+                                            val uidInput = parts[0]
+                                            val pwdInput = parts[1]
+                                            val twofaInput = parts.getOrNull(2)?.takeIf { !it.contains("=") && !it.startsWith("EAA") }.orEmpty()
 
-                                        try {
-                                            val processResults = FacebookToken.process(line)
-                                            val firstRes = processResults.firstOrNull()
-                                            if (firstRes != null && firstRes.success && !firstRes.token.isNullOrBlank()) {
-                                                token = firstRes.token
-                                                cookie = firstRes.cookie ?: cookie
-                                                uidFromLine = firstRes.uid
-                                            }
-                                        } catch (_: Exception) {}
-
-                                        // 3. Truyền thẳng Token EAAAA vừa lấy được vào hàm fetchAccountDetailsWithToken có sẵn
-                                        if (!token.isNullOrBlank()) {
                                             try {
-                                                val details = accountManager.fetchAccountDetailsWithToken(token, proxy)
-                                                if (details.isLive) {
-                                                    val resolvedUid = if (details.uid.isBlank() || details.uid == "Token") (uidFromLine ?: details.uid) else details.uid
-                                                    return@async details.copy(
-                                                        uid = resolvedUid,
-                                                        bio = token,
-                                                        note = cookie ?: details.note,
+                                                val authRes = com.cayxu.app.facebook.FacebookAuthenticator().login(
+                                                    uid = uidInput,
+                                                    pass = pwdInput,
+                                                    twoFaSecret = twofaInput,
+                                                    proxyStr = proxy,
+                                                    rawCookie = cookiePart
+                                                )
+                                                if (authRes.isSuccess && authRes.account.isLive) {
+                                                    return@async authRes.account.copy(
+                                                        password = pwdInput,
+                                                        link = twofaInput,
+                                                        note = cookiePart ?: authRes.account.note,
                                                         phone = proxy.orEmpty(),
                                                         isLive = true
                                                     )
@@ -331,13 +324,13 @@ fun FacebookLoginBottomSheet(
                                             } catch (_: Exception) {}
                                         }
 
-                                        // 4. Ưu tiên phụ: Thử lấy token qua Cookie nếu có cookie
-                                        if (!cookie.isNullOrBlank()) {
+                                        // 3. Ưu tiên phụ: Thử lấy token qua Cookie nếu có cookie
+                                        if (!cookiePart.isNullOrBlank()) {
                                             try {
-                                                val cookieAcc = accountManager.getTokenFromCookie(cookie, proxy)
+                                                val cookieAcc = accountManager.getTokenFromCookie(cookiePart, proxy)
                                                 if (cookieAcc != null && cookieAcc.isLive) {
                                                     return@async cookieAcc.copy(
-                                                        note = cookie,
+                                                        note = cookiePart,
                                                         phone = proxy.orEmpty(),
                                                         isLive = true
                                                     )

@@ -3,8 +3,22 @@ package com.cayxu.app.facebook
 import androidx.annotation.Keep
 import com.cayxu.app.data.local.FacebookAccount
 import com.cayxu.app.data.local.FacebookPageItem
+import com.cayxu.app.util.NativeSecurity
 import okhttp3.*
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.security.KeyFactory
+import java.security.SecureRandom
+import java.security.spec.X509EncodedKeySpec
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 @Keep
 data class FacebookAuthResult(
@@ -14,13 +28,109 @@ data class FacebookAuthResult(
 )
 
 /**
- * Xác thực và đăng nhập Facebook chuẩn xác 100%:
- * 1. Hỗ trợ UID|Pass|2FA (tự động submit 2FA bằng TOTP).
- * 2. Hỗ trợ Đăng nhập bằng Cookie trực tiếp (kiểm tra LIVE qua mbasic Facebook).
- * 3. Hỗ trợ Đăng nhập bằng Token EAA trực tiếp.
+ * Mã hóa mật khẩu Facebook bằng RSA + AES-256-GCM theo đúng giao thức Meta pwd_key_fetch.
+ */
+@Keep
+object FacebookPasswordEncryptor {
+
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    fun encryptPassword(password: String): String? {
+        return try {
+            val keyFetchToken = NativeSecurity.getFbKeyFetchToken()
+            val encodedToken = java.net.URLEncoder.encode(keyFetchToken, "UTF-8")
+            val url = "https://b-graph.facebook.com/pwd_key_fetch?version=2&flow=CONTROLLER_INITIALIZATION&method=GET&fb_api_req_friendly_name=pwdKeyFetch&fb_api_caller_class=com.facebook.auth.login.AuthOperations&access_token=$encodedToken"
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful) return null
+            val body = response.body?.string() ?: return null
+            val json = JSONObject(body)
+            val pubKey = json.optString("public_key", "")
+            val keyId = json.optInt("key_id", 25)
+            if (pubKey.isBlank()) return null
+
+            val cleanPem = pubKey
+                .replace("-----BEGIN PUBLIC KEY-----", "")
+                .replace("-----END PUBLIC KEY-----", "")
+                .replace("\\s".toRegex(), "")
+
+            val keyBytes = android.util.Base64.decode(cleanPem, android.util.Base64.DEFAULT)
+            val spec = X509EncodedKeySpec(keyBytes)
+            val keyFactory = KeyFactory.getInstance("RSA")
+            val rsaPublicKey = keyFactory.generatePublic(spec)
+
+            // 1. Tạo ngẫu nhiên AES Key (32 bytes = 256 bits) và IV (12 bytes)
+            val random = SecureRandom()
+            val aesKeyBytes = ByteArray(32)
+            random.nextBytes(aesKeyBytes)
+
+            val ivBytes = ByteArray(12)
+            random.nextBytes(ivBytes)
+
+            // 2. Mã hóa AES Key bằng RSA (PKCS1Padding)
+            val rsaCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding")
+            rsaCipher.init(Cipher.ENCRYPT_MODE, rsaPublicKey)
+            val encryptedAesKey = rsaCipher.doFinal(aesKeyBytes)
+
+            // 3. Mã hóa Password bằng AES-256-GCM với AAD = current timestamp
+            val currentTimeSec = (System.currentTimeMillis() / 1000).toString()
+            val aadBytes = currentTimeSec.toByteArray(Charsets.UTF_8)
+
+            val gcmSpec = GCMParameterSpec(128, ivBytes) // 128 bit = 16 byte tag
+            val secretKey = SecretKeySpec(aesKeyBytes, "AES")
+            val gcmCipher = Cipher.getInstance("AES/GCM/NoPadding")
+            gcmCipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmSpec)
+            gcmCipher.updateAAD(aadBytes)
+            val cipherTextWithTag = gcmCipher.doFinal(password.toByteArray(Charsets.UTF_8))
+
+            // GCM trong Java nối tag 16 byte vào cuối ciphertext
+            val tagLen = 16
+            val encryptedPassLen = cipherTextWithTag.size - tagLen
+            val encryptedPass = ByteArray(encryptedPassLen)
+            val tag = ByteArray(tagLen)
+            System.arraycopy(cipherTextWithTag, 0, encryptedPass, 0, encryptedPassLen)
+            System.arraycopy(cipherTextWithTag, encryptedPassLen, tag, 0, tagLen)
+
+            // 4. Pack buffer theo đúng định dạng nhị phân Facebook:
+            val out = ByteArrayOutputStream()
+            out.write(1) // version
+            out.write(keyId and 0xFF) // keyId
+            out.write(ivBytes) // iv 12 bytes
+
+            val lenBuf = ByteBuffer.allocate(2).order(ByteOrder.LITTLE_ENDIAN)
+            lenBuf.putShort(encryptedAesKey.size.toShort())
+            out.write(lenBuf.array()) // len Encrypted AES Key
+
+            out.write(encryptedAesKey)
+            out.write(tag)
+            out.write(encryptedPass)
+
+            android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
+/**
+ * Xác thực và đăng nhập Facebook chuẩn xác 100% qua Katana Native API & Graph API.
+ * KHÔNG sử dụng web scraping (mbasic, www, m.facebook.com).
  */
 @Keep
 class FacebookAuthenticator {
+
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(25, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .build()
 
     fun login(
         uid: String,
@@ -29,105 +139,232 @@ class FacebookAuthenticator {
         proxyStr: String? = null,
         rawCookie: String? = null
     ): FacebookAuthResult {
-        val proxyParts = proxyStr?.split(":")
-        val proxyHost = proxyParts?.getOrNull(0)
-        val proxyPort = proxyParts?.getOrNull(1)?.toIntOrNull()
+        val client = if (!proxyStr.isNullOrBlank()) buildProxiedClient(proxyStr) else httpClient
 
-        val authEngine = FacebookAuthEngine(proxyHost = proxyHost, proxyPort = proxyPort)
+        // TRƯỜNG HỢP 1: Đăng nhập bằng Cookie trực tiếp nếu có Cookie mà không có password
+        val effectiveCookie = rawCookie?.trim()?.takeIf { it.contains("c_user=") || it.contains("xs=") }
+            ?: pass.trim().takeIf { it.contains("c_user=") || it.contains("xs=") }
+            ?: uid.trim().takeIf { it.contains("c_user=") || it.contains("xs=") }
 
-        // =========================================================================
-        // TRƯỜNG HỢP 1: ĐĂNG NHẬP BẰNG COOKIE (Khi có cookie hoặc không có pass)
-        // =========================================================================
-        val isCookieInput = !rawCookie.isNullOrBlank() && (rawCookie.contains("c_user=") || rawCookie.contains("xs="))
-        val isPassAsCookie = pass.contains("c_user=") || pass.contains("xs=")
-        val isUidAsCookie = uid.contains("c_user=") || uid.contains("xs=")
-        val effectiveCookie = if (isCookieInput) rawCookie!!.trim() else if (isPassAsCookie) pass.trim() else if (isUidAsCookie) uid.trim() else null
+        if (!effectiveCookie.isNullOrBlank() && (pass.isBlank() || pass == effectiveCookie || uid == effectiveCookie)) {
+            val mgr = FacebookAccountManager()
+            val cookieAcc = mgr.getTokenFromCookie(effectiveCookie, proxyStr)
+            if (cookieAcc != null && cookieAcc.isLive) {
+                return FacebookAuthResult(isSuccess = true, account = cookieAcc)
+            }
+        }
 
-        if (!effectiveCookie.isNullOrBlank() && (pass.isBlank() || isUidAsCookie || isPassAsCookie)) {
-            val cookieRes = authEngine.loginWithCookie(effectiveCookie)
-            if (cookieRes.isSuccess) {
-                val realUid = cookieRes.userId ?: uid
-                val realName = cookieRes.userName?.ifBlank { realUid } ?: realUid
-                val avatar = cookieRes.avatarUrl ?: "https://graph.facebook.com/v21.0/$realUid/picture?type=large"
+        // TRƯỜNG HỢP 2: Đăng nhập bằng Token EAA trực tiếp nếu có
+        val directToken = uid.trim().takeIf { it.startsWith("EAA") }
+            ?: pass.trim().takeIf { it.startsWith("EAA") }
+            ?: twoFaSecret.trim().takeIf { it.startsWith("EAA") }
 
-                // Cố gắng quét Page 615 nếu có token hoặc qua Cookie
-                val pageEngine = FacebookPageEngine(proxyHost = proxyHost, proxyPort = proxyPort)
-                val pages = pageEngine.getAdminedPages(cookieRes.accessToken)
+        if (!directToken.isNullOrBlank()) {
+            val mgr = FacebookAccountManager()
+            try {
+                val details = mgr.fetchAccountDetailsWithToken(directToken, proxyStr)
+                if (details.isLive) {
+                    return FacebookAuthResult(isSuccess = true, account = details)
+                }
+            } catch (_: Exception) {}
+        }
 
-                val account = FacebookAccount(
-                    uid = realUid,
-                    name = realName,
-                    link = twoFaSecret,
-                    note = effectiveCookie,
-                    phone = proxyStr.orEmpty(),
-                    bio = cookieRes.accessToken.orEmpty(),
-                    isLive = true,
-                    avatar = avatar,
-                    pages = pages,
-                    password = pass
-                )
-                return FacebookAuthResult(isSuccess = true, account = account)
-            } else {
-                return FacebookAuthResult(
+        // TRƯỜNG HỢP 3: Đăng nhập UID | PASS | 2FA chuẩn Katana Native API (b-graph.facebook.com)
+        val appToken = NativeSecurity.getFbAppToken()
+        val apiKey = NativeSecurity.getFbApiKey()
+        val sig = NativeSecurity.getFbSig()
+        val userAgent = NativeSecurity.getFbDalvikUA()
+
+        val adid = UUID.randomUUID().toString()
+        val jazoest = (10000..99999).random().toString()
+        val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+        val cleanDatr = if (!rawCookie.isNullOrBlank() && rawCookie.contains("datr=")) {
+            rawCookie.substringAfter("datr=").substringBefore(";").trim()
+        } else null
+
+        val machineId = if (!cleanDatr.isNullOrBlank() && cleanDatr.length >= 24) {
+            cleanDatr.substring(0, 24)
+        } else {
+            (1..24).map { chars.random() }.joinToString("")
+        }
+
+        val passwords = mutableListOf<String>()
+        val encPass = FacebookPasswordEncryptor.encryptPassword(pass)
+        if (!encPass.isNullOrBlank()) {
+            passwords.add(encPass)
+        }
+        if (encPass != pass) {
+            passwords.add(pass)
+        }
+
+        var lastResult: FacebookAuthResult? = null
+        val cleanFullCookie = rawCookie?.replace("\r", "")?.replace("\n", "")?.filter { it.code in 32..126 }?.trim()
+
+        for (pwd in passwords) {
+            try {
+                val totpCode = if (twoFaSecret.isNotBlank()) TotpGenerator.generateTotp(twoFaSecret) else ""
+
+                val formBuilder = FormBody.Builder()
+                    .add("email", uid)
+                    .add("password", pwd)
+                    .add("generate_session_cookies", "1")
+                    .add("locale", "vi_VN")
+                    .add("client_country_code", "VN")
+                    .add("access_token", appToken)
+                    .add("api_key", apiKey)
+                    .add("adid", adid)
+                    .add("machine_id", machineId)
+                    .add("jazoest", jazoest)
+                    .add("fb_api_req_friendly_name", "authenticate")
+                    .add("sig", sig)
+
+                val reqBuilder = Request.Builder()
+                    .url("https://b-graph.facebook.com/auth/login")
+                    .header("User-Agent", userAgent)
+                    .header("Accept", "*/*")
+                    .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                if (!cleanFullCookie.isNullOrBlank()) {
+                    reqBuilder.header("Cookie", cleanFullCookie)
+                }
+                val request = reqBuilder.post(formBuilder.build()).build()
+
+                val response = client.newCall(request).execute()
+                val responseBody = response.body?.string() ?: ""
+
+                val json = JSONObject(responseBody)
+
+                // Kiểm tra nếu cần 2FA bước 2
+                val errorData = json.optJSONObject("error")?.optJSONObject("error_data")
+                val is2FaRequired = (json.has("error_code") && json.optInt("error_code") == 406) || 
+                                   (errorData != null && errorData.has("login_first_factor"))
+
+                if (is2FaRequired && totpCode.isNotBlank()) {
+                    val factor = errorData?.optString("login_first_factor", machineId) ?: machineId
+                    val userId = errorData?.optString("uid", uid) ?: uid
+
+                    val retryForm = FormBody.Builder()
+                        .add("email", uid)
+                        .add("access_token", appToken)
+                        .add("twofactor_code", totpCode)
+                        .add("password", pwd)
+                        .add("userid", userId)
+                        .add("machine_id", factor)
+                        .add("generate_session_cookies", "1")
+                        .build()
+
+                    val retryReqBuilder = Request.Builder()
+                        .url("https://b-graph.facebook.com/auth/login")
+                        .header("User-Agent", userAgent)
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                    if (!cleanFullCookie.isNullOrBlank()) {
+                        retryReqBuilder.header("Cookie", cleanFullCookie)
+                    }
+                    val retryReq = retryReqBuilder.post(retryForm).build()
+
+                    val retryRes = client.newCall(retryReq).execute()
+                    val retryBody = retryRes.body?.string() ?: ""
+                    val retryJson = JSONObject(retryBody)
+                    val res = handleAuthJsonResponse(uid, pass, twoFaSecret, proxyStr, cleanFullCookie, retryJson, retryBody)
+                    if (res.isSuccess) return res
+                    lastResult = res
+                    continue
+                }
+
+                val res = handleAuthJsonResponse(uid, pass, twoFaSecret, proxyStr, cleanFullCookie, json, responseBody)
+                if (res.isSuccess) return res
+                lastResult = res
+
+                val errorMsg = if (json.has("error")) json.getJSONObject("error").optString("message", "") else ""
+                if (errorMsg.contains("Invalid username or password") && pwd != passwords.last()) {
+                    continue
+                }
+            } catch (e: Exception) {
+                lastResult = FacebookAuthResult(
                     isSuccess = false,
                     account = FacebookAccount(
                         uid = uid,
                         name = uid,
-                        note = effectiveCookie,
-                        isLive = false
+                        link = twoFaSecret,
+                        phone = proxyStr.orEmpty(),
+                        isLive = false,
+                        password = pass
                     ),
-                    errorMessage = cookieRes.message ?: "Cookie không hợp lệ hoặc đã hết hạn"
+                    errorMessage = e.message ?: "Lỗi kết nối Facebook"
                 )
             }
         }
 
-        // =========================================================================
-        // TRƯỜNG HỢP 2: ĐĂNG NHẬP BẰNG UID | PASS | 2FA (Tự động vượt 2FA)
-        // =========================================================================
-        val loginResult = authEngine.loginCAA(
-            contactPoint = uid,
-            passwordRaw = pass,
-            twoFaSecret = twoFaSecret
+        return lastResult ?: FacebookAuthResult(
+            isSuccess = false,
+            account = FacebookAccount(
+                uid = uid,
+                name = uid,
+                link = twoFaSecret,
+                phone = proxyStr.orEmpty(),
+                isLive = false,
+                password = pass
+            ),
+            errorMessage = "Đăng nhập thất bại"
         )
+    }
 
-        if (loginResult.isSuccess) {
-            val token = loginResult.accessToken.orEmpty()
-            val realUid = loginResult.userId?.ifBlank { uid } ?: uid
-            val cookies = if (!loginResult.cookies.isNullOrBlank()) loginResult.cookies else rawCookie.orEmpty()
+    private fun handleAuthJsonResponse(
+        uid: String,
+        pass: String,
+        twoFaSecret: String,
+        proxyStr: String?,
+        rawCookie: String?,
+        json: JSONObject,
+        rawBody: String
+    ): FacebookAuthResult {
+        if (json.has("access_token")) {
+            val rawToken = json.getString("access_token")
+            val realUid = json.optString("uid", uid).ifBlank { uid }
 
-            // 1. Lấy thông tin Avatar & Tên
-            val mediaEngine = FacebookMediaEngine(
-                accessToken = token,
-                userId = realUid,
-                proxyHost = proxyHost,
-                proxyPort = proxyPort
-            )
-            val profileMedia = if (token.isNotBlank()) mediaEngine.getProfileMedia("me", tokenParam = token) else null
-            val fullName = profileMedia?.name?.ifBlank { realUid } ?: realUid
-            val avatarUrl = profileMedia?.avatarUrl?.takeIf { !it.contains("84628273_176159830277856") }
-                ?: (if (token.isNotBlank()) "https://graph.facebook.com/v21.0/me/picture?type=large&access_token=$token"
-                    else "https://graph.facebook.com/v21.0/$realUid/picture?type=large")
-            val coverUrl = profileMedia?.coverUrl.orEmpty()
+            val mgr = FacebookAccountManager()
+            val eaaaaToken = mgr.convertToken(rawToken, "350685531728", proxyStr) ?: rawToken
 
-            // 2. Lấy danh sách Fanpage chuẩn UID 615
-            val pageEngine = FacebookPageEngine(
-                accessToken = token,
-                proxyHost = proxyHost,
-                proxyPort = proxyPort
-            )
-            val pagesList = if (token.isNotBlank()) pageEngine.getAdminedPages(token) else emptyList()
+            val cookieBuilder = StringBuilder()
+            if (json.has("session_cookies")) {
+                val cookiesArr = json.getJSONArray("session_cookies")
+                for (i in 0 until cookiesArr.length()) {
+                    val c = cookiesArr.getJSONObject(i)
+                    val name = c.optString("name")
+                    val value = c.optString("value")
+                    if (name.isNotBlank()) {
+                        cookieBuilder.append("$name=$value; ")
+                    }
+                }
+            }
+            val cookieStr = cookieBuilder.toString().trimEnd(' ', ';')
+            val finalSavedCookie = if (!rawCookie.isNullOrBlank()) rawCookie else cookieStr
+
+            var fullName = realUid
+            var avatarUrl = "https://graph.facebook.com/v19.0/$realUid/picture?type=large"
+            var email = ""
+            var pages = emptyList<FacebookPageItem>()
+
+            try {
+                val detailsAcc = mgr.fetchAccountDetailsWithToken(eaaaaToken, proxyStr)
+                fullName = detailsAcc.name.ifBlank { realUid }
+                avatarUrl = detailsAcc.avatar.ifBlank { avatarUrl }
+                email = detailsAcc.email
+                pages = detailsAcc.pages
+            } catch (_: Exception) {}
 
             val finalAccount = FacebookAccount(
                 uid = realUid,
                 name = fullName,
                 link = twoFaSecret,
-                note = cookies.orEmpty(),
+                note = finalSavedCookie,
                 phone = proxyStr.orEmpty(),
-                bio = token,
+                bio = eaaaaToken,
                 isLive = true,
                 avatar = avatarUrl,
-                cover = coverUrl,
-                pages = pagesList,
+                email = email,
+                pages = pages,
                 password = pass
             )
 
@@ -136,27 +373,13 @@ class FacebookAuthenticator {
                 account = finalAccount
             )
         } else {
-            // Nếu đăng nhập User/Pass thất bại mà có sẵn Cookie -> Thử fallback Cookie
-            if (!rawCookie.isNullOrBlank() && (rawCookie.contains("c_user=") || rawCookie.contains("xs="))) {
-                val fallbackCookie = authEngine.loginWithCookie(rawCookie)
-                if (fallbackCookie.isSuccess) {
-                    val realUid = fallbackCookie.userId ?: uid
-                    val finalAccount = FacebookAccount(
-                        uid = realUid,
-                        name = fallbackCookie.userName ?: realUid,
-                        link = twoFaSecret,
-                        note = rawCookie,
-                        phone = proxyStr.orEmpty(),
-                        isLive = true,
-                        avatar = fallbackCookie.avatarUrl ?: "",
-                        password = pass
-                    )
-                    return FacebookAuthResult(isSuccess = true, account = finalAccount)
-                }
+            val errorMsg = if (json.has("error_msg")) {
+                json.getString("error_msg")
+            } else if (json.has("error")) {
+                json.getJSONObject("error").optString("message", "Đăng nhập thất bại")
+            } else {
+                "Tài khoản DIE, sai mật khẩu hoặc Checkpoint"
             }
-
-            val errorMsg = loginResult.message?.ifBlank { "Đăng nhập thất bại: Kiểm tra lại tài khoản hoặc 2FA!" }
-                ?: "Đăng nhập thất bại"
 
             return FacebookAuthResult(
                 isSuccess = false,
@@ -166,11 +389,30 @@ class FacebookAuthenticator {
                     link = twoFaSecret,
                     phone = proxyStr.orEmpty(),
                     isLive = false,
-                    password = pass,
-                    note = rawCookie.orEmpty()
+                    password = pass
                 ),
                 errorMessage = errorMsg
             )
         }
+    }
+
+    private fun buildProxiedClient(proxyStr: String): OkHttpClient {
+        val parts = proxyStr.split(":")
+        val host = parts[0]
+        val port = parts[1].toInt()
+        val builder = httpClient.newBuilder()
+            .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress(host, port)))
+
+        if (parts.size >= 4) {
+            val user = parts[2]
+            val pass = parts[3]
+            builder.proxyAuthenticator { _, response ->
+                val credential = Credentials.basic(user, pass)
+                response.request.newBuilder()
+                    .header("Proxy-Authorization", credential)
+                    .build()
+            }
+        }
+        return builder.build()
     }
 }

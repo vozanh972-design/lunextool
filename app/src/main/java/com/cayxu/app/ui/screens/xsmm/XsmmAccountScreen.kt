@@ -64,7 +64,6 @@ import com.cayxu.app.data.local.LinkedAccountsStore
 import com.cayxu.app.facebook.FacebookAccountManager
 import com.cayxu.app.automation.instagram.IgTaToolClient
 import com.cayxu.app.instagram.InstagramApiClient
-import com.example.facebooktoken.FacebookToken
 import com.cayxu.app.data.repository.XsmmLoginResult
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.theme.*
@@ -755,29 +754,25 @@ fun XsmmAccountScreen(navController: NavController) {
                                     } catch (_: Exception) {}
                                 }
 
-                                var token: String? = null
-                                var cookie: String? = cookiePart
-                                var uidFromLine: String? = null
+                                // 2. Nếu là UID|PASS|2FA... -> Đăng nhập bằng Katana Native API (b-graph.facebook.com)
+                                if (parts.size >= 2 && !parts[0].startsWith("EAA") && !parts[0].contains("c_user=")) {
+                                    val uidInput = parts[0]
+                                    val pwdInput = parts[1]
+                                    val twofaInput = parts.getOrNull(2)?.takeIf { !it.contains("=") && !it.startsWith("EAA") }.orEmpty()
 
-                                try {
-                                    val processResults = FacebookToken.process(line)
-                                    val firstRes = processResults.firstOrNull()
-                                    if (firstRes != null && firstRes.success && !firstRes.token.isNullOrBlank()) {
-                                        token = firstRes.token
-                                        cookie = firstRes.cookie ?: cookie
-                                        uidFromLine = firstRes.uid
-                                    }
-                                } catch (_: Exception) {}
-
-                                if (!token.isNullOrBlank()) {
                                     try {
-                                        val details = accountManager.fetchAccountDetailsWithToken(token, proxy)
-                                        if (details.isLive) {
-                                            val resolvedUid = if (details.uid.isBlank() || details.uid == "Token") (uidFromLine ?: details.uid) else details.uid
-                                            return@async details.copy(
-                                                uid = resolvedUid,
-                                                bio = token,
-                                                note = cookie ?: details.note,
+                                        val authRes = com.cayxu.app.facebook.FacebookAuthenticator().login(
+                                            uid = uidInput,
+                                            pass = pwdInput,
+                                            twoFaSecret = twofaInput,
+                                            proxyStr = proxy,
+                                            rawCookie = cookiePart
+                                        )
+                                        if (authRes.isSuccess && authRes.account.isLive) {
+                                            return@async authRes.account.copy(
+                                                password = pwdInput,
+                                                link = twofaInput,
+                                                note = cookiePart ?: authRes.account.note,
                                                 phone = proxy.orEmpty(),
                                                 isLive = true
                                             )
@@ -785,12 +780,13 @@ fun XsmmAccountScreen(navController: NavController) {
                                     } catch (_: Exception) {}
                                 }
 
-                                if (!cookie.isNullOrBlank()) {
+                                // 3. Thử lấy token qua Cookie nếu có cookie
+                                if (!cookiePart.isNullOrBlank()) {
                                     try {
-                                        val cookieAcc = accountManager.getTokenFromCookie(cookie, proxy)
+                                        val cookieAcc = accountManager.getTokenFromCookie(cookiePart, proxy)
                                         if (cookieAcc != null && cookieAcc.isLive) {
                                             return@async cookieAcc.copy(
-                                                note = cookie,
+                                                note = cookiePart,
                                                 phone = proxy.orEmpty(),
                                                 isLive = true
                                             )
@@ -1076,6 +1072,33 @@ fun XsmmAccountScreen(navController: NavController) {
                 facebookAccounts.map { acc ->
                     val isLinked = linkedFbUids.contains(acc.uid.trim())
                     val curAv = liveFbAvatars[acc.uid] ?: acc.avatar
+                    val isRunningThis = com.cayxu.app.automation.facebook.XsmmFacebookManager.isRunning(acc.uid)
+
+                    val pageItems = acc.pages.map { page ->
+                        val pageDisplayUid = livePageUids[page.pageId] ?: page.displayUid
+                        val effectivePageUid = (page.additionalProfileId.takeIf { it.isNotBlank() && it.startsWith("615") }
+                            ?: pageDisplayUid.takeIf { it.isNotBlank() && it.startsWith("615") }
+                            ?: page.additionalProfileId.takeIf { it.isNotBlank() }
+                            ?: pageDisplayUid.takeIf { it.isNotBlank() }
+                            ?: page.pageId).trim()
+
+                        val isPageRunning = com.cayxu.app.automation.facebook.XsmmFacebookManager.isRunning(effectivePageUid) ||
+                            com.cayxu.app.automation.facebook.XsmmFacebookManager.isRunning(page.pageId) ||
+                            (page.additionalProfileId.isNotBlank() && com.cayxu.app.automation.facebook.XsmmFacebookManager.isRunning(page.additionalProfileId))
+                        val isPageLinked = linkedFbUids.contains(effectivePageUid) || linkedFbUids.contains(page.pageId)
+                        val pageAvatar = livePageAvatars[page.pageId] ?: page.avatar.ifBlank { "https://graph.facebook.com/v19.0/$effectivePageUid/picture?type=large" }
+
+                        XsmmPageItem(
+                            pageId = effectivePageUid,
+                            pageName = page.pageName.ifBlank { "Page: $effectivePageUid" },
+                            displayUid = pageDisplayUid.ifBlank { effectivePageUid },
+                            avatarUrl = pageAvatar,
+                            isLive = page.isLive,
+                            isLinked = isPageLinked,
+                            isRunning = isPageRunning
+                        )
+                    }
+
                     XsmmAccount(
                         id = acc.uid,
                         name = acc.name.ifBlank { "UID: ${acc.uid}" },
@@ -1084,6 +1107,9 @@ fun XsmmAccountScreen(navController: NavController) {
                         statusOk = isLinked && acc.isLive,
                         avatarUrl = curAv,
                         isLive = acc.isLive,
+                        isLinked = isLinked,
+                        isRunning = isRunningThis,
+                        pages = pageItems
                     )
                 }
             }
@@ -1094,6 +1120,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     val clean = username.trim().removePrefix("@").lowercase()
                     val acc = igMap[clean]
                     val isLinked = acc?.isXsmmLinked == true
+                    val isRunningThis = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(clean) || (acc?.userId?.isNotBlank() == true && com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(acc.userId))
                     val displayName = acc?.fullName?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
                         ?: "@${username.trim().removePrefix("@")}"
                     XsmmAccount(
@@ -1105,6 +1132,8 @@ fun XsmmAccountScreen(navController: NavController) {
                         avatarUrl = acc?.avatar.orEmpty(),
                         followerCount = acc?.followersCount?.toLong() ?: 0L,
                         isLive = acc?.isLive != false,
+                        isLinked = isLinked,
+                        isRunning = isRunningThis
                     )
                 }
             }
@@ -1117,6 +1146,12 @@ fun XsmmAccountScreen(navController: NavController) {
         XsmmPlatform.Instagram to instagramAccounts.size
     )
 
+    val isAnyRunning = when (currentPlatform) {
+        XsmmPlatform.TikTok -> false
+        XsmmPlatform.Facebook -> com.cayxu.app.automation.facebook.XsmmFacebookManager.isAnyRunning()
+        XsmmPlatform.Instagram -> com.cayxu.app.automation.instagram.XsmmInstagramManager.isAnyRunning()
+    }
+
     val uiState = XsmmAccountsUiState(
         username = username,
         coinBalance = points,
@@ -1125,7 +1160,8 @@ fun XsmmAccountScreen(navController: NavController) {
         selectedTypeId = selectedTypeId,
         accounts = currentAccounts,
         selectedAccountIds = selectedForRunUids,
-        refreshingBalance = isRefreshing
+        refreshingBalance = isRefreshing,
+        isAnyRunning = isAnyRunning
     )
 
     XsmmAccountsScreen(
@@ -1304,6 +1340,29 @@ fun XsmmAccountScreen(navController: NavController) {
             }
         },
         onLinkAccount = { acc ->
+            if (currentPlatform == XsmmPlatform.Facebook) {
+                scope.launch {
+                    try {
+                        val token = XsmmAccountStore.getToken(context)
+                        if (token.isNullOrBlank()) {
+                            Toast.makeText(context, "Vui lòng đăng nhập XSMM trước", Toast.LENGTH_SHORT).show()
+                            return@launch
+                        }
+                        Toast.makeText(context, "Đang thêm nick Facebook vào XSMM...", Toast.LENGTH_SHORT).show()
+                        val res = XsmmAccountsRepository.ensureFacebookAccountLinked2(token, acc.id)
+                        if (res.isSuccess) {
+                            linkedFbUids = linkedFbUids + acc.id
+                            Toast.makeText(context, "Đã thêm Facebook [${acc.name}] vào XSMM thành công!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Lỗi thêm Facebook: ${res.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Lỗi kết nối: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                return@XsmmAccountsScreen
+            }
+
             val cleanHandle = acc.handle.trim().removePrefix("@")
             if (cleanHandle.isBlank()) {
                 Toast.makeText(context, "Handle tài khoản không hợp lệ", Toast.LENGTH_SHORT).show()
@@ -1349,6 +1408,44 @@ fun XsmmAccountScreen(navController: NavController) {
             }
         },
         onReloadAccount = { acc ->
+            if (currentPlatform == XsmmPlatform.Facebook) {
+                scope.launch(Dispatchers.IO) {
+                    val targetAcc = facebookAccounts.firstOrNull { it.uid == acc.id }
+                    if (targetAcc != null) {
+                        try {
+                            val mgr = com.cayxu.app.facebook.FacebookAccountManager()
+                            val refreshed = if (targetAcc.bio.isNotBlank()) {
+                                mgr.fetchAccountDetailsWithToken(targetAcc.bio, targetAcc.phone.ifBlank { null })
+                            } else if (targetAcc.note.contains("c_user=")) {
+                                mgr.getTokenFromCookie(targetAcc.note, targetAcc.phone.ifBlank { null })
+                            } else null
+
+                            withContext(Dispatchers.Main) {
+                                if (refreshed != null && refreshed.isLive) {
+                                    val merged = targetAcc.copy(
+                                        name = refreshed.name.ifBlank { targetAcc.name },
+                                        avatar = refreshed.avatar.ifBlank { targetAcc.avatar },
+                                        bio = refreshed.bio.ifBlank { targetAcc.bio },
+                                        pages = refreshed.pages.ifEmpty { targetAcc.pages },
+                                        isLive = true
+                                    )
+                                    com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, merged)
+                                    facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                    Toast.makeText(context, "Đã làm mới [${merged.name}] (Live)", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Không thể kết nối hoặc nick đã hết hạn", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "Lỗi làm mới: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                }
+                return@XsmmAccountsScreen
+            }
+
             if (currentPlatform == XsmmPlatform.TikTok) {
                 if (!reloadingTikTokUids.contains(acc.id)) {
                     reloadingTikTokUids = reloadingTikTokUids + acc.id
@@ -1376,6 +1473,80 @@ fun XsmmAccountScreen(navController: NavController) {
                                 reloadingTikTokUids = reloadingTikTokUids - acc.id
                             }
                         }
+                    }
+                }
+            }
+        },
+        onTogglePlayAccount = { acc ->
+            when (currentPlatform) {
+                XsmmPlatform.Facebook -> {
+                    if (com.cayxu.app.automation.facebook.XsmmFacebookManager.isRunning(acc.id)) {
+                        com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(acc.id)
+                        Toast.makeText(context, "Đã dừng chạy: ${acc.name}", Toast.LENGTH_SHORT).show()
+                    } else {
+                        com.cayxu.app.automation.facebook.XsmmFacebookManager.start(context, acc.id)
+                        Toast.makeText(context, "Bắt đầu chạy: ${acc.name}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                XsmmPlatform.Instagram -> {
+                    val clean = acc.id.trim().removePrefix("@").lowercase()
+                    if (com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(clean)) {
+                        com.cayxu.app.automation.instagram.XsmmInstagramManager.stop(clean)
+                        Toast.makeText(context, "Đã dừng chạy: ${acc.name}", Toast.LENGTH_SHORT).show()
+                    } else {
+                        com.cayxu.app.automation.instagram.XsmmInstagramManager.start(context, clean)
+                        Toast.makeText(context, "Bắt đầu chạy: ${acc.name}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                XsmmPlatform.TikTok -> {
+                    com.cayxu.app.ui.overlay.xsmm.startXsmmJobRunnerOverlay(context, listOf(acc.handle.ifBlank { acc.id }))
+                }
+            }
+        },
+        onTogglePage = { parentAcc, page ->
+            selectedForRunUids = if (selectedForRunUids.contains(page.pageId)) {
+                selectedForRunUids - page.pageId
+            } else {
+                selectedForRunUids + page.pageId
+            }
+        },
+        onTogglePlayPage = { parentAcc, page ->
+            if (com.cayxu.app.automation.facebook.XsmmFacebookManager.isRunning(page.pageId)) {
+                com.cayxu.app.automation.facebook.XsmmFacebookManager.stop(page.pageId)
+                Toast.makeText(context, "Đã dừng chạy Page: ${page.pageName}", Toast.LENGTH_SHORT).show()
+            } else {
+                com.cayxu.app.automation.facebook.XsmmFacebookManager.start(context, page.pageId)
+                Toast.makeText(context, "Bắt đầu chạy Page: ${page.pageName}", Toast.LENGTH_SHORT).show()
+            }
+        },
+        onReloadPage = { parentAcc, page ->
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val targetAcc = facebookAccounts.firstOrNull { it.uid == parentAcc.id }
+                    val parentToken = targetAcc?.bio.orEmpty()
+                    if (parentToken.isNotBlank()) {
+                        val service = com.cayxu.app.facebook.FacebookPageService()
+                        val refreshed = service.getPages(parentToken)
+                        val match = refreshed.firstOrNull { it.pageId == page.pageId || it.additionalProfileId == page.pageId }
+                        withContext(Dispatchers.Main) {
+                            if (match != null) {
+                                val currentStored = com.cayxu.app.data.local.FacebookAccountsStore.getAccount(context, parentAcc.id) ?: targetAcc
+                                if (currentStored != null) {
+                                    val updatedPages = currentStored.pages.map { p ->
+                                        if (p.pageId == match.pageId) match else p
+                                    }
+                                    com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, currentStored.copy(pages = updatedPages))
+                                    facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                }
+                                Toast.makeText(context, "Đã làm mới Page: ${match.pageName}", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Không tìm thấy Page từ Facebook", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Lỗi làm mới: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
