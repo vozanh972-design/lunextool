@@ -381,9 +381,29 @@ fun XsmmAccountsScreen(
                             BasicText("Tất cả", style = type(13f, FontWeight.SemiBold, Alx.Ink2))
                         }
                     }
+
+                    // Nút Chạy tất cả / Dừng tất cả (Tam giác Play ➔ Ô vuông đỏ)
+                    if (state.accounts.isNotEmpty()) {
+                        val isRunning = state.isAnyRunning
+                        PressBox(
+                            onClick = onRun,
+                            modifier = Modifier
+                                .padding(start = 12.dp)
+                                .size(44.dp)
+                                .background(if (isRunning) Alx.Danger else state.selectedPlatform.accent(), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (isRunning) {
+                                Box(Modifier.size(12.dp).clip(RoundedCornerShape(2.dp)).background(Alx.White))
+                            } else {
+                                SvgIcon(Play, 16.dp, Alx.White, 2f, fill = true)
+                            }
+                        }
+                    }
+
                     PressBox(
                         onClick = onAddAccount,
-                        modifier = Modifier.padding(start = 14.dp).size(44.dp).background(state.selectedPlatform.accent(), CircleShape),
+                        modifier = Modifier.padding(start = 12.dp).size(44.dp).background(state.selectedPlatform.accent(), CircleShape),
                         contentAlignment = Alignment.Center,
                     ) { SvgIcon(Plus, 18.dp, Alx.White, 2.4f) }
                 }

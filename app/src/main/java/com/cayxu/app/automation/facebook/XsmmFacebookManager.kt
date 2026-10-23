@@ -30,11 +30,11 @@ object XsmmFacebookManager {
 
     fun isRunning(accountUid: String): Boolean {
         val clean = accountUid.trim().lowercase()
-        return runningJobs.containsKey(clean)
+        return runningAccounts.contains(clean) || runningJobs.containsKey(clean)
     }
 
     fun isAnyRunning(): Boolean {
-        return runningJobs.isNotEmpty()
+        return runningAccounts.isNotEmpty() || runningJobs.isNotEmpty()
     }
 
     fun start(context: Context, accountUid: String, startDelayMs: Long = 0L) {
