@@ -183,6 +183,35 @@ object AppUpdateManager {
     }
 
     /**
+     * So sánh phiên bản dạng x.y.z (ví dụ "1.0.7" so với "1.0.6").
+     * Trả về true nếu [remoteVersion] mới hơn [currentVersion].
+     */
+    fun isNewerVersion(remoteVersion: String, currentVersion: String): Boolean {
+        val rParts = remoteVersion.trim().split(".").mapNotNull { it.toIntOrNull() }
+        val cParts = currentVersion.trim().split(".").mapNotNull { it.toIntOrNull() }
+        val maxLen = maxOf(rParts.size, cParts.size)
+        for (i in 0 until maxLen) {
+            val r = rParts.getOrElse(i) { 0 }
+            val c = cParts.getOrElse(i) { 0 }
+            if (r > c) return true
+            if (r < c) return false
+        }
+        return false
+    }
+
+    /**
+     * Kiểm tra xem dữ liệu cập nhật từ API có phiên bản mới hơn phiên bản app hiện tại hay không.
+     * Chỉ trả về true nếu:
+     * - versionCode của server lớn hơn versionCode của app, HOẶC
+     * - versionName của server mới hơn versionName của app (ví dụ 1.0.7 > 1.0.6).
+     */
+    fun hasNewUpdate(updateData: AppUpdateData?): Boolean {
+        if (updateData == null) return false
+        if (updateData.versionCode > BuildConfig.VERSION_CODE) return true
+        return isNewerVersion(updateData.versionName, BuildConfig.VERSION_NAME)
+    }
+
+    /**
      * Tải tệp APK ngầm trong ứng dụng và thông báo tiến độ % qua [onProgress].
      * Khi tải xong 100%, tự động gọi [installApk] để mở màn hình cài đặt của hệ thống.
      */

@@ -117,9 +117,9 @@ data class ProfileUiState(
     /** Vài dòng mới nhất của sổ xu (thường 2), lấy từ CoinLedger.observeRecent(2). Rỗng thì hiện thẻ Chưa có lịch sử. */
     val recent: List<CoinEntry> = emptyList(),
     /** true thì hiện thẻ "Có bản cập nhật mới" phía trên avatar, đẩy khối Identity xuống dưới một chút. */
-    val hasUpdate: Boolean = true,
+    val hasUpdate: Boolean = false,
     /** Dòng phụ trong thẻ cập nhật, vd "Autolunex · phiên bản 1.0.6". Không dùng khi [hasUpdate] = false. */
-    val updateVersionLabel: String = "Autolunex · phiên bản 1.0.6",
+    val updateVersionLabel: String = "",
 )
 
 /* Icon: lưới 24×24, cờ cung luôn viết cách nhau vì PathParser không đọc dạng dính. */
@@ -264,7 +264,7 @@ fun ProfileScreen(
         "1. Facebook: sửa lỗi đăng nhập\n2. Instagram: sửa lỗi đăng nhập\n3. TikTok: thêm tuongtaccheo tiktok"
     } ?: "1. Facebook: sửa lỗi đăng nhập\n2. Instagram: sửa lỗi đăng nhập\n3. TikTok: thêm tuongtaccheo tiktok"
 
-    val hasUpdate = true
+    val hasUpdate = AppUpdateManager.hasNewUpdate(activeUpdateData)
     val updateVersionLabel = "Autolunex · phiên bản $realVersionName"
 
     val buyerUsername = remember { securePrefs.getBuyerUsername() }
