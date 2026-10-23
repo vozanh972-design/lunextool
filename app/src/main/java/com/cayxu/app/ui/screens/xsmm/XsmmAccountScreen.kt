@@ -1038,7 +1038,21 @@ fun XsmmAccountScreen(navController: NavController) {
         }
     }
 
-    val currentAccounts = remember(currentPlatform, allTikTokAccounts, facebookAccounts, instagramAccounts, linkedHandles, linkedFbUids, liveFbAvatars, reloadingTikTokUids, linkingTikTokUids) {
+    val currentAccounts = remember(
+        currentPlatform,
+        allTikTokAccounts,
+        facebookAccounts,
+        instagramAccounts,
+        linkedHandles,
+        linkedFbUids,
+        liveFbAvatars,
+        livePageUids,
+        livePageAvatars,
+        reloadingTikTokUids,
+        linkingTikTokUids,
+        com.cayxu.app.automation.facebook.XsmmFacebookManager.runningAccounts.toList(),
+        com.cayxu.app.automation.instagram.XsmmInstagramManager.runningAccounts.toList()
+    ) {
         when (currentPlatform) {
             XsmmPlatform.TikTok -> {
                 allTikTokAccounts.map { acc ->
