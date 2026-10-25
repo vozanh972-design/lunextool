@@ -16,7 +16,10 @@ import androidx.navigation.NavController
 import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.data.local.InstagramAccountsStore
 import com.cayxu.app.data.local.TikTokAccountsStore
+import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.ui.navigation.Routes
+import com.cayxu.app.ui.xsmm.startXsmmVerifyTikTokAccount
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -39,15 +42,25 @@ fun F4fAccountScreen(navController: NavController) {
     var refreshingBalance by remember { mutableStateOf(false) }
     var isAnyRunning by remember { mutableStateOf(false) }
 
+    // Quản lý kiểm tra & liên kết tài khoản TikTok
+    var showTikTokCheckSheet by remember { mutableStateOf(false) }
+    var selectedVariant by remember { mutableStateOf(TikTokAppVariant.STANDARD) }
+    var reloadingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var linkingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
+
     // Danh sách tài khoản remote từ F4F API
     var remoteTiktokAccounts by remember { mutableStateOf<List<F4fRemoteAccount>>(emptyList()) }
     var remoteFbAccounts by remember { mutableStateOf<List<F4fRemoteAccount>>(emptyList()) }
     var remoteIgAccounts by remember { mutableStateOf<List<F4fRemoteAccount>>(emptyList()) }
 
     // Danh sách tài khoản local trên máy
-    val localTikTokAccounts = remember { TikTokAccountsStore.getAccounts(context) }
+    var localTikTokAccounts by remember { mutableStateOf(TikTokAccountsStore.getAccounts(context)) }
     val localFbAccounts = remember { FacebookAccountsStore.getAccounts(context) }
     val localIgAccounts = remember { InstagramAccountsStore.getAccounts(context) }
+
+    fun reloadTikTok() {
+        localTikTokAccounts = TikTokAccountsStore.getAccounts(context)
+    }
 
     // Hàm gọi API đồng bộ thông tin tài khoản & số dư từ server Follow4Follow
     fun refreshProfileAndAccounts() {
@@ -85,48 +98,55 @@ fun F4fAccountScreen(navController: NavController) {
         refreshProfileAndAccounts()
     }
 
-    // Đếm số lượng tài khoản theo từng nền tảng (ưu tiên số lượng từ server, nếu chưa có thì đếm local)
+    // Đếm số lượng tài khoản theo từng nền tảng
     val platformCounts = remember(remoteTiktokAccounts, remoteFbAccounts, remoteIgAccounts, localTikTokAccounts, localFbAccounts, localIgAccounts) {
         mapOf(
-            F4fPlatform.TikTok to if (remoteTiktokAccounts.isNotEmpty()) remoteTiktokAccounts.size else localTikTokAccounts.size,
+            F4fPlatform.TikTok to localTikTokAccounts.size,
             F4fPlatform.Facebook to if (remoteFbAccounts.isNotEmpty()) remoteFbAccounts.size else localFbAccounts.size,
             F4fPlatform.Instagram to if (remoteIgAccounts.isNotEmpty()) remoteIgAccounts.size else localIgAccounts.size,
         )
     }
 
-    val accounts = remember(selectedPlatform, remoteTiktokAccounts, remoteFbAccounts, remoteIgAccounts, localTikTokAccounts, localFbAccounts, localIgAccounts) {
+    val accounts = remember(
+        selectedPlatform,
+        remoteTiktokAccounts,
+        remoteFbAccounts,
+        remoteIgAccounts,
+        localTikTokAccounts,
+        localFbAccounts,
+        localIgAccounts,
+        reloadingTikTokUids,
+        linkingTikTokUids
+    ) {
         when (selectedPlatform) {
             F4fPlatform.TikTok -> {
-                if (remoteTiktokAccounts.isNotEmpty()) {
-                    remoteTiktokAccounts.map { acc ->
-                        F4fAccount(
-                            id = acc.id,
-                            name = if (acc.username.startsWith("@")) acc.username else "@${acc.username}",
-                            typeId = "tiktok",
-                            statusLabel = if (acc.isLive) "Hoạt động" else "Chưa kích hoạt",
-                            statusOk = acc.isLive,
-                            avatarUrl = acc.avatarUrl,
-                            handle = acc.username.removePrefix("@"),
-                            isLive = acc.isLive,
-                        )
+                val remoteHandles = remoteTiktokAccounts.map { it.username.trim().removePrefix("@").lowercase() }.toSet()
+                localTikTokAccounts.map { acc ->
+                    val cleanHandle = acc.handle.trim().removePrefix("@")
+                    val typeId = when (acc.variant) {
+                        TikTokAppVariant.LITE -> "tiktok_lite"
+                        TikTokAppVariant.STUDIO -> "tiktok_studio"
+                        else -> "tiktok"
                     }
-                } else {
-                    localTikTokAccounts.map { acc ->
-                        val cleanHandle = acc.handle.trim().removePrefix("@")
-                        F4fAccount(
-                            id = acc.uid,
-                            name = "@${cleanHandle.ifBlank { acc.uid }}",
-                            typeId = "tiktok",
-                            statusLabel = if (acc.isLive) "Hoạt động" else "Chưa đăng nhập",
-                            statusOk = acc.isLive,
-                            avatarUrl = acc.avatarUrl,
-                            handle = cleanHandle,
-                            followerCount = acc.followerCount,
-                            heartCount = acc.heartCount,
-                            createDateFormatted = acc.createDateFormatted,
-                            isLive = acc.isLive,
-                        )
-                    }
+                    val isLinked = cleanHandle.lowercase() in remoteHandles
+                    val isReloading = acc.uid in reloadingTikTokUids
+                    val isLinking = acc.uid in linkingTikTokUids
+                    F4fAccount(
+                        id = acc.uid,
+                        name = "@${cleanHandle.ifBlank { acc.uid }}",
+                        typeId = typeId,
+                        statusLabel = if (!isLinked) "Chưa liên kết" else if (acc.isLive) "Hoạt động" else "Chưa đăng nhập",
+                        statusOk = isLinked && acc.isLive,
+                        avatarUrl = acc.avatarUrl,
+                        handle = cleanHandle,
+                        followerCount = acc.followerCount,
+                        heartCount = acc.heartCount,
+                        createDateFormatted = acc.createDateFormatted,
+                        isLive = acc.isLive,
+                        isLinked = isLinked,
+                        isReloading = isReloading,
+                        isLinking = isLinking,
+                    )
                 }
             }
             F4fPlatform.Facebook -> {
@@ -244,6 +264,11 @@ fun F4fAccountScreen(navController: NavController) {
             },
             onSelectType = { typeId ->
                 selectedTypeId = typeId
+                selectedVariant = when (typeId) {
+                    "tiktok_lite" -> TikTokAppVariant.LITE
+                    "tiktok_studio" -> TikTokAppVariant.STUDIO
+                    else -> TikTokAppVariant.STANDARD
+                }
             },
             onToggleSelectAll = {
                 val currentVisible = state.accounts.filter { selectedTypeId == null || it.typeId == selectedTypeId }
@@ -261,7 +286,17 @@ fun F4fAccountScreen(navController: NavController) {
                 }
             },
             onAddAccount = {
-                Toast.makeText(context, "Thêm tài khoản cho ${selectedPlatform.label}", Toast.LENGTH_SHORT).show()
+                when (selectedPlatform) {
+                    F4fPlatform.TikTok -> {
+                        showTikTokCheckSheet = true
+                    }
+                    F4fPlatform.Facebook -> {
+                        Toast.makeText(context, "Thêm tài khoản Facebook đang phát triển", Toast.LENGTH_SHORT).show()
+                    }
+                    F4fPlatform.Instagram -> {
+                        Toast.makeText(context, "Thêm tài khoản Instagram đang phát triển", Toast.LENGTH_SHORT).show()
+                    }
+                }
             },
             onOpenConfig = {
                 navController.navigate(Routes.F4F_RUN_CONFIG)
@@ -283,11 +318,58 @@ fun F4fAccountScreen(navController: NavController) {
                 }
             },
             onReloadAccount = { acc ->
-                Toast.makeText(context, "Đang kiểm tra tài khoản ${acc.name}...", Toast.LENGTH_SHORT).show()
+                when (selectedPlatform) {
+                    F4fPlatform.TikTok -> {
+                        val variant = when (acc.typeId) {
+                            "tiktok_lite" -> TikTokAppVariant.LITE
+                            "tiktok_studio" -> TikTokAppVariant.STUDIO
+                            else -> TikTokAppVariant.STANDARD
+                        }
+                        reloadingTikTokUids = reloadingTikTokUids + acc.id
+                        startXsmmVerifyTikTokAccount(context, variant)
+                        scope.launch {
+                            delay(4000)
+                            reloadTikTok()
+                            reloadingTikTokUids = reloadingTikTokUids - acc.id
+                        }
+                    }
+                    else -> {
+                        Toast.makeText(context, "Đang kiểm tra tài khoản ${acc.name}...", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onLinkAccount = { acc ->
+                val cleanHandle = acc.handle.trim().removePrefix("@")
+                Toast.makeText(context, "Đang đồng bộ @$cleanHandle với Follow4Follow...", Toast.LENGTH_SHORT).show()
+                refreshProfileAndAccounts()
+            },
+            onTogglePlayAccount = { acc ->
+                when (selectedPlatform) {
+                    F4fPlatform.TikTok -> {
+                        Toast.makeText(context, "Chạy tài khoản TikTok: @${acc.handle.ifBlank { acc.name }}", Toast.LENGTH_SHORT).show()
+                    }
+                    F4fPlatform.Facebook -> {
+                        Toast.makeText(context, "Chạy tài khoản Facebook: ${acc.name}", Toast.LENGTH_SHORT).show()
+                    }
+                    F4fPlatform.Instagram -> {
+                        Toast.makeText(context, "Chạy tài khoản Instagram: ${acc.name}", Toast.LENGTH_SHORT).show()
+                    }
+                }
             },
             onDeleteSelected = {
                 selectedAccountIds = emptySet()
             }
         )
+
+        if (showTikTokCheckSheet) {
+            F4fTikTokCheckSheet(
+                initialVariant = selectedVariant,
+                onDismiss = {
+                    showTikTokCheckSheet = false
+                    reloadTikTok()
+                    refreshProfileAndAccounts()
+                }
+            )
+        }
     }
 }

@@ -615,8 +615,40 @@ private fun AccountRow(
                         style = type(14.5f, FontWeight.Bold, Alx.Ink),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (isFacebook || isInstagram) {
+                    if (isTiktok) {
+                        if (account.isLinked) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(LiveGreen.copy(alpha = 0.12f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Box(Modifier.size(5.dp).clip(CircleShape).background(LiveGreen))
+                                Spacer(Modifier.width(4.dp))
+                                BasicText("Đã liên kết", style = type(10f, FontWeight.ExtraBold, LiveGreen))
+                            }
+                        } else {
+                            PressBox(
+                                onClick = { onLinkAccount?.invoke() },
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(F4fViolet.copy(alpha = 0.12f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    if (account.isLinking) {
+                                        CircularProgressIndicator(color = F4fViolet, strokeWidth = 1.5.dp, modifier = Modifier.size(9.dp))
+                                    } else {
+                                        Box(Modifier.size(5.dp).clip(CircleShape).background(F4fViolet))
+                                    }
+                                    BasicText(if (account.isLinking) "Đang liên kết..." else "Chưa liên kết", style = type(10f, FontWeight.ExtraBold, F4fViolet))
+                                }
+                            }
+                        }
+                    } else if (isFacebook || isInstagram) {
                         Box(
                             Modifier
                                 .background(if (account.isLive) Color(0xFFDCFCE7) else Color(0xFFFEE2E2), RoundedCornerShape(4.dp))
@@ -630,7 +662,7 @@ private fun AccountRow(
                     }
                 }
 
-                if (account.handle.isNotBlank()) {
+                if (account.handle.isNotBlank() && !isTiktok) {
                     BasicText(
                         account.handle,
                         Modifier.padding(top = 1.dp),
@@ -640,44 +672,48 @@ private fun AccountRow(
                     )
                 }
 
-                if (isTiktok && (account.followerCount > 0 || account.heartCount > 0)) {
-                    Row(
-                        Modifier.padding(top = 3.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        BasicText(
-                            "${formatCount(account.followerCount)} Follower",
-                            style = type(11.5f, FontWeight.SemiBold, Alx.Ink2)
-                        )
-                        BasicText("•", style = type(11.5f, FontWeight.Bold, Alx.Muted))
-                        BasicText(
-                            "${formatCount(account.heartCount)} Tim",
-                            style = type(11.5f, FontWeight.SemiBold, Alx.Ink2)
-                        )
-                    }
+                val stats = buildList {
+                    if (account.followerCount > 0) add("${formatCount(account.followerCount)} Follower")
+                    if (account.heartCount > 0) add("${formatCount(account.heartCount)} Tim")
+                }
+                if (stats.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
+                    BasicText(stats.joinToString(" • "), style = type(11.5f, FontWeight.SemiBold, Color(0xFFE1306C)))
                 }
 
                 if (account.createDateFormatted.isNotBlank()) {
-                    BasicText(
-                        "Tạo ngày: ${account.createDateFormatted}",
-                        Modifier.padding(top = 2.dp),
-                        style = type(11f, FontWeight.Medium, Alx.Muted)
-                    )
+                    Spacer(Modifier.height(2.dp))
+                    BasicText("Tạo: ${account.createDateFormatted}", style = type(11f, FontWeight.Medium, Alx.Muted))
                 }
             }
 
-            // Reload button
-            if (onReload != null) {
-                PressBox(
-                    onClick = onReload,
-                    modifier = Modifier.size(36.dp).background(Alx.Bg, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (account.isReloading) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = platform.accent())
-                    } else {
-                        SvgIcon(Refresh, 16.dp, Alx.Ink2, 2f)
+            // Reload & Play button
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (onReload != null) {
+                    PressBox(
+                        onClick = onReload,
+                        modifier = Modifier.size(34.dp).clip(CircleShape).background(Alx.Bg),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (account.isReloading) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = F4fViolet)
+                        } else {
+                            SvgIcon(Refresh, 16.dp, Alx.Muted, 2f)
+                        }
+                    }
+                }
+
+                if (onTogglePlay != null) {
+                    PressBox(
+                        onClick = onTogglePlay,
+                        modifier = Modifier.size(34.dp).clip(CircleShape).background(if (account.isRunning) Alx.Danger.copy(alpha = 0.12f) else F4fVioletSoft),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (account.isRunning) {
+                            Box(Modifier.size(11.dp).clip(RoundedCornerShape(2.5.dp)).background(Alx.Danger))
+                        } else {
+                            SvgIcon(Play, 14.dp, F4fViolet, 2f, fill = true)
+                        }
                     }
                 }
             }
