@@ -91,6 +91,10 @@
             android:name=".ui.crossttc.CrossTTCOverlayService"
             android:exported="false" />
 
+        <service
+            android:name=".ui.f4f.F4fJobRunnerOverlayService"
+            android:exported="false" />
+
         <!-- Foreground Service chạy ngầm - hiển thị notification khi vuốt màn hình xuống -->
         <service
             android:name=".worker.AppBackgroundService"

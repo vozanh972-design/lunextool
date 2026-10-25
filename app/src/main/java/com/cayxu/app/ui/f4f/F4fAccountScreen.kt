@@ -41,11 +41,12 @@ fun F4fAccountScreen(navController: NavController) {
     var selectedTypeId by remember { mutableStateOf<String?>("tiktok") }
     var selectedAccountIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var refreshingBalance by remember { mutableStateOf(false) }
+    val isOverlayRunning by F4fJobRunnerOverlayService.isRunning.collectAsState()
     val isRunnerRunning by F4fTikTokTaskRunner.isRunning.collectAsState()
     var isAnyRunning by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isRunnerRunning) {
-        isAnyRunning = isRunnerRunning
+    LaunchedEffect(isOverlayRunning, isRunnerRunning) {
+        isAnyRunning = isOverlayRunning || isRunnerRunning
     }
 
     // Quản lý kiểm tra & liên kết tài khoản TikTok
@@ -310,8 +311,9 @@ fun F4fAccountScreen(navController: NavController) {
                 navController.navigate(Routes.F4F_RUN_CONFIG)
             },
             onRun = {
-                if (isAnyRunning || F4fTikTokTaskRunner.isRunning()) {
+                if (isAnyRunning || F4fJobRunnerOverlayService.isRunning.value || F4fTikTokTaskRunner.isRunning()) {
                     isAnyRunning = false
+                    stopF4fJobRunnerOverlay(context)
                     F4fTikTokTaskRunner.stop()
                     Toast.makeText(context, "Đã dừng nhiệm vụ Follow4Follow", Toast.LENGTH_SHORT).show()
                     refreshProfileAndAccounts()
@@ -335,14 +337,11 @@ fun F4fAccountScreen(navController: NavController) {
                         F4fPlatform.TikTok -> {
                             val handles = accountsToRun.map { it.handle.ifBlank { it.name.removePrefix("@") } }
                             isAnyRunning = true
-                            Toast.makeText(context, "Bắt đầu chạy ${handles.size} nick TikTok Follow4Follow...", Toast.LENGTH_SHORT).show()
-                            F4fTikTokTaskRunner.start(
+                            Toast.makeText(context, "Mở màn nổi chạy ${handles.size} nick TikTok Follow4Follow...", Toast.LENGTH_SHORT).show()
+                            startF4fJobRunnerOverlay(
                                 context = context,
-                                selectedHandles = handles,
-                                variant = selectedVariant,
-                                onProgressUpdate = { _, _ ->
-                                    coinBalance = F4fSession.points.value
-                                }
+                                accountHandles = handles,
+                                variant = selectedVariant
                             )
                         }
                         else -> {

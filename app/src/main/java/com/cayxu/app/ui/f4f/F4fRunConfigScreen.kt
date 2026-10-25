@@ -50,12 +50,13 @@ private val Back = listOf("M19 12H5M11 6l-6 6 6 6")
 @Composable
 fun F4fRunConfigScreen(navController: NavController) {
     val context = LocalContext.current
+    val initialConfig = remember { F4fRunConfigStore.get(context) }
 
-    var delaySeconds by remember { mutableStateOf("5") }
-    var taskCount by remember { mutableStateOf("50") }
-    var followTask by remember { mutableStateOf(true) }
-    var likeTask by remember { mutableStateOf(true) }
-    var commentTask by remember { mutableStateOf(false) }
+    var delaySeconds by remember { mutableStateOf(initialConfig.delaySeconds.toString()) }
+    var taskCount by remember { mutableStateOf(initialConfig.targetTaskCount.toString()) }
+    var followTask by remember { mutableStateOf(initialConfig.enableFollow) }
+    var likeTask by remember { mutableStateOf(initialConfig.enableLike) }
+    var commentTask by remember { mutableStateOf(initialConfig.enableComment) }
 
     Column(
         Modifier
@@ -123,6 +124,14 @@ fun F4fRunConfigScreen(navController: NavController) {
                 .clip(RoundedCornerShape(16.dp))
                 .background(F4fViolet)
                 .clickable {
+                    val config = F4fRunConfig(
+                        delaySeconds = delaySeconds.toIntOrNull()?.coerceAtLeast(3) ?: 5,
+                        targetTaskCount = taskCount.toIntOrNull()?.coerceAtLeast(0) ?: 50,
+                        enableFollow = followTask,
+                        enableLike = likeTask,
+                        enableComment = commentTask
+                    )
+                    F4fRunConfigStore.save(context, config)
                     Toast.makeText(context, "Đã lưu cấu hình Follow4Follow", Toast.LENGTH_SHORT).show()
                     navController.popBackStack()
                 },
