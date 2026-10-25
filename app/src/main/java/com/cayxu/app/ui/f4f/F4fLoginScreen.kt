@@ -35,7 +35,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -46,11 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -62,7 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -80,6 +75,7 @@ private val F4fVioletSoft = Color(0xFFF5F3FF)
 private val Back = listOf("M19 12H5M11 6l-6 6 6 6")
 private val CloseIcon = listOf("M18 6L6 18M6 6l12 12")
 private val Lock = listOf("M6 11h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2zM8 11V7a4 4 0 0 1 8 0v4")
+private val UserIcon = listOf("M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2", "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z")
 private val LoginArrow = listOf("M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3")
 private val External = listOf("M7 17L17 7M8 7h9v9")
 
@@ -88,6 +84,9 @@ fun F4fLoginScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    var loginTab by remember { mutableIntStateOf(0) } // 0: Tài khoản & Mật khẩu, 1: Access Token
+    var usernameInput by remember { mutableStateOf("") }
+    var passwordInput by remember { mutableStateOf("") }
     var tokenInput by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -103,58 +102,66 @@ fun F4fLoginScreen(navController: NavController) {
         }
     }
 
-    fun submit() {
-        if (tokenInput.isBlank()) {
-            errorMessage = "Vui lòng nhập Access Token hoặc API Key"
+    fun submitCredentials() {
+        if (usernameInput.isBlank() || passwordInput.isBlank()) {
+            errorMessage = "Vui lòng nhập đầy đủ tài khoản và mật khẩu"
             return
         }
         isLoading = true
         errorMessage = null
         scope.launch {
-            // Lưu thông tin đăng nhập F4F
-            val trimmed = tokenInput.trim()
-            val username = "f4f_user_${trimmed.take(6)}"
-            F4fSession.login(context, trimmed, username, 0L)
-            isLoading = false
-            navController.navigate(Routes.F4F_ACCOUNT) {
-                popUpTo(Routes.F4F_LOGIN) { inclusive = true }
+            when (val result = F4fApiClient.loginWithCredentials(usernameInput.trim(), passwordInput.trim())) {
+                is F4fApiResult.Success -> {
+                    F4fSession.login(
+                        context = context,
+                        token = result.data.token,
+                        userUsername = result.data.username,
+                        userPoints = result.data.balancePoints
+                    )
+                    isLoading = false
+                    navController.navigate(Routes.F4F_ACCOUNT) {
+                        popUpTo(Routes.F4F_LOGIN) { inclusive = true }
+                    }
+                }
+                is F4fApiResult.Error -> {
+                    isLoading = false
+                    errorMessage = result.message
+                }
             }
         }
     }
 
-    F4fLoginContent(
-        token = tokenInput,
-        onTokenChange = {
-            tokenInput = it
-            errorMessage = null
-        },
-        onLogin = { submit() },
-        onBack = { navController.popBackStack() },
-        onOpenSite = { showWebView = true },
-        loading = isLoading,
-        errorText = errorMessage,
-        loggedIn = isLoggedIn,
-    )
-
-    if (showWebView) {
-        F4fWebViewDialog(onClose = { showWebView = false })
+    fun submitToken() {
+        if (tokenInput.isBlank()) {
+            errorMessage = "Vui lòng nhập Access Token"
+            return
+        }
+        isLoading = true
+        errorMessage = null
+        scope.launch {
+            when (val result = F4fApiClient.fetchMe(tokenInput.trim())) {
+                is F4fApiResult.Success -> {
+                    F4fSession.login(
+                        context = context,
+                        token = result.data.token,
+                        userUsername = result.data.username,
+                        userPoints = result.data.balancePoints
+                    )
+                    isLoading = false
+                    navController.navigate(Routes.F4F_ACCOUNT) {
+                        popUpTo(Routes.F4F_LOGIN) { inclusive = true }
+                    }
+                }
+                is F4fApiResult.Error -> {
+                    isLoading = false
+                    errorMessage = result.message
+                }
+            }
+        }
     }
-}
 
-@Composable
-private fun F4fLoginContent(
-    token: String,
-    onTokenChange: (String) -> Unit,
-    onLogin: () -> Unit,
-    onBack: () -> Unit,
-    onOpenSite: () -> Unit,
-    modifier: Modifier = Modifier,
-    loading: Boolean = false,
-    errorText: String? = null,
-    loggedIn: Boolean = false,
-) {
     Column(
-        modifier
+        Modifier
             .fillMaxSize()
             .background(Alx.Bg)
             .statusBarsPadding()
@@ -162,9 +169,10 @@ private fun F4fLoginContent(
             .verticalScroll(rememberScrollState())
             .padding(start = 20.dp, end = 20.dp, top = 24.dp),
     ) {
+        // Header
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             PressBox(
-                onClick = onBack,
+                onClick = { navController.popBackStack() },
                 modifier = Modifier
                     .size(44.dp)
                     .background(Alx.White, CircleShape)
@@ -190,150 +198,232 @@ private fun F4fLoginContent(
             }
             Column(Modifier.weight(1f)) {
                 BasicText(
-                    if (loggedIn) "Đã đăng nhập Follow4Follow" else "Chưa đăng nhập Follow4Follow",
+                    if (isLoggedIn) "Đã đăng nhập Follow4Follow" else "Chưa đăng nhập Follow4Follow",
                     style = type(14.5f, FontWeight.ExtraBold, Alx.Ink, lineHeight = 1.25f),
                 )
                 BasicText(
-                    if (loggedIn) "Nhập token mới nếu bạn muốn đổi tài khoản" else "Dán Access Token để kết nối tài khoản",
+                    if (isLoggedIn) "Nhập thông tin mới nếu muốn đổi tài khoản" else "Kết nối với tài khoản Follow4Follow của bạn",
                     Modifier.padding(top = 2.dp),
                     style = type(12f, FontWeight.Medium, Alx.Muted, lineHeight = 1.35f),
                 )
             }
         }
 
-        // Thẻ Access Token
+        // Tab chọn phương thức đăng nhập
+        Row(
+            Modifier
+                .padding(top = 16.dp)
+                .fillMaxWidth()
+                .background(Color(0xFFE6EBF3), RoundedCornerShape(14.dp))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            listOf("Tài khoản & Mật khẩu", "Access Token").forEachIndexed { index, title ->
+                val selected = loginTab == index
+                val shape = RoundedCornerShape(10.dp)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
+                        .then(if (selected) Modifier.background(Alx.White, shape) else Modifier)
+                        .clip(shape)
+                        .clickable {
+                            loginTab = index
+                            errorMessage = null
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    BasicText(
+                        title,
+                        style = type(13f, if (selected) FontWeight.Bold else FontWeight.Medium, if (selected) F4fViolet else Alx.Muted)
+                    )
+                }
+            }
+        }
+
+        // Form đăng nhập
         Column(
             Modifier
                 .padding(top = 16.dp)
                 .fillMaxWidth()
                 .background(Alx.White, RoundedCornerShape(22.dp))
                 .border(1.dp, Alx.Line, RoundedCornerShape(22.dp))
-                .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 16.dp),
+                .padding(16.dp),
         ) {
-            BasicText("Access Token / API Key", style = type(15.5f, FontWeight.ExtraBold, Alx.Ink, lineHeight = 1.2f))
-            BasicText(
-                "Lấy token từ tài khoản Follow4Follow của bạn và dán vào bên dưới",
-                Modifier.padding(top = 3.dp),
-                style = type(12.5f, FontWeight.Medium, Alx.Muted, lineHeight = 1.4f),
-            )
+            if (loginTab == 0) {
+                // Tài khoản & Mật khẩu
+                BasicText("Tài khoản Follow4Follow", style = type(15f, FontWeight.ExtraBold, Alx.Ink))
+                BasicText("Đăng nhập an toàn trực tiếp qua hệ thống API Follow4Follow", Modifier.padding(top = 2.dp), style = type(12f, FontWeight.Medium, Alx.Muted))
 
-            TokenField(token, onTokenChange, enabled = !loading, hasError = errorText != null, onDone = onLogin)
+                F4fInputField(
+                    value = usernameInput,
+                    onValueChange = { usernameInput = it; errorMessage = null },
+                    placeholder = "Tên đăng nhập hoặc Email",
+                    icon = UserIcon,
+                    enabled = !isLoading,
+                    modifier = Modifier.padding(top = 14.dp)
+                )
 
-            if (errorText != null) {
-                BasicText(
-                    errorText,
-                    Modifier.padding(top = 8.dp),
-                    style = type(12f, FontWeight.SemiBold, Alx.Danger, lineHeight = 1.35f),
+                F4fInputField(
+                    value = passwordInput,
+                    onValueChange = { passwordInput = it; errorMessage = null },
+                    placeholder = "Mật khẩu",
+                    icon = Lock,
+                    enabled = !isLoading,
+                    isPassword = true,
+                    onDone = { submitCredentials() },
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+
+                if (errorMessage != null) {
+                    BasicText(errorMessage!!, Modifier.padding(top = 10.dp), style = type(12f, FontWeight.SemiBold, Alx.Danger))
+                }
+
+                LoginButton(
+                    label = if (isLoading) "Đang đăng nhập…" else "Đăng nhập",
+                    enabled = !isLoading && usernameInput.isNotBlank() && passwordInput.isNotBlank(),
+                    onClick = { submitCredentials() },
+                    modifier = Modifier.padding(top = 16.dp)
+                )
+            } else {
+                // Access Token
+                val clipboard = LocalClipboardManager.current
+                BasicText("Access Token / API Key", style = type(15f, FontWeight.ExtraBold, Alx.Ink))
+                BasicText("Dán Bearer token lấy từ trang web Follow4Follow", Modifier.padding(top = 2.dp), style = type(12f, FontWeight.Medium, Alx.Muted))
+
+                Box(
+                    Modifier
+                        .padding(top = 14.dp)
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    val focusManager = LocalFocusManager.current
+                    BasicTextField(
+                        value = tokenInput,
+                        onValueChange = { tokenInput = it; errorMessage = null },
+                        enabled = !isLoading,
+                        singleLine = true,
+                        textStyle = type(14f, FontWeight.Bold, Alx.Ink),
+                        cursorBrush = SolidColor(F4fViolet),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus(); submitToken() }),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Alx.White, RoundedCornerShape(14.dp))
+                            .border(1.5.dp, if (errorMessage != null) Alx.Danger else Alx.InputBorder, RoundedCornerShape(14.dp)),
+                        decorationBox = { inner ->
+                            Box(Modifier.fillMaxSize().padding(start = 44.dp, end = 76.dp), contentAlignment = Alignment.CenterStart) {
+                                if (tokenInput.isEmpty()) {
+                                    BasicText("Dán token vào đây…", style = type(14f, FontWeight.Medium, Alx.Placeholder))
+                                }
+                                inner()
+                            }
+                        }
+                    )
+                    SvgIcon(Lock, 20.dp, Alx.Muted, 2f, Modifier.align(Alignment.CenterStart).padding(start = 16.dp))
+                    PressBox(
+                        onClick = { clipboard.getText()?.text?.trim()?.let { tokenInput = it; errorMessage = null } },
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(end = 8.dp)
+                            .height(36.dp)
+                            .background(F4fVioletSoft, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.Center
+                    ) { BasicText("Dán", style = type(13f, FontWeight.ExtraBold, F4fViolet)) }
+                }
+
+                if (errorMessage != null) {
+                    BasicText(errorMessage!!, Modifier.padding(top = 10.dp), style = type(12f, FontWeight.SemiBold, Alx.Danger))
+                }
+
+                LoginButton(
+                    label = if (isLoading) "Đang kết nối…" else "Xác nhận Token",
+                    enabled = !isLoading && tokenInput.isNotBlank(),
+                    onClick = { submitToken() },
+                    modifier = Modifier.padding(top = 16.dp)
                 )
             }
-
-            LoginButton(
-                label = if (loading) "Đang đăng nhập…" else "Đăng nhập",
-                enabled = !loading && token.isNotBlank(),
-                onClick = onLogin,
-                modifier = Modifier.padding(top = 16.dp),
-            )
         }
 
-        // Thẻ mở web
+        // Mở Web Follow4Follow
         Row(
             Modifier
                 .padding(top = 16.dp)
                 .fillMaxWidth()
                 .background(Alx.White, RoundedCornerShape(18.dp))
                 .border(1.dp, Alx.Line, RoundedCornerShape(18.dp))
-                .clickable(role = Role.Button, onClick = onOpenSite)
+                .clickable { showWebView = true }
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            BasicText(
-                "Mở trang web Follow4Follow để lấy token",
-                Modifier.weight(1f),
-                style = type(13.5f, FontWeight.Bold, F4fViolet),
-            )
+            BasicText("Mở trang web Follow4Follow để đăng ký hoặc lấy token", Modifier.weight(1f), style = type(13.5f, FontWeight.Bold, F4fViolet))
             SvgIcon(External, 18.dp, F4fViolet, 2f)
         }
 
         Spacer(Modifier.height(30.dp))
         Spacer(Modifier.navigationBarsPadding())
     }
+
+    if (showWebView) {
+        F4fWebViewDialog(onClose = { showWebView = false })
+    }
 }
 
 @Composable
-private fun TokenField(
+private fun F4fInputField(
     value: String,
     onValueChange: (String) -> Unit,
+    placeholder: String,
+    icon: List<String>,
     enabled: Boolean,
-    hasError: Boolean,
-    onDone: () -> Unit,
-    modifier: Modifier = Modifier,
+    isPassword: Boolean = false,
+    onDone: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
 ) {
-    val clipboard = LocalClipboardManager.current
     val focusManager = LocalFocusManager.current
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
-
-    val border = when {
-        hasError -> Alx.Danger
-        focused -> F4fViolet
-        else -> Alx.InputBorder
-    }
     val shape = RoundedCornerShape(14.dp)
 
-    Box(
-        modifier
-            .padding(top = 14.dp)
-            .fillMaxWidth()
-            .height(52.dp),
-    ) {
+    Box(modifier.fillMaxWidth().height(52.dp)) {
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             enabled = enabled,
             singleLine = true,
             interactionSource = source,
+            visualTransformation = if (isPassword) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
             textStyle = type(14.5f, FontWeight.Bold, Alx.Ink),
             cursorBrush = SolidColor(F4fViolet),
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.None,
                 autoCorrect = false,
-                keyboardType = KeyboardType.Ascii,
-                imeAction = ImeAction.Done,
+                keyboardType = if (isPassword) KeyboardType.Password else KeyboardType.Text,
+                imeAction = if (onDone != null) ImeAction.Done else ImeAction.Next
             ),
             keyboardActions = KeyboardActions(onDone = {
                 focusManager.clearFocus()
-                onDone()
+                onDone?.invoke()
             }),
             modifier = Modifier
                 .fillMaxSize()
                 .background(Alx.White, shape)
-                .border(if (focused || hasError) 2.dp else 1.5.dp, border, shape),
+                .border(if (focused) 2.dp else 1.5.dp, if (focused) F4fViolet else Alx.InputBorder, shape),
             decorationBox = { inner ->
                 Box(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(start = 44.dp, end = 76.dp),
-                    contentAlignment = Alignment.CenterStart,
+                    Modifier.fillMaxSize().padding(start = 44.dp, end = 16.dp),
+                    contentAlignment = Alignment.CenterStart
                 ) {
                     if (value.isEmpty()) {
-                        BasicText("Dán token vào đây…", style = type(14.5f, FontWeight.Medium, Alx.Placeholder))
+                        BasicText(placeholder, style = type(14f, FontWeight.Medium, Alx.Placeholder))
                     }
                     inner()
                 }
-            },
+            }
         )
-        SvgIcon(Lock, 20.dp, Alx.Muted, 2f, Modifier.align(Alignment.CenterStart).padding(start = 16.dp))
-        PressBox(
-            onClick = { clipboard.getText()?.text?.trim()?.let(onValueChange) },
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 8.dp)
-                .height(36.dp)
-                .background(F4fVioletSoft, RoundedCornerShape(10.dp))
-                .padding(horizontal = 14.dp),
-            contentAlignment = Alignment.Center,
-        ) { BasicText("Dán", style = type(13f, FontWeight.ExtraBold, F4fViolet)) }
+        SvgIcon(icon, 20.dp, Alx.Muted, 2f, Modifier.align(Alignment.CenterStart).padding(start = 16.dp))
     }
 }
 
@@ -435,7 +525,7 @@ fun F4fWebViewDialog(onClose: () -> Unit) {
                             settings.domStorageEnabled = true
                             webViewClient = WebViewClient()
                             webChromeClient = WebChromeClient()
-                            loadUrl("https://follow4follow.com")
+                            loadUrl("https://follow4follow.net")
                             webView = this
                         }
                     }

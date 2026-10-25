@@ -4,7 +4,6 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,15 +20,16 @@ import com.cayxu.app.ui.navigation.Routes
 import kotlinx.coroutines.launch
 
 /**
- * Màn hình tài khoản Follow4Follow (F4F) độc lập:
- * - Hiển thị thông tin đăng nhập, số xu F4F
- * - 3 Tab: TikTok, Facebook, Instagram
- * - Nút Cấu hình, Tất cả, Chạy / Dừng, Thêm tài khoản
+ * Màn hình tài khoản Follow4Follow (F4F) độc lập kết nối API thật:
+ * - Gọi /user/auth/me để lấy số dư xu, username thực tế từ F4F
+ * - Gọi /user/account/list để đồng bộ tài khoản MXH thật từ server
+ * - Hỗ trợ làm mới số dư, chuyển tab, đăng xuất
  */
 @Composable
 fun F4fAccountScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val token = remember { F4fAccountStore.getToken(context).orEmpty() }
 
     var username by remember { mutableStateOf(F4fAccountStore.getUsername(context).ifBlank { "f4f_user" }) }
     var coinBalance by remember { mutableStateOf(F4fAccountStore.getPoints(context)) }
@@ -39,62 +39,155 @@ fun F4fAccountScreen(navController: NavController) {
     var refreshingBalance by remember { mutableStateOf(false) }
     var isAnyRunning by remember { mutableStateOf(false) }
 
-    // Đọc danh sách tài khoản độc lập từ store nội bộ
-    val tiktokAccounts = remember { TikTokAccountsStore.getAccounts(context) }
-    val fbAccounts = remember { FacebookAccountsStore.getAccounts(context) }
-    val igAccounts = remember { InstagramAccountsStore.getAccounts(context) }
+    // Danh sách tài khoản remote từ F4F API
+    var remoteTiktokAccounts by remember { mutableStateOf<List<F4fRemoteAccount>>(emptyList()) }
+    var remoteFbAccounts by remember { mutableStateOf<List<F4fRemoteAccount>>(emptyList()) }
+    var remoteIgAccounts by remember { mutableStateOf<List<F4fRemoteAccount>>(emptyList()) }
 
-    val platformCounts = remember(tiktokAccounts, fbAccounts, igAccounts) {
+    // Danh sách tài khoản local trên máy
+    val localTikTokAccounts = remember { TikTokAccountsStore.getAccounts(context) }
+    val localFbAccounts = remember { FacebookAccountsStore.getAccounts(context) }
+    val localIgAccounts = remember { InstagramAccountsStore.getAccounts(context) }
+
+    // Hàm gọi API đồng bộ thông tin tài khoản & số dư từ server Follow4Follow
+    fun refreshProfileAndAccounts() {
+        if (token.isBlank()) return
+        scope.launch {
+            refreshingBalance = true
+            when (val userResult = F4fApiClient.fetchMe(token)) {
+                is F4fApiResult.Success -> {
+                    username = userResult.data.username
+                    coinBalance = userResult.data.balancePoints
+                    F4fAccountStore.updatePoints(context, coinBalance)
+                    F4fSession.points.value = coinBalance
+                    F4fSession.username.value = username
+                }
+                is F4fApiResult.Error -> {
+                    // Giữ giá trị cache nếu lỗi mạng
+                }
+            }
+
+            // Tải danh sách tài khoản theo từng nền tảng
+            val tiktokRes = F4fApiClient.fetchAccountList(token, "tiktok")
+            if (tiktokRes is F4fApiResult.Success) remoteTiktokAccounts = tiktokRes.data
+
+            val fbRes = F4fApiClient.fetchAccountList(token, "facebook")
+            if (fbRes is F4fApiResult.Success) remoteFbAccounts = fbRes.data
+
+            val igRes = F4fApiClient.fetchAccountList(token, "instagram")
+            if (igRes is F4fApiResult.Success) remoteIgAccounts = igRes.data
+
+            refreshingBalance = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        refreshProfileAndAccounts()
+    }
+
+    // Đếm số lượng tài khoản theo từng nền tảng (ưu tiên số lượng từ server, nếu chưa có thì đếm local)
+    val platformCounts = remember(remoteTiktokAccounts, remoteFbAccounts, remoteIgAccounts, localTikTokAccounts, localFbAccounts, localIgAccounts) {
         mapOf(
-            F4fPlatform.TikTok to tiktokAccounts.size,
-            F4fPlatform.Facebook to fbAccounts.size,
-            F4fPlatform.Instagram to igAccounts.size,
+            F4fPlatform.TikTok to if (remoteTiktokAccounts.isNotEmpty()) remoteTiktokAccounts.size else localTikTokAccounts.size,
+            F4fPlatform.Facebook to if (remoteFbAccounts.isNotEmpty()) remoteFbAccounts.size else localFbAccounts.size,
+            F4fPlatform.Instagram to if (remoteIgAccounts.isNotEmpty()) remoteIgAccounts.size else localIgAccounts.size,
         )
     }
 
-    val accounts = remember(selectedPlatform, tiktokAccounts, fbAccounts, igAccounts) {
+    val accounts = remember(selectedPlatform, remoteTiktokAccounts, remoteFbAccounts, remoteIgAccounts, localTikTokAccounts, localFbAccounts, localIgAccounts) {
         when (selectedPlatform) {
-            F4fPlatform.TikTok -> tiktokAccounts.map { acc ->
-                val cleanHandle = acc.handle.trim().removePrefix("@")
-                F4fAccount(
-                    id = acc.uid,
-                    name = "@${cleanHandle.ifBlank { acc.uid }}",
-                    typeId = "tiktok",
-                    statusLabel = if (acc.isLive) "Hoạt động" else "Chưa đăng nhập",
-                    statusOk = acc.isLive,
-                    avatarUrl = acc.avatarUrl,
-                    handle = cleanHandle,
-                    followerCount = acc.followerCount,
-                    heartCount = acc.heartCount,
-                    createDateFormatted = acc.createDateFormatted,
-                    isLive = acc.isLive,
-                )
+            F4fPlatform.TikTok -> {
+                if (remoteTiktokAccounts.isNotEmpty()) {
+                    remoteTiktokAccounts.map { acc ->
+                        F4fAccount(
+                            id = acc.id,
+                            name = if (acc.username.startsWith("@")) acc.username else "@${acc.username}",
+                            typeId = "tiktok",
+                            statusLabel = if (acc.isLive) "Hoạt động" else "Chưa kích hoạt",
+                            statusOk = acc.isLive,
+                            avatarUrl = acc.avatarUrl,
+                            handle = acc.username.removePrefix("@"),
+                            isLive = acc.isLive,
+                        )
+                    }
+                } else {
+                    localTikTokAccounts.map { acc ->
+                        val cleanHandle = acc.handle.trim().removePrefix("@")
+                        F4fAccount(
+                            id = acc.uid,
+                            name = "@${cleanHandle.ifBlank { acc.uid }}",
+                            typeId = "tiktok",
+                            statusLabel = if (acc.isLive) "Hoạt động" else "Chưa đăng nhập",
+                            statusOk = acc.isLive,
+                            avatarUrl = acc.avatarUrl,
+                            handle = cleanHandle,
+                            followerCount = acc.followerCount,
+                            heartCount = acc.heartCount,
+                            createDateFormatted = acc.createDateFormatted,
+                            isLive = acc.isLive,
+                        )
+                    }
+                }
             }
-            F4fPlatform.Facebook -> fbAccounts.map { acc ->
-                F4fAccount(
-                    id = acc.uid,
-                    name = acc.name.ifBlank { acc.uid },
-                    typeId = "facebook",
-                    statusLabel = if (acc.isLive) "Hoạt động" else "Hết hạn",
-                    statusOk = acc.isLive,
-                    avatarUrl = acc.avatar,
-                    handle = acc.uid,
-                    isLive = acc.isLive,
-                )
+            F4fPlatform.Facebook -> {
+                if (remoteFbAccounts.isNotEmpty()) {
+                    remoteFbAccounts.map { acc ->
+                        F4fAccount(
+                            id = acc.id,
+                            name = acc.username,
+                            typeId = "facebook",
+                            statusLabel = if (acc.isLive) "Hoạt động" else "Hết hạn",
+                            statusOk = acc.isLive,
+                            avatarUrl = acc.avatarUrl,
+                            handle = acc.id,
+                            isLive = acc.isLive,
+                        )
+                    }
+                } else {
+                    localFbAccounts.map { acc ->
+                        F4fAccount(
+                            id = acc.uid,
+                            name = acc.name.ifBlank { acc.uid },
+                            typeId = "facebook",
+                            statusLabel = if (acc.isLive) "Hoạt động" else "Hết hạn",
+                            statusOk = acc.isLive,
+                            avatarUrl = acc.avatar,
+                            handle = acc.uid,
+                            isLive = acc.isLive,
+                        )
+                    }
+                }
             }
-            F4fPlatform.Instagram -> igAccounts.map { acc ->
-                val displayName = acc.fullName.ifBlank { "@${acc.username.trim().removePrefix("@")}" }
-                F4fAccount(
-                    id = acc.username,
-                    name = displayName,
-                    typeId = "instagram",
-                    statusLabel = if (acc.isLive) "Hoạt động" else "Hết hạn",
-                    statusOk = acc.isLive,
-                    avatarUrl = acc.avatar,
-                    handle = "@${acc.username.trim().removePrefix("@")}",
-                    followerCount = acc.followersCount.toLong(),
-                    isLive = acc.isLive,
-                )
+            F4fPlatform.Instagram -> {
+                if (remoteIgAccounts.isNotEmpty()) {
+                    remoteIgAccounts.map { acc ->
+                        F4fAccount(
+                            id = acc.id,
+                            name = if (acc.username.startsWith("@")) acc.username else "@${acc.username}",
+                            typeId = "instagram",
+                            statusLabel = if (acc.isLive) "Hoạt động" else "Hết hạn",
+                            statusOk = acc.isLive,
+                            avatarUrl = acc.avatarUrl,
+                            handle = "@${acc.username.removePrefix("@")}",
+                            isLive = acc.isLive,
+                        )
+                    }
+                } else {
+                    localIgAccounts.map { acc ->
+                        val displayName = acc.fullName.ifBlank { "@${acc.username.trim().removePrefix("@")}" }
+                        F4fAccount(
+                            id = acc.username,
+                            name = displayName,
+                            typeId = "instagram",
+                            statusLabel = if (acc.isLive) "Hoạt động" else "Hết hạn",
+                            statusOk = acc.isLive,
+                            avatarUrl = acc.avatar,
+                            handle = "@${acc.username.trim().removePrefix("@")}",
+                            followerCount = acc.followersCount.toLong(),
+                            isLive = acc.isLive,
+                        )
+                    }
+                }
             }
         }
     }
@@ -118,10 +211,20 @@ fun F4fAccountScreen(navController: NavController) {
             onRefreshBalance = {
                 scope.launch {
                     refreshingBalance = true
-                    kotlinx.coroutines.delay(800)
-                    coinBalance = F4fAccountStore.getPoints(context)
+                    when (val userResult = F4fApiClient.fetchMe(token)) {
+                        is F4fApiResult.Success -> {
+                            username = userResult.data.username
+                            coinBalance = userResult.data.balancePoints
+                            F4fAccountStore.updatePoints(context, coinBalance)
+                            F4fSession.points.value = coinBalance
+                            F4fSession.username.value = username
+                            Toast.makeText(context, "Đã cập nhật: ${userResult.data.balanceText}", Toast.LENGTH_SHORT).show()
+                        }
+                        is F4fApiResult.Error -> {
+                            Toast.makeText(context, userResult.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
                     refreshingBalance = false
-                    Toast.makeText(context, "Đã làm mới số dư F4F", Toast.LENGTH_SHORT).show()
                 }
             },
             onLogout = {
