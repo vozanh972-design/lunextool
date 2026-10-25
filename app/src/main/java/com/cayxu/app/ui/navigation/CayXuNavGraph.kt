@@ -73,6 +73,9 @@ object Routes {
     const val XSMM_LOGIN = "xsmm_login"
     const val XSMM_ACCOUNT = "xsmm_account"
     const val XSMM_RUN_CONFIG = "xsmm_run_config"
+    const val F4F_LOGIN = "f4f_login"
+    const val F4F_ACCOUNT = "f4f_account"
+    const val F4F_RUN_CONFIG = "f4f_run_config"
     const val GOLIKE_ACCOUNT = "golike_account"
     const val TUONG_TAC_CHEO = "tuong_tac_cheo"
     const val TUONG_TAC_CHEO_TIKTOK = "tuong_tac_cheo_tiktok"
@@ -321,6 +324,15 @@ fun CayXuNavGraph(
             }
             composable(Routes.XSMM_RUN_CONFIG) {
                 com.cayxu.app.ui.screens.xsmm.XsmmRunConfigScreen(navController)
+            }
+            composable(Routes.F4F_LOGIN) {
+                com.cayxu.app.ui.f4f.F4fLoginScreen(navController)
+            }
+            composable(Routes.F4F_ACCOUNT) {
+                com.cayxu.app.ui.f4f.F4fAccountScreen(navController)
+            }
+            composable(Routes.F4F_RUN_CONFIG) {
+                com.cayxu.app.ui.f4f.F4fRunConfigScreen(navController)
             }
             composable(Routes.GOLIKE_ACCOUNT) {
                 com.cayxu.app.ui.screens.golike.GolikeAccountScreen(navController)
