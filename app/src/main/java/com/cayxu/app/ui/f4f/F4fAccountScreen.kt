@@ -55,40 +55,44 @@ fun F4fAccountScreen(navController: NavController) {
     val accounts = remember(selectedPlatform, tiktokAccounts, fbAccounts, igAccounts) {
         when (selectedPlatform) {
             F4fPlatform.TikTok -> tiktokAccounts.map { acc ->
+                val cleanHandle = acc.handle.trim().removePrefix("@")
                 F4fAccount(
-                    id = acc.id,
-                    name = acc.username,
+                    id = acc.uid,
+                    name = "@${cleanHandle.ifBlank { acc.uid }}",
                     typeId = "tiktok",
-                    statusLabel = if (acc.isLoggedIn) "Hoạt động" else "Chưa đăng nhập",
-                    statusOk = acc.isLoggedIn,
+                    statusLabel = if (acc.isLive) "Hoạt động" else "Chưa đăng nhập",
+                    statusOk = acc.isLive,
                     avatarUrl = acc.avatarUrl,
-                    handle = "@${acc.username}",
-                    followerCount = 0L,
-                    heartCount = 0L,
-                    isLive = acc.isLoggedIn,
+                    handle = cleanHandle,
+                    followerCount = acc.followerCount,
+                    heartCount = acc.heartCount,
+                    createDateFormatted = acc.createDateFormatted,
+                    isLive = acc.isLive,
                 )
             }
             F4fPlatform.Facebook -> fbAccounts.map { acc ->
                 F4fAccount(
-                    id = acc.id,
+                    id = acc.uid,
                     name = acc.name.ifBlank { acc.uid },
                     typeId = "facebook",
-                    statusLabel = if (acc.isLive) "Hoạt động" else "Die",
+                    statusLabel = if (acc.isLive) "Hoạt động" else "Hết hạn",
                     statusOk = acc.isLive,
-                    avatarUrl = acc.avatarUrl,
+                    avatarUrl = acc.avatar,
                     handle = acc.uid,
                     isLive = acc.isLive,
                 )
             }
             F4fPlatform.Instagram -> igAccounts.map { acc ->
+                val displayName = acc.fullName.ifBlank { "@${acc.username.trim().removePrefix("@")}" }
                 F4fAccount(
-                    id = acc.id,
-                    name = acc.username,
+                    id = acc.username,
+                    name = displayName,
                     typeId = "instagram",
-                    statusLabel = if (acc.isLive) "Hoạt động" else "Die",
+                    statusLabel = if (acc.isLive) "Hoạt động" else "Hết hạn",
                     statusOk = acc.isLive,
-                    avatarUrl = acc.avatarUrl,
-                    handle = "@${acc.username}",
+                    avatarUrl = acc.avatar,
+                    handle = "@${acc.username.trim().removePrefix("@")}",
+                    followerCount = acc.followersCount.toLong(),
                     isLive = acc.isLive,
                 )
             }
