@@ -142,10 +142,16 @@ object F4fApiClient {
                 for (elem in dataArr) {
                     if (elem.isJsonObject) {
                         val item = elem.asJsonObject
-                        val id = item.get("id")?.asString ?: item.get("account_id")?.asString.orEmpty()
-                        val uName = item.get("username")?.asString ?: item.get("name")?.asString.orEmpty()
+                        val id = item.get("id")?.asString
+                            ?: item.get("account_id")?.asString
+                            ?: item.get("link")?.asString.orEmpty()
+                        val uName = item.get("link")?.asString
+                            ?: item.get("username")?.asString
+                            ?: item.get("name")?.asString
+                            ?: item.get("account_id")?.asString.orEmpty()
                         val status = item.get("status")?.asString ?: "Hoạt động"
-                        val isLive = item.get("is_active")?.asBoolean ?: (status.equals("active", ignoreCase = true) || status.equals("Hoạt động", ignoreCase = true))
+                        val isLive = item.get("is_active")?.asBoolean
+                            ?: (status.equals("active", ignoreCase = true) || status.equals("Hoạt động", ignoreCase = true))
                         val avatar = item.get("avatar")?.asString.orEmpty()
                         resultList.add(
                             F4fRemoteAccount(
@@ -161,6 +167,8 @@ object F4fApiClient {
                 }
                 F4fApiResult.Success(resultList)
             }
+        } catch (e: java.net.UnknownHostException) {
+            F4fApiResult.Error("Lỗi kết nối: Vui lòng kiểm tra lại mạng WiFi/4G")
         } catch (e: Exception) {
             F4fApiResult.Error(e.message ?: "Lỗi tải danh sách tài khoản F4F")
         }
@@ -213,6 +221,8 @@ object F4fApiClient {
                     F4fApiResult.Error(if (message.isNotBlank()) message else "Lỗi liên kết tài khoản (Mã $statusCode)")
                 }
             }
+        } catch (e: java.net.UnknownHostException) {
+            F4fApiResult.Error("Lỗi kết nối: Vui lòng kiểm tra lại mạng WiFi/4G")
         } catch (e: Exception) {
             F4fApiResult.Error(e.message ?: "Lỗi kết nối khi liên kết tài khoản F4F")
         }

@@ -47,6 +47,7 @@ fun F4fAccountScreen(navController: NavController) {
     var selectedVariant by remember { mutableStateOf(TikTokAppVariant.STANDARD) }
     var reloadingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     var linkingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var locallyLinkedHandles by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     // Danh sách tài khoản remote từ F4F API
     var remoteTiktokAccounts by remember { mutableStateOf<List<F4fRemoteAccount>>(emptyList()) }
@@ -116,7 +117,8 @@ fun F4fAccountScreen(navController: NavController) {
         localFbAccounts,
         localIgAccounts,
         reloadingTikTokUids,
-        linkingTikTokUids
+        linkingTikTokUids,
+        locallyLinkedHandles
     ) {
         when (selectedPlatform) {
             F4fPlatform.TikTok -> {
@@ -128,7 +130,7 @@ fun F4fAccountScreen(navController: NavController) {
                         TikTokAppVariant.STUDIO -> "tiktok_studio"
                         else -> "tiktok"
                     }
-                    val isLinked = cleanHandle.lowercase() in remoteHandles
+                    val isLinked = cleanHandle.lowercase() in remoteHandles || cleanHandle.lowercase() in locallyLinkedHandles
                     val isReloading = acc.uid in reloadingTikTokUids
                     val isLinking = acc.uid in linkingTikTokUids
                     F4fAccount(
@@ -358,16 +360,20 @@ fun F4fAccountScreen(navController: NavController) {
                     }
                     when (val res = F4fApiClient.addAccount(token, cleanHandle, type)) {
                         is F4fApiResult.Success -> {
+                            locallyLinkedHandles = locallyLinkedHandles + cleanHandle.lowercase()
                             Toast.makeText(context, "Đã liên kết @$cleanHandle thành công!", Toast.LENGTH_SHORT).show()
                             refreshProfileAndAccounts()
                         }
                         is F4fApiResult.Error -> {
                             val msg = res.message
-                            if (msg.contains("đã tồn tại", ignoreCase = true) ||
+                            if (msg.contains("đã có", ignoreCase = true) ||
+                                msg.contains("tồn tại", ignoreCase = true) ||
                                 msg.contains("already", ignoreCase = true) ||
-                                msg.contains("exist", ignoreCase = true)
+                                msg.contains("exist", ignoreCase = true) ||
+                                msg.contains("tài khoản của bạn", ignoreCase = true)
                             ) {
-                                Toast.makeText(context, "Tài khoản @$cleanHandle đã có trên Follow4Follow!", Toast.LENGTH_SHORT).show()
+                                locallyLinkedHandles = locallyLinkedHandles + cleanHandle.lowercase()
+                                Toast.makeText(context, "Tài khoản @$cleanHandle đã được liên kết với Follow4Follow!", Toast.LENGTH_SHORT).show()
                                 refreshProfileAndAccounts()
                             } else {
                                 Toast.makeText(context, "Lỗi liên kết: $msg", Toast.LENGTH_SHORT).show()
