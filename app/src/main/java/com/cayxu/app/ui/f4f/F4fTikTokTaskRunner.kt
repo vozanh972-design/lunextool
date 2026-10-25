@@ -120,18 +120,31 @@ object F4fTikTokTaskRunner {
                             if (enableLike) add("like")
                         }.ifEmpty { listOf("follow") }
 
+                        val jobQueue = mutableListOf<F4fJobInfo>()
+                        var currentBatchTotal = 0
+                        var currentBatchIndex = 0
+
                         for (jobType in jobTypesToTry) {
                             if (!isActive || !_isRunning.value) break
-                            XsmmJobStatusBridge.update("@$handle: Đang tìm job $jobType...")
-                            val jobRes = F4fApiClient.getEarnJob(token, platform = "tiktok", typeJob = jobType, uid = handle)
-                            if (jobRes is F4fApiResult.Success) {
-                                jobInfo = jobRes.data
+                            val typeLabel = if (jobType == "like") "Like (thả tim)" else "Follow"
+                            XsmmJobStatusBridge.update("@$handle: Đang tìm job $typeLabel...")
+                            onStatusChange("@$handle: Đang tìm job $typeLabel...")
+                            val batchRes = F4fApiClient.getEarnJobs(token, platform = "tiktok", typeJob = jobType, uid = handle)
+                            if (batchRes is F4fApiResult.Success && batchRes.data.isNotEmpty()) {
+                                jobQueue.clear()
+                                jobQueue.addAll(batchRes.data)
+                                currentBatchTotal = batchRes.data.size
+                                currentBatchIndex = 0
+                                val msgFound = "@$handle: Đã tìm thấy $currentBatchTotal job $typeLabel! Chuẩn bị làm..."
+                                XsmmJobStatusBridge.update(msgFound)
+                                onStatusChange(msgFound)
+                                delay(1000L)
                                 break
                             }
-                            delay(1000L)
+                            delay(600L)
                         }
 
-                        if (jobInfo == null) {
+                        if (jobQueue.isEmpty()) {
                             val waitMsg = "@$handle: Tạm hết nhiệm vụ, chờ 8 giây..."
                             XsmmJobStatusBridge.update(waitMsg)
                             onStatusChange(waitMsg)
@@ -139,87 +152,106 @@ object F4fTikTokTaskRunner {
                             continue
                         }
 
-                        // 2. Mở TikTok đến profile/video của job
-                        val isLikeJob = jobInfo.typeJob.equals("like", ignoreCase = true)
-                        val jobLabel = if (isLikeJob) "Like (thả tim)" else "Follow"
-                        val effAccountId = if (jobInfo.accountId > 0L) {
-                            jobInfo.accountId
-                        } else if (numericAccountId > 0L) {
-                            numericAccountId
-                        } else {
-                            jobInfo.jobId
-                        }
+                        while (jobQueue.isNotEmpty() && isActive && _isRunning.value) {
+                            if (targetTaskCount in 1..totalCompleted) {
+                                val doneMsg = "Đã đạt mục tiêu $totalCompleted nhiệm vụ. Hoàn thành!"
+                                XsmmJobStatusBridge.update(doneMsg)
+                                onStatusChange(doneMsg)
+                                stop()
+                                return@launch
+                            }
 
-                        if (isLikeJob) {
-                            XsmmJobStatusBridge.update("@$handle: Đánh dấu bắt đầu Like #${jobInfo.jobId}...")
-                            F4fApiClient.markStartTiktokLike(token, jobInfo.jobId, effAccountId)
-                            delay(500L)
-                        }
+                            currentBatchIndex++
+                            val jobInfo = jobQueue.removeAt(0)
 
-                        val taskMsg = "@$handle: Làm job #${jobInfo.jobId} ($jobLabel)..."
-                        XsmmJobStatusBridge.update(taskMsg)
-                        onStatusChange(taskMsg)
-
-                        val targetUrl = jobInfo.targetLink.let { link ->
-                            if (link.startsWith("http://") || link.startsWith("https://")) {
-                                link
+                            // 2. Mở TikTok đến profile/video của job
+                            val isLikeJob = jobInfo.typeJob.equals("like", ignoreCase = true)
+                            val jobLabel = if (isLikeJob) "Like" else "Follow"
+                            val effAccountId = if (jobInfo.accountId > 0L) {
+                                jobInfo.accountId
+                            } else if (numericAccountId > 0L) {
+                                numericAccountId
                             } else {
-                                "https://www.tiktok.com/@${link.trim().removePrefix("@")}"
+                                jobInfo.jobId
                             }
-                        }
 
-                        TikTokAppLauncher.openUserProfile(context, targetUrl)
-                        delay(2000L)
-
-                        // 3. Kích hoạt Trợ năng bấm nút tương tác
-                        val actionId = XsmmTaskAutomationBridge.triggerTask(
-                            taskType = if (isLikeJob) "like" else "follow",
-                            swipeBefore = false,
-                            returnHomeAndSwipe = false,
-                            durationSeconds = 3
-                        )
-
-                        // Chờ thao tác hoàn thành
-                        val startActionTime = System.currentTimeMillis()
-                        var actionSuccess = false
-                        while (isActive && (System.currentTimeMillis() - startActionTime) < 15000L) {
-                            val res = XsmmTaskAutomationBridge.result.value
-                            if (res is XsmmTaskActionResult.Completed && res.actionId == actionId) {
-                                actionSuccess = res.success
-                                break
+                            if (isLikeJob) {
+                                XsmmJobStatusBridge.update("@$handle: Job $currentBatchIndex/$currentBatchTotal: Đánh dấu Like #${jobInfo.jobId}...")
+                                F4fApiClient.markStartTiktokLike(token, jobInfo.jobId, effAccountId)
+                                delay(400L)
                             }
-                            delay(400L)
-                        }
 
-                        // 4. Nghỉ delay theo cấu hình trước khi xác nhận
-                        val waitDelay = (delaySeconds.coerceAtLeast(3)) * 1000L
-                        XsmmJobStatusBridge.update("Chờ ${delaySeconds}s xác nhận...")
-                        delay(waitDelay)
+                            val taskMsg = "@$handle: Đang làm job $currentBatchIndex/$currentBatchTotal (#${jobInfo.jobId} $jobLabel)..."
+                            XsmmJobStatusBridge.update(taskMsg)
+                            onStatusChange(taskMsg)
 
-                        // 5. Xác nhận hoàn thành job lên server F4F
-                        when (val completeRes = F4fApiClient.completeJob(
-                            rawToken = token,
-                            jobId = jobInfo.jobId,
-                            accountId = effAccountId,
-                            type = "tiktok",
-                            typeJob = jobInfo.typeJob
-                        )) {
-                            is F4fApiResult.Success -> {
-                                val reward = completeRes.data.takeIf { it > 0 } ?: jobInfo.rewardCoins
-                                totalCompleted++
-                                totalCoinsEarned += reward
-                                F4fSession.points.value = F4fSession.points.value + reward
-
-                                val succMsg = "+$reward coin (#${jobInfo.jobId} $jobLabel) | Xong $totalCompleted NV"
-                                XsmmJobStatusBridge.update(succMsg)
-                                onStatusChange(succMsg)
-                                onProgressUpdate(totalCompleted, totalCoinsEarned)
+                            val targetUrl = jobInfo.targetLink.let { link ->
+                                if (link.startsWith("http://") || link.startsWith("https://")) {
+                                    link
+                                } else {
+                                    "https://www.tiktok.com/@${link.trim().removePrefix("@")}"
+                                }
                             }
-                            is F4fApiResult.Error -> {
-                                val errMsg = "Lỗi duyệt job: ${completeRes.message}"
-                                XsmmJobStatusBridge.update(errMsg)
-                                onStatusChange(errMsg)
+
+                            TikTokAppLauncher.openUserProfile(context, targetUrl)
+                            delay(2000L)
+
+                            // 3. Kích hoạt Trợ năng bấm nút tương tác
+                            val actionId = XsmmTaskAutomationBridge.triggerTask(
+                                taskType = if (isLikeJob) "like" else "follow",
+                                swipeBefore = false,
+                                returnHomeAndSwipe = false,
+                                durationSeconds = 3
+                            )
+
+                            // Chờ thao tác hoàn thành
+                            val startActionTime = System.currentTimeMillis()
+                            var actionSuccess = false
+                            while (isActive && (System.currentTimeMillis() - startActionTime) < 15000L) {
+                                val res = XsmmTaskAutomationBridge.result.value
+                                if (res is XsmmTaskActionResult.Completed && res.actionId == actionId) {
+                                    actionSuccess = res.success
+                                    break
+                                }
+                                delay(400L)
                             }
+
+                            // 4. Nghỉ delay theo cấu hình trước khi xác nhận
+                            for (s in (delaySeconds.coerceAtLeast(3)) downTo 1) {
+                                if (!isActive || !_isRunning.value) break
+                                val msgCount = "Job $currentBatchIndex/$currentBatchTotal: Chờ ${s}s xác nhận..."
+                                XsmmJobStatusBridge.update(msgCount)
+                                onStatusChange(msgCount)
+                                delay(1000L)
+                            }
+
+                            // 5. Xác nhận hoàn thành job lên server F4F
+                            when (val completeRes = F4fApiClient.completeJob(
+                                rawToken = token,
+                                jobId = jobInfo.jobId,
+                                accountId = effAccountId,
+                                type = "tiktok",
+                                typeJob = jobInfo.typeJob
+                            )) {
+                                is F4fApiResult.Success -> {
+                                    val reward = completeRes.data.takeIf { it > 0 } ?: jobInfo.rewardCoins
+                                    totalCompleted++
+                                    totalCoinsEarned += reward
+                                    F4fSession.points.value = F4fSession.points.value + reward
+
+                                    val succMsg = "+$reward coin (Job $currentBatchIndex/$currentBatchTotal) | Xong $totalCompleted NV"
+                                    XsmmJobStatusBridge.update(succMsg)
+                                    onStatusChange(succMsg)
+                                    onProgressUpdate(totalCompleted, totalCoinsEarned)
+                                }
+                                is F4fApiResult.Error -> {
+                                    val errMsg = "Job $currentBatchIndex/$currentBatchTotal lỗi: ${completeRes.message}"
+                                    XsmmJobStatusBridge.update(errMsg)
+                                    onStatusChange(errMsg)
+                                }
+                            }
+
+                            delay(1500L)
                         }
 
                         delay(2000L)

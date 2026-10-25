@@ -326,6 +326,8 @@ class F4fJobRunnerOverlayService : Service() {
                     val maxJobsPerTurn = 15
                     var jobsInCurrentTurn = 0
                     val jobQueue = mutableListOf<F4fJobInfo>()
+                    var currentBatchTotal = 0
+                    var currentBatchIndex = 0
 
                     while (isActive && jobsInCurrentTurn < maxJobsPerTurn) {
                         checkPauseWait()
@@ -343,7 +345,12 @@ class F4fJobRunnerOverlayService : Service() {
                                 setStatus("@$handle: Đang tìm job $typeLabel...")
                                 val batchRes = F4fApiClient.getEarnJobs(token, platform = "tiktok", typeJob = jType, uid = handle)
                                 if (batchRes is F4fApiResult.Success && batchRes.data.isNotEmpty()) {
+                                    jobQueue.clear()
                                     jobQueue.addAll(batchRes.data)
+                                    currentBatchTotal = batchRes.data.size
+                                    currentBatchIndex = 0
+                                    setStatus("@$handle: Đã tìm thấy $currentBatchTotal job $typeLabel! Chuẩn bị làm...")
+                                    delay(1000L)
                                     break
                                 }
                                 delay(600L)
@@ -362,11 +369,12 @@ class F4fJobRunnerOverlayService : Service() {
                         }
 
                         consecutiveFails = 0
+                        currentBatchIndex++
                         val currentJob = jobQueue.removeAt(0)
                         jobsInCurrentTurn++
 
                         val isLikeJob = currentJob.typeJob.equals("like", ignoreCase = true)
-                        val jobLabel = if (isLikeJob) "Like (thả tim)" else "Follow"
+                        val jobLabel = if (isLikeJob) "Like" else "Follow"
                         val effAccountId = if (currentJob.accountId > 0L) {
                             currentJob.accountId
                         } else if (numericAccountId > 0L) {
@@ -377,13 +385,13 @@ class F4fJobRunnerOverlayService : Service() {
 
                         // Nếu là job Like (tym), gọi mark-start theo đúng chuẩn cURL web
                         if (isLikeJob) {
-                            setStatus("@$handle: Đánh dấu bắt đầu Like #${currentJob.jobId}...")
+                            setStatus("@$handle: Job $currentBatchIndex/$currentBatchTotal: Đánh dấu Like #${currentJob.jobId}...")
                             F4fApiClient.markStartTiktokLike(token, currentJob.jobId, effAccountId)
-                            delay(500L)
+                            delay(400L)
                         }
 
                         // Mở profile/video trên TikTok
-                        setStatus("@$handle: Làm job #${currentJob.jobId} ($jobLabel)...")
+                        setStatus("@$handle: Đang làm job $currentBatchIndex/$currentBatchTotal (#${currentJob.jobId} $jobLabel)...")
                         val opened = openTikTokDirectDeepLink(applicationContext, currentJob.targetLink, "")
                         if (!opened) {
                             TikTokAppLauncher.openUserProfile(applicationContext, currentJob.targetLink)
@@ -409,7 +417,7 @@ class F4fJobRunnerOverlayService : Service() {
 
                         // Giãn cách chờ xác nhận
                         val delaySec = config.delaySeconds.coerceAtLeast(3)
-                        countdownWait(delaySec) { s -> "Chờ ${s}s nhận coin..." }
+                        countdownWait(delaySec) { s -> "Job $currentBatchIndex/$currentBatchTotal: Chờ ${s}s nhận coin..." }
 
                         // Gửi xác nhận hoàn thành
                         when (val completeRes = F4fApiClient.completeJob(
@@ -425,10 +433,10 @@ class F4fJobRunnerOverlayService : Service() {
                                 totalEarnedCoins += reward
                                 F4fSession.points.value = F4fSession.points.value + reward
                                 updateProgressDisplay()
-                                setStatus("+$reward coin (#${currentJob.jobId} $jobLabel) | Xong $totalCompleted NV")
+                                setStatus("+$reward coin (Job $currentBatchIndex/$currentBatchTotal) | Xong $totalCompleted NV")
                             }
                             is F4fApiResult.Error -> {
-                                setStatus("Lỗi duyệt job: ${completeRes.message}")
+                                setStatus("Job $currentBatchIndex/$currentBatchTotal lỗi: ${completeRes.message}")
                             }
                         }
 
