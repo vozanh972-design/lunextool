@@ -88,8 +88,7 @@ fun F4fRunConfigScreen(navController: NavController) {
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -114,15 +113,6 @@ fun F4fRunConfigScreen(navController: NavController) {
                         style = type(12.5f, FontWeight.Medium, Alx.Muted)
                     )
                 }
-            }
-
-            Box(
-                Modifier
-                    .size(40.dp)
-                    .background(F4fVioletSoft, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                SvgIcon(paths = SettingsIcon, size = 20.dp, color = F4fViolet)
             }
         }
 
@@ -156,13 +146,6 @@ fun F4fRunConfigScreen(navController: NavController) {
                 subtitle = "Tự động mở video TikTok và thả tim nhận coin",
                 checked = likeTask,
                 onCheckedChange = { likeTask = it }
-            )
-            Spacer(Modifier.height(10.dp))
-            ToggleRow(
-                title = "Comment / Bình luận",
-                subtitle = "Tự động bình luận theo nội dung nhiệm vụ",
-                checked = commentTask,
-                onCheckedChange = { commentTask = it }
             )
 
             // ── 2. THỜI GIAN GIÃN CÁCH GIỮA CÁC TASK (GIÂY) ──
@@ -322,10 +305,10 @@ private fun NumberField(
             .padding(horizontal = 14.dp),
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        textStyle = type(15f, FontWeight.SemiBold, Alx.Ink, align = TextAlign.Start),
+        textStyle = type(15f, FontWeight.SemiBold, Alx.Ink, align = TextAlign.Center),
         cursorBrush = SolidColor(F4fViolet),
         decorationBox = { innerTextField ->
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 innerTextField()
             }
         }

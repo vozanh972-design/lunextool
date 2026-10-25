@@ -345,13 +345,16 @@ class F4fJobRunnerOverlayService : Service() {
                                 setStatus("@$handle: Đang tìm job $typeLabel...")
                                 val batchRes = F4fApiClient.getEarnJobs(token, platform = "tiktok", typeJob = jType, uid = handle)
                                 if (batchRes is F4fApiResult.Success && batchRes.data.isNotEmpty()) {
-                                    jobQueue.clear()
-                                    jobQueue.addAll(batchRes.data)
-                                    currentBatchTotal = batchRes.data.size
-                                    currentBatchIndex = 0
-                                    setStatus("@$handle: Đã tìm thấy $currentBatchTotal job $typeLabel! Chuẩn bị làm...")
-                                    delay(1000L)
-                                    break
+                                    val validJobs = batchRes.data.filter { it.typeJob.lowercase() in jobTypesToTry }
+                                    if (validJobs.isNotEmpty()) {
+                                        jobQueue.clear()
+                                        jobQueue.addAll(validJobs)
+                                        currentBatchTotal = validJobs.size
+                                        currentBatchIndex = 0
+                                        setStatus("@$handle: Đã tìm thấy $currentBatchTotal job $typeLabel! Chuẩn bị làm...")
+                                        delay(1000L)
+                                        break
+                                    }
                                 }
                                 delay(600L)
                             }
@@ -389,6 +392,17 @@ class F4fJobRunnerOverlayService : Service() {
                             setStatus("@$handle: Job $currentBatchIndex/$currentBatchTotal: Đánh dấu Like #${currentJob.jobId}...")
                             F4fApiClient.markStartTiktokLike(token, currentJob.jobId, effAccountId)
                             delay(400L)
+                        }
+
+                        // Nếu cấu hình bật "Lướt video trước khi làm"
+                        if (config.swipeBeforeGetJob) {
+                            XsmmTaskAutomationBridge.triggerTask(
+                                taskType = "swipe",
+                                swipeBefore = false,
+                                returnHomeAndSwipe = false,
+                                durationSeconds = 1
+                            )
+                            delay(1000L)
                         }
 
                         // Mở profile/video trên TikTok
@@ -439,9 +453,25 @@ class F4fJobRunnerOverlayService : Service() {
                                 F4fSession.points.value = F4fSession.points.value + reward
                                 updateProgressDisplay()
                                 setStatus("+$reward coin (Job $currentBatchIndex/$currentBatchTotal) | Xong $totalCompleted NV")
+
+                                // Kiểm tra mục tiêu số lượng sau khi hoàn thành job
+                                if (config.targetTaskCount > 0 && totalCompleted >= config.targetTaskCount) {
+                                    setStatus("Đã đạt mục tiêu $totalCompleted nhiệm vụ. Hoàn thành!")
+                                    delay(2000L)
+                                    stopSelf()
+                                    return@launch
+                                }
                             }
                             is F4fApiResult.Error -> {
                                 setStatus("Job $currentBatchIndex/$currentBatchTotal lỗi: ${completeRes.message}")
+                                consecutiveFails++
+                                val maxConsecutiveFails = if (config.autoSwapOnError) config.errorSwapCount.coerceAtLeast(1) else 3
+                                if (config.autoSwapOnError && consecutiveFails >= maxConsecutiveFails) {
+                                    delay(1200L)
+                                    setStatus("@$handle: Lỗi liên tiếp $consecutiveFails lần -> Đổi nick...")
+                                    delay(2000L)
+                                    break
+                                }
                             }
                         }
 
