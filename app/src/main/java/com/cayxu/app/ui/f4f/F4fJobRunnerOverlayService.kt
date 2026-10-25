@@ -359,8 +359,9 @@ class F4fJobRunnerOverlayService : Service() {
 
                         if (jobQueue.isEmpty()) {
                             consecutiveFails++
-                            if (consecutiveFails >= 3) {
-                                setStatus("@$handle: Tạm hết job -> Chuyển nick tiếp theo...")
+                            val maxConsecutiveFails = if (config.autoSwapOnError) config.errorSwapCount.coerceAtLeast(1) else 3
+                            if (consecutiveFails >= maxConsecutiveFails) {
+                                setStatus("@$handle: Tạm hết job $consecutiveFails lần -> Chuyển nick tiếp theo...")
                                 delay(2000L)
                                 break
                             }
@@ -415,8 +416,12 @@ class F4fJobRunnerOverlayService : Service() {
                             delay(400L)
                         }
 
-                        // Giãn cách chờ xác nhận
-                        val delaySec = config.delaySeconds.coerceAtLeast(3)
+                        // Giãn cách chờ xác nhận (ngẫu nhiên giữa min và max)
+                        val delaySec = if (config.delayMaxSeconds > config.delayMinSeconds) {
+                            (config.delayMinSeconds..config.delayMaxSeconds).random()
+                        } else {
+                            config.delaySeconds.coerceAtLeast(3)
+                        }
                         countdownWait(delaySec) { s -> "Job $currentBatchIndex/$currentBatchTotal: Chờ ${s}s nhận coin..." }
 
                         // Gửi xác nhận hoàn thành

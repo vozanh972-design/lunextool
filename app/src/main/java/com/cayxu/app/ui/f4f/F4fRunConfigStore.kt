@@ -8,10 +8,15 @@ import com.google.gson.Gson
  */
 data class F4fRunConfig(
     val delaySeconds: Int = 5,
+    val delayMinSeconds: Int = 5,
+    val delayMaxSeconds: Int = 10,
     val targetTaskCount: Int = 50,
     val enableFollow: Boolean = true,
     val enableLike: Boolean = true,
     val enableComment: Boolean = false,
+    val autoSwapOnError: Boolean = true,
+    val errorSwapCount: Int = 3,
+    val swipeBeforeGetJob: Boolean = false,
 )
 
 object F4fRunConfigStore {
