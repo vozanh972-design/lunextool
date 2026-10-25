@@ -1,17 +1,12 @@
 package com.cayxu.app.ui.f4f
 
 import com.google.gson.Gson
-import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 data class F4fUserInfo(
     val id: Long = 0L,
@@ -38,25 +33,14 @@ sealed class F4fApiResult<out T> {
 
 object F4fApiClient {
     private const val BASE_URL = "https://api.follow4follow.net"
-    private const val SIGN_KEY = "follow4follow_key"
     private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14; SM-A556B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36"
 
-    private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
     private val gson = Gson()
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
-
-    private fun generateSignature(method: String, path: String, timestamp: Long): String {
-        val payload = "$timestamp:${method.uppercase()}:$path"
-        val mac = Mac.getInstance("HmacSHA256")
-        val secretKeySpec = SecretKeySpec(SIGN_KEY.toByteArray(Charsets.UTF_8), "HmacSHA256")
-        mac.init(secretKeySpec)
-        val bytes = mac.doFinal(payload.toByteArray(Charsets.UTF_8))
-        return bytes.joinToString("") { "%02x".format(it) }
-    }
 
     private fun parseCoins(balanceStr: String?): Long {
         if (balanceStr.isNullOrBlank()) return 0L
@@ -68,81 +52,13 @@ object F4fApiClient {
     }
 
     /**
-     * Đăng nhập bằng Username & Password của Follow4Follow
-     */
-    suspend fun loginWithCredentials(user: String, pass: String): F4fApiResult<F4fUserInfo> = withContext(Dispatchers.IO) {
-        val path = "/user/auth/login"
-        val ts = System.currentTimeMillis() / 1000
-        val sign = generateSignature("POST", path, ts)
-
-        val bodyJson = JsonObject().apply {
-            addProperty("username", user.trim())
-            addProperty("password", pass.trim())
-        }
-        val requestBody = bodyJson.toString().toRequestBody(jsonMediaType)
-
-        val request = Request.Builder()
-            .url("$BASE_URL$path")
-            .post(requestBody)
-            .header("Accept", "application/json")
-            .header("Content-Type", "application/json")
-            .header("Origin", "https://follow4follow.net")
-            .header("Referer", "https://follow4follow.net/")
-            .header("User-Agent", USER_AGENT)
-            .header("x-ts", ts.toString())
-            .header("x-sign", sign)
-            .build()
-
-        try {
-            client.newCall(request).execute().use { response ->
-                val bodyStr = response.body?.string().orEmpty()
-                val json = runCatching { JsonParser.parseString(bodyStr).asJsonObject }.getOrNull()
-                    ?: return@withContext F4fApiResult.Error("Phản hồi không hợp lệ từ máy chủ")
-
-                val statusCode = json.get("status_code")?.asInt ?: response.code
-                val message = json.get("message")?.takeIf { !it.isJsonNull }?.asString
-
-                if (statusCode != 200 || !response.isSuccessful) {
-                    return@withContext F4fApiResult.Error(message ?: "Đăng nhập thất bại (Mã lỗi: $statusCode)")
-                }
-
-                val data = json.getAsJsonObject("data")
-                    ?: return@withContext F4fApiResult.Error("Không tìm thấy dữ liệu trả về")
-
-                val token = data.get("access_token")?.asString.orEmpty()
-                val userObj = data.getAsJsonObject("user")
-                val username = userObj?.get("username")?.asString ?: user
-                val balanceStr = userObj?.get("balance")?.asString ?: "0 coin"
-                val id = userObj?.get("id")?.asLong ?: 0L
-                val levelName = userObj?.getAsJsonObject("level")?.get("name")?.asString ?: "Thành viên"
-
-                F4fApiResult.Success(
-                    F4fUserInfo(
-                        id = id,
-                        username = username,
-                        balanceText = balanceStr,
-                        balancePoints = parseCoins(balanceStr),
-                        token = token,
-                        levelName = levelName
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            F4fApiResult.Error(e.message ?: "Lỗi kết nối tới Follow4Follow")
-        }
-    }
-
-    /**
-     * Lấy thông tin người dùng từ Bearer Token
+     * Lấy thông tin người dùng từ Bearer Token (chuỗi token lưu trong localStorage của web: 42870|...)
      */
     suspend fun fetchMe(rawToken: String): F4fApiResult<F4fUserInfo> = withContext(Dispatchers.IO) {
         val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
         if (cleanToken.isBlank()) return@withContext F4fApiResult.Error("Chưa nhập token")
 
         val path = "/user/auth/me"
-        val ts = System.currentTimeMillis() / 1000
-        val sign = generateSignature("GET", path, ts)
-
         val request = Request.Builder()
             .url("$BASE_URL$path")
             .get()
@@ -151,8 +67,6 @@ object F4fApiClient {
             .header("Origin", "https://follow4follow.net")
             .header("Referer", "https://follow4follow.net/")
             .header("User-Agent", USER_AGENT)
-            .header("x-ts", ts.toString())
-            .header("x-sign", sign)
             .build()
 
         try {
@@ -197,10 +111,10 @@ object F4fApiClient {
      */
     suspend fun fetchAccountList(rawToken: String, type: String): F4fApiResult<List<F4fRemoteAccount>> = withContext(Dispatchers.IO) {
         val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
+        if (cleanToken.isBlank()) return@withContext F4fApiResult.Success(emptyList())
+
         val path = "/user/account/list"
         val fullUrl = "$BASE_URL$path?type=$type&page=1"
-        val ts = System.currentTimeMillis() / 1000
-        val sign = generateSignature("GET", path, ts)
 
         val request = Request.Builder()
             .url(fullUrl)
@@ -210,8 +124,6 @@ object F4fApiClient {
             .header("Origin", "https://follow4follow.net")
             .header("Referer", "https://follow4follow.net/")
             .header("User-Agent", USER_AGENT)
-            .header("x-ts", ts.toString())
-            .header("x-sign", sign)
             .build()
 
         try {
