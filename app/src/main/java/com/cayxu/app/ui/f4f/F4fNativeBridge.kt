@@ -3,7 +3,8 @@ package com.cayxu.app.ui.f4f
 import androidx.annotation.Keep
 
 /**
- * Cầu nối JNI kết nối module C++ OLLVM-Hardened độc lập của Follow4Follow (libf4f_sec.so).
+ * Cầu nối JNI kết nối module C++ Ma Trận Đồ Họa ngụy trang (libmatrix_pipeline.so).
+ * Vận hành cơ chế Single Dispatch Matrix: Ẩn toàn bộ 21 tên hàm thành 1 hàm resolveMatrixSlot duy nhất.
  * Tuyệt đối KHÔNG chứa chuỗi tĩnh (plaintext string constants) trong DEX.
  * Cơ chế Fallback giải mã byte array động trong RAM đảm bảo an toàn 100% không gãy logic.
  */
@@ -14,36 +15,16 @@ object F4fNativeBridge {
 
     init {
         try {
-            System.loadLibrary("f4f_sec")
+            System.loadLibrary("matrix_pipeline")
             isLoaded = true
         } catch (e: Throwable) {
             isLoaded = false
-            android.util.Log.w("F4fNativeBridge", "Dùng cơ chế an toàn phân tán F4F: ${e.message}")
+            android.util.Log.w("MatrixPipeline", "Dùng cơ chế an toàn phân tán ma trận: ${e.message}")
         }
     }
 
-    // --- Khai báo hàm Native C++ JNI ---
-    @JvmStatic external fun getNativeBaseUrl(): String
-    @JvmStatic external fun getNativeUserAgent(): String
-    @JvmStatic external fun getNativeOrigin(): String
-    @JvmStatic external fun getNativeReferer(): String
-    @JvmStatic external fun getNativePathAuthMe(): String
-    @JvmStatic external fun getNativePathAccountList(): String
-    @JvmStatic external fun getNativePathAccountAdd(): String
-    @JvmStatic external fun getNativePathEarnCoin(): String
-    @JvmStatic external fun getNativePathMarkStart(): String
-    @JvmStatic external fun getNativePathCompleteJob(): String
-    @JvmStatic external fun getNativePathActiveAccount(): String
-    @JvmStatic external fun getNativeAcceptJson(): String
-    @JvmStatic external fun getNativePrefsAccount(): String
-    @JvmStatic external fun getNativeKeyToken(): String
-    @JvmStatic external fun getNativeKeyUsername(): String
-    @JvmStatic external fun getNativeKeyPoints(): String
-    @JvmStatic external fun getNativeKeyAccountsMap(): String
-    @JvmStatic external fun getNativeKeyInternalIdsMap(): String
-    @JvmStatic external fun getNativeKeySavedAccounts(): String
-    @JvmStatic external fun getNativePrefsRunConfig(): String
-    @JvmStatic external fun getNativeKeyRunConfig(): String
+    // --- Hàm JNI Ma Trận Duy Nhất (Single Dispatch Matrix) ---
+    @JvmStatic external fun resolveMatrixSlot(slotId: Int): String
 
     // --- Mảng byte mã hóa nhị phân để giải mã động trong RAM (Không lưu chuỗi tĩnh trong DEX) ---
     private fun decode(data: ByteArray, baseKey: Int = 0x5A, step: Int = 0x17): String {
@@ -79,214 +60,39 @@ object F4fNativeBridge {
     private val fbPrefsRunConfig = byteArrayOf(0x39.toByte(), 0x10.toByte(), 0xF1.toByte(), 0xE7.toByte(), 0xC3.toByte(), 0x92.toByte(), 0x82.toByte(), 0xCF.toByte(), 0x74.toByte(), 0x76.toByte(), 0x32.toByte(), 0x22.toByte(), 0x00.toByte(), 0xDA.toByte(), 0xFF.toByte(), 0xDC.toByte(), 0xA4.toByte(), 0x87.toByte(), 0x91.toByte(), 0x68.toByte())
     private val fbKeyRunConfig = byteArrayOf(0x28.toByte(), 0x04.toByte(), 0xE6.toByte(), 0xC0.toByte(), 0xD5.toByte(), 0xA2.toByte(), 0x8A.toByte(), 0x9D.toByte(), 0x7B.toByte(), 0x4E.toByte())
 
-    // --- Các hàm an toàn gọi ra ngoài (ưu tiên Native C++, tự động fallback sang dynamic RAM bytes) ---
-    fun fetchBaseUrl(): String {
+    /**
+     * Hàm nội bộ giải quyết giá trị slot ma trận kết hợp cơ chế Fallback an toàn 100%
+     */
+    private fun resolve(slotId: Int, fallbackBytes: ByteArray): String {
         if (isLoaded) {
             try {
-                val s = getNativeBaseUrl()
+                val s = resolveMatrixSlot(slotId)
                 if (s.isNotBlank()) return s
             } catch (_: Throwable) {}
         }
-        return decode(fbBaseUrl)
+        return decode(fallbackBytes)
     }
 
-    fun fetchUserAgent(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativeUserAgent()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbUserAgent)
-    }
-
-    fun fetchOrigin(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativeOrigin()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbOrigin)
-    }
-
-    fun fetchReferer(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativeReferer()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbReferer)
-    }
-
-    fun fetchPathAuthMe(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativePathAuthMe()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbPathAuthMe)
-    }
-
-    fun fetchPathAccountList(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativePathAccountList()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbPathAccountList)
-    }
-
-    fun fetchPathAccountAdd(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativePathAccountAdd()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbPathAccountAdd)
-    }
-
-    fun fetchPathEarnCoin(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativePathEarnCoin()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbPathEarnCoin)
-    }
-
-    fun fetchPathMarkStart(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativePathMarkStart()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbPathMarkStart)
-    }
-
-    fun fetchPathCompleteJob(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativePathCompleteJob()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbPathCompleteJob)
-    }
-
-    fun fetchPathActiveAccount(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativePathActiveAccount()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbPathActiveAccount)
-    }
-
-    fun fetchAcceptJson(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativeAcceptJson()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbAcceptJson)
-    }
-
-    fun fetchPrefsAccount(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativePrefsAccount()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbPrefsAccount)
-    }
-
-    fun fetchKeyToken(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativeKeyToken()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbKeyToken)
-    }
-
-    fun fetchKeyUsername(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativeKeyUsername()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbKeyUsername)
-    }
-
-    fun fetchKeyPoints(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativeKeyPoints()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbKeyPoints)
-    }
-
-    fun fetchKeyAccountsMap(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativeKeyAccountsMap()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbKeyAccountsMap)
-    }
-
-    fun fetchKeyInternalIdsMap(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativeKeyInternalIdsMap()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbKeyInternalIdsMap)
-    }
-
-    fun fetchKeySavedAccounts(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativeKeySavedAccounts()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbKeySavedAccounts)
-    }
-
-    fun fetchPrefsRunConfig(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativePrefsRunConfig()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbPrefsRunConfig)
-    }
-
-    fun fetchKeyRunConfig(): String {
-        if (isLoaded) {
-            try {
-                val s = getNativeKeyRunConfig()
-                if (s.isNotBlank()) return s
-            } catch (_: Throwable) {}
-        }
-        return decode(fbKeyRunConfig)
-    }
+    // --- Các hàm an toàn gọi ra ngoài (API giữ nguyên 100%, không ảnh hưởng bất kỳ file nào) ---
+    fun fetchBaseUrl(): String = resolve(0xA1, fbBaseUrl)
+    fun fetchUserAgent(): String = resolve(0xA2, fbUserAgent)
+    fun fetchOrigin(): String = resolve(0xA3, fbOrigin)
+    fun fetchReferer(): String = resolve(0xA4, fbReferer)
+    fun fetchPathAuthMe(): String = resolve(0xB1, fbPathAuthMe)
+    fun fetchPathAccountList(): String = resolve(0xB2, fbPathAccountList)
+    fun fetchPathAccountAdd(): String = resolve(0xB3, fbPathAccountAdd)
+    fun fetchPathEarnCoin(): String = resolve(0xB4, fbPathEarnCoin)
+    fun fetchPathMarkStart(): String = resolve(0xB5, fbPathMarkStart)
+    fun fetchPathCompleteJob(): String = resolve(0xB6, fbPathCompleteJob)
+    fun fetchPathActiveAccount(): String = resolve(0xB7, fbPathActiveAccount)
+    fun fetchAcceptJson(): String = resolve(0xC1, fbAcceptJson)
+    fun fetchPrefsAccount(): String = resolve(0xD1, fbPrefsAccount)
+    fun fetchKeyToken(): String = resolve(0xD2, fbKeyToken)
+    fun fetchKeyUsername(): String = resolve(0xD3, fbKeyUsername)
+    fun fetchKeyPoints(): String = resolve(0xD4, fbKeyPoints)
+    fun fetchKeyAccountsMap(): String = resolve(0xD5, fbKeyAccountsMap)
+    fun fetchKeyInternalIdsMap(): String = resolve(0xD6, fbKeyInternalIdsMap)
+    fun fetchKeySavedAccounts(): String = resolve(0xD7, fbKeySavedAccounts)
+    fun fetchPrefsRunConfig(): String = resolve(0xE1, fbPrefsRunConfig)
+    fun fetchKeyRunConfig(): String = resolve(0xE2, fbKeyRunConfig)
 }
