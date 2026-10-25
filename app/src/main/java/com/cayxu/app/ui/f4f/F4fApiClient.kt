@@ -1,11 +1,14 @@
 package com.cayxu.app.ui.f4f
 
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 data class F4fUserInfo(
@@ -160,6 +163,58 @@ object F4fApiClient {
             }
         } catch (e: Exception) {
             F4fApiResult.Error(e.message ?: "Lỗi tải danh sách tài khoản F4F")
+        }
+    }
+
+    /**
+     * Thêm/liên kết tài khoản MXH vào Follow4Follow:
+     * POST /user/account/add
+     * Body JSON: {"link": "<handle>", "g_recaptcha_response": "", "type": "<type>"}
+     */
+    suspend fun addAccount(rawToken: String, handle: String, type: String = "tiktok"): F4fApiResult<String> = withContext(Dispatchers.IO) {
+        val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
+        if (cleanToken.isBlank()) return@withContext F4fApiResult.Error("Chưa có token đăng nhập")
+        val cleanHandle = handle.trim().removePrefix("@").trim()
+        if (cleanHandle.isBlank()) return@withContext F4fApiResult.Error("Tên tài khoản không hợp lệ")
+
+        val path = "/user/account/add"
+        val jsonBody = JsonObject().apply {
+            addProperty("link", cleanHandle)
+            addProperty("g_recaptcha_response", "")
+            addProperty("type", type)
+        }.toString()
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val requestBody = jsonBody.toRequestBody(mediaType)
+
+        val request = Request.Builder()
+            .url("$BASE_URL$path")
+            .post(requestBody)
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .header("Authorization", "Bearer $cleanToken")
+            .header("Origin", "https://follow4follow.net")
+            .header("Referer", "https://follow4follow.net/")
+            .header("User-Agent", USER_AGENT)
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string().orEmpty()
+                val json = runCatching { JsonParser.parseString(bodyStr).asJsonObject }.getOrNull()
+                    ?: return@withContext F4fApiResult.Error("Phản hồi không hợp lệ từ máy chủ")
+
+                val statusCode = json.get("status_code")?.asInt ?: response.code
+                val message = json.get("message")?.takeIf { !it.isJsonNull }?.asString.orEmpty()
+
+                if (statusCode == 200 && response.isSuccessful) {
+                    F4fApiResult.Success(if (message.isNotBlank()) message else "Liên kết tài khoản thành công")
+                } else {
+                    F4fApiResult.Error(if (message.isNotBlank()) message else "Lỗi liên kết tài khoản (Mã $statusCode)")
+                }
+            }
+        } catch (e: Exception) {
+            F4fApiResult.Error(e.message ?: "Lỗi kết nối khi liên kết tài khoản F4F")
         }
     }
 }

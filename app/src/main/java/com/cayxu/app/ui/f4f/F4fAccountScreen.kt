@@ -340,8 +340,42 @@ fun F4fAccountScreen(navController: NavController) {
             },
             onLinkAccount = { acc ->
                 val cleanHandle = acc.handle.trim().removePrefix("@")
-                Toast.makeText(context, "Đang đồng bộ @$cleanHandle với Follow4Follow...", Toast.LENGTH_SHORT).show()
-                refreshProfileAndAccounts()
+                if (cleanHandle.isBlank()) {
+                    Toast.makeText(context, "Handle tài khoản không hợp lệ", Toast.LENGTH_SHORT).show()
+                    return@F4fAccountsScreen
+                }
+                if (token.isBlank()) {
+                    Toast.makeText(context, "Vui lòng đăng nhập lại Follow4Follow", Toast.LENGTH_SHORT).show()
+                    return@F4fAccountsScreen
+                }
+
+                linkingTikTokUids = linkingTikTokUids + acc.id
+                scope.launch {
+                    val type = when (selectedPlatform) {
+                        F4fPlatform.TikTok -> "tiktok"
+                        F4fPlatform.Facebook -> "facebook"
+                        F4fPlatform.Instagram -> "instagram"
+                    }
+                    when (val res = F4fApiClient.addAccount(token, cleanHandle, type)) {
+                        is F4fApiResult.Success -> {
+                            Toast.makeText(context, "Đã liên kết @$cleanHandle thành công!", Toast.LENGTH_SHORT).show()
+                            refreshProfileAndAccounts()
+                        }
+                        is F4fApiResult.Error -> {
+                            val msg = res.message
+                            if (msg.contains("đã tồn tại", ignoreCase = true) ||
+                                msg.contains("already", ignoreCase = true) ||
+                                msg.contains("exist", ignoreCase = true)
+                            ) {
+                                Toast.makeText(context, "Tài khoản @$cleanHandle đã có trên Follow4Follow!", Toast.LENGTH_SHORT).show()
+                                refreshProfileAndAccounts()
+                            } else {
+                                Toast.makeText(context, "Lỗi liên kết: $msg", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    linkingTikTokUids = linkingTikTokUids - acc.id
+                }
             },
             onTogglePlayAccount = { acc ->
                 when (selectedPlatform) {
