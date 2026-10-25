@@ -687,33 +687,17 @@ private fun AccountRow(
                 }
             }
 
-            // Reload & Play button
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (onReload != null) {
-                    PressBox(
-                        onClick = onReload,
-                        modifier = Modifier.size(34.dp).clip(CircleShape).background(Alx.Bg),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (account.isReloading) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = F4fViolet)
-                        } else {
-                            SvgIcon(Refresh, 16.dp, Alx.Muted, 2f)
-                        }
-                    }
-                }
-
-                if (onTogglePlay != null) {
-                    PressBox(
-                        onClick = onTogglePlay,
-                        modifier = Modifier.size(34.dp).clip(CircleShape).background(if (account.isRunning) Alx.Danger.copy(alpha = 0.12f) else F4fVioletSoft),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (account.isRunning) {
-                            Box(Modifier.size(11.dp).clip(RoundedCornerShape(2.5.dp)).background(Alx.Danger))
-                        } else {
-                            SvgIcon(Play, 14.dp, F4fViolet, 2f, fill = true)
-                        }
+            // Nút Reload làm mới
+            if (onReload != null) {
+                PressBox(
+                    onClick = onReload,
+                    modifier = Modifier.size(34.dp).clip(CircleShape).background(Alx.Bg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (account.isReloading) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = F4fViolet)
+                    } else {
+                        SvgIcon(Refresh, 16.dp, Alx.Muted, 2f)
                     }
                 }
             }
