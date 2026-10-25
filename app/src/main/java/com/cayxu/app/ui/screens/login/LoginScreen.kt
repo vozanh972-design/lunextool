@@ -68,6 +68,15 @@ fun LoginScreen(
         }
     }
 
+    var showBuyWeb by remember { mutableStateOf(false) }
+
+    if (showBuyWeb) {
+        com.cayxu.app.ui.license.SeamlessLoginWebView(
+            onClose = { showBuyWeb = false }
+        )
+        return
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -366,8 +375,7 @@ fun LoginScreen(
                         fontWeight = FontWeight.Bold,
                         color = Primary,
                         modifier = Modifier.clickable {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://lunex.io.vn/"))
-                            runCatching { context.startActivity(intent) }
+                            showBuyWeb = true
                         }
                     )
                 }

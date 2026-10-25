@@ -77,11 +77,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onBuy = {
-                                val intent = Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse("https://t.me/cayxu_admin")
-                                ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                                context.startActivity(intent)
+                                // Được xử lý trong AppFlow qua SeamlessLoginWebView
                             },
                             home = {
                                 CayXuNavGraph(startDestination = Routes.HOME)

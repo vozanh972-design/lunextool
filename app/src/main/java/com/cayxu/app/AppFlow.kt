@@ -82,6 +82,15 @@ fun AppFlow(
         )
     }
 
+    var showBuyWeb by remember { mutableStateOf(false) }
+
+    if (showBuyWeb) {
+        com.cayxu.app.ui.license.SeamlessLoginWebView(
+            onClose = { showBuyWeb = false }
+        )
+        return
+    }
+
     when (val s = step) {
         Step.Language -> LanguageRoute(onDone = { lang ->
             store.language = lang.name
@@ -91,7 +100,7 @@ fun AppFlow(
         is Step.License -> LicenseRoute(
             initialKey = s.key,
             initialError = s.error,
-            onBuy = onBuy,
+            onBuy = { showBuyWeb = true },
             onActivated = { key -> step = Step.Verifying(key, firstTime = true) },
         )
 
