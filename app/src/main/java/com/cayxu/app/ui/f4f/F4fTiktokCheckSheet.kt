@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -41,13 +40,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -60,31 +59,26 @@ import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.ui.design.Alx
 import com.cayxu.app.ui.design.EaseOutSoft
+import com.cayxu.app.ui.design.PrimaryButton
 import com.cayxu.app.ui.design.SvgIcon
 import com.cayxu.app.ui.design.type
 import com.cayxu.app.ui.overlay.xsmm.startXsmmVerifyTikTokAccount
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val F4fViolet = Color(0xFF7C3AED)
-private val F4fVioletSoft = Color(0xFFF5F3FF)
-
-enum class F4fTiktokVariant(val title: String, val appVariant: TikTokAppVariant) {
+/**
+ * Các app TikTok có thể chọn để kiểm tra trong Follow4Follow.
+ */
+enum class F4fTiktokVariant(val title: String, val variant: TikTokAppVariant) {
     TikTok("TikTok", TikTokAppVariant.STANDARD),
     TikTokLite("TikTok Lite", TikTokAppVariant.LITE),
     TikTokStudio("TikTok Studio", TikTokAppVariant.STUDIO),
 }
 
-private val IconOverlay = listOf(
-    "M4 6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2H6a2 2 0 0 1 -2 -2z",
-    "M13 11h5v5h-5z"
-)
-
-private val IconAccess = listOf(
-    "M12 4a2 2 0 1 0 0 -4 2 2 0 0 0 0 4z",
-    "M4 8h16M12 8v12M8 12l4 4 4 -4M9 20l3 -4 3 4"
-)
-
+/**
+ * Sheet kiểm tra tài khoản TikTok cho Follow4Follow (F4F)
+ * Giao diện và phong cách thiết kế đồng bộ chuẩn 100% với màn kiểm tra TikTok của hệ thống.
+ */
 @Composable
 fun F4fTikTokCheckSheet(
     initialVariant: TikTokAppVariant = TikTokAppVariant.STANDARD,
@@ -100,7 +94,6 @@ fun F4fTikTokCheckSheet(
             }
         )
     }
-
     var overlayGranted by remember { mutableStateOf(TikTokAppLauncher.isOverlayPermissionGranted(context)) }
     var accessibilityGranted by remember { mutableStateOf(TikTokAppLauncher.isAccessibilityServiceEnabled(context)) }
 
@@ -133,7 +126,9 @@ fun F4fTikTokCheckSheet(
         var shown by remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
 
-        LaunchedEffect(Unit) { shown = true }
+        LaunchedEffect(Unit) {
+            shown = true
+        }
 
         val dismissWithAnim: () -> Unit = {
             scope.launch {
@@ -143,7 +138,11 @@ fun F4fTikTokCheckSheet(
             }
         }
 
-        val scrimAlpha by animateFloatAsState(if (shown) 1f else 0f, tween(220), label = "f4fScrim")
+        val scrimAlpha by animateFloatAsState(
+            targetValue = if (shown) 1f else 0f,
+            animationSpec = tween(220),
+            label = "scrimAlpha"
+        )
 
         Box(modifier = Modifier.fillMaxSize()) {
             Box(
@@ -169,9 +168,13 @@ fun F4fTikTokCheckSheet(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                         .background(Alx.White)
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {}
+                        )
                         .navigationBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 18.dp)
+                        .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 28.dp)
                 ) {
                     Box(
                         modifier = Modifier
@@ -181,36 +184,48 @@ fun F4fTikTokCheckSheet(
                             .background(Alx.InputBorder)
                     )
 
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(18.dp))
+
                     BasicText("Kiểm tra tài khoản TikTok", style = type(size = 20f, weight = FontWeight.ExtraBold, color = Alx.Ink))
-                    Spacer(Modifier.height(4.dp))
+
+                    Spacer(Modifier.height(6.dp))
+
                     BasicText(
                         "Màn hình nổi và Trợ năng cần được cấp quyền để tự động mở TikTok và kiểm tra trạng thái nick.",
-                        style = type(size = 13f, weight = FontWeight.Medium, color = Alx.Muted, lineHeight = 1.45f),
+                        style = type(size = 13.5f, weight = FontWeight.Medium, color = Alx.Muted, lineHeight = 1.45f),
                     )
 
                     Spacer(Modifier.height(16.dp))
 
-                    F4fPermissionRow(
-                        icon = IconOverlay,
+                    PermissionRow(
+                        iconPaths = IconOverlayWindow,
                         title = "Hiển thị trên ứng dụng khác",
-                        subtitle = "Để hiện màn nổi kiểm tra tài khoản TikTok",
+                        subtitle = "Để hiện màn nổi kiểm tra và điều khiển trên TikTok",
                         granted = overlayGranted,
-                        onGrant = { TikTokAppLauncher.openOverlayPermissionSettings(context) }
+                        grantedLabel = "Đã cấp",
+                        requestLabel = "Cấp quyền",
+                        onGrant = { TikTokAppLauncher.openOverlayPermissionSettings(context) },
                     )
 
                     Spacer(Modifier.height(10.dp))
 
-                    F4fPermissionRow(
-                        icon = IconAccess,
+                    PermissionRow(
+                        iconPaths = IconAccessibility,
                         title = "Dịch vụ Trợ năng",
                         subtitle = "Để tự động bấm tab \"Tôi\" và kiểm tra @username TikTok",
                         granted = accessibilityGranted,
-                        onGrant = { TikTokAppLauncher.openAccessibilitySettings(context) }
+                        grantedLabel = "Đã cấp",
+                        requestLabel = "Cấp quyền",
+                        onGrant = { TikTokAppLauncher.openAccessibilitySettings(context) },
                     )
 
-                    Spacer(Modifier.height(18.dp))
-                    BasicText("CHỌN ỨNG DỤNG CẦN KIỂM TRA", style = type(size = 11f, weight = FontWeight.ExtraBold, color = Alx.Muted, spacing = 0.12f))
+                    Spacer(Modifier.height(20.dp))
+
+                    BasicText(
+                        "CHỌN ỨNG DỤNG CẦN KIỂM TRA",
+                        style = type(size = 11f, weight = FontWeight.ExtraBold, color = Alx.Muted, spacing = 0.12f),
+                    )
+
                     Spacer(Modifier.height(10.dp))
 
                     LazyVerticalGrid(
@@ -220,54 +235,44 @@ fun F4fTikTokCheckSheet(
                         modifier = Modifier.height(64.dp),
                     ) {
                         items(F4fTiktokVariant.entries) { app ->
-                            val selected = selectedApp == app
-                            val installed = installedApps.contains(app)
-                            Box(
-                                modifier = Modifier
-                                    .height(60.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(if (selected) F4fVioletSoft else Alx.Bg)
-                                    .border(if (selected) 2.dp else 1.dp, if (selected) F4fViolet else Alx.Line, RoundedCornerShape(14.dp))
-                                    .clickable { selectedApp = app },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    BasicText(app.title, style = type(13f, if (selected) FontWeight.Bold else FontWeight.Medium, if (selected) F4fViolet else Alx.Ink))
-                                    BasicText(if (installed) "Đã cài" else "Chưa cài", style = type(10.5f, FontWeight.Normal, if (installed) Color(0xFF16A34A) else Alx.Muted))
-                                }
-                            }
+                            AppVariantCard(
+                                title = app.title,
+                                installed = installedApps.contains(app),
+                                selected = selectedApp == app,
+                                onClick = { selectedApp = app },
+                            )
                         }
                     }
 
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(18.dp))
 
-                    val canCheck = accessibilityGranted && overlayGranted
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (canCheck) F4fViolet else Alx.InputBorder)
-                            .clickable(enabled = canCheck) {
-                                val variant = selectedApp.appVariant
-                                if (!TikTokAppLauncher.isInstalled(context, variant)) {
-                                    Toast.makeText(context, "Chưa cài đặt ${selectedApp.title} trên máy này", Toast.LENGTH_SHORT).show()
-                                    return@clickable
-                                }
-                                startXsmmVerifyTikTokAccount(context, variant)
-                                onDismiss()
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        BasicText("Kiểm tra tài khoản", style = type(15.5f, FontWeight.Bold, Alx.White))
-                    }
+                    val checkEnabled = accessibilityGranted
 
-                    if (!canCheck) {
+                    PrimaryButton(
+                        label = "Kiểm tra tài khoản",
+                        onClick = {
+                            val variant = selectedApp.variant
+                            if (!TikTokAppLauncher.isInstalled(context, variant)) {
+                                Toast.makeText(context, "Chưa cài đặt ${selectedApp.title} trên máy này", Toast.LENGTH_SHORT).show()
+                                return@PrimaryButton
+                            }
+                            if (!overlayGranted || !accessibilityGranted) {
+                                Toast.makeText(context, "Vui lòng cấp đủ 2 quyền ở trên trước khi kiểm tra", Toast.LENGTH_SHORT).show()
+                                return@PrimaryButton
+                            }
+
+                            startXsmmVerifyTikTokAccount(context, variant)
+                            onDismiss()
+                        },
+                        enabled = checkEnabled,
+                    )
+
+                    if (!checkEnabled) {
                         Spacer(Modifier.height(8.dp))
                         BasicText(
-                            "Vui lòng cấp đủ 2 quyền ở trên để tiếp tục",
-                            style = type(12f, FontWeight.Medium, Alx.Muted),
-                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                            "Cấp quyền Trợ năng để tiếp tục",
+                            style = type(size = 12f, weight = FontWeight.Medium, color = Alx.Muted),
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
                         )
                     }
                 }
@@ -276,58 +281,145 @@ fun F4fTikTokCheckSheet(
     }
 }
 
+/* ───────────────────────────── Thành phần con ───────────────────────────── */
+
 @Composable
-private fun F4fPermissionRow(
-    icon: List<String>,
+private fun PermissionRow(
+    iconPaths: List<String>,
     title: String,
     subtitle: String,
     granted: Boolean,
-    onGrant: () -> Unit
+    grantedLabel: String,
+    requestLabel: String,
+    onGrant: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (granted) Color(0xFFF0FDF4) else Color(0xFFFFFBEB))
-            .border(1.dp, if (granted) Color(0xFFBBF7D0) else Color(0xFFFDE68A), RoundedCornerShape(16.dp))
-            .padding(12.dp),
+            .clip(RoundedCornerShape(18.dp))
+            .background(Alx.Bg)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Box(
             modifier = Modifier
                 .size(40.dp)
-                .clip(CircleShape)
-                .background(if (granted) Color(0xFFDCFCE7) else Color(0xFFFEF3C7)),
-            contentAlignment = Alignment.Center
-        ) {
-            SvgIcon(icon, 20.dp, if (granted) Color(0xFF16A34A) else Color(0xFFD97706), 2f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Alx.BlueSoft),
+            contentAlignment = Alignment.Center,
+        ) { SvgIcon(paths = iconPaths, size = 19.dp, color = Alx.Blue, strokeWidth = 1.8f) }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            BasicText(title, style = type(size = 14.5f, weight = FontWeight.Bold, color = Alx.Ink))
+            Spacer(Modifier.height(2.dp))
+            BasicText(subtitle, style = type(size = 12f, weight = FontWeight.Medium, color = Alx.Muted, lineHeight = 1.4f))
         }
 
-        Column(Modifier.weight(1f)) {
-            BasicText(title, style = type(13.5f, FontWeight.Bold, Alx.Ink))
-            BasicText(subtitle, style = type(11.5f, FontWeight.Normal, Alx.Muted))
-        }
+        Spacer(Modifier.width(12.dp))
 
         if (granted) {
-            Box(
+            Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFDCFCE7))
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .height(30.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Alx.BlueSoft)
+                    .padding(horizontal = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                BasicText("Đã cấp", style = type(12f, FontWeight.Bold, Color(0xFF16A34A)))
+                SvgIcon(paths = listOf(IconCheckMark), size = 13.dp, color = Alx.Blue, strokeWidth = 3f)
+                BasicText(grantedLabel, style = type(size = 12.5f, weight = FontWeight.ExtraBold, color = Alx.Blue))
             }
         } else {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(F4fViolet)
-                    .clickable(onClick = onGrant)
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                BasicText("Cấp quyền", style = type(12f, FontWeight.Bold, Alx.White))
+            PressBox(onClick = onGrant) { _ ->
+                Box(
+                    modifier = Modifier
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Alx.Blue)
+                        .padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BasicText(requestLabel, style = type(size = 13f, weight = FontWeight.Bold, color = Alx.White))
+                }
             }
         }
     }
 }
+
+@Composable
+private fun AppVariantCard(
+    title: String,
+    installed: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    PressBox(onClick = onClick, enabled = installed) { _ ->
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(if (selected) Alx.Ink else Alx.White)
+                .then(
+                    if (selected) Modifier else Modifier.border(1.dp, Alx.Line, RoundedCornerShape(18.dp))
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                BasicText(
+                    title,
+                    style = type(
+                        size = 14f,
+                        weight = if (selected) FontWeight.ExtraBold else FontWeight.Bold,
+                        color = if (selected) Alx.White else Alx.Ink2,
+                        align = TextAlign.Center,
+                    ),
+                )
+                Spacer(Modifier.height(2.dp))
+                BasicText(
+                    if (installed) "Đã cài" else "Chưa cài",
+                    style = type(
+                        size = 11.5f,
+                        weight = FontWeight.SemiBold,
+                        color = if (selected) Color(0xFFB6C0D2) else Alx.Muted,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PressBox(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    content: @Composable (pressed: Boolean) -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(
+        modifier = Modifier
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            )
+            .alpha(if (enabled) 1f else .45f)
+    ) { content(pressed) }
+}
+
+private val IconOverlayWindow = listOf("M4 4h12v12H4z", "M8 20h12V8")
+
+private val IconAccessibility = listOf(
+    "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0",
+    "M10.7 7.5a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0 -2.6 0",
+    "M7 11.5l5-1 5 1",
+    "M12 11.5v3.5",
+    "M9.5 18.5l2.5-3.5 2.5 3.5",
+)
+
+private const val IconCheckMark = "M5 12.5l4.5 4.5L19 7.5"
