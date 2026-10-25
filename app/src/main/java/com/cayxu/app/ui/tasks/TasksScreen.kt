@@ -97,6 +97,7 @@ val DefaultServices = listOf(
     TaskService("golike", "GL", Alx.Blue, Alx.BlueSoft, "GoLike", listOf(Platform.Facebook, Platform.Instagram, Platform.TikTok)),
     TaskService("ttc", "TTC", Color(0xFFC2255C), Color(0xFFFDEAF2), "Tuongtaccheo", listOf(Platform.Facebook)),
     TaskService("tiktok", "TikT", Color(0xFF334155), Color(0xFFEDF0F5), "TikTok TTC", listOf(Platform.TikTok), 12.5f),
+    TaskService("f4f", "F4F", Color(0xFF7C3AED), Color(0xFFF5F3FF), "Follow4Follow", listOf(Platform.TikTok, Platform.Instagram), 13f),
     TaskService("nvc", "NV", Color(0xFF94A3B8), Color(0xFFF1F5F9), "Nhiemvucheo", listOf(Platform.Facebook), isSupported = false),
 )
 
@@ -166,6 +167,7 @@ fun TasksScreen(
                     "golike" -> navController.navigate(Routes.GOLIKE_ACCOUNT)
                     "ttc" -> navController.navigate(Routes.TUONG_TAC_CHEO)
                     "tiktok" -> navController.navigate(Routes.TUONG_TAC_CHEO_TIKTOK)
+                    "f4f" -> android.widget.Toast.makeText(context, "Nền tảng Follow4Follow đang hoàn thiện kết nối", android.widget.Toast.LENGTH_SHORT).show()
                     "nvc" -> Unit
                 }
             }
