@@ -411,7 +411,15 @@ class F4fJobRunnerOverlayService : Service() {
                         if (!opened) {
                             TikTokAppLauncher.openUserProfile(applicationContext, currentJob.targetLink)
                         }
-                        delay(2500L)
+                        delay(2000L)
+
+                        // Thời gian làm job ngẫu nhiên trên profile/video theo cấu hình trước khi bấm nút
+                        val doJobSec = if (config.doJobMaxSeconds > config.doJobMinSeconds) {
+                            (config.doJobMinSeconds..config.doJobMaxSeconds).random()
+                        } else {
+                            config.doJobMinSeconds.coerceAtLeast(1)
+                        }
+                        countdownWait(doJobSec) { s -> "Job $currentBatchIndex/$currentBatchTotal: Đang xem $jobLabel (chờ ${s}s)..." }
 
                         // Bấm nút qua Accessibility
                         val actionId = XsmmTaskAutomationBridge.triggerTask(

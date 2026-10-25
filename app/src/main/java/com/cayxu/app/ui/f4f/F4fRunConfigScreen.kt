@@ -2,9 +2,6 @@ package com.cayxu.app.ui.f4f
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,10 +15,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +26,8 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,10 +53,6 @@ private val F4fViolet = Color(0xFF7C3AED)
 private val F4fVioletSoft = Color(0xFFF5F3FF)
 
 private val Back = listOf("M19 12H5M11 6l-6 6 6 6")
-private val SettingsIcon = listOf(
-    "M12 15a3 3 0 100-6 3 3 0 000 6z",
-    "M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06-.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"
-)
 
 @Composable
 fun F4fRunConfigScreen(navController: NavController) {
@@ -67,6 +62,9 @@ fun F4fRunConfigScreen(navController: NavController) {
     var followTask by remember { mutableStateOf(initialConfig.enableFollow) }
     var likeTask by remember { mutableStateOf(initialConfig.enableLike) }
     var commentTask by remember { mutableStateOf(initialConfig.enableComment) }
+
+    var doJobMin by remember { mutableStateOf(initialConfig.doJobMinSeconds.toString()) }
+    var doJobMax by remember { mutableStateOf(initialConfig.doJobMaxSeconds.toString()) }
 
     var delayMin by remember { mutableStateOf(initialConfig.delayMinSeconds.toString()) }
     var delayMax by remember { mutableStateOf(initialConfig.delayMaxSeconds.toString()) }
@@ -148,8 +146,18 @@ fun F4fRunConfigScreen(navController: NavController) {
                 onCheckedChange = { likeTask = it }
             )
 
-            // ── 2. THỜI GIAN GIÃN CÁCH GIỮA CÁC TASK (GIÂY) ──
-            SectionLabel("2. THỜI GIAN GIÃN CÁCH GIỮA CÁC TASK (GIÂY)", Modifier.padding(top = 26.dp))
+            // ── 2. THỜI GIAN LÀM JOB (GIÂY) ──
+            SectionLabel("2. THỜI GIAN LÀM JOB (GIÂY)", Modifier.padding(top = 26.dp))
+            MinMaxRow(
+                minVal = doJobMin,
+                onMinChange = { doJobMin = it },
+                maxVal = doJobMax,
+                onMaxChange = { doJobMax = it }
+            )
+            SubLabel("Thời gian đếm ngược ngẫu nhiên trên profile/video trước khi bấm Follow/Like")
+
+            // ── 3. THỜI GIAN NGHỈ GIỮA CÁC JOB (GIÂY) ──
+            SectionLabel("3. THỜI GIAN NGHỈ GIỮA CÁC JOB (GIÂY)", Modifier.padding(top = 26.dp))
             MinMaxRow(
                 minVal = delayMin,
                 onMinChange = { delayMin = it },
@@ -166,16 +174,16 @@ fun F4fRunConfigScreen(navController: NavController) {
                 onCheckedChange = { swipeBeforeGetJob = it }
             )
 
-            // ── 3. SỐ LƯỢNG NHIỆM VỤ MỤC TIÊU ──
-            SectionLabel("3. SỐ LƯỢNG NHIỆM VỤ MỤC TIÊU", Modifier.padding(top = 26.dp))
+            // ── 4. SỐ LƯỢNG NHIỆM VỤ MỤC TIÊU ──
+            SectionLabel("4. SỐ LƯỢNG NHIỆM VỤ MỤC TIÊU", Modifier.padding(top = 26.dp))
             Column(Modifier.padding(top = 8.dp)) {
                 FieldLabel("Số job mục tiêu")
                 NumberField(taskCount, { taskCount = it }, Modifier.fillMaxWidth())
                 SubLabel("Nhập 0 để chạy không giới hạn số lượng (Tool sẽ tự động dừng khi đạt đủ mục tiêu)")
             }
 
-            // ── 4. TỰ ĐỘNG ĐỔI NICK KHI LỖI HOẶC HẾT JOB ──
-            SectionLabel("4. TỰ ĐỘNG ĐỔI NICK KHI LỖI HOẶC HẾT JOB", Modifier.padding(top = 26.dp))
+            // ── 5. TỰ ĐỘNG ĐỔI NICK KHI LỖI HOẶC HẾT JOB ──
+            SectionLabel("5. TỰ ĐỘNG ĐỔI NICK KHI LỖI HOẶC HẾT JOB", Modifier.padding(top = 26.dp))
             Spacer(Modifier.height(10.dp))
             ToggleRow(
                 title = "Tự động đổi nick khi lỗi",
@@ -210,12 +218,16 @@ fun F4fRunConfigScreen(navController: NavController) {
                     .clip(RoundedCornerShape(16.dp))
                     .background(F4fViolet)
                     .clickable {
-                        val dMin = delayMin.toIntOrNull()?.coerceAtLeast(3) ?: 5
+                        val djMin = doJobMin.toIntOrNull()?.coerceAtLeast(1) ?: 5
+                        val djMax = doJobMax.toIntOrNull()?.coerceAtLeast(djMin) ?: (djMin + 5)
+                        val dMin = delayMin.toIntOrNull()?.coerceAtLeast(1) ?: 5
                         val dMax = delayMax.toIntOrNull()?.coerceAtLeast(dMin) ?: (dMin + 5)
                         val config = F4fRunConfig(
                             delaySeconds = dMin,
                             delayMinSeconds = dMin,
                             delayMaxSeconds = dMax,
+                            doJobMinSeconds = djMin,
+                            doJobMaxSeconds = djMax,
                             targetTaskCount = taskCount.toIntOrNull()?.coerceAtLeast(0) ?: 50,
                             enableFollow = followTask,
                             enableLike = likeTask,
@@ -230,39 +242,80 @@ fun F4fRunConfigScreen(navController: NavController) {
                     },
                 contentAlignment = Alignment.Center
             ) {
-                BasicText("Lưu cấu hình", style = type(16f, FontWeight.Bold, Alx.White))
+                BasicText(
+                    "Lưu cấu hình",
+                    style = type(15.5f, FontWeight.SemiBold, Alx.White)
+                )
             }
         }
     }
 }
 
-/* ───────────────────────────── Các thành phần UI phụ trợ ───────────────────────────── */
+@Composable
+private fun SectionLabel(title: String, modifier: Modifier = Modifier) {
+    BasicText(
+        text = title,
+        modifier = modifier,
+        style = type(12.5f, FontWeight.Bold, Color(0xFF6B7280))
+    )
+}
 
 @Composable
-private fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+private fun FieldLabel(title: String) {
     BasicText(
-        text,
-        modifier.padding(start = 2.dp),
-        style = type(12.5f, FontWeight.ExtraBold, Color(0xFF475569), spacing = 0.05f)
+        text = title,
+        modifier = Modifier.padding(bottom = 6.dp),
+        style = type(13.5f, FontWeight.SemiBold, Color(0xFF374151))
     )
 }
 
 @Composable
 private fun SubLabel(text: String) {
     BasicText(
-        text,
-        Modifier.padding(top = 6.dp, start = 4.dp),
-        style = type(12f, FontWeight.Medium, Alx.Muted, lineHeight = 1.35f)
+        text = text,
+        modifier = Modifier.padding(top = 5.dp),
+        style = type(12f, FontWeight.Normal, Color(0xFF9CA3AF))
     )
 }
 
 @Composable
-private fun FieldLabel(text: String) {
-    BasicText(
-        text,
-        Modifier.padding(bottom = 6.dp, start = 2.dp),
-        style = type(13f, FontWeight.SemiBold, Alx.Ink2)
-    )
+private fun ToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFFF9FAFB))
+            .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            BasicText(title, style = type(14.5f, FontWeight.SemiBold, Color(0xFF1F2937)))
+            BasicText(
+                subtitle,
+                Modifier.padding(top = 2.dp),
+                style = type(12f, FontWeight.Normal, Color(0xFF6B7280))
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Alx.White,
+                checkedTrackColor = F4fViolet,
+                uncheckedThumbColor = Alx.White,
+                uncheckedTrackColor = Color(0xFFE5E7EB),
+                uncheckedBorderColor = Color.Transparent
+            )
+        )
+    }
 }
 
 @Composable
@@ -275,15 +328,16 @@ private fun MinMaxRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(top = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            FieldLabel("Tối thiểu")
+            FieldLabel("Tối thiểu (giây)")
             NumberField(minVal, onMinChange, Modifier.fillMaxWidth())
         }
         Column(Modifier.weight(1f)) {
-            FieldLabel("Tối đa")
+            FieldLabel("Tối đa (giây)")
             NumberField(maxVal, onMaxChange, Modifier.fillMaxWidth())
         }
     }
@@ -295,79 +349,81 @@ private fun NumberField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    BasicTextField(
-        value = value,
-        onValueChange = { s -> onValueChange(s.filter { it.isDigit() }) },
+    val numericVal = value.toIntOrNull() ?: 0
+
+    Row(
         modifier = modifier
             .height(48.dp)
-            .background(Color(0xFFF8FAFC), RoundedCornerShape(14.dp))
-            .border(1.dp, Alx.InputBorder, RoundedCornerShape(14.dp))
-            .padding(horizontal = 14.dp),
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        textStyle = type(15f, FontWeight.SemiBold, Alx.Ink, align = TextAlign.Center),
-        cursorBrush = SolidColor(F4fViolet),
-        decorationBox = { innerTextField ->
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                innerTextField()
-            }
-        }
-    )
-}
-
-@Composable
-private fun ToggleRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(Color(0xFFF8FAFC), RoundedCornerShape(16.dp))
-            .border(1.dp, Alx.Divider, RoundedCornerShape(16.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { onCheckedChange(!checked) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFFF9FAFB))
+            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
+            .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            Modifier
-                .weight(1f)
-                .padding(end = 12.dp)
+        // Nút trừ
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+                .border(1.dp, Color(0xFFE5E7EB), CircleShape)
+                .clickable {
+                    val next = (numericVal - 1).coerceAtLeast(0)
+                    onValueChange(next.toString())
+                },
+            contentAlignment = Alignment.Center
         ) {
-            BasicText(title, style = type(14f, FontWeight.Bold, Alx.Ink))
-            BasicText(
-                subtitle,
-                Modifier.padding(top = 2.dp),
-                style = type(12f, FontWeight.Medium, Alx.Muted, lineHeight = 1.35f)
+            BasicText("-", style = type(16f, FontWeight.Bold, Color(0xFF4B5563)))
+        }
+
+        // Ô nhập số ở giữa căn giữa tuyệt đối
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = { newVal ->
+                    val filtered = newVal.filter { it.isDigit() }
+                    if (filtered.length <= 5) {
+                        onValueChange(filtered)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = type(15f, FontWeight.Bold, Color(0xFF111827)).copy(textAlign = TextAlign.Center),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                cursorBrush = SolidColor(F4fViolet),
+                decorationBox = { innerTextField ->
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        if (value.isEmpty()) {
+                            BasicText(
+                                "0",
+                                style = type(15f, FontWeight.Bold, Color(0xFF9CA3AF)).copy(textAlign = TextAlign.Center)
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
             )
         }
-        F4fSwitch(checked)
-    }
-}
 
-@Composable
-private fun F4fSwitch(checked: Boolean) {
-    val track by animateColorAsState(if (checked) F4fViolet else Color(0xFFCBD2DF), tween(150), label = "f4fTrack")
-    val knob by animateDpAsState(if (checked) 20.dp else 0.dp, tween(150), label = "f4fKnob")
-
-    Box(
-        Modifier
-            .size(width = 52.dp, height = 32.dp)
-            .background(track, RoundedCornerShape(16.dp))
-            .padding(3.dp)
-    ) {
+        // Nút cộng
         Box(
-            Modifier
-                .offset(x = knob)
-                .size(26.dp)
-                .shadow(1.dp, CircleShape)
-                .background(Color.White, CircleShape)
-        )
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+                .border(1.dp, Color(0xFFE5E7EB), CircleShape)
+                .clickable {
+                    val next = numericVal + 1
+                    onValueChange(next.toString())
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            BasicText("+", style = type(16f, FontWeight.Bold, Color(0xFF4B5563)))
+        }
     }
 }

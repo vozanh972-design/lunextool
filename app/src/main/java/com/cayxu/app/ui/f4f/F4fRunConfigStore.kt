@@ -14,6 +14,8 @@ data class F4fRunConfig(
     @SerializedName("delaySeconds") val delaySeconds: Int = 5,
     @SerializedName("delayMinSeconds") val delayMinSeconds: Int = 5,
     @SerializedName("delayMaxSeconds") val delayMaxSeconds: Int = 10,
+    @SerializedName("doJobMinSeconds") val doJobMinSeconds: Int = 5,
+    @SerializedName("doJobMaxSeconds") val doJobMaxSeconds: Int = 10,
     @SerializedName("targetTaskCount") val targetTaskCount: Int = 50,
     @SerializedName("enableFollow") val enableFollow: Boolean = true,
     @SerializedName("enableLike") val enableLike: Boolean = true,
