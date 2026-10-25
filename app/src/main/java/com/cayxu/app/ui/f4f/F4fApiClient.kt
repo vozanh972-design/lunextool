@@ -29,6 +29,15 @@ data class F4fRemoteAccount(
     val type: String = "",
 )
 
+data class F4fJobInfo(
+    val jobId: Long,
+    val targetLink: String,
+    val type: String = "tiktok",
+    val typeJob: String = "follow",
+    val rewardCoins: Long = 0L,
+    val originalData: String = "",
+)
+
 sealed class F4fApiResult<out T> {
     data class Success<T>(val data: T) : F4fApiResult<T>()
     data class Error(val message: String) : F4fApiResult<Nothing>()
@@ -225,6 +234,156 @@ object F4fApiClient {
             F4fApiResult.Error("Lỗi kết nối: Vui lòng kiểm tra lại mạng WiFi/4G")
         } catch (e: Exception) {
             F4fApiResult.Error(e.message ?: "Lỗi kết nối khi liên kết tài khoản F4F")
+        }
+    }
+
+    /**
+     * Lấy nhiệm vụ kiếm xu từ Follow4Follow:
+     * GET /user/earn-coin?platform=tiktok&type=follow&refresh=1&uid=<handle>
+     */
+    suspend fun getEarnJob(
+        rawToken: String,
+        platform: String = "tiktok",
+        typeJob: String = "follow",
+        uid: String = ""
+    ): F4fApiResult<F4fJobInfo> = withContext(Dispatchers.IO) {
+        val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
+        if (cleanToken.isBlank()) return@withContext F4fApiResult.Error("Chưa có token đăng nhập")
+
+        val path = "/user/earn-coin"
+        val cleanUid = uid.trim().removePrefix("@").trim()
+        val fullUrl = "$BASE_URL$path?platform=$platform&type=$typeJob&refresh=1&uid=$cleanUid"
+
+        val request = Request.Builder()
+            .url(fullUrl)
+            .get()
+            .header("Accept", "application/json")
+            .header("Authorization", "Bearer $cleanToken")
+            .header("Origin", "https://follow4follow.net")
+            .header("Referer", "https://follow4follow.net/")
+            .header("User-Agent", USER_AGENT)
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string().orEmpty()
+                val json = runCatching { JsonParser.parseString(bodyStr).asJsonObject }.getOrNull()
+                    ?: return@withContext F4fApiResult.Error("Phản hồi nhận job không hợp lệ")
+
+                val statusCode = json.get("status_code")?.asInt ?: response.code
+                val message = json.get("message")?.takeIf { !it.isJsonNull }?.asString.orEmpty()
+
+                if (statusCode != 200 || !response.isSuccessful) {
+                    return@withContext F4fApiResult.Error(if (message.isNotBlank()) message else "Không có nhiệm vụ khả dụng (Mã $statusCode)")
+                }
+
+                val jobObj = if (json.has("data") && json.get("data").isJsonObject) {
+                    json.getAsJsonObject("data")
+                } else if (json.has("data") && json.get("data").isJsonArray && json.getAsJsonArray("data").size() > 0) {
+                    json.getAsJsonArray("data").get(0).asJsonObject
+                } else {
+                    null
+                }
+
+                if (jobObj == null) {
+                    return@withContext F4fApiResult.Error("Hết nhiệm vụ hoặc không có job khả dụng")
+                }
+
+                val jobId = jobObj.get("id")?.asLong
+                    ?: jobObj.get("job_id")?.asLong
+                    ?: 0L
+
+                val link = jobObj.get("link")?.asString
+                    ?: jobObj.get("url")?.asString
+                    ?: jobObj.get("target_url")?.asString
+                    ?: jobObj.get("username")?.asString.orEmpty()
+
+                val coin = jobObj.get("coin")?.asLong
+                    ?: jobObj.get("reward")?.asLong
+                    ?: jobObj.get("point")?.asLong
+                    ?: 0L
+
+                if (jobId == 0L || link.isBlank()) {
+                    return@withContext F4fApiResult.Error("Dữ liệu nhiệm vụ không hợp lệ")
+                }
+
+                F4fApiResult.Success(
+                    F4fJobInfo(
+                        jobId = jobId,
+                        targetLink = link,
+                        type = platform,
+                        typeJob = typeJob,
+                        rewardCoins = coin,
+                        originalData = bodyStr
+                    )
+                )
+            }
+        } catch (e: java.net.UnknownHostException) {
+            F4fApiResult.Error("Lỗi kết nối: Vui lòng kiểm tra lại mạng WiFi/4G")
+        } catch (e: Exception) {
+            F4fApiResult.Error(e.message ?: "Lỗi lấy nhiệm vụ F4F")
+        }
+    }
+
+    /**
+     * Xác nhận hoàn thành nhiệm vụ và nhận xu:
+     * POST /user/earn-coin/complete-job
+     * Body JSON: {"job_id": <id>, "account_id": <id>, "type": "<type>", "type_job": "<type_job>"}
+     */
+    suspend fun completeJob(
+        rawToken: String,
+        jobId: Long,
+        accountId: Long,
+        type: String = "tiktok",
+        typeJob: String = "follow"
+    ): F4fApiResult<Long> = withContext(Dispatchers.IO) {
+        val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
+        if (cleanToken.isBlank()) return@withContext F4fApiResult.Error("Chưa có token đăng nhập")
+
+        val path = "/user/earn-coin/complete-job"
+        val jsonBody = JsonObject().apply {
+            addProperty("job_id", jobId)
+            addProperty("account_id", accountId)
+            addProperty("type", type)
+            addProperty("type_job", typeJob)
+        }.toString()
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val requestBody = jsonBody.toRequestBody(mediaType)
+
+        val request = Request.Builder()
+            .url("$BASE_URL$path")
+            .post(requestBody)
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .header("Authorization", "Bearer $cleanToken")
+            .header("Origin", "https://follow4follow.net")
+            .header("Referer", "https://follow4follow.net/")
+            .header("User-Agent", USER_AGENT)
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string().orEmpty()
+                val json = runCatching { JsonParser.parseString(bodyStr).asJsonObject }.getOrNull()
+                    ?: return@withContext F4fApiResult.Error("Phản hồi hoàn thành job không hợp lệ")
+
+                val statusCode = json.get("status_code")?.asInt ?: response.code
+                val message = json.get("message")?.takeIf { !it.isJsonNull }?.asString.orEmpty()
+
+                if (statusCode == 200 && response.isSuccessful) {
+                    val reward = json.getAsJsonObject("data")?.get("coin")?.asLong
+                        ?: json.getAsJsonObject("data")?.get("reward")?.asLong
+                        ?: 0L
+                    F4fApiResult.Success(reward)
+                } else {
+                    F4fApiResult.Error(if (message.isNotBlank()) message else "Lỗi duyệt job (Mã $statusCode)")
+                }
+            }
+        } catch (e: java.net.UnknownHostException) {
+            F4fApiResult.Error("Lỗi kết nối: Vui lòng kiểm tra lại mạng WiFi/4G")
+        } catch (e: Exception) {
+            F4fApiResult.Error(e.message ?: "Lỗi xác nhận hoàn thành job F4F")
         }
     }
 }

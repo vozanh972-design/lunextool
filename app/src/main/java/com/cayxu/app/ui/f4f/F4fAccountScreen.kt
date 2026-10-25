@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,7 +41,12 @@ fun F4fAccountScreen(navController: NavController) {
     var selectedTypeId by remember { mutableStateOf<String?>("tiktok") }
     var selectedAccountIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var refreshingBalance by remember { mutableStateOf(false) }
+    val isRunnerRunning by F4fTikTokTaskRunner.isRunning.collectAsState()
     var isAnyRunning by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isRunnerRunning) {
+        isAnyRunning = isRunnerRunning
+    }
 
     // Quản lý kiểm tra & liên kết tài khoản TikTok
     var showTikTokCheckSheet by remember { mutableStateOf(false) }
@@ -304,18 +310,44 @@ fun F4fAccountScreen(navController: NavController) {
                 navController.navigate(Routes.F4F_RUN_CONFIG)
             },
             onRun = {
-                if (isAnyRunning) {
+                if (isAnyRunning || F4fTikTokTaskRunner.isRunning()) {
                     isAnyRunning = false
+                    F4fTikTokTaskRunner.stop()
                     Toast.makeText(context, "Đã dừng nhiệm vụ Follow4Follow", Toast.LENGTH_SHORT).show()
+                    refreshProfileAndAccounts()
                 } else {
-                    if (selectedAccountIds.isEmpty() && accounts.isNotEmpty()) {
-                        selectedAccountIds = accounts.map { it.id }.toSet()
-                    }
-                    if (selectedAccountIds.isEmpty()) {
-                        Toast.makeText(context, "Vui lòng chọn tài khoản để chạy", Toast.LENGTH_SHORT).show()
+                    val accountsToRun = if (selectedAccountIds.isNotEmpty()) {
+                        accounts.filter { it.id in selectedAccountIds }
                     } else {
-                        isAnyRunning = true
-                        Toast.makeText(context, "Đang chạy nhiệm vụ Follow4Follow...", Toast.LENGTH_SHORT).show()
+                        accounts.filter { it.isLinked }
+                    }
+
+                    if (accountsToRun.isEmpty()) {
+                        Toast.makeText(context, "Vui lòng chọn tài khoản TikTok đã liên kết để chạy", Toast.LENGTH_SHORT).show()
+                        return@F4fAccountsScreen
+                    }
+
+                    if (selectedAccountIds.isEmpty()) {
+                        selectedAccountIds = accountsToRun.map { it.id }.toSet()
+                    }
+
+                    when (selectedPlatform) {
+                        F4fPlatform.TikTok -> {
+                            val handles = accountsToRun.map { it.handle.ifBlank { it.name.removePrefix("@") } }
+                            isAnyRunning = true
+                            Toast.makeText(context, "Bắt đầu chạy ${handles.size} nick TikTok Follow4Follow...", Toast.LENGTH_SHORT).show()
+                            F4fTikTokTaskRunner.start(
+                                context = context,
+                                selectedHandles = handles,
+                                variant = selectedVariant,
+                                onProgressUpdate = { _, _ ->
+                                    coinBalance = F4fSession.points.value
+                                }
+                            )
+                        }
+                        else -> {
+                            Toast.makeText(context, "Nền tảng ${selectedPlatform.label} đang được phát triển", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             },
