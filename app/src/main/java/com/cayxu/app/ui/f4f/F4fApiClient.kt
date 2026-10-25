@@ -1,8 +1,10 @@
 package com.cayxu.app.ui.f4f
 
+import androidx.annotation.Keep
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -11,32 +13,35 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
+@Keep
 data class F4fUserInfo(
-    val id: Long = 0L,
-    val username: String = "",
-    val balanceText: String = "0 coin",
-    val balancePoints: Long = 0L,
-    val token: String = "",
-    val levelName: String = "Thành viên",
+    @SerializedName("id") val id: Long = 0L,
+    @SerializedName("username") val username: String = "",
+    @SerializedName("balanceText") val balanceText: String = "0 coin",
+    @SerializedName("balancePoints") val balancePoints: Long = 0L,
+    @SerializedName("token") val token: String = "",
+    @SerializedName("levelName") val levelName: String = "Thành viên",
 )
 
+@Keep
 data class F4fRemoteAccount(
-    val id: String,
-    val username: String,
-    val status: String,
-    val isLive: Boolean,
-    val avatarUrl: String = "",
-    val type: String = "",
+    @SerializedName("id") val id: String,
+    @SerializedName("username") val username: String,
+    @SerializedName("status") val status: String,
+    @SerializedName("isLive") val isLive: Boolean,
+    @SerializedName("avatarUrl") val avatarUrl: String = "",
+    @SerializedName("type") val type: String = "",
 )
 
+@Keep
 data class F4fJobInfo(
-    val jobId: Long,
-    val targetLink: String,
-    val type: String = "tiktok",
-    val typeJob: String = "follow",
-    val rewardCoins: Long = 0L,
-    val accountId: Long = 0L,
-    val originalData: String = "",
+    @SerializedName("jobId") val jobId: Long,
+    @SerializedName("targetLink") val targetLink: String,
+    @SerializedName("type") val type: String = "tiktok",
+    @SerializedName("typeJob") val typeJob: String = "follow",
+    @SerializedName("rewardCoins") val rewardCoins: Long = 0L,
+    @SerializedName("accountId") val accountId: Long = 0L,
+    @SerializedName("originalData") val originalData: String = "",
 )
 
 sealed class F4fApiResult<out T> {
@@ -44,10 +49,8 @@ sealed class F4fApiResult<out T> {
     data class Error(val message: String) : F4fApiResult<Nothing>()
 }
 
+@Keep
 object F4fApiClient {
-    private const val BASE_URL = "https://api.follow4follow.net"
-    private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14; SM-A556B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36"
-
     private val gson = Gson()
 
     private val client = OkHttpClient.Builder()
@@ -65,21 +68,31 @@ object F4fApiClient {
     }
 
     /**
+     * Tạo Request.Builder chuẩn với các header F4F được giải mã qua Native C++
+     */
+    private fun buildF4fRequest(url: String, cleanToken: String): Request.Builder {
+        val b = Request.Builder()
+            .url(url)
+            .header("Accept", F4fNativeBridge.fetchAcceptJson())
+            .header("Origin", F4fNativeBridge.fetchOrigin())
+            .header("Referer", F4fNativeBridge.fetchReferer())
+            .header("User-Agent", F4fNativeBridge.fetchUserAgent())
+        if (cleanToken.isNotBlank()) {
+            b.header("Authorization", "Bearer $cleanToken")
+        }
+        return b
+    }
+
+    /**
      * Lấy thông tin người dùng từ Bearer Token (chuỗi token lưu trong localStorage của web: 42870|...)
      */
     suspend fun fetchMe(rawToken: String): F4fApiResult<F4fUserInfo> = withContext(Dispatchers.IO) {
         val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
         if (cleanToken.isBlank()) return@withContext F4fApiResult.Error("Chưa nhập token")
 
-        val path = "/user/auth/me"
-        val request = Request.Builder()
-            .url("$BASE_URL$path")
+        val fullUrl = "${F4fNativeBridge.fetchBaseUrl()}${F4fNativeBridge.fetchPathAuthMe()}"
+        val request = buildF4fRequest(fullUrl, cleanToken)
             .get()
-            .header("Accept", "application/json")
-            .header("Authorization", "Bearer $cleanToken")
-            .header("Origin", "https://follow4follow.net")
-            .header("Referer", "https://follow4follow.net/")
-            .header("User-Agent", USER_AGENT)
             .build()
 
         try {
@@ -126,17 +139,9 @@ object F4fApiClient {
         val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
         if (cleanToken.isBlank()) return@withContext F4fApiResult.Success(emptyList())
 
-        val path = "/user/account/list"
-        val fullUrl = "$BASE_URL$path?type=$type&page=1"
-
-        val request = Request.Builder()
-            .url(fullUrl)
+        val fullUrl = "${F4fNativeBridge.fetchBaseUrl()}${F4fNativeBridge.fetchPathAccountList()}?type=$type&page=1"
+        val request = buildF4fRequest(fullUrl, cleanToken)
             .get()
-            .header("Accept", "application/json")
-            .header("Authorization", "Bearer $cleanToken")
-            .header("Origin", "https://follow4follow.net")
-            .header("Referer", "https://follow4follow.net/")
-            .header("User-Agent", USER_AGENT)
             .build()
 
         try {
@@ -195,7 +200,7 @@ object F4fApiClient {
         val cleanHandle = handle.trim().removePrefix("@").trim()
         if (cleanHandle.isBlank()) return@withContext F4fApiResult.Error("Tên tài khoản không hợp lệ")
 
-        val path = "/user/account/add"
+        val fullUrl = "${F4fNativeBridge.fetchBaseUrl()}${F4fNativeBridge.fetchPathAccountAdd()}"
         val jsonBody = JsonObject().apply {
             addProperty("link", cleanHandle)
             addProperty("g_recaptcha_response", "")
@@ -205,15 +210,9 @@ object F4fApiClient {
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = jsonBody.toRequestBody(mediaType)
 
-        val request = Request.Builder()
-            .url("$BASE_URL$path")
+        val request = buildF4fRequest(fullUrl, cleanToken)
             .post(requestBody)
-            .header("Accept", "application/json")
             .header("Content-Type", "application/json")
-            .header("Authorization", "Bearer $cleanToken")
-            .header("Origin", "https://follow4follow.net")
-            .header("Referer", "https://follow4follow.net/")
-            .header("User-Agent", USER_AGENT)
             .build()
 
         try {
@@ -251,18 +250,11 @@ object F4fApiClient {
         val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
         if (cleanToken.isBlank()) return@withContext F4fApiResult.Error("Chưa có token đăng nhập")
 
-        val path = "/user/earn-coin"
         val cleanUid = uid.trim().removePrefix("@").trim()
-        val fullUrl = "$BASE_URL$path?platform=$platform&type=$typeJob&refresh=1&uid=$cleanUid"
+        val fullUrl = "${F4fNativeBridge.fetchBaseUrl()}${F4fNativeBridge.fetchPathEarnCoin()}?platform=$platform&type=$typeJob&refresh=1&uid=$cleanUid"
 
-        val request = Request.Builder()
-            .url(fullUrl)
+        val request = buildF4fRequest(fullUrl, cleanToken)
             .get()
-            .header("Accept", "application/json")
-            .header("Authorization", "Bearer $cleanToken")
-            .header("Origin", "https://follow4follow.net")
-            .header("Referer", "https://follow4follow.net/")
-            .header("User-Agent", USER_AGENT)
             .build()
 
         try {
@@ -398,7 +390,7 @@ object F4fApiClient {
         val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
         if (cleanToken.isBlank()) return@withContext F4fApiResult.Error("Chưa có token đăng nhập")
 
-        val path = "/user/earn-coin/tiktok-like/mark-start"
+        val fullUrl = "${F4fNativeBridge.fetchBaseUrl()}${F4fNativeBridge.fetchPathMarkStart()}"
         val jsonBody = JsonObject().apply {
             addProperty("job_id", jobId)
             addProperty("account_id", accountId)
@@ -407,15 +399,9 @@ object F4fApiClient {
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = jsonBody.toRequestBody(mediaType)
 
-        val request = Request.Builder()
-            .url("$BASE_URL$path")
+        val request = buildF4fRequest(fullUrl, cleanToken)
             .post(requestBody)
-            .header("Accept", "application/json")
             .header("Content-Type", "application/json")
-            .header("Authorization", "Bearer $cleanToken")
-            .header("Origin", "https://follow4follow.net")
-            .header("Referer", "https://follow4follow.net/")
-            .header("User-Agent", USER_AGENT)
             .build()
 
         try {
@@ -450,7 +436,7 @@ object F4fApiClient {
         val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
         if (cleanToken.isBlank()) return@withContext F4fApiResult.Error("Chưa có token đăng nhập")
 
-        val path = "/user/earn-coin/complete-job"
+        val fullUrl = "${F4fNativeBridge.fetchBaseUrl()}${F4fNativeBridge.fetchPathCompleteJob()}"
         val jsonBody = JsonObject().apply {
             addProperty("job_id", jobId)
             addProperty("account_id", accountId)
@@ -461,15 +447,9 @@ object F4fApiClient {
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = jsonBody.toRequestBody(mediaType)
 
-        val request = Request.Builder()
-            .url("$BASE_URL$path")
+        val request = buildF4fRequest(fullUrl, cleanToken)
             .post(requestBody)
-            .header("Accept", "application/json")
             .header("Content-Type", "application/json")
-            .header("Authorization", "Bearer $cleanToken")
-            .header("Origin", "https://follow4follow.net")
-            .header("Referer", "https://follow4follow.net/")
-            .header("User-Agent", USER_AGENT)
             .build()
 
         try {

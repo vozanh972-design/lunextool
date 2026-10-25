@@ -1,39 +1,42 @@
 package com.cayxu.app.ui.f4f
 
 import android.content.Context
+import androidx.annotation.Keep
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 
 /**
  * Cấu hình chạy nhiệm vụ riêng biệt của Follow4Follow.
+ * Có @Keep và @SerializedName đảm bảo tương thích 100% với R8/ProGuard không bao giờ gãy logic.
  */
+@Keep
 data class F4fRunConfig(
-    val delaySeconds: Int = 5,
-    val delayMinSeconds: Int = 5,
-    val delayMaxSeconds: Int = 10,
-    val targetTaskCount: Int = 50,
-    val enableFollow: Boolean = true,
-    val enableLike: Boolean = true,
-    val enableComment: Boolean = false,
-    val autoSwapOnError: Boolean = true,
-    val errorSwapCount: Int = 3,
-    val swipeBeforeGetJob: Boolean = false,
+    @SerializedName("delaySeconds") val delaySeconds: Int = 5,
+    @SerializedName("delayMinSeconds") val delayMinSeconds: Int = 5,
+    @SerializedName("delayMaxSeconds") val delayMaxSeconds: Int = 10,
+    @SerializedName("targetTaskCount") val targetTaskCount: Int = 50,
+    @SerializedName("enableFollow") val enableFollow: Boolean = true,
+    @SerializedName("enableLike") val enableLike: Boolean = true,
+    @SerializedName("enableComment") val enableComment: Boolean = false,
+    @SerializedName("autoSwapOnError") val autoSwapOnError: Boolean = true,
+    @SerializedName("errorSwapCount") val errorSwapCount: Int = 3,
+    @SerializedName("swipeBeforeGetJob") val swipeBeforeGetJob: Boolean = false,
 )
 
+@Keep
 object F4fRunConfigStore {
-    private const val PREFS_NAME = "cayxu_f4f_run_config"
-    private const val KEY_CONFIG = "run_config"
     private val gson = Gson()
 
     fun get(context: Context): F4fRunConfig {
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val json = prefs.getString(KEY_CONFIG, null) ?: return F4fRunConfig()
+        val prefs = context.applicationContext.getSharedPreferences(F4fNativeBridge.fetchPrefsRunConfig(), Context.MODE_PRIVATE)
+        val json = prefs.getString(F4fNativeBridge.fetchKeyRunConfig(), null) ?: return F4fRunConfig()
         return runCatching {
             gson.fromJson(json, F4fRunConfig::class.java) ?: F4fRunConfig()
         }.getOrDefault(F4fRunConfig())
     }
 
     fun save(context: Context, config: F4fRunConfig) {
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putString(KEY_CONFIG, gson.toJson(config)).apply()
+        val prefs = context.applicationContext.getSharedPreferences(F4fNativeBridge.fetchPrefsRunConfig(), Context.MODE_PRIVATE)
+        prefs.edit().putString(F4fNativeBridge.fetchKeyRunConfig(), gson.toJson(config)).apply()
     }
 }
