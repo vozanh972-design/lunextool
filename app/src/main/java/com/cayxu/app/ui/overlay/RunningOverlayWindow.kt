@@ -450,17 +450,18 @@ class OverlayStrings private constructor(
 
     companion object {
         fun of(language: AppLanguage, mode: String = ""): OverlayStrings {
+            val isF4fMode = mode.contains("Follow", ignoreCase = true) || mode.contains("F4F", ignoreCase = true)
             val isCoinMode = mode.contains("TTC", ignoreCase = true) || mode.contains("XSMM", ignoreCase = true)
             return when (language) {
                 AppLanguage.VI -> OverlayStrings(
                     modeLabel = "Chế độ", accountLabel = "Tài khoản", noAccount = "Chưa chọn tài khoản", doneLabel = "Đã làm",
                     pause = "Tạm dừng", resume = "Tiếp tục", running = "Đang chạy…",
-                    doneUnit = { n -> "$n NV" }, coinUnit = { n -> if (isCoinMode) "+$n xu" else "+$n đ" },
+                    doneUnit = { n -> "$n NV" }, coinUnit = { n -> if (isF4fMode) "+$n coin" else if (isCoinMode) "+$n xu" else "+$n đ" },
                 )
                 AppLanguage.EN -> OverlayStrings(
                     modeLabel = "Mode", accountLabel = "Account", noAccount = "No account selected", doneLabel = "Done",
                     pause = "Pause", resume = "Resume", running = "Running…",
-                    doneUnit = { n -> "$n tasks" }, coinUnit = { n -> if (isCoinMode) "+$n xu" else "+$n coins" },
+                    doneUnit = { n -> "$n tasks" }, coinUnit = { n -> if (isF4fMode) "+$n coins" else if (isCoinMode) "+$n xu" else "+$n coins" },
                 )
             }
         }

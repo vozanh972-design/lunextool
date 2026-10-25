@@ -163,25 +163,37 @@ class F4fJobRunnerOverlayService : Service() {
     }
 
     private fun openTikTokDirectDeepLink(context: Context, rawTarget: String, uid: String): Boolean {
-        val cleanHandle = rawTarget.trim()
-            .removePrefix("@")
-            .removePrefix("https://www.tiktok.com/@")
-            .removePrefix("http://www.tiktok.com/@")
-            .trim('/')
-
+        val cleanTarget = rawTarget.trim()
         val deepLinks = mutableListOf<String>()
 
-        val cleanUid = uid.trim()
-        if (cleanUid.isNotBlank() && cleanUid.all { it.isDigit() }) {
-            deepLinks.add("snssdk1233://user/profile/$cleanUid")
-            deepLinks.add("snssdk1180://user/profile/$cleanUid")
-        }
+        if (cleanTarget.contains("/video/")) {
+            // Link video TikTok (dùng cho job Like / Thả tim)
+            val videoId = cleanTarget.substringAfter("/video/").substringBefore("?").trim('/')
+            if (videoId.isNotBlank() && videoId.all { it.isDigit() }) {
+                deepLinks.add("snssdk1233://aweme/detail/$videoId")
+                deepLinks.add("snssdk1180://aweme/detail/$videoId")
+            }
+            deepLinks.add(cleanTarget)
+        } else {
+            // Link profile người dùng (dùng cho job Follow)
+            val cleanHandle = cleanTarget
+                .removePrefix("@")
+                .removePrefix("https://www.tiktok.com/@")
+                .removePrefix("http://www.tiktok.com/@")
+                .trim('/')
 
-        if (cleanHandle.isNotBlank()) {
-            deepLinks.add("snssdk1233://user/profile?unique_id=$cleanHandle")
-            deepLinks.add("snssdk1180://user/profile?unique_id=$cleanHandle")
-            deepLinks.add("tiktok://user/profile?unique_id=$cleanHandle")
-            deepLinks.add("https://www.tiktok.com/@$cleanHandle")
+            val cleanUid = uid.trim()
+            if (cleanUid.isNotBlank() && cleanUid.all { it.isDigit() }) {
+                deepLinks.add("snssdk1233://user/profile/$cleanUid")
+                deepLinks.add("snssdk1180://user/profile/$cleanUid")
+            }
+
+            if (cleanHandle.isNotBlank()) {
+                deepLinks.add("snssdk1233://user/profile?unique_id=$cleanHandle")
+                deepLinks.add("snssdk1180://user/profile?unique_id=$cleanHandle")
+                deepLinks.add("tiktok://user/profile?unique_id=$cleanHandle")
+                deepLinks.add("https://www.tiktok.com/@$cleanHandle")
+            }
         }
 
         val tikTokPackages = when (selectedVariant) {
@@ -313,6 +325,7 @@ class F4fJobRunnerOverlayService : Service() {
                     var consecutiveFails = 0
                     val maxJobsPerTurn = 15
                     var jobsInCurrentTurn = 0
+                    val jobQueue = mutableListOf<F4fJobInfo>()
 
                     while (isActive && jobsInCurrentTurn < maxJobsPerTurn) {
                         checkPauseWait()
@@ -322,20 +335,22 @@ class F4fJobRunnerOverlayService : Service() {
                             return@launch
                         }
 
-                        // Lấy job từ F4F
-                        var currentJob: F4fJobInfo? = null
-                        for (jType in jobTypesToTry) {
-                            if (!isActive) break
-                            setStatus("@$handle: Đang tìm job $jType...")
-                            val jobRes = F4fApiClient.getEarnJob(token, platform = "tiktok", typeJob = jType, uid = handle)
-                            if (jobRes is F4fApiResult.Success) {
-                                currentJob = jobRes.data
-                                break
+                        // Nếu hàng đợi rỗng, lấy đợt job mới từ server F4F
+                        if (jobQueue.isEmpty()) {
+                            for (jType in jobTypesToTry) {
+                                if (!isActive) break
+                                val typeLabel = if (jType == "like") "Like (thả tim)" else "Follow"
+                                setStatus("@$handle: Đang tìm job $typeLabel...")
+                                val batchRes = F4fApiClient.getEarnJobs(token, platform = "tiktok", typeJob = jType, uid = handle)
+                                if (batchRes is F4fApiResult.Success && batchRes.data.isNotEmpty()) {
+                                    jobQueue.addAll(batchRes.data)
+                                    break
+                                }
+                                delay(600L)
                             }
-                            delay(800L)
                         }
 
-                        if (currentJob == null) {
+                        if (jobQueue.isEmpty()) {
                             consecutiveFails++
                             if (consecutiveFails >= 3) {
                                 setStatus("@$handle: Tạm hết job -> Chuyển nick tiếp theo...")
@@ -347,10 +362,28 @@ class F4fJobRunnerOverlayService : Service() {
                         }
 
                         consecutiveFails = 0
+                        val currentJob = jobQueue.removeAt(0)
                         jobsInCurrentTurn++
 
+                        val isLikeJob = currentJob.typeJob.equals("like", ignoreCase = true)
+                        val jobLabel = if (isLikeJob) "Like (thả tim)" else "Follow"
+                        val effAccountId = if (currentJob.accountId > 0L) {
+                            currentJob.accountId
+                        } else if (numericAccountId > 0L) {
+                            numericAccountId
+                        } else {
+                            currentJob.jobId
+                        }
+
+                        // Nếu là job Like (tym), gọi mark-start theo đúng chuẩn cURL web
+                        if (isLikeJob) {
+                            setStatus("@$handle: Đánh dấu bắt đầu Like #${currentJob.jobId}...")
+                            F4fApiClient.markStartTiktokLike(token, currentJob.jobId, effAccountId)
+                            delay(500L)
+                        }
+
                         // Mở profile/video trên TikTok
-                        setStatus("@$handle: Làm job #${currentJob.jobId} (${currentJob.typeJob})...")
+                        setStatus("@$handle: Làm job #${currentJob.jobId} ($jobLabel)...")
                         val opened = openTikTokDirectDeepLink(applicationContext, currentJob.targetLink, "")
                         if (!opened) {
                             TikTokAppLauncher.openUserProfile(applicationContext, currentJob.targetLink)
@@ -359,7 +392,7 @@ class F4fJobRunnerOverlayService : Service() {
 
                         // Bấm nút qua Accessibility
                         val actionId = XsmmTaskAutomationBridge.triggerTask(
-                            taskType = if (currentJob.typeJob == "like") "like" else "follow",
+                            taskType = if (isLikeJob) "like" else "follow",
                             swipeBefore = false,
                             returnHomeAndSwipe = false,
                             durationSeconds = 3
@@ -379,7 +412,6 @@ class F4fJobRunnerOverlayService : Service() {
                         countdownWait(delaySec) { s -> "Chờ ${s}s nhận coin..." }
 
                         // Gửi xác nhận hoàn thành
-                        val effAccountId = if (numericAccountId > 0L) numericAccountId else currentJob.jobId
                         when (val completeRes = F4fApiClient.completeJob(
                             rawToken = token,
                             jobId = currentJob.jobId,
@@ -393,7 +425,7 @@ class F4fJobRunnerOverlayService : Service() {
                                 totalEarnedCoins += reward
                                 F4fSession.points.value = F4fSession.points.value + reward
                                 updateProgressDisplay()
-                                setStatus("+$reward coin (#${currentJob.jobId}) | Xong $totalCompleted NV")
+                                setStatus("+$reward coin (#${currentJob.jobId} $jobLabel) | Xong $totalCompleted NV")
                             }
                             is F4fApiResult.Error -> {
                                 setStatus("Lỗi duyệt job: ${completeRes.message}")

@@ -140,7 +140,23 @@ object F4fTikTokTaskRunner {
                         }
 
                         // 2. Mở TikTok đến profile/video của job
-                        val taskMsg = "@$handle: Làm job #${jobInfo.jobId} (${jobInfo.typeJob})..."
+                        val isLikeJob = jobInfo.typeJob.equals("like", ignoreCase = true)
+                        val jobLabel = if (isLikeJob) "Like (thả tim)" else "Follow"
+                        val effAccountId = if (jobInfo.accountId > 0L) {
+                            jobInfo.accountId
+                        } else if (numericAccountId > 0L) {
+                            numericAccountId
+                        } else {
+                            jobInfo.jobId
+                        }
+
+                        if (isLikeJob) {
+                            XsmmJobStatusBridge.update("@$handle: Đánh dấu bắt đầu Like #${jobInfo.jobId}...")
+                            F4fApiClient.markStartTiktokLike(token, jobInfo.jobId, effAccountId)
+                            delay(500L)
+                        }
+
+                        val taskMsg = "@$handle: Làm job #${jobInfo.jobId} ($jobLabel)..."
                         XsmmJobStatusBridge.update(taskMsg)
                         onStatusChange(taskMsg)
 
@@ -157,7 +173,7 @@ object F4fTikTokTaskRunner {
 
                         // 3. Kích hoạt Trợ năng bấm nút tương tác
                         val actionId = XsmmTaskAutomationBridge.triggerTask(
-                            taskType = if (jobInfo.typeJob == "like") "like" else "follow",
+                            taskType = if (isLikeJob) "like" else "follow",
                             swipeBefore = false,
                             returnHomeAndSwipe = false,
                             durationSeconds = 3
@@ -181,7 +197,6 @@ object F4fTikTokTaskRunner {
                         delay(waitDelay)
 
                         // 5. Xác nhận hoàn thành job lên server F4F
-                        val effAccountId = if (numericAccountId > 0L) numericAccountId else jobInfo.jobId
                         when (val completeRes = F4fApiClient.completeJob(
                             rawToken = token,
                             jobId = jobInfo.jobId,
@@ -195,7 +210,7 @@ object F4fTikTokTaskRunner {
                                 totalCoinsEarned += reward
                                 F4fSession.points.value = F4fSession.points.value + reward
 
-                                val succMsg = "+$reward coin (#${jobInfo.jobId}) | Xong $totalCompleted NV"
+                                val succMsg = "+$reward coin (#${jobInfo.jobId} $jobLabel) | Xong $totalCompleted NV"
                                 XsmmJobStatusBridge.update(succMsg)
                                 onStatusChange(succMsg)
                                 onProgressUpdate(totalCompleted, totalCoinsEarned)
