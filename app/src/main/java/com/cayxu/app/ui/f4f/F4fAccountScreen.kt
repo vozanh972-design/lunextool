@@ -18,7 +18,7 @@ import com.cayxu.app.data.local.InstagramAccountsStore
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.ui.navigation.Routes
-import com.cayxu.app.ui.xsmm.startXsmmVerifyTikTokAccount
+import com.cayxu.app.ui.overlay.xsmm.startXsmmVerifyTikTokAccount
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
