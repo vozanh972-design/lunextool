@@ -231,6 +231,14 @@ fun GolikeAccountsScreen(
                             contentAlignment = Alignment.Center,
                         ) { SvgIcon(Plus, 18.dp, Alx.White, 2.4f) }
                     }
+                } else {
+                    if (state.selectedAccountIds.isNotEmpty() && onDeleteSelected != null) {
+                        PressBox(
+                            onClick = onDeleteSelected,
+                            modifier = Modifier.size(40.dp).background(Alx.DangerBg, CircleShape).border(1.dp, Alx.Danger.copy(alpha = 0.35f), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) { SvgIcon(Trash, 18.dp, Alx.Danger, 2f) }
+                    }
                 }
             }
 
@@ -889,11 +897,6 @@ private fun GolikeInstagramAccountRow(
                 )
             }
 
-            // Hàng 3 (Bottom Row): Divider + Thống kê
-            Box(
-                Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFF1F5F9))
-            )
-
             val successCount = com.cayxu.app.ui.screens.golike.GolikeRunningManager.successCountMap[account.id]
                 ?: com.cayxu.app.ui.screens.golike.GolikeRunningManager.successCountMap[account.username]
                 ?: account.successCount
@@ -901,15 +904,37 @@ private fun GolikeInstagramAccountRow(
                 ?: com.cayxu.app.ui.screens.golike.GolikeRunningManager.errorCountMap[account.username]
                 ?: account.errorCount
 
+            // Hàng 3 (Bottom Row): 2 Badge viên thuốc Hoàn thành (xanh) và Lỗi (đỏ)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                BasicText(
-                    "Hoàn thành: $successCount • Lỗi: $errorCount",
-                    style = type(12f, FontWeight.SemiBold, Alx.Muted)
-                )
+                // Badge Hoàn thành (xanh)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Color(0xFFE7F8EE))
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    BasicText(
+                        "Hoàn thành: $successCount",
+                        style = type(11.5f, FontWeight.ExtraBold, Color(0xFF15803D))
+                    )
+                }
+
+                // Badge Lỗi (đỏ)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Color(0xFFFDECEC))
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    BasicText(
+                        "Lỗi: $errorCount",
+                        style = type(11.5f, FontWeight.ExtraBold, Color(0xFFC9363B))
+                    )
+                }
             }
         }
     }

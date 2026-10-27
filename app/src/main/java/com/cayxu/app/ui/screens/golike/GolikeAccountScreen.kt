@@ -51,8 +51,10 @@ import com.cayxu.app.automation.tiktok.TikTokCaptureBridge
 import com.cayxu.app.automation.tiktok.TikTokCaptureState
 import com.cayxu.app.automation.tiktok.XsmmTaskActionResult
 import com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge
+import com.cayxu.app.data.local.InstagramAccount
 import com.cayxu.app.data.local.InstagramAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
+import com.cayxu.app.instagram.InstagramApiClient
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobRunnerOverlayService
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge
 import com.cayxu.app.ui.theme.*
@@ -716,11 +718,115 @@ fun GolikeAccountScreen(navController: NavController) {
 
     if (showAddAccountSheet) {
         if (selectedPlatform == "instagram") {
-            com.cayxu.app.ui.screens.xsmm.InstagramCookieBottomSheet(
+            GolikeInstagramAddSheet(
                 onDismiss = { showAddAccountSheet = false },
-                onCookieSaved = {
+                onSubmit = { data ->
+                    val rawInput = data.trim()
+                    if (rawInput.isBlank()) {
+                        Toast.makeText(context, "Vui lòng nhập danh sách tài khoản", Toast.LENGTH_SHORT).show()
+                        return@GolikeInstagramAddSheet
+                    }
+
+                    val lines = rawInput.lines().map { it.trim() }.filter { it.isNotBlank() }
+                    val hasValidCookieLine = lines.any { line ->
+                        val rawCookie = if (line.contains("|")) line.substring(0, line.lastIndexOf("|")).trim() else line
+                        rawCookie.contains("sessionid") && rawCookie.contains("ds_user_id") && rawCookie.contains("csrftoken")
+                    }
+
+                    if (!hasValidCookieLine) {
+                        Toast.makeText(context, "Cookie thiếu các trường bắt buộc (cần có sessionid, ds_user_id, csrftoken)", Toast.LENGTH_LONG).show()
+                        return@GolikeInstagramAddSheet
+                    }
+
+                    Toast.makeText(context, "Đang kiểm tra tài khoản Instagram...", Toast.LENGTH_SHORT).show()
                     showAddAccountSheet = false
-                    reloadAccounts()
+
+                    scope.launch {
+                        val addedAccounts = mutableListOf<String>()
+                        var hasCheckpointOrDie = false
+
+                        withContext(Dispatchers.IO) {
+                            for (line in lines) {
+                                var rawCookie = ""
+                                var proxyStr: String? = null
+                                if (line.contains("|")) {
+                                    val lastPipeIndex = line.lastIndexOf("|")
+                                    rawCookie = line.substring(0, lastPipeIndex).trim()
+                                    proxyStr = line.substring(lastPipeIndex + 1).trim().takeIf { it.isNotBlank() }
+                                } else {
+                                    rawCookie = line
+                                }
+
+                                if (!rawCookie.contains("sessionid") || !rawCookie.contains("ds_user_id") || !rawCookie.contains("csrftoken")) {
+                                    continue
+                                }
+
+                                val client = IgTaToolClient.buildClient(proxyStr)
+                                val info = IgTaToolClient.checkCookieIg(client, rawCookie)
+
+                                if (info.isLive && info.username.isNotBlank()) {
+                                    val tokens = IgTaToolClient.extractPageTokens(
+                                        client = client,
+                                        cookie = rawCookie,
+                                        targetUrl = "https://www.instagram.com/"
+                                    )
+                                    val dev = InstagramApiClient.getDeviceProfileFor(info.userId)
+                                    val pic = try {
+                                        InstagramApiClient.fetchProfilePic(info.username, rawCookie, proxyStr)
+                                    } catch (_: Exception) { null }
+
+                                    withContext(Dispatchers.Main) {
+                                        InstagramAccountsStore.addAccount(
+                                            context,
+                                            InstagramAccount(
+                                                username = info.username,
+                                                userId = info.userId,
+                                                cookie = rawCookie,
+                                                userAgent = dev.userAgent,
+                                                proxy = proxyStr.orEmpty(),
+                                                fullName = info.username,
+                                                avatar = pic.orEmpty(),
+                                                fbDtsg = tokens.dtsg,
+                                                lsd = tokens.lsd,
+                                                isLive = true
+                                            )
+                                        )
+                                        com.cayxu.app.data.local.LinkedAccountsStore.addAccount(context, "Instagram", info.username)
+                                        val gAcc = GolikeAccount(
+                                            id = info.username,
+                                            platform = "instagram",
+                                            username = info.username,
+                                            avatar = pic.orEmpty(),
+                                            isLive = true,
+                                            proxy = proxyStr.orEmpty(),
+                                            lastStatus = "Sẵn sàng làm job"
+                                        )
+                                        GolikeAccountsStore.addOrUpdateAccount(context, gAcc)
+                                        addedAccounts.add(info.username)
+                                    }
+                                } else {
+                                    hasCheckpointOrDie = true
+                                }
+                            }
+                        }
+
+                        if (addedAccounts.isNotEmpty()) {
+                            val successMsg = if (addedAccounts.size == 1) {
+                                "Thêm tài khoản @${addedAccounts.first()} thành công!"
+                            } else {
+                                "Đã thêm thành công ${addedAccounts.size} tài khoản (${addedAccounts.joinToString(", ")})"
+                            }
+                            Toast.makeText(context, successMsg, Toast.LENGTH_SHORT).show()
+                            reloadAccounts()
+                        } else {
+                            val errMsg = if (hasCheckpointOrDie) {
+                                "Cookie không hợp lệ hoặc tài khoản bị Checkpoint"
+                            } else {
+                                "Không thể xác thực cookie Instagram. Vui lòng kiểm tra lại!"
+                            }
+                            Toast.makeText(context, errMsg, Toast.LENGTH_LONG).show()
+                        }
+                    }
                 }
             )
         } else {
