@@ -538,22 +538,14 @@ fun GolikeAccountScreen(navController: NavController) {
         if (selectedPlatform == "instagram") {
             val savedCfg = remember(showConfigSheet) { GolikeRunConfigStore.get(context, "instagram") }
             var igConfigState by remember(showConfigSheet) {
-                val mode = when (savedCfg.taskType) {
-                    "instagram_follow" -> GolikeIgTaskMode.FollowOnly
-                    "instagram_like" -> GolikeIgTaskMode.TymOnly
-                    else -> GolikeIgTaskMode.Random
-                }
                 mutableStateOf(
                     GolikeRunConfigInstagramUiState(
-                        mode = mode,
                         getTaskWaitSeconds = savedCfg.getJobMinSeconds.toString(),
                         workSeconds = savedCfg.doJobMinSeconds.toString(),
                         taskCount = if (savedCfg.taskCountTarget > 0) savedCfg.taskCountTarget.toString() else "",
                         stopAfterEmptyTimes = savedCfg.stopAfterNoTaskCount.toString(),
                         errorSwapAccountCount = savedCfg.failJobCountToSwitchAccount.toString(),
                         stopAfterDoneTimes = if (savedCfg.stopAfterCompletedCount > 0) savedCfg.stopAfterCompletedCount.toString() else "",
-                        browseBeforeTask = savedCfg.swipeBeforeGetJob,
-                        backHomeThenBrowse = savedCfg.returnHomeAndSwipe,
                     )
                 )
             }
@@ -565,21 +557,13 @@ fun GolikeAccountScreen(navController: NavController) {
                 GolikeRunConfigInstagramScreen(
                     state = igConfigState,
                     onBack = { showConfigSheet = false },
-                    onModeChange = { igConfigState = igConfigState.copy(mode = it) },
                     onGetTaskWaitChange = { igConfigState = igConfigState.copy(getTaskWaitSeconds = it) },
                     onWorkSecondsChange = { igConfigState = igConfigState.copy(workSeconds = it) },
                     onTaskCountChange = { igConfigState = igConfigState.copy(taskCount = it) },
                     onStopAfterEmptyChange = { igConfigState = igConfigState.copy(stopAfterEmptyTimes = it) },
                     onErrorSwapChange = { igConfigState = igConfigState.copy(errorSwapAccountCount = it) },
                     onStopAfterDoneChange = { igConfigState = igConfigState.copy(stopAfterDoneTimes = it) },
-                    onBrowseBeforeTaskChange = { igConfigState = igConfigState.copy(browseBeforeTask = it) },
-                    onBackHomeThenBrowseChange = { igConfigState = igConfigState.copy(backHomeThenBrowse = it) },
                     onSave = {
-                        val targetType = when (igConfigState.mode) {
-                            GolikeIgTaskMode.FollowOnly -> "instagram_follow"
-                            GolikeIgTaskMode.TymOnly -> "instagram_like"
-                            GolikeIgTaskMode.Random -> "instagram_random"
-                        }
                         val gWait = igConfigState.getTaskWaitSeconds.toIntOrNull()?.coerceAtLeast(1) ?: 10
                         val wSec = igConfigState.workSeconds.toIntOrNull()?.coerceAtLeast(1) ?: 10
                         val goal = igConfigState.taskCount.toIntOrNull()?.coerceAtLeast(0) ?: 0
@@ -591,7 +575,7 @@ fun GolikeAccountScreen(navController: NavController) {
                             context,
                             savedCfg.copy(
                                 platform = "instagram",
-                                taskType = targetType,
+                                taskType = "instagram_random",
                                 getJobMinSeconds = gWait,
                                 getJobMaxSeconds = gWait,
                                 doJobMinSeconds = wSec,
@@ -602,8 +586,8 @@ fun GolikeAccountScreen(navController: NavController) {
                                 stopAfterNoTaskCount = stopEmpty,
                                 failJobCountToSwitchAccount = errSwap,
                                 stopAfterCompletedCount = stopDone,
-                                swipeBeforeGetJob = igConfigState.browseBeforeTask,
-                                returnHomeAndSwipe = igConfigState.backHomeThenBrowse
+                                swipeBeforeGetJob = false,
+                                returnHomeAndSwipe = false
                             )
                         )
                         Toast.makeText(context, "Đã lưu cấu hình Instagram", Toast.LENGTH_SHORT).show()

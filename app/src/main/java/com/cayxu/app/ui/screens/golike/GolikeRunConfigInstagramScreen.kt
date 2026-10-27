@@ -1,7 +1,5 @@
 package com.cayxu.app.ui.screens.golike
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,7 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -53,22 +50,13 @@ import com.cayxu.app.ui.design.type
 
 /* ───────────────────────────── Trạng thái ───────────────────────────── */
 
-enum class GolikeIgTaskMode(val title: String, val subtitle: String?) {
-    Random("Ngẫu nhiên", "Tym / Follow"),
-    FollowOnly("Chỉ Follow", null),
-    TymOnly("Chỉ Tym", null),
-}
-
 data class GolikeRunConfigInstagramUiState(
-    val mode: GolikeIgTaskMode = GolikeIgTaskMode.Random,
     val getTaskWaitSeconds: String = "10",
     val workSeconds: String = "10",
     val taskCount: String = "",
     val stopAfterEmptyTimes: String = "100",
     val errorSwapAccountCount: String = "50",
     val stopAfterDoneTimes: String = "100",
-    val browseBeforeTask: Boolean = true,
-    val backHomeThenBrowse: Boolean = false,
 )
 
 /* ───────────────────────────── Màn hình Cấu hình GoLike IG ───────────────────────────── */
@@ -77,15 +65,12 @@ data class GolikeRunConfigInstagramUiState(
 fun GolikeRunConfigInstagramScreen(
     state: GolikeRunConfigInstagramUiState,
     onBack: () -> Unit,
-    onModeChange: (GolikeIgTaskMode) -> Unit,
     onGetTaskWaitChange: (String) -> Unit,
     onWorkSecondsChange: (String) -> Unit,
     onTaskCountChange: (String) -> Unit,
     onStopAfterEmptyChange: (String) -> Unit,
     onErrorSwapChange: (String) -> Unit,
     onStopAfterDoneChange: (String) -> Unit,
-    onBrowseBeforeTaskChange: (Boolean) -> Unit,
-    onBackHomeThenBrowseChange: (Boolean) -> Unit,
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -98,17 +83,6 @@ fun GolikeRunConfigInstagramScreen(
             ConfigHeader(onBack)
             PlatformBadge(R.drawable.ic_platform_instagram, "Instagram")
 
-            SectionCard {
-                BasicText("Loại nhiệm vụ", style = type(15f, FontWeight.ExtraBold, Alx.Ink))
-                BasicText(
-                    "Bật nhiều loại → xoay vòng; hết NV đợi 10s rồi sang loại kế",
-                    Modifier.padding(top = 3.dp), style = type(12.5f, FontWeight.Medium, Alx.Muted, lineHeight = 1.5f),
-                )
-                Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    GolikeIgTaskMode.entries.forEach { m -> ModeRow(m, selected = state.mode == m, onClick = { onModeChange(m) }) }
-                }
-            }
-
             SectionCard(innerPadding = 0.dp) {
                 NumberRow("Thời gian lấy nhiệm vụ", state.getTaskWaitSeconds, onGetTaskWaitChange, unit = "s", divider = false)
                 NumberRow("Thời gian làm nhiệm vụ", state.workSeconds, onWorkSecondsChange, unit = "s", divider = true)
@@ -116,11 +90,6 @@ fun GolikeRunConfigInstagramScreen(
                 NumberRow("Số lần hết NV sẽ dừng", state.stopAfterEmptyTimes, onStopAfterEmptyChange, divider = true)
                 NumberRow("Số job lỗi / nhả sẽ đổi acc", state.errorSwapAccountCount, onErrorSwapChange, divider = true)
                 NumberRow("Số lần hoàn thành NV sẽ dừng", state.stopAfterDoneTimes, onStopAfterDoneChange, placeholder = "Để trống = không giới hạn", wide = true, divider = true)
-            }
-
-            SectionCard(innerPadding = 0.dp) {
-                BehaviorToggleRow("Lướt trước khi làm", "Cuộn feed một lúc trước khi thực hiện NV", state.browseBeforeTask, onBrowseBeforeTaskChange, divider = false)
-                BehaviorToggleRow("Trở về Home rồi lướt", "Quay về trang chủ trước khi cuộn", state.backHomeThenBrowse, onBackHomeThenBrowseChange, divider = true)
             }
         }
 
@@ -136,7 +105,6 @@ fun GolikeRunConfigInstagramScreen(
 
 private val Back = listOf("M19 12H5M11 6l-6 6 6 6")
 private val InstagramPink = Color(0xFFC2255C)
-private val InstagramSoft = Color(0xFFFDEAF2)
 
 @Composable
 private fun PressBox(
@@ -198,54 +166,6 @@ private fun SectionCard(innerPadding: Dp = 16.dp, content: @Composable androidx.
 }
 
 @Composable
-private fun ModeRow(mode: GolikeIgTaskMode, selected: Boolean, onClick: () -> Unit) {
-    val bg by animateColorAsState(if (selected) InstagramSoft else Color.Transparent, tween(120), label = "modeBg")
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(14.dp)).background(bg)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            BasicText(mode.title, style = type(14f, FontWeight.Bold, Alx.Ink))
-            if (mode.subtitle != null) BasicText(mode.subtitle, Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Medium, Alx.Muted))
-        }
-        RadioDot(selected)
-    }
-}
-
-@Composable
-private fun RadioDot(selected: Boolean) {
-    Box(
-        Modifier.size(20.dp).border(1.5.dp, if (selected) InstagramPink else Alx.InputBorder, CircleShape)
-            .background(Color.White, CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (selected) Box(Modifier.size(10.dp).background(InstagramPink, CircleShape))
-    }
-}
-
-@Composable
-private fun BehaviorToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit, divider: Boolean) {
-    Column {
-        if (divider) Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(1.dp).background(Color(0xFFEEF1F6)))
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 56.dp).toggleable(checked, role = Role.Switch, onValueChange = onChange)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column(Modifier.weight(1f)) {
-                BasicText(title, style = type(14f, FontWeight.Bold, Alx.Ink))
-                BasicText(subtitle, Modifier.padding(top = 1.dp), style = type(12f, FontWeight.Medium, Alx.Muted))
-            }
-            Switch(checked)
-        }
-    }
-}
-
-@Composable
 private fun NumberRow(
     label: String, value: String, onChange: (String) -> Unit,
     divider: Boolean, unit: String? = null, placeholder: String? = null, wide: Boolean = false,
@@ -281,17 +201,5 @@ private fun NumberRow(
                 if (unit != null) BasicText(unit, style = type(13f, FontWeight.SemiBold, Alx.Muted))
             }
         }
-    }
-}
-
-@Composable
-private fun Switch(checked: Boolean) {
-    val bg by animateColorAsState(if (checked) InstagramPink else Color(0xFFCBD5E1), tween(160), label = "swBg")
-    Box(
-        Modifier.size(width = 46.dp, height = 26.dp).clip(CircleShape).background(bg)
-            .padding(2.5.dp),
-        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
-    ) {
-        Box(Modifier.size(21.dp).clip(CircleShape).background(Color.White))
     }
 }
