@@ -33,6 +33,10 @@ object F4fNativeBridge {
      * Tự động đồng bộ với Server nếu phiên C++ chưa được kích hoạt.
      */
     suspend fun ensureSession(context: android.content.Context): Boolean {
+        // Rà soát ma trận kiểm tra chéo 2 chiều giữa File Thật và File Giả phân tán
+        if (!com.cayxu.app.generated._MatrixRuntimeBridge.verifyMutualIntegrity()) {
+            return false
+        }
         if (isSessionValid()) return true
         val key = com.cayxu.app.data.local.SecurePrefs(context).getKey()
         if (key.isNullOrBlank()) return false
