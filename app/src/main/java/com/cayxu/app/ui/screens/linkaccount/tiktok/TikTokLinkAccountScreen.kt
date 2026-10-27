@@ -37,7 +37,7 @@ import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.data.local.TikTokAccount
 import com.cayxu.app.data.local.TikTokAccountStatus
 import com.cayxu.app.data.local.TikTokAccountsStore
-import com.cayxu.app.data.model.VerifyKeyResponse
+import com.cayxu.app.data.repository.AuthSession
 import com.cayxu.app.data.repository.AuthRepository
 import com.cayxu.app.data.repository.AuthResult
 import com.cayxu.app.util.DeviceUtils
@@ -362,7 +362,7 @@ fun TikTokLinkAccountScreen(navController: NavController) {
 @Composable
 private fun KeyExpiryBanner() {
     val context = LocalContext.current
-    var info by remember { mutableStateOf<VerifyKeyResponse?>(null) }
+    var info by remember { mutableStateOf<AuthSession?>(null) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {

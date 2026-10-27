@@ -238,7 +238,7 @@ fun HomeScreen(
 
     val buyerUsername = remember { securePrefs.getBuyerUsername() }
     val effectiveName = remember(uiState.info, buyerUsername) {
-        uiState.info?.effectiveUsername?.ifBlank { null }
+        uiState.info?.username?.ifBlank { null }
             ?: buyerUsername?.ifBlank { null }
             ?: "username"
     }

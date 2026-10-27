@@ -84,16 +84,52 @@ static const uint8_t enc_KEY_SAVED_ACCOUNTS[25] = { 0x3C, 0x45, 0xEE, 0xC0, 0xC2
 static const uint8_t enc_PREFS_RUN_CONFIG[20] = { 0x39, 0x10, 0xF1, 0xE7, 0xC3, 0x92, 0x82, 0xCF, 0x74, 0x76, 0x32, 0x22, 0x00, 0xDA, 0xFF, 0xDC, 0xA4, 0x87, 0x91, 0x68 };
 static const uint8_t enc_KEY_RUN_CONFIG[10] = { 0x28, 0x04, 0xE6, 0xC0, 0xD5, 0xA2, 0x8A, 0x9D, 0x7B, 0x4E };
 
+// Quản lý vé phiên làm việc (Session Ticket) bảo mật trong RAM
+static volatile uint64_t g_matrix_session_auth = 0;
+
+static inline std::string extractJsonString(const std::string& json, const std::string& key) {
+    std::string needle = "\"" + key + "\":";
+    size_t pos = json.find(needle);
+    if (pos == std::string::npos) {
+        needle = "\"" + key + "\" :";
+        pos = json.find(needle);
+        if (pos == std::string::npos) return "";
+    }
+    pos += needle.length();
+    while (pos < json.length() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n')) {
+        pos++;
+    }
+    if (pos >= json.length()) return "";
+    if (json[pos] == '\"') {
+        pos++;
+        size_t end = json.find('\"', pos);
+        if (end == std::string::npos) return "";
+        return json.substr(pos, end - pos);
+    } else {
+        size_t end = pos;
+        while (end < json.length() && json[end] != ',' && json[end] != '}' && json[end] != '\r' && json[end] != '\n' && json[end] != ' ') {
+            end++;
+        }
+        std::string val = json.substr(pos, end - pos);
+        if (val == "null") return "";
+        return val;
+    }
+}
+
 } // namespace
 
 extern "C" {
 
 /**
  * Hàm phân phối ma trận duy nhất (Single Dispatch Matrix).
- * Ẩn toàn bộ 21 tên hàm JNI riêng lẻ, điều hướng toàn bộ chuỗi bảo mật theo slotId.
+ * Ràng buộc bảo mật: Nếu chưa có Session Ticket hợp lệ được C++ cấp, từ chối cấp slot dữ liệu.
  */
 JNIEXPORT jstring JNICALL
 Java_com_cayxu_app_ui_f4f_F4fNativeBridge_resolveMatrixSlot(JNIEnv* env, jclass, jint slotId) {
+    if (g_matrix_session_auth == 0) {
+        return env->NewStringUTF("");
+    }
+
     std::string s;
     switch (slotId) {
         case 0xA1: s = decryptMatrixSlotString(enc_BASE_URL, sizeof(enc_BASE_URL), 0x5A, 0x17); break;
@@ -120,6 +156,65 @@ Java_com_cayxu_app_ui_f4f_F4fNativeBridge_resolveMatrixSlot(JNIEnv* env, jclass,
         default: s = ""; break;
     }
     return env->NewStringUTF(s.c_str());
+}
+
+/**
+ * Đăng ký và thẩm định phản hồi bản quyền trực tiếp trong C++.
+ * C++ tự bóc tách JSON, tạo Session Ticket bảo mật trong RAM và trả về gói thông tin hiển thị an toàn.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_cayxu_app_ui_f4f_F4fNativeBridge_registerLicenseSession(JNIEnv* env, jclass, jstring jrawJson, jstring juserKey, jstring jdeviceId) {
+    if (!jrawJson || !juserKey || !jdeviceId) return env->NewStringUTF("");
+
+    const char* rawJsonC = env->GetStringUTFChars(jrawJson, nullptr);
+    const char* userKeyC = env->GetStringUTFChars(juserKey, nullptr);
+    const char* deviceIdC = env->GetStringUTFChars(jdeviceId, nullptr);
+
+    std::string jsonStr = rawJsonC ? rawJsonC : "";
+    std::string userKey = userKeyC ? userKeyC : "";
+    std::string deviceId = deviceIdC ? deviceIdC : "";
+
+    if (rawJsonC) env->ReleaseStringUTFChars(jrawJson, rawJsonC);
+    if (userKeyC) env->ReleaseStringUTFChars(juserKey, userKeyC);
+    if (deviceIdC) env->ReleaseStringUTFChars(jdeviceId, deviceIdC);
+
+    std::string status = extractJsonString(jsonStr, "status");
+    if (status != "success") {
+        g_matrix_session_auth = 0;
+        return env->NewStringUTF("");
+    }
+
+    std::string username = extractJsonString(jsonStr, "username");
+    if (username.empty()) {
+        size_t bPos = jsonStr.find("\"buyer\"");
+        if (bPos != std::string::npos) {
+            username = extractJsonString(jsonStr.substr(bPos), "username");
+        }
+    }
+    std::string pkg = extractJsonString(jsonStr, "package");
+    std::string expiresAt = extractJsonString(jsonStr, "expires_at");
+    std::string daysLeft = extractJsonString(jsonStr, "days_left");
+    if (daysLeft.empty()) {
+        daysLeft = extractJsonString(jsonStr, "max_days");
+    }
+
+    // Tính toán hash Session Ticket bảo mật không thể bị can thiệp
+    uint64_t hash = 0xCBF29CE484222325ULL;
+    for (char c : userKey) hash = (hash ^ (uint8_t)c) * 0x100000001B3ULL;
+    for (char c : deviceId) hash = (hash ^ (uint8_t)c) * 0x100000001B3ULL;
+    for (char c : expiresAt) hash = (hash ^ (uint8_t)c) * 0x100000001B3ULL;
+    g_matrix_session_auth = hash ^ 0xA5A55A5AA5A55A5AULL;
+
+    std::string result = "OK|" + username + "|" + pkg + "|" + expiresAt + "|" + daysLeft;
+    return env->NewStringUTF(result.c_str());
+}
+
+/**
+ * Kiểm tra trạng thái Session Ticket từ tầng C++.
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_cayxu_app_ui_f4f_F4fNativeBridge_isSessionValid(JNIEnv* env, jclass) {
+    return (g_matrix_session_auth != 0) ? JNI_TRUE : JNI_FALSE;
 }
 
 } // extern "C"

@@ -42,7 +42,7 @@ class KeyRecheckWorker(appContext: Context, params: WorkerParameters) : Coroutin
             when (val result = repository.verifyKey(key, deviceId)) {
                 is AuthResult.Success -> {
                     // Vẫn hợp lệ -> cập nhật thông tin mới nhất từ server
-                    result.data.effectiveUsername?.let { prefs.saveBuyerUsername(it) }
+                    result.data.username?.let { prefs.saveBuyerUsername(it) }
                     result.data.packageName?.let { prefs.savePackageName(it) }
                     result.data.expiresAt?.let { prefs.saveExpiresAt(it) }
                 }

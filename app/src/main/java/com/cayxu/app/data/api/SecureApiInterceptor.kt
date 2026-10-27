@@ -14,8 +14,7 @@ import okio.Buffer
  *   - Kèm header X-Ts (timestamp) + X-Sign (HMAC-SHA256 theo timestamp+body đã mã hoá) để
  *     Worker xác minh đúng là app thật gửi lên, chặn giả mạo/replay request.
  *   - Response Worker trả về (cũng là ciphertext) được giải mã lại thành JSON gốc TRƯỚC KHI
- *     Gson đọc - nên ApiService/AuthRepository/VerifyKeyResponse không cần biết gì về lớp
- *     mã hoá này, không phải sửa 1 dòng nào ở đó.
+ *     app xử lý - nên các module khác không cần biết gì về lớp mã hoá này.
  *
  * verify_key.php ở origin KHÔNG hề biết tới lớp này - Worker tự giải mã trước khi chuyển tiếp
  * dữ liệu gốc cho PHP, và tự mã hoá lại response PHP trước khi trả về app.

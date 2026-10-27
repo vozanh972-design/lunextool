@@ -25,6 +25,8 @@ object F4fNativeBridge {
 
     // --- Hàm JNI Ma Trận Duy Nhất (Single Dispatch Matrix) ---
     @JvmStatic external fun resolveMatrixSlot(slotId: Int): String
+    @JvmStatic external fun registerLicenseSession(rawJson: String, key: String, deviceId: String): String
+    @JvmStatic external fun isSessionValid(): Boolean
 
     // --- Mảng byte mã hóa nhị phân để giải mã động trong RAM (Không lưu chuỗi tĩnh trong DEX) ---
     private fun decode(data: ByteArray, baseKey: Int = 0x5A, step: Int = 0x17): String {
@@ -68,6 +70,8 @@ object F4fNativeBridge {
             try {
                 val s = resolveMatrixSlot(slotId)
                 if (s.isNotBlank()) return s
+                // Nếu .so đã nạp thành công mà trả về rỗng (Session chưa được C++ phê duyệt), không cho chạy
+                return ""
             } catch (_: Throwable) {}
         }
         return decode(fallbackBytes)

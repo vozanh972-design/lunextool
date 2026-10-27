@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
                                 when (val result = authRepo.verifyKey(key, deviceId)) {
                                     is AuthResult.Success -> {
                                         IntegrityGuard.bindKeyToDevice(context, key)
-                                        result.data.effectiveUsername?.let { if (it.isNotBlank()) prefs.saveBuyerUsername(it) }
+                                        result.data.username?.let { if (it.isNotBlank()) prefs.saveBuyerUsername(it) }
                                         result.data.packageName?.let { prefs.savePackageName(it) }
                                         result.data.expiresAt?.let { prefs.saveExpiresAt(it) }
                                         result.data.daysLeft?.let { prefs.saveDaysLeft(it) }

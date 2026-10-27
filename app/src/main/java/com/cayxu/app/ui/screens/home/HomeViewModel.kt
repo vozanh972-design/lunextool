@@ -7,7 +7,7 @@ import com.cayxu.app.data.local.FacebookAccountsStore
 import com.cayxu.app.data.local.SecurePrefs
 import com.cayxu.app.data.local.TikTokAccountStatus
 import com.cayxu.app.data.local.TikTokAccountsStore
-import com.cayxu.app.data.model.VerifyKeyResponse
+import com.cayxu.app.data.repository.AuthSession
 import com.cayxu.app.data.repository.AuthRepository
 import com.cayxu.app.data.repository.AuthResult
 import com.cayxu.app.util.DeviceUtils
@@ -30,7 +30,7 @@ data class RecentActivityItem(
 data class HomeUiState(
     val androidId: String = "",
     val isLoading: Boolean = true,
-    val info: VerifyKeyResponse? = null,
+    val info: AuthSession? = null,
     val sessionExpired: Boolean = false,
     val recentActivities: List<RecentActivityItem> = emptyList()
 )
@@ -63,7 +63,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 is AuthResult.Success -> {
                     result.data.daysLeft?.let { securePrefs.saveDaysLeft(it) }
                     result.data.expiresAt?.let { securePrefs.saveExpiresAt(it) }
-                    result.data.effectiveUsername?.let { if (it.isNotBlank()) securePrefs.saveBuyerUsername(it) }
+                    result.data.username?.let { if (it.isNotBlank()) securePrefs.saveBuyerUsername(it) }
                     result.data.packageName?.let { securePrefs.savePackageName(it) }
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
