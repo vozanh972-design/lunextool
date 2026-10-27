@@ -234,6 +234,15 @@ class GolikeApiClient(
         return execute(newRequestBuilder("$BASE_URL/tiktok-account/verify").post(body).build())
     }
 
+    // 2c. Xác minh tài khoản Instagram vào Golike: POST /api/instagram-account/verify-account {"object_id": username}
+    fun verifyInstagramAccount(username: String): JSONObject? {
+        val cleanUsername = username.trim().removePrefix("@")
+        val body = JSONObject().apply {
+            put("object_id", cleanUsername)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        return execute(newRequestBuilder("$BASE_URL/instagram-account/verify-account").post(body).build())
+    }
+
     // 3. Lấy nhiệm vụ (Get Job)
     suspend fun getSecurityTokenForGetJob(
         accountId: Any,

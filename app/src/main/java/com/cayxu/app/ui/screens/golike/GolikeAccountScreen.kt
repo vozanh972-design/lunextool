@@ -51,8 +51,6 @@ import com.cayxu.app.automation.tiktok.TikTokCaptureBridge
 import com.cayxu.app.automation.tiktok.TikTokCaptureState
 import com.cayxu.app.automation.tiktok.XsmmTaskActionResult
 import com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge
-import com.cayxu.app.data.local.InstagramAccount
-import com.cayxu.app.data.local.InstagramAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.instagram.InstagramApiClient
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobRunnerOverlayService
@@ -268,24 +266,31 @@ suspend fun syncLinkedAccountsFromApi(
                 else -> client.getInstagramAccounts()
             }
             val dataArray = res?.optJSONArray("data") ?: return
+            val existingList = GolikeAccountsStore.getAccounts(context, platform.lowercase())
             for (i in 0 until dataArray.length()) {
                 val item = dataArray.optJSONObject(i) ?: continue
                 val accountId = item.optString("id")
-                val uname = item.optString("nickname").ifBlank {
-                    item.optString("unique_username").ifBlank {
-                        item.optString("username").ifBlank {
-                            item.optString("name", accountId)
+                val uname = item.optString("instagram_username").ifBlank {
+                    item.optString("nickname").ifBlank {
+                        item.optString("unique_username").ifBlank {
+                            item.optString("username").ifBlank {
+                                item.optString("name", accountId)
+                            }
                         }
                     }
                 }
                 val fbId = item.optString("fb_id")
                 val cleanId = (if (fbId.isNotBlank()) fbId else if (uname.isNotBlank()) uname else accountId).removePrefix("@").trim()
                 if (cleanId.isNotBlank()) {
-                    val acc = GolikeAccount(
+                    val existingAcc = existingList.firstOrNull {
+                        it.id.equals(cleanId, ignoreCase = true) || it.username.equals(uname, ignoreCase = true)
+                    }
+                    val acc = (existingAcc ?: GolikeAccount(
                         id = cleanId,
                         platform = platform.lowercase(),
-                        username = uname,
-                        avatar = item.optString("avatar"),
+                        username = uname
+                    )).copy(
+                        avatar = if (existingAcc?.avatar.isNullOrBlank()) item.optString("avatar") else existingAcc!!.avatar,
                         isLive = true,
                         isGolikeLinked = true,
                         golikeAccountId = accountId,
@@ -297,6 +302,119 @@ suspend fun syncLinkedAccountsFromApi(
         }
     } catch (_: Exception) {}
 }
+
+/**
+ * Tự động xác minh và liên kết tài khoản Instagram vào hệ thống Golike Gateway:
+ * 1. Kiểm tra tài khoản đã liên kết sẵn trên Golike chưa.
+ * 2. Lấy link yêu cầu follow (link_verify_follow) từ Golike.
+ * 3. Tự động thực hiện follow ngầm bằng cookie riêng của tài khoản Golike IG.
+ * 4. Gửi xác nhận POST /api/instagram-account/verify-account {"object_id": username}.
+ * 5. Lưu ID tài khoản Golike vào GolikeAccountsStore.
+ */
+suspend fun verifyAndLinkInstagramAccount(
+    context: Context,
+    client: GolikeApiClient,
+    account: GolikeAccount,
+    onProgress: (String) -> Unit = {}
+): Result<GolikeAccount> {
+    return try {
+        onProgress("Đang kiểm tra tài khoản @${account.username} trên Golike...")
+        val getAccRes = client.getInstagramAccounts()
+        val verifyFollowLink = getAccRes?.optString("link_verify_follow").orEmpty()
+        val dataArray = getAccRes?.optJSONArray("data")
+        val cleanUser = account.username.trim().removePrefix("@").lowercase()
+
+        // 1. Kiểm tra xem tài khoản đã tồn tại trên Golike chưa
+        if (dataArray != null) {
+            for (i in 0 until dataArray.length()) {
+                val item = dataArray.optJSONObject(i) ?: continue
+                val sUser = item.optString("instagram_username").ifBlank {
+                    item.optString("username").ifBlank {
+                        item.optString("nickname")
+                    }
+                }.trim().removePrefix("@").lowercase()
+                val sId = item.optString("id")
+                if (sUser == cleanUser && sId.isNotBlank()) {
+                    val linked = account.copy(
+                        isGolikeLinked = true,
+                        golikeAccountId = sId,
+                        lastStatus = "Đã liên kết Golike • Sẵn sàng"
+                    )
+                    GolikeAccountsStore.addOrUpdateAccount(context, linked)
+                    return Result.success(linked)
+                }
+            }
+        }
+
+        // 2. Yêu cầu cookie để tự động follow nick do Golike chỉ định
+        if (account.cookie.isBlank()) {
+            return Result.failure(Exception("Tài khoản @${account.username} chưa có cookie để tự động follow. Vui lòng thêm lại tài khoản kèm cookie!"))
+        }
+
+        val targetUrl = if (verifyFollowLink.isNotBlank()) verifyFollowLink else "https://www.instagram.com/james111119999"
+        val targetUsername = targetUrl.trim().trimEnd('/').substringAfterLast('/').trim().removePrefix("@")
+        onProgress("Đang tự động follow @$targetUsername theo yêu cầu của Golike...")
+
+        val igProxy = account.proxy.takeIf { it.isNotBlank() }
+        val igClient = IgTaToolClient.buildClient(igProxy)
+
+        var targetUid = InstagramApiClient.resolveTargetUserId(targetUrl, igProxy)
+        if (targetUid.isNullOrBlank()) {
+            targetUid = IgTaToolClient.extractTargetIdFromUrl(igClient, account.cookie, targetUrl)
+        }
+
+        if (!targetUid.isNullOrBlank()) {
+            val followRes = IgTaToolClient.follow(
+                client = igClient,
+                rawCookie = account.cookie,
+                targetId = targetUid,
+                profileUrl = targetUrl,
+                cachedDtsg = account.fbDtsg.takeIf { it.isNotBlank() },
+                cachedLsd = account.lsd.takeIf { it.isNotBlank() },
+                userId = account.userId.takeIf { it.isNotBlank() }
+            )
+            android.util.Log.d("GolikeIgVerify", "Kết quả follow @$targetUsername: $followRes")
+        }
+        delay(1500L)
+
+        // 3. Gửi xác minh lên Gateway Golike: POST /api/instagram-account/verify-account {"object_id": username}
+        onProgress("Đang gửi xác minh tài khoản @${account.username} lên Golike...")
+        val verifyRes = client.verifyInstagramAccount(account.username)
+        val isSuccess = verifyRes?.optBoolean("success", false) == true
+        if (isSuccess) {
+            val verifiedData = verifyRes?.optJSONObject("data")
+            var verifiedId = verifiedData?.optString("id").orEmpty()
+            if (verifiedId.isBlank()) {
+                val recheck = client.getInstagramAccounts()
+                val arr = recheck?.optJSONArray("data")
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        val itm = arr.optJSONObject(i) ?: continue
+                        val u = itm.optString("instagram_username").ifBlank { itm.optString("username") }.trim().removePrefix("@").lowercase()
+                        if (u == cleanUser) {
+                            verifiedId = itm.optString("id")
+                            break
+                        }
+                    }
+                }
+            }
+            val linked = account.copy(
+                isGolikeLinked = true,
+                golikeAccountId = verifiedId,
+                lastStatus = "Đã liên kết Golike • Sẵn sàng"
+            )
+            GolikeAccountsStore.addOrUpdateAccount(context, linked)
+            Result.success(linked)
+        } else {
+            val errMsg = verifyRes?.optString("message")?.takeIf { it.isNotBlank() }
+                ?: "Golike từ chối xác minh (Vui lòng kiểm tra cookie hoặc nick follow)"
+            Result.failure(Exception(errMsg))
+        }
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+}
+
 
 /**
  * Màn hình quản lý tài khoản & làm nhiệm vụ Golike (Nhân bản 100% giao diện từ XSMM).
@@ -345,11 +463,7 @@ fun GolikeAccountScreen(navController: NavController) {
         if (!isLoggedIn) 0 else if (selectedPlatform == "facebook") otherAccounts.size else GolikeAccountsStore.getAccounts(context, "facebook").size
     }
     val instagramCount = remember(otherAccounts, selectedPlatform, isLoggedIn) {
-        if (!isLoggedIn) 0 else {
-            val fromStore = InstagramAccountsStore.getAccounts(context).size
-            val fromGolike = GolikeAccountsStore.getAccounts(context, "instagram").size
-            maxOf(fromStore, fromGolike)
-        }
+        if (!isLoggedIn) 0 else if (selectedPlatform == "instagram") otherAccounts.size else GolikeAccountsStore.getAccounts(context, "instagram").size
     }
 
     // Đồng bộ danh sách tài khoản khi đổi tab hoặc sau khi đăng xuất/đăng nhập
@@ -360,32 +474,6 @@ fun GolikeAccountScreen(navController: NavController) {
             }
             tiktokAccounts.clear()
             tiktokAccounts.addAll(list)
-        } else if (selectedPlatform == "instagram") {
-            // Tự động đồng bộ dùng chung toàn bộ tài khoản Instagram từ InstagramAccountsStore
-            val igStoreAccounts = InstagramAccountsStore.getAccounts(context)
-            val currentGolikeIg = GolikeAccountsStore.getAccounts(context, "instagram").associateBy { it.username.lowercase().trim().removePrefix("@") }
-            igStoreAccounts.forEach { igAcc ->
-                val cleanUname = igAcc.username.lowercase().trim().removePrefix("@")
-                if (cleanUname.isNotBlank()) {
-                    val existing = currentGolikeIg[cleanUname]
-                    val updated = (existing ?: GolikeAccount(
-                        id = igAcc.username,
-                        platform = "instagram",
-                        username = igAcc.username,
-                        avatar = igAcc.avatar,
-                        isLive = igAcc.isLive,
-                        isGolikeLinked = false,
-                        proxy = igAcc.proxy,
-                        lastStatus = "Sẵn sàng làm job"
-                    )).copy(
-                        avatar = if (existing?.avatar.isNullOrBlank()) igAcc.avatar else existing!!.avatar,
-                        isLive = igAcc.isLive,
-                        proxy = if (existing?.proxy.isNullOrBlank()) igAcc.proxy else existing!!.proxy
-                    )
-                    GolikeAccountsStore.addOrUpdateAccount(context, updated)
-                }
-            }
-            otherAccounts = if (!GolikeSession.isLoggedIn.value) emptyList() else GolikeAccountsStore.getAccounts(context, "instagram")
         } else {
             otherAccounts = if (!GolikeSession.isLoggedIn.value) emptyList() else GolikeAccountsStore.getAccounts(context, selectedPlatform)
         }
@@ -776,22 +864,6 @@ fun GolikeAccountScreen(navController: NavController) {
                                     } catch (_: Exception) { null }
 
                                     withContext(Dispatchers.Main) {
-                                        InstagramAccountsStore.addAccount(
-                                            context,
-                                            InstagramAccount(
-                                                username = info.username,
-                                                userId = info.userId,
-                                                cookie = rawCookie,
-                                                userAgent = dev.userAgent,
-                                                proxy = proxyStr.orEmpty(),
-                                                fullName = info.username,
-                                                avatar = pic.orEmpty(),
-                                                fbDtsg = tokens.dtsg,
-                                                lsd = tokens.lsd,
-                                                isLive = true
-                                            )
-                                        )
-                                        com.cayxu.app.data.local.LinkedAccountsStore.addAccount(context, "Instagram", info.username)
                                         val gAcc = GolikeAccount(
                                             id = info.username,
                                             platform = "instagram",
@@ -799,6 +871,10 @@ fun GolikeAccountScreen(navController: NavController) {
                                             avatar = pic.orEmpty(),
                                             isLive = true,
                                             proxy = proxyStr.orEmpty(),
+                                            cookie = rawCookie,
+                                            userId = info.userId,
+                                            fbDtsg = tokens.dtsg,
+                                            lsd = tokens.lsd,
                                             lastStatus = "Sẵn sàng làm job"
                                         )
                                         GolikeAccountsStore.addOrUpdateAccount(context, gAcc)
@@ -974,7 +1050,33 @@ fun GolikeAccountScreen(navController: NavController) {
         scope.launch(Dispatchers.IO) {
             val client = GolikeAccountsStore.getApiClient(context)
             val cfg = GolikeRunConfigStore.get(context, selectedPlatform)
-            val golikeAccId = acc.golikeAccountId.ifBlank { acc.id }
+            var effectiveAcc = acc
+
+            // Nếu là Instagram và chưa liên kết Golike: Tự động xác minh và liên kết trước
+            if (selectedPlatform.lowercase() == "instagram" && (!effectiveAcc.isGolikeLinked || effectiveAcc.golikeAccountId.isBlank())) {
+                GolikeRunningManager.statusMap[acc.id] = "Đang kiểm tra & liên kết nick với Golike..."
+                val linkRes = verifyAndLinkInstagramAccount(
+                    context = context,
+                    client = client,
+                    account = effectiveAcc,
+                    onProgress = { p -> GolikeRunningManager.statusMap[acc.id] = p }
+                )
+                if (linkRes.isSuccess) {
+                    effectiveAcc = linkRes.getOrThrow()
+                    withContext(Dispatchers.Main) {
+                        reloadAccounts()
+                    }
+                } else {
+                    val failMsg = linkRes.exceptionOrNull()?.message ?: "Không thể liên kết nick @${acc.username} với Golike"
+                    GolikeRunningManager.statusMap[acc.id] = "Lỗi: $failMsg"
+                    GolikeRunningManager.runningAccounts[acc.id] = false
+                    GolikeRunningManager.lastErrorDetailMap[acc.id] = failMsg
+                    GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, "Lỗi: $failMsg", isSuccess = false, errorDetail = failMsg)
+                    return@launch
+                }
+            }
+
+            val golikeAccId = effectiveAcc.golikeAccountId.ifBlank { effectiveAcc.id }
             var consecutiveFails = 0
 
             while (GolikeRunningManager.isRunning(acc.id) && isActive) {
@@ -1016,14 +1118,13 @@ fun GolikeAccountScreen(navController: NavController) {
                     val jobType = jobData.optString("type", "tương tác")
                     val countdown = jobRes.optInt("countdown", cfg.delayMinSeconds).coerceAtLeast(3)
 
-                    // 2. Thực hiện tương tác thực tế nếu là Instagram (thừa hưởng từ IgTaToolClient)
+                    // 2. Thực hiện tương tác thực tế nếu là Instagram (Dùng cookie độc lập của Golike IG)
                     if (selectedPlatform.lowercase() == "instagram") {
-                        val igAcc = InstagramAccountsStore.getAccount(context, acc.username)
-                            ?: InstagramAccountsStore.getAccount(context, acc.id)
+                        val cookie = effectiveAcc.cookie.takeIf { it.isNotBlank() }
 
-                        if (igAcc == null || igAcc.cookie.isBlank()) {
+                        if (cookie.isNullOrBlank()) {
                             consecutiveFails++
-                            val errMsg = "Chưa có Cookie Instagram cho nick ${acc.username}"
+                            val errMsg = "Chưa có Cookie Instagram cho nick ${effectiveAcc.username}"
                             val curErr = (GolikeRunningManager.errorCountMap[acc.id] ?: acc.errorCount) + 1
                             GolikeRunningManager.errorCountMap[acc.id] = curErr
                             GolikeRunningManager.lastErrorDetailMap[acc.id] = errMsg
@@ -1034,7 +1135,7 @@ fun GolikeAccountScreen(navController: NavController) {
                             continue
                         }
 
-                        val igProxy = igAcc.proxy.ifBlank { acc.proxy }.takeIf { it.isNotBlank() }
+                        val igProxy = effectiveAcc.proxy.takeIf { it.isNotBlank() }
                         val igClient = IgTaToolClient.buildClient(igProxy)
                         val targetLink = jobData.optString("link")
                         val objectId = jobData.optString("object_id")
@@ -1047,19 +1148,19 @@ fun GolikeAccountScreen(navController: NavController) {
                             GolikeRunningManager.statusMap[acc.id] = "Đang thực hiện Follow Instagram..."
                             var uid = objectId.trim()
                             if (!uid.all { it.isDigit() } || uid.isBlank()) {
-                                val extracted = if (targetLink.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(igClient, igAcc.cookie, targetLink) else null
+                                val extracted = if (targetLink.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(igClient, cookie, targetLink) else null
                                 uid = extracted ?: objectId
                             }
                             val targetUser = (if (pkgName.isNotBlank()) pkgName else objectId).trim().trim('/').substringAfterLast('/')
                             val profileUrl = if (targetLink.isNotBlank()) targetLink else if (targetUser.isNotBlank()) "https://www.instagram.com/$targetUser/" else "https://www.instagram.com/"
                             val followRes = IgTaToolClient.follow(
                                 client = igClient,
-                                rawCookie = igAcc.cookie,
+                                rawCookie = cookie,
                                 targetId = uid,
                                 profileUrl = profileUrl,
-                                cachedDtsg = igAcc.fbDtsg.takeIf { it.isNotBlank() },
-                                cachedLsd = igAcc.lsd.takeIf { it.isNotBlank() },
-                                userId = igAcc.userId.takeIf { it.isNotBlank() }
+                                cachedDtsg = effectiveAcc.fbDtsg.takeIf { it.isNotBlank() },
+                                cachedLsd = effectiveAcc.lsd.takeIf { it.isNotBlank() },
+                                userId = effectiveAcc.userId.takeIf { it.isNotBlank() }
                             )
                             if (followRes.contains("1357004") || followRes.contains("checkpoint_required") || followRes.contains("login_required")) {
                                 actionSuccess = false
@@ -1078,12 +1179,12 @@ fun GolikeAccountScreen(navController: NavController) {
                             }
                             val likeRes = IgTaToolClient.tym(
                                 client = igClient,
-                                rawCookie = igAcc.cookie,
+                                rawCookie = cookie,
                                 mediaId = mid,
                                 linkJob = targetLink,
-                                cachedDtsg = igAcc.fbDtsg.takeIf { it.isNotBlank() },
-                                cachedLsd = igAcc.lsd.takeIf { it.isNotBlank() },
-                                userId = igAcc.userId.takeIf { it.isNotBlank() }
+                                cachedDtsg = effectiveAcc.fbDtsg.takeIf { it.isNotBlank() },
+                                cachedLsd = effectiveAcc.lsd.takeIf { it.isNotBlank() },
+                                userId = effectiveAcc.userId.takeIf { it.isNotBlank() }
                             )
                             if (likeRes.contains("1357004") || likeRes.contains("checkpoint_required") || likeRes.contains("login_required")) {
                                 actionSuccess = false
@@ -1283,6 +1384,45 @@ fun GolikeAccountScreen(navController: NavController) {
                                 GolikeAccountsStore.addOrUpdateAccount(context, updatedAcc)
                                 reloadAccounts()
                                 Toast.makeText(context, "Đã liên kết @" + cleanHandle + " thành công!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val err = linkResult.exceptionOrNull()?.message ?: "Thất bại"
+                                Toast.makeText(context, "Liên kết thất bại: " + err, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Lỗi: " + e.message, Toast.LENGTH_SHORT).show()
+                        }
+                    } finally {
+                        withContext(Dispatchers.Main) {
+                            addingUid = null
+                        }
+                    }
+                }
+            } else if (selectedPlatform == "instagram") {
+                if (!isLoggedIn) {
+                    Toast.makeText(context, "Vui lòng đăng nhập Golike trước khi liên kết!", Toast.LENGTH_SHORT).show()
+                    showWebViewLoginDialog = true
+                    return@GolikeAccountsScreen
+                }
+                if (addingUid != null) return@GolikeAccountsScreen
+                addingUid = acc.id
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val client = GolikeAccountsStore.getApiClient(context)
+                        val linkResult = verifyAndLinkInstagramAccount(
+                            context = context,
+                            client = client,
+                            account = acc,
+                            onProgress = { p ->
+                                GolikeRunningManager.statusMap[acc.id] = p
+                            }
+                        )
+                        withContext(Dispatchers.Main) {
+                            if (linkResult.isSuccess) {
+                                val linkedAcc = linkResult.getOrThrow()
+                                reloadAccounts()
+                                Toast.makeText(context, "Đã liên kết @" + linkedAcc.username + " với Golike thành công!", Toast.LENGTH_SHORT).show()
                             } else {
                                 val err = linkResult.exceptionOrNull()?.message ?: "Thất bại"
                                 Toast.makeText(context, "Liên kết thất bại: " + err, Toast.LENGTH_LONG).show()
