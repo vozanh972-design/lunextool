@@ -267,10 +267,19 @@ suspend fun syncLinkedAccountsFromApi(
                 "facebook" -> client.getFacebookAccounts()
                 else -> client.getInstagramAccounts()
             }
-            val dataArray = res?.optJSONArray("data") ?: return
+            val dataArray = res?.optJSONArray("data")
+            val items = mutableListOf<org.json.JSONObject>()
+            if (dataArray != null) {
+                for (i in 0 until dataArray.length()) {
+                    dataArray.optJSONObject(i)?.let { items.add(it) }
+                }
+            } else {
+                res?.optJSONObject("data")?.let { items.add(it) }
+            }
+            if (items.isEmpty()) return
+
             val existingList = GolikeAccountsStore.getAccounts(context, platform.lowercase())
-            for (i in 0 until dataArray.length()) {
-                val item = dataArray.optJSONObject(i) ?: continue
+            for (item in items) {
                 val accountId = item.optString("id")
                 val uname = item.optString("instagram_username").ifBlank {
                     item.optString("nickname").ifBlank {
@@ -287,12 +296,13 @@ suspend fun syncLinkedAccountsFromApi(
                     val existingAcc = existingList.firstOrNull {
                         it.id.equals(cleanId, ignoreCase = true) || it.username.equals(uname, ignoreCase = true)
                     }
+                    val serverPic = item.optString("profile_pic_url").ifBlank { item.optString("avatar") }
                     val acc = (existingAcc ?: GolikeAccount(
                         id = cleanId,
                         platform = platform.lowercase(),
                         username = uname
                     )).copy(
-                        avatar = if (existingAcc?.avatar.isNullOrBlank()) item.optString("avatar") else existingAcc!!.avatar,
+                        avatar = if (existingAcc?.avatar.isNullOrBlank() && serverPic.isNotBlank()) serverPic else (existingAcc?.avatar ?: serverPic),
                         isLive = true,
                         isGolikeLinked = true,
                         golikeAccountId = accountId,
@@ -481,21 +491,15 @@ fun GolikeAccountScreen(navController: NavController) {
 
     // Danh sách tài khoản theo nền tảng
     val tiktokAccounts = remember { mutableStateListOf<GolikeAccount>() }
-    var otherAccounts by remember(selectedPlatform, isLoggedIn) {
-        mutableStateOf(if (selectedPlatform != "tiktok" && isLoggedIn) GolikeAccountsStore.getAccounts(context, selectedPlatform) else emptyList())
-    }
+    val otherAccounts = remember { mutableStateListOf<GolikeAccount>() }
 
     val displayAccounts: List<GolikeAccount> =
         if (selectedPlatform == "tiktok") tiktokAccounts else otherAccounts
 
     // Đếm số lượng tài khoản theo từng tab
     val tiktokCount = tiktokAccounts.size
-    val facebookCount = remember(otherAccounts, selectedPlatform, isLoggedIn) {
-        if (!isLoggedIn) 0 else if (selectedPlatform == "facebook") otherAccounts.size else GolikeAccountsStore.getAccounts(context, "facebook").size
-    }
-    val instagramCount = remember(otherAccounts, selectedPlatform, isLoggedIn) {
-        if (!isLoggedIn) 0 else if (selectedPlatform == "instagram") otherAccounts.size else GolikeAccountsStore.getAccounts(context, "instagram").size
-    }
+    val facebookCount = if (selectedPlatform == "facebook") otherAccounts.size else (if (!isLoggedIn) 0 else GolikeAccountsStore.getAccounts(context, "facebook").size)
+    val instagramCount = if (selectedPlatform == "instagram") otherAccounts.size else (if (!isLoggedIn) 0 else GolikeAccountsStore.getAccounts(context, "instagram").size)
 
     // Đồng bộ danh sách tài khoản khi đổi tab hoặc sau khi đăng xuất/đăng nhập
     fun reloadAccounts() {
@@ -506,7 +510,9 @@ fun GolikeAccountScreen(navController: NavController) {
             tiktokAccounts.clear()
             tiktokAccounts.addAll(list)
         } else {
-            otherAccounts = if (!GolikeSession.isLoggedIn.value) emptyList() else GolikeAccountsStore.getAccounts(context, selectedPlatform)
+            val list = if (!GolikeSession.isLoggedIn.value) emptyList() else GolikeAccountsStore.getAccounts(context, selectedPlatform)
+            otherAccounts.clear()
+            otherAccounts.addAll(list)
         }
     }
 

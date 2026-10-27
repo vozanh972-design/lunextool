@@ -1,6 +1,7 @@
 package com.cayxu.app.ui.screens.golike
 
 import android.content.Context
+import com.cayxu.app.data.local.InstagramAccountsStore
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.XsmmAccountStore
 import com.google.gson.Gson
@@ -60,6 +61,8 @@ object GolikeAccountsStore {
     private const val KEY_CLIENT = "golike_client"
     private const val KEY_TIKTOK_ACCOUNTS_LIST = "golike_tiktok_accounts_list"
     private const val KEY_PREFIX_ACCOUNTS = "golike_accounts_"
+    private const val KEY_DELETED_GOLIKE_IG = "golike_deleted_ig_accounts"
+    private const val ENTRY_SEPARATOR = "\u0001"
 
     private val gson = Gson()
 
@@ -362,6 +365,34 @@ object GolikeAccountsStore {
         saveAccounts(context, "tiktok", list)
     }
 
+    // ===== QUẢN LÝ DANH SÁCH TÀI KHOẢN BỊ XÓA RIÊNG CỦA GOLIKE IG =====
+    fun getDeletedGolikeIgKeys(context: Context): Set<String> {
+        val raw = prefs(context).getString(KEY_DELETED_GOLIKE_IG, null) ?: return emptySet()
+        return raw.split(ENTRY_SEPARATOR)
+            .map { it.trim().lowercase() }
+            .filter { it.isNotBlank() }
+            .toSet()
+    }
+
+    fun clearDeletedGolikeIgKey(context: Context, key: String) {
+        val clean = key.trim().removePrefix("@").lowercase()
+        if (clean.isBlank()) return
+        val current = getDeletedGolikeIgKeys(context).toMutableSet()
+        if (current.remove(clean)) {
+            prefs(context).edit().putString(KEY_DELETED_GOLIKE_IG, current.joinToString(ENTRY_SEPARATOR)).commit()
+        }
+    }
+
+    fun addDeletedGolikeIgKeys(context: Context, keys: Collection<String>) {
+        val cleanKeys = keys
+            .flatMap { listOf(it.trim().lowercase(), it.trim().removePrefix("@").lowercase()) }
+            .filter { it.isNotBlank() }
+        if (cleanKeys.isEmpty()) return
+        val current = getDeletedGolikeIgKeys(context).toMutableSet()
+        current.addAll(cleanKeys)
+        prefs(context).edit().putString(KEY_DELETED_GOLIKE_IG, current.joinToString(ENTRY_SEPARATOR)).commit()
+    }
+
     fun getAccounts(context: Context, platform: String): List<GolikeAccount> {
         val key = if (platform.lowercase() == "tiktok") KEY_TIKTOK_ACCOUNTS_LIST else "${KEY_PREFIX_ACCOUNTS}${platform.lowercase()}"
         var json = prefs(context).getString(key, null)
@@ -394,6 +425,71 @@ object GolikeAccountsStore {
             }
         }
 
+        if (platform.lowercase() == "instagram") {
+            val deletedSet = getDeletedGolikeIgKeys(context)
+            val igStoreAccounts = runCatching {
+                InstagramAccountsStore.getAccounts(context)
+            }.getOrDefault(emptyList())
+
+            val merged = mutableListOf<GolikeAccount>()
+            val processedHandles = mutableSetOf<String>()
+
+            // 1. Nạp các tài khoản từ kho InstagramAccountsStore (chia sẻ phiên đăng nhập / cookie từ XSMM hoặc đã thêm trước đó)
+            igStoreAccounts.forEach { ig ->
+                val cleanHandle = ig.username.trim().removePrefix("@").lowercase()
+                if (cleanHandle.isNotBlank() && !deletedSet.contains(cleanHandle) && !deletedSet.contains(ig.username.lowercase())) {
+                    val existing = list.firstOrNull {
+                        it.id.equals(cleanHandle, ignoreCase = true) || it.username.trim().removePrefix("@").equals(cleanHandle, ignoreCase = true)
+                    }
+                    if (existing != null) {
+                        merged.add(
+                            existing.copy(
+                                id = cleanHandle,
+                                username = cleanHandle,
+                                avatar = if (existing.avatar.isNotBlank()) existing.avatar else ig.avatar,
+                                proxy = if (existing.proxy.isNotBlank()) existing.proxy else ig.proxy,
+                                cookie = if (existing.cookie.isNotBlank()) existing.cookie else ig.cookie,
+                                userId = if (existing.userId.isNotBlank()) existing.userId else ig.userId,
+                                fbDtsg = if (existing.fbDtsg.isNotBlank()) existing.fbDtsg else ig.fbDtsg,
+                                lsd = if (existing.lsd.isNotBlank()) existing.lsd else ig.lsd,
+                                isLive = ig.isLive
+                            )
+                        )
+                    } else {
+                        merged.add(
+                            GolikeAccount(
+                                id = cleanHandle,
+                                platform = "instagram",
+                                username = cleanHandle,
+                                avatar = ig.avatar,
+                                isLive = ig.isLive,
+                                isGolikeLinked = false,
+                                golikeAccountId = "",
+                                proxy = ig.proxy,
+                                cookie = ig.cookie,
+                                userId = ig.userId,
+                                fbDtsg = ig.fbDtsg,
+                                lsd = ig.lsd,
+                                lastStatus = "Sẵn sàng làm job"
+                            )
+                        )
+                    }
+                    processedHandles.add(cleanHandle)
+                }
+            }
+
+            // 2. Bổ sung các tài khoản được thêm riêng trong Golike mà chưa có trong InstagramAccountsStore
+            list.forEach { gAcc ->
+                val clean = gAcc.id.trim().removePrefix("@").lowercase()
+                if (clean.isNotBlank() && !processedHandles.contains(clean) && !deletedSet.contains(clean) && !deletedSet.contains(gAcc.username.trim().removePrefix("@").lowercase())) {
+                    merged.add(gAcc)
+                    processedHandles.add(clean)
+                }
+            }
+
+            return merged
+        }
+
         return list
     }
 
@@ -415,6 +511,10 @@ object GolikeAccountsStore {
     }
 
     fun addOrUpdateAccount(context: Context, account: GolikeAccount) {
+        if (account.platform.lowercase() == "instagram") {
+            clearDeletedGolikeIgKey(context, account.id)
+            clearDeletedGolikeIgKey(context, account.username)
+        }
         val currentList = getAccounts(context, account.platform).toMutableList()
         val index = currentList.indexOfFirst { it.id.equals(account.id, ignoreCase = true) }
         if (index >= 0) {
@@ -428,6 +528,9 @@ object GolikeAccountsStore {
     /** Xóa vĩnh viễn danh sách tài khoản theo ID (sử dụng .commit()) */
     fun removeAccounts(context: Context, platform: String, idsToRemove: Collection<String>) {
         if (idsToRemove.isEmpty()) return
+        if (platform.lowercase() == "instagram") {
+            addDeletedGolikeIgKeys(context, idsToRemove)
+        }
         val currentList = getAccounts(context, platform)
         val cleanSet = idsToRemove.map { it.trim().lowercase() }.toSet()
         val updated = currentList.filterNot { cleanSet.contains(it.id.trim().lowercase()) }
