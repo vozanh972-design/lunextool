@@ -329,9 +329,9 @@ android {
         // Android 7.0 (Nougat) trở lên
         minSdk = 24
         // targetSdk sẽ được nâng lên khi Android 16 SDK chính thức phát hành
-        versionCode = 8
-        versionName = "1.0.7"
-        buildConfigField("String", "UPDATE_CHANGELOG", "\"1. Thêm nền tảng mới: Follow4Follow TikTok (Follow & Like)\"")
+        versionCode = 9
+        versionName = "1.0.8"
+        buildConfigField("String", "UPDATE_CHANGELOG", "\"1. Cập nhật tính năng mua hàng\"")
 
         externalNativeBuild {
             cmake {
