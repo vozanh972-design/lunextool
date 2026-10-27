@@ -244,6 +244,11 @@ class F4fJobRunnerOverlayService : Service() {
     private fun startAutomationRunner() {
         runnerJob?.cancel()
         runnerJob = serviceScope.launch(Dispatchers.IO) {
+            if (!F4fNativeBridge.ensureSession(applicationContext)) {
+                setStatus("Lỗi: Bản quyền không hợp lệ hoặc đã hết hạn")
+                return@launch
+            }
+
             val token = F4fAccountStore.getToken(applicationContext).orEmpty()
             if (token.isBlank()) {
                 setStatus("Lỗi: Chưa đăng nhập Follow4Follow")

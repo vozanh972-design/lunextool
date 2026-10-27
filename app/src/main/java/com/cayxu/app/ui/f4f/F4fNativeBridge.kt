@@ -28,6 +28,23 @@ object F4fNativeBridge {
     @JvmStatic external fun registerLicenseSession(rawJson: String, key: String, deviceId: String): String
     @JvmStatic external fun isSessionValid(): Boolean
 
+    /**
+     * Đảm bảo Session Ticket trong C++ hợp lệ trước khi thực thi job.
+     * Tự động đồng bộ với Server nếu phiên C++ chưa được kích hoạt.
+     */
+    suspend fun ensureSession(context: android.content.Context): Boolean {
+        if (isSessionValid()) return true
+        val key = com.cayxu.app.data.local.SecurePrefs(context).getKey()
+        if (key.isNullOrBlank()) return false
+        val deviceId = com.cayxu.app.util.DeviceUtils.getAndroidId(context)
+        return try {
+            val res = com.cayxu.app.data.repository.AuthRepository().verifyKey(key, deviceId)
+            res is com.cayxu.app.data.repository.AuthResult.Success
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     // --- Mảng byte mã hóa nhị phân để giải mã động trong RAM (Không lưu chuỗi tĩnh trong DEX) ---
     private fun decode(data: ByteArray, baseKey: Int = 0x5A, step: Int = 0x17): String {
         val out = CharArray(data.size)
