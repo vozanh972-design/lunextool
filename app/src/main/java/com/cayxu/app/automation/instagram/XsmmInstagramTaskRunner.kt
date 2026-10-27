@@ -210,8 +210,7 @@ class XsmmInstagramTaskRunner(
             )
             val runner = XsmmInstagramTaskRunner(token, igAccount)
 
-            // Bước 1: Đồng bộ token & session qua Web HTML
-            notify("Kiểm tra cookie & token...")
+            // Bước 1: Khởi động phiên tương tác chuẩn TA Tool (Sử dụng token sẵn có)
             val (isLive, tokens) = runner.syncSessionTokens()
             if (!isLive) {
                 val msg = "• Lỗi: Kháng nghị / Checkpoint / DIE"
@@ -243,15 +242,14 @@ class XsmmInstagramTaskRunner(
             igAccount.username = realUsername
             if (updated.userId.isNotBlank()) igAccount.userId = updated.userId
 
-            // Bước 2: Đảm bảo nick đã có trên XSMM.NET qua /api/taskapi/accounts2
-            notify("Đồng bộ liên kết XSMM...")
-            val isLinked = runner.ensureAccountLinked()
-            if (!isLinked) {
-                notify("Thêm nick XSMM: Thử lại...")
-                delay(2000L)
-            } else {
-                InstagramAccountsStore.setXsmmLinked(context, realUsername, true)
-                InstagramAccountsStore.setXsmmLinked(context, cleanUsername, true)
+            // Bước 2: Đảm bảo nick đã có trên XSMM.NET nếu chưa liên kết
+            if (!localAcc.isXsmmLinked) {
+                notify("Đồng bộ liên kết XSMM...")
+                val isLinked = runner.ensureAccountLinked()
+                if (isLinked) {
+                    InstagramAccountsStore.setXsmmLinked(context, realUsername, true)
+                    InstagramAccountsStore.setXsmmLinked(context, cleanUsername, true)
+                }
             }
 
             // Bước 3: Đọc cấu hình nhiệm vụ
@@ -457,22 +455,39 @@ class XsmmInstagramTaskRunner(
 
     // ── 1. ĐỒNG BỘ TOKEN THEO IgTaToolClient (Bóc tách fb_dtsg, lsd, jazoest chuẩn Meta) ────
     fun syncSessionTokens(): Pair<Boolean, Map<String, String>> {
+        val tokenMap = mutableMapOf<String, String>()
+        val realUsername = account.username.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) } ?: ""
+        val realUserId = account.userId
+        tokenMap["username"] = realUsername
+        tokenMap["userId"] = realUserId
+
+        try {
+            val cookieTokens = extractTokensFromCookie(account.cookie)
+            val csrftoken = cookieTokens["csrftoken"] ?: ""
+            if (csrftoken.isNotBlank()) tokenMap["csrftoken"] = csrftoken
+        } catch (_: Exception) {}
+
+        // Nếu đã có sẵn fbDtsg và lsd -> Tái sử dụng ngay lập tức chuẩn TA Tool Python, không tải lại HTML
+        if (!account.fbDtsg.isNullOrBlank() && !account.lsd.isNullOrBlank()) {
+            tokenMap["fb_dtsg"] = account.fbDtsg!!
+            tokenMap["lsd"] = account.lsd!!
+            return Pair(true, tokenMap)
+        }
+
+        // Nếu chưa có, mới tiến hành kiểm tra cookie và bóc tách
         val info = IgTaToolClient.checkCookieIg(client, account.cookie)
         if (!info.isLive) {
             account.lastErrorMessage = "Tài khoản bị Kháng nghị / Checkpoint / DIE"
             return Pair(false, emptyMap())
         }
 
-        val realUsername = info.username.ifBlank { account.username }
-        val realUserId = info.userId.ifBlank { account.userId }
-        account.username = realUsername
-        account.userId = realUserId
+        val resolvedUser = info.username.ifBlank { realUsername }
+        val resolvedId = info.userId.ifBlank { realUserId }
+        account.username = resolvedUser
+        account.userId = resolvedId
+        tokenMap["username"] = resolvedUser
+        tokenMap["userId"] = resolvedId
 
-        val tokenMap = mutableMapOf<String, String>()
-        tokenMap["username"] = realUsername
-        tokenMap["userId"] = realUserId
-
-        // Trích xuất fb_dtsg và lsd bắt buộc cho GraphQL queries
         val pageTokens = IgTaToolClient.extractPageTokens(
             client = client,
             cookie = account.cookie,
@@ -492,16 +507,6 @@ class XsmmInstagramTaskRunner(
             tokenMap["lsd"] = pageTokens.lsd
         } else if (!account.lsd.isNullOrBlank()) {
             tokenMap["lsd"] = account.lsd!!
-        }
-
-        try {
-            val cookieTokens = extractTokensFromCookie(account.cookie)
-            val csrftoken = cookieTokens["csrftoken"] ?: ""
-            if (csrftoken.isNotBlank()) tokenMap["csrftoken"] = csrftoken
-        } catch (_: Exception) {}
-
-        if (tokenMap["fb_dtsg"].isNullOrBlank() || tokenMap["lsd"].isNullOrBlank()) {
-            account.lastErrorMessage = "Không lấy được fb_dtsg/lsd của Instagram"
         }
 
         return Pair(true, tokenMap)

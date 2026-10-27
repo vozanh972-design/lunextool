@@ -1386,6 +1386,40 @@ fun XsmmAccountScreen(navController: NavController) {
                 return@XsmmAccountsScreen
             }
 
+            if (currentPlatform == XsmmPlatform.Instagram) {
+                scope.launch {
+                    try {
+                        val token = XsmmAccountStore.getToken(context)
+                        if (token.isNullOrBlank()) {
+                            Toast.makeText(context, "Vui lòng đăng nhập XSMM trước", Toast.LENGTH_SHORT).show()
+                            return@launch
+                        }
+                        val cleanUser = acc.id.trim().removePrefix("@").trim('/')
+                        Toast.makeText(context, "Đang thêm @$cleanUser vào XSMM...", Toast.LENGTH_SHORT).show()
+                        val res = XsmmAccountsRepository.addInstagramAccount2(token, cleanUser)
+                        when (res) {
+                            is XsmmAddAccountResult.Success -> {
+                                com.cayxu.app.data.local.InstagramAccountsStore.setXsmmLinked(context, cleanUser, true)
+                                Toast.makeText(context, "Đã liên kết Instagram @$cleanUser thành công!", Toast.LENGTH_SHORT).show()
+                                reloadAccounts()
+                            }
+                            is XsmmAddAccountResult.Error -> {
+                                if (res.message.contains("đã tồn tại", ignoreCase = true) || res.message.contains("already", ignoreCase = true) || res.message.contains("exist", ignoreCase = true)) {
+                                    com.cayxu.app.data.local.InstagramAccountsStore.setXsmmLinked(context, cleanUser, true)
+                                    Toast.makeText(context, "Tài khoản @$cleanUser đã có trên XSMM!", Toast.LENGTH_SHORT).show()
+                                    reloadAccounts()
+                                } else {
+                                    Toast.makeText(context, "Lỗi thêm nick: ${res.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Lỗi kết nối: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                return@XsmmAccountsScreen
+            }
+
             val cleanHandle = acc.handle.trim().removePrefix("@")
             if (cleanHandle.isBlank()) {
                 Toast.makeText(context, "Handle tài khoản không hợp lệ", Toast.LENGTH_SHORT).show()
@@ -1495,6 +1529,30 @@ fun XsmmAccountScreen(navController: NavController) {
                                 facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
                                 Toast.makeText(context, "Lỗi kiểm tra [${targetAcc.name}]: ${e.message} (Đánh dấu Die)", Toast.LENGTH_SHORT).show()
                             }
+                        }
+                    }
+                }
+                return@XsmmAccountsScreen
+            }
+
+            if (currentPlatform == XsmmPlatform.Instagram) {
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val clean = acc.id.trim().removePrefix("@").lowercase()
+                        val stored = com.cayxu.app.data.local.InstagramAccountsStore.getAccount(context, clean)
+                        if (stored != null && stored.cookie.isNotBlank()) {
+                            val client = com.cayxu.app.automation.instagram.IgTaToolClient.buildClient(stored.proxy.takeIf { it.isNotBlank() })
+                            val check = com.cayxu.app.automation.instagram.IgTaToolClient.checkCookieIg(client, stored.cookie)
+                            val isLive = check.isLive
+                            com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, stored.copy(isLive = isLive))
+                            withContext(Dispatchers.Main) {
+                                reloadAccounts()
+                                Toast.makeText(context, if (isLive) "Tài khoản @$clean còn Live!" else "Tài khoản @$clean đã DIE hoặc hết hạn!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Lỗi kiểm tra: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
