@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -135,6 +137,32 @@ fun GolikeRunConfigInstagramScreen(
 private val Back = listOf("M19 12H5M11 6l-6 6 6 6")
 private val InstagramPink = Color(0xFFC2255C)
 private val InstagramSoft = Color(0xFFFDEAF2)
+
+@Composable
+private fun PressBox(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentAlignment: Alignment = Alignment.TopStart,
+    content: @Composable () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                val scale = if (pressed) 0.985f else 1f
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = contentAlignment,
+    ) { content() }
+}
 
 @Composable
 private fun ConfigHeader(onBack: () -> Unit) {

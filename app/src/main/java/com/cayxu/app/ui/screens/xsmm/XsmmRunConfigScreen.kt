@@ -124,7 +124,6 @@ fun XsmmRunConfigScreen(navController: NavController) {
                 when (saved.taskType) {
                     "instagram_follow" -> XsmmIgTaskMode.FollowOnly
                     "instagram_like" -> XsmmIgTaskMode.TymOnly
-                    "instagram_comment" -> XsmmIgTaskMode.CommentOnly
                     else -> XsmmIgTaskMode.Random
                 }
             }
