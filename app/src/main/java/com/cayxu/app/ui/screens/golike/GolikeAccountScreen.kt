@@ -51,6 +51,8 @@ import com.cayxu.app.automation.tiktok.TikTokCaptureBridge
 import com.cayxu.app.automation.tiktok.TikTokCaptureState
 import com.cayxu.app.automation.tiktok.XsmmTaskActionResult
 import com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge
+import com.cayxu.app.data.local.InstagramAccount
+import com.cayxu.app.data.local.InstagramAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.instagram.InstagramApiClient
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobRunnerOverlayService
@@ -346,8 +348,37 @@ suspend fun verifyAndLinkInstagramAccount(
             }
         }
 
-        // 2. Yêu cầu cookie để tự động follow nick do Golike chỉ định
-        if (account.cookie.isBlank()) {
+        // 2. Lấy cookie để tự động follow nick do Golike chỉ định (Dùng cookie có sẵn hoặc tự động lấy từ kho phiên chung)
+        var effectiveCookie = account.cookie
+        var effectiveUserId = account.userId
+        var effectiveFbDtsg = account.fbDtsg
+        var effectiveLsd = account.lsd
+        var effectiveProxy = account.proxy
+
+        if (effectiveCookie.isBlank()) {
+            val sharedIg = InstagramAccountsStore.getAccount(context, account.username)
+                ?: InstagramAccountsStore.getAccount(context, account.id)
+            if (sharedIg != null && sharedIg.cookie.isNotBlank()) {
+                effectiveCookie = sharedIg.cookie
+                if (effectiveUserId.isBlank()) effectiveUserId = sharedIg.userId
+                if (effectiveFbDtsg.isBlank()) effectiveFbDtsg = sharedIg.fbDtsg
+                if (effectiveLsd.isBlank()) effectiveLsd = sharedIg.lsd
+                if (effectiveProxy.isBlank()) effectiveProxy = sharedIg.proxy
+                // Tự động lưu lại vào GolikeAccount để dùng thông suốt
+                GolikeAccountsStore.addOrUpdateAccount(
+                    context,
+                    account.copy(
+                        cookie = effectiveCookie,
+                        userId = effectiveUserId,
+                        fbDtsg = effectiveFbDtsg,
+                        lsd = effectiveLsd,
+                        proxy = effectiveProxy
+                    )
+                )
+            }
+        }
+
+        if (effectiveCookie.isBlank()) {
             return Result.failure(Exception("Tài khoản @${account.username} chưa có cookie để tự động follow. Vui lòng thêm lại tài khoản kèm cookie!"))
         }
 
@@ -355,23 +386,23 @@ suspend fun verifyAndLinkInstagramAccount(
         val targetUsername = targetUrl.trim().trimEnd('/').substringAfterLast('/').trim().removePrefix("@")
         onProgress("Đang tự động follow @$targetUsername theo yêu cầu của Golike...")
 
-        val igProxy = account.proxy.takeIf { it.isNotBlank() }
+        val igProxy = effectiveProxy.takeIf { it.isNotBlank() }
         val igClient = IgTaToolClient.buildClient(igProxy)
 
         var targetUid = InstagramApiClient.resolveTargetUserId(targetUrl, igProxy)
         if (targetUid.isNullOrBlank()) {
-            targetUid = IgTaToolClient.extractTargetIdFromUrl(igClient, account.cookie, targetUrl)
+            targetUid = IgTaToolClient.extractTargetIdFromUrl(igClient, effectiveCookie, targetUrl)
         }
 
         if (!targetUid.isNullOrBlank()) {
             val followRes = IgTaToolClient.follow(
                 client = igClient,
-                rawCookie = account.cookie,
+                rawCookie = effectiveCookie,
                 targetId = targetUid,
                 profileUrl = targetUrl,
-                cachedDtsg = account.fbDtsg.takeIf { it.isNotBlank() },
-                cachedLsd = account.lsd.takeIf { it.isNotBlank() },
-                userId = account.userId.takeIf { it.isNotBlank() }
+                cachedDtsg = effectiveFbDtsg.takeIf { it.isNotBlank() },
+                cachedLsd = effectiveLsd.takeIf { it.isNotBlank() },
+                userId = effectiveUserId.takeIf { it.isNotBlank() }
             )
             android.util.Log.d("GolikeIgVerify", "Kết quả follow @$targetUsername: $followRes")
         }
@@ -864,6 +895,24 @@ fun GolikeAccountScreen(navController: NavController) {
                                     } catch (_: Exception) { null }
 
                                     withContext(Dispatchers.Main) {
+                                        // 1. Cập nhật phiên đăng nhập vào kho chung InstagramAccountsStore (để XSMM cũng dùng được không cần đăng nhập lại)
+                                        InstagramAccountsStore.addAccount(
+                                            context,
+                                            InstagramAccount(
+                                                username = info.username,
+                                                userId = info.userId,
+                                                cookie = rawCookie,
+                                                userAgent = dev.userAgent,
+                                                proxy = proxyStr.orEmpty(),
+                                                fullName = info.username,
+                                                avatar = pic.orEmpty(),
+                                                fbDtsg = tokens.dtsg,
+                                                lsd = tokens.lsd,
+                                                isLive = true
+                                            )
+                                        )
+
+                                        // 2. Thêm vào danh sách quản lý riêng của Golike IG
                                         val gAcc = GolikeAccount(
                                             id = info.username,
                                             platform = "instagram",
@@ -1118,9 +1167,33 @@ fun GolikeAccountScreen(navController: NavController) {
                     val jobType = jobData.optString("type", "tương tác")
                     val countdown = jobRes.optInt("countdown", cfg.delayMinSeconds).coerceAtLeast(3)
 
-                    // 2. Thực hiện tương tác thực tế nếu là Instagram (Dùng cookie độc lập của Golike IG)
+                    // 2. Thực hiện tương tác thực tế nếu là Instagram (Dùng cookie có sẵn hoặc tự động lấy từ kho phiên chung)
                     if (selectedPlatform.lowercase() == "instagram") {
-                        val cookie = effectiveAcc.cookie.takeIf { it.isNotBlank() }
+                        var cookie = effectiveAcc.cookie.takeIf { it.isNotBlank() }
+                        var effUserId = effectiveAcc.userId
+                        var effFbDtsg = effectiveAcc.fbDtsg
+                        var effLsd = effectiveAcc.lsd
+                        var effProxy = effectiveAcc.proxy
+
+                        if (cookie.isNullOrBlank()) {
+                            val shared = InstagramAccountsStore.getAccount(context, effectiveAcc.username)
+                                ?: InstagramAccountsStore.getAccount(context, effectiveAcc.id)
+                            if (shared != null && shared.cookie.isNotBlank()) {
+                                cookie = shared.cookie
+                                if (effUserId.isBlank()) effUserId = shared.userId
+                                if (effFbDtsg.isBlank()) effFbDtsg = shared.fbDtsg
+                                if (effLsd.isBlank()) effLsd = shared.lsd
+                                if (effProxy.isBlank()) effProxy = shared.proxy
+                                effectiveAcc = effectiveAcc.copy(
+                                    cookie = cookie,
+                                    userId = effUserId,
+                                    fbDtsg = effFbDtsg,
+                                    lsd = effLsd,
+                                    proxy = effProxy
+                                )
+                                GolikeAccountsStore.addOrUpdateAccount(context, effectiveAcc)
+                            }
+                        }
 
                         if (cookie.isNullOrBlank()) {
                             consecutiveFails++
@@ -1135,7 +1208,7 @@ fun GolikeAccountScreen(navController: NavController) {
                             continue
                         }
 
-                        val igProxy = effectiveAcc.proxy.takeIf { it.isNotBlank() }
+                        val igProxy = effProxy.takeIf { it.isNotBlank() }
                         val igClient = IgTaToolClient.buildClient(igProxy)
                         val targetLink = jobData.optString("link")
                         val objectId = jobData.optString("object_id")
@@ -1158,9 +1231,9 @@ fun GolikeAccountScreen(navController: NavController) {
                                 rawCookie = cookie,
                                 targetId = uid,
                                 profileUrl = profileUrl,
-                                cachedDtsg = effectiveAcc.fbDtsg.takeIf { it.isNotBlank() },
-                                cachedLsd = effectiveAcc.lsd.takeIf { it.isNotBlank() },
-                                userId = effectiveAcc.userId.takeIf { it.isNotBlank() }
+                                cachedDtsg = effFbDtsg.takeIf { it.isNotBlank() },
+                                cachedLsd = effLsd.takeIf { it.isNotBlank() },
+                                userId = effUserId.takeIf { it.isNotBlank() }
                             )
                             if (followRes.contains("1357004") || followRes.contains("checkpoint_required") || followRes.contains("login_required")) {
                                 actionSuccess = false
@@ -1182,9 +1255,9 @@ fun GolikeAccountScreen(navController: NavController) {
                                 rawCookie = cookie,
                                 mediaId = mid,
                                 linkJob = targetLink,
-                                cachedDtsg = effectiveAcc.fbDtsg.takeIf { it.isNotBlank() },
-                                cachedLsd = effectiveAcc.lsd.takeIf { it.isNotBlank() },
-                                userId = effectiveAcc.userId.takeIf { it.isNotBlank() }
+                                cachedDtsg = effFbDtsg.takeIf { it.isNotBlank() },
+                                cachedLsd = effLsd.takeIf { it.isNotBlank() },
+                                userId = effUserId.takeIf { it.isNotBlank() }
                             )
                             if (likeRes.contains("1357004") || likeRes.contains("checkpoint_required") || likeRes.contains("login_required")) {
                                 actionSuccess = false
