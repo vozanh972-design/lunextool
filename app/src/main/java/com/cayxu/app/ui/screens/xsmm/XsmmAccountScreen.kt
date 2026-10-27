@@ -1401,13 +1401,15 @@ fun XsmmAccountScreen(navController: NavController) {
                             is XsmmAddAccountResult.Success -> {
                                 com.cayxu.app.data.local.InstagramAccountsStore.setXsmmLinked(context, cleanUser, true)
                                 Toast.makeText(context, "Đã liên kết Instagram @$cleanUser thành công!", Toast.LENGTH_SHORT).show()
-                                reloadAccounts()
+                                instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+                                linkedSyncTrigger = System.currentTimeMillis()
                             }
                             is XsmmAddAccountResult.Error -> {
                                 if (res.message.contains("đã tồn tại", ignoreCase = true) || res.message.contains("already", ignoreCase = true) || res.message.contains("exist", ignoreCase = true)) {
                                     com.cayxu.app.data.local.InstagramAccountsStore.setXsmmLinked(context, cleanUser, true)
                                     Toast.makeText(context, "Tài khoản @$cleanUser đã có trên XSMM!", Toast.LENGTH_SHORT).show()
-                                    reloadAccounts()
+                                    instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+                                    linkedSyncTrigger = System.currentTimeMillis()
                                 } else {
                                     Toast.makeText(context, "Lỗi thêm nick: ${res.message}", Toast.LENGTH_SHORT).show()
                                 }
@@ -1546,7 +1548,8 @@ fun XsmmAccountScreen(navController: NavController) {
                             val isLive = check.isLive
                             com.cayxu.app.data.local.InstagramAccountsStore.updateAccount(context, stored.copy(isLive = isLive))
                             withContext(Dispatchers.Main) {
-                                reloadAccounts()
+                                instagramAccounts = com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context).map { it.username }
+                                linkedSyncTrigger = System.currentTimeMillis()
                                 Toast.makeText(context, if (isLive) "Tài khoản @$clean còn Live!" else "Tài khoản @$clean đã DIE hoặc hết hạn!", Toast.LENGTH_SHORT).show()
                             }
                         }
