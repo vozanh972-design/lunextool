@@ -1344,16 +1344,16 @@ fun XsmmAccountScreen(navController: NavController) {
                             val match = allIgAccounts.firstOrNull { acc ->
                                 val accUname = acc.username.trim().removePrefix("@").lowercase()
                                 val accUid = acc.userId.trim().lowercase()
-                                (accUname == clean || accUid == clean || acc.username == uname || acc.userId == uname) && acc.isXsmmLinked
+                                accUname == clean || accUid == clean || acc.username.equals(uname, ignoreCase = true) || acc.userId.equals(uname, ignoreCase = true)
                             }
                             match?.let { acc ->
                                 val candidate = acc.username.trim().removePrefix("@")
                                 if (candidate.isNotBlank() && !candidate.contains("người dùng", ignoreCase = true)) candidate
                                 else acc.userId.trim().takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) } ?: candidate
-                            }
+                            } ?: clean.takeIf { it.isNotBlank() }
                         }.distinct()
                         if (accountsToRun.isEmpty()) {
-                            Toast.makeText(context, "Chưa có tài khoản nào được liên kết XSMM! Hãy thêm nick vào XSMM trước.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "Vui lòng chọn ít nhất 1 tài khoản Instagram để chạy", Toast.LENGTH_SHORT).show()
                         } else {
                             com.cayxu.app.automation.instagram.XsmmInstagramManager.startAccounts(context, accountsToRun)
                             Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Instagram", Toast.LENGTH_SHORT).show()

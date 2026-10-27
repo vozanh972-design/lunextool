@@ -290,13 +290,34 @@ class XsmmInstagramTaskRunner(
                     val infoMsg = taskRes.message
                     val waitSec = if (taskRes.countdown > 0) taskRes.countdown else 10
 
+                    val combinedMsg = listOfNotNull(errMsg, infoMsg).joinToString(" ")
+                    val isUnlinkedError = combinedMsg.contains("thêm tài khoản", ignoreCase = true) ||
+                                          combinedMsg.contains("cấu hình trước", ignoreCase = true) ||
+                                          combinedMsg.contains("chưa liên kết", ignoreCase = true) ||
+                                          combinedMsg.contains("không tồn tại", ignoreCase = true)
+
+                    if (isUnlinkedError) {
+                        errorCount++
+                        val errDisplay = "• Lỗi: Chưa thêm nick vào XSMM! Bấm [Chưa liên kết] để thêm."
+                        notify(errDisplay, completedCount, errorCount)
+                        val fullDetail = "XSMM báo:\n\"$combinedMsg\"\n\nNick @$cleanUsername chưa được thêm vào hệ thống XSMM.\nVui lòng bấm nút [Chưa liên kết] màu xanh ở dòng tài khoản để hệ thống thêm tài khoản vào XSMM trước khi Chạy!"
+                        onErrorDetail?.invoke(cleanUsername, fullDetail)
+                        return RunResult(completedCount, errorCount, totalPoints, errDisplay)
+                    }
+
                     if (!errMsg.isNullOrBlank()) {
-                        notify("XSMM Lỗi: $errMsg", completedCount, errorCount)
+                        consecutiveErrors++
+                        errorCount++
+                        notify("• XSMM Lỗi: $errMsg", completedCount, errorCount)
                         onErrorDetail?.invoke(cleanUsername, "XSMM Lỗi ($jobType):\n$errMsg")
+                        if (consecutiveErrors >= maxErrors) {
+                            notify("• Quá $maxErrors lần lỗi liên tiếp -> Dừng", completedCount, errorCount)
+                            break
+                        }
                     } else if (!infoMsg.isNullOrBlank()) {
-                        notify("XSMM: $infoMsg", completedCount, errorCount)
+                        notify("• XSMM: $infoMsg", completedCount, errorCount)
                     } else {
-                        notify("Hết job $jobType (chờ ${waitSec}s)...", completedCount, errorCount)
+                        notify("• Hết job $jobType (chờ ${waitSec}s)...", completedCount, errorCount)
                     }
 
                     for (x in waitSec downTo 1) {
@@ -527,19 +548,35 @@ class XsmmInstagramTaskRunner(
             }
         } catch (_: Exception) {}
 
-        val body = JSONObject().apply {
+        val body1 = JSONObject().apply {
             put("type", "instagram")
             put("account_type", "instagram")
-            put("link_account", "https://www.instagram.com/$cleanUser/")
+            put("link_account", "https://www.instagram.com/$cleanUser")
         }.toString().toRequestBody(JSON_TYPE)
-        val addReq = Request.Builder()
+        val addReq1 = Request.Builder()
             .url("${XSMM_API}accounts2")
             .header("Authorization", "Bearer $xsmmToken")
             .header("Content-Type", "application/json")
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
-            .post(body).build()
-        val addRes = execute(addReq)
-        return addRes != null && (!addRes.contains("\"error\":") || addRes.contains("đã tồn tại") || addRes.contains("\"id\":"))
+            .post(body1).build()
+        val addRes1 = execute(addReq1)
+        if (addRes1 != null && (!addRes1.contains("\"error\":") || addRes1.contains("đã tồn tại") || addRes1.contains("already") || addRes1.contains("\"id\":"))) {
+            return true
+        }
+
+        // Fallback sang endpoint đơn luồng
+        val body2 = JSONObject().apply {
+            put("type", "instagram")
+            put("link_account", "https://www.instagram.com/$cleanUser")
+        }.toString().toRequestBody(JSON_TYPE)
+        val addReq2 = Request.Builder()
+            .url("${XSMM_API}accounts")
+            .header("Authorization", "Bearer $xsmmToken")
+            .header("Content-Type", "application/json")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+            .post(body2).build()
+        val addRes2 = execute(addReq2)
+        return addRes2 != null && (!addRes2.contains("\"error\":") || addRes2.contains("đã tồn tại") || addRes2.contains("already") || addRes2.contains("\"id\":"))
     }
 
     // ── 3. LẤY NHIỆM VỤ THEO /api/taskapi/tasks2 ───────────────────────

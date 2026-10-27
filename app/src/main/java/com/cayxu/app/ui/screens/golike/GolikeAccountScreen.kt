@@ -343,7 +343,11 @@ fun GolikeAccountScreen(navController: NavController) {
         if (!isLoggedIn) 0 else if (selectedPlatform == "facebook") otherAccounts.size else GolikeAccountsStore.getAccounts(context, "facebook").size
     }
     val instagramCount = remember(otherAccounts, selectedPlatform, isLoggedIn) {
-        if (!isLoggedIn) 0 else if (selectedPlatform == "instagram") otherAccounts.size else GolikeAccountsStore.getAccounts(context, "instagram").size
+        if (!isLoggedIn) 0 else {
+            val fromStore = InstagramAccountsStore.getAccounts(context).size
+            val fromGolike = GolikeAccountsStore.getAccounts(context, "instagram").size
+            maxOf(fromStore, fromGolike)
+        }
     }
 
     // Đồng bộ danh sách tài khoản khi đổi tab hoặc sau khi đăng xuất/đăng nhập
@@ -354,6 +358,32 @@ fun GolikeAccountScreen(navController: NavController) {
             }
             tiktokAccounts.clear()
             tiktokAccounts.addAll(list)
+        } else if (selectedPlatform == "instagram") {
+            // Tự động đồng bộ dùng chung toàn bộ tài khoản Instagram từ InstagramAccountsStore
+            val igStoreAccounts = InstagramAccountsStore.getAccounts(context)
+            val currentGolikeIg = GolikeAccountsStore.getAccounts(context, "instagram").associateBy { it.username.lowercase().trim().removePrefix("@") }
+            igStoreAccounts.forEach { igAcc ->
+                val cleanUname = igAcc.username.lowercase().trim().removePrefix("@")
+                if (cleanUname.isNotBlank()) {
+                    val existing = currentGolikeIg[cleanUname]
+                    val updated = (existing ?: GolikeAccount(
+                        id = igAcc.username,
+                        platform = "instagram",
+                        username = igAcc.username,
+                        avatar = igAcc.avatar,
+                        isLive = igAcc.isLive,
+                        isGolikeLinked = false,
+                        proxy = igAcc.proxy,
+                        lastStatus = "Sẵn sàng làm job"
+                    )).copy(
+                        avatar = if (existing?.avatar.isNullOrBlank()) igAcc.avatar else existing!!.avatar,
+                        isLive = igAcc.isLive,
+                        proxy = if (existing?.proxy.isNullOrBlank()) igAcc.proxy else existing!!.proxy
+                    )
+                    GolikeAccountsStore.addOrUpdateAccount(context, updated)
+                }
+            }
+            otherAccounts = if (!GolikeSession.isLoggedIn.value) emptyList() else GolikeAccountsStore.getAccounts(context, "instagram")
         } else {
             otherAccounts = if (!GolikeSession.isLoggedIn.value) emptyList() else GolikeAccountsStore.getAccounts(context, selectedPlatform)
         }

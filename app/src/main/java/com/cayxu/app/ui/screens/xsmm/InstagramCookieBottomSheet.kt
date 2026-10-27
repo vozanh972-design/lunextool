@@ -238,6 +238,16 @@ fun InstagramCookieBottomSheet(
                                                 )
                                             )
                                             com.cayxu.app.data.local.LinkedAccountsStore.addAccount(context, "Instagram", info.username)
+                                            val gAcc = com.cayxu.app.ui.screens.golike.GolikeAccount(
+                                                id = info.username,
+                                                platform = "instagram",
+                                                username = info.username,
+                                                avatar = pic.orEmpty(),
+                                                isLive = true,
+                                                proxy = proxyStr.orEmpty(),
+                                                lastStatus = "Sẵn sàng làm job"
+                                            )
+                                            com.cayxu.app.ui.screens.golike.GolikeAccountsStore.addOrUpdateAccount(context, gAcc)
                                             addedAccounts.add(info.username)
                                         }
                                     } else {
