@@ -27,7 +27,11 @@ data class GolikeRunConfig(
     val delayMaxSeconds: Int = 15,
     val taskCountTarget: Int = 0, // 0 = Không giới hạn
     val failJobCountToSwitchAccount: Int = 5,
-    val autoSwitchOnFail: Boolean = true
+    val autoSwitchOnFail: Boolean = true,
+    val taskType: String = "instagram_random",
+    val stopAfterNoTaskCount: Int = 100,
+    val stopAfterCompletedCount: Int = 100,
+    val returnHomeAndSwipe: Boolean = false
 )
 
 object GolikeRunConfigStore {
@@ -46,6 +50,10 @@ object GolikeRunConfigStore {
     private const val KEY_TASK_TARGET = "golike_task_target"
     private const val KEY_FAIL_SWITCH = "golike_fail_switch"
     private const val KEY_AUTO_SWITCH = "golike_auto_switch"
+    private const val KEY_TASK_TYPE = "golike_task_type"
+    private const val KEY_STOP_AFTER_NO_TASK = "golike_stop_after_no_task"
+    private const val KEY_STOP_AFTER_COMPLETED = "golike_stop_after_completed"
+    private const val KEY_RETURN_HOME_SWIPE = "golike_return_home_swipe"
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -67,7 +75,11 @@ object GolikeRunConfigStore {
             delayMaxSeconds = p.getInt("${prefix}${KEY_DELAY_MAX}", p.getInt(KEY_DELAY_MAX, 15)),
             taskCountTarget = p.getInt("${prefix}${KEY_TASK_TARGET}", p.getInt(KEY_TASK_TARGET, 0)),
             failJobCountToSwitchAccount = p.getInt("${prefix}${KEY_FAIL_SWITCH}", p.getInt(KEY_FAIL_SWITCH, 5)),
-            autoSwitchOnFail = p.getBoolean("${prefix}${KEY_AUTO_SWITCH}", p.getBoolean(KEY_AUTO_SWITCH, true))
+            autoSwitchOnFail = p.getBoolean("${prefix}${KEY_AUTO_SWITCH}", p.getBoolean(KEY_AUTO_SWITCH, true)),
+            taskType = p.getString("${prefix}${KEY_TASK_TYPE}", p.getString(KEY_TASK_TYPE, "instagram_random")).orEmpty().ifBlank { "instagram_random" },
+            stopAfterNoTaskCount = p.getInt("${prefix}${KEY_STOP_AFTER_NO_TASK}", p.getInt(KEY_STOP_AFTER_NO_TASK, 100)),
+            stopAfterCompletedCount = p.getInt("${prefix}${KEY_STOP_AFTER_COMPLETED}", p.getInt(KEY_STOP_AFTER_COMPLETED, 100)),
+            returnHomeAndSwipe = p.getBoolean("${prefix}${KEY_RETURN_HOME_SWIPE}", p.getBoolean(KEY_RETURN_HOME_SWIPE, false))
         )
     }
 
@@ -89,6 +101,10 @@ object GolikeRunConfigStore {
             .putInt("${prefix}${KEY_TASK_TARGET}", config.taskCountTarget)
             .putInt("${prefix}${KEY_FAIL_SWITCH}", config.failJobCountToSwitchAccount)
             .putBoolean("${prefix}${KEY_AUTO_SWITCH}", config.autoSwitchOnFail)
+            .putString("${prefix}${KEY_TASK_TYPE}", config.taskType)
+            .putInt("${prefix}${KEY_STOP_AFTER_NO_TASK}", config.stopAfterNoTaskCount)
+            .putInt("${prefix}${KEY_STOP_AFTER_COMPLETED}", config.stopAfterCompletedCount)
+            .putBoolean("${prefix}${KEY_RETURN_HOME_SWIPE}", config.returnHomeAndSwipe)
             .apply()
     }
 }

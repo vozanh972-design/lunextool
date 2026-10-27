@@ -74,10 +74,9 @@ import com.cayxu.app.ui.design.type
 /* ───────────────────────────── Trạng thái ───────────────────────────── */
 
 enum class XsmmIgTaskMode(val title: String, val subtitle: String?) {
-    Random("Ngẫu nhiên", "Tym / Follow / Comment"),
+    Random("Ngẫu nhiên", "Tym / Follow"),
     FollowOnly("Chỉ Follow", null),
     TymOnly("Chỉ Tym", null),
-    CommentOnly("Chỉ Comment", null),
 }
 
 /** Các field để trống (taskCount / stopAfterDoneTimes) nghĩa là "không giới hạn" — do logic thật diễn giải, UI chỉ hiển thị placeholder. */

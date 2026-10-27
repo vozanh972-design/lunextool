@@ -533,80 +533,159 @@ fun GolikeAccountScreen(navController: NavController) {
     }
 
     // Modal BottomSheet Cấu hình nhiệm vụ Golike (Chuẩn thiết kế mới)
+    // Modal BottomSheet Cấu hình nhiệm vụ Golike (Chuẩn thiết kế mới)
     if (showConfigSheet) {
-        val currentConfig = remember(showConfigSheet, selectedPlatform) {
-            GolikeRunConfigStore.get(context, selectedPlatform)
-        }
-        var configUiState by remember(showConfigSheet, selectedPlatform) {
-            mutableStateOf(
-                GolikeTaskConfigUiState(
-                    platformLabel = selectedPlatform.replaceFirstChar { it.uppercase() },
-                    getJobMinSeconds = currentConfig.getJobMinSeconds.toString(),
-                    getJobMaxSeconds = currentConfig.getJobMaxSeconds.toString(),
-                    swipeBeforeGetJob = currentConfig.swipeBeforeGetJob,
-                    doJobMinSeconds = currentConfig.doJobMinSeconds.toString(),
-                    doJobMaxSeconds = currentConfig.doJobMaxSeconds.toString(),
-                    swipeAfterFollow = currentConfig.swipeAfterFollow,
-                    completeJobMinSeconds = currentConfig.completeJobMinSeconds.toString(),
-                    completeJobMaxSeconds = currentConfig.completeJobMaxSeconds.toString(),
-                    breakMinSeconds = currentConfig.delayMinSeconds.toString(),
-                    breakMaxSeconds = currentConfig.delayMaxSeconds.toString(),
-                    goalTaskCount = currentConfig.taskCountTarget.toString(),
-                    autoSwapOnError = currentConfig.autoSwitchOnFail,
-                    errorSwapCount = currentConfig.failJobCountToSwitchAccount.toString()
+        if (selectedPlatform == "instagram") {
+            val savedCfg = remember(showConfigSheet) { GolikeRunConfigStore.get(context, "instagram") }
+            var igConfigState by remember(showConfigSheet) {
+                val mode = when (savedCfg.taskType) {
+                    "instagram_follow" -> GolikeIgTaskMode.FollowOnly
+                    "instagram_like" -> GolikeIgTaskMode.TymOnly
+                    else -> GolikeIgTaskMode.Random
+                }
+                mutableStateOf(
+                    GolikeRunConfigInstagramUiState(
+                        mode = mode,
+                        getTaskWaitSeconds = savedCfg.getJobMinSeconds.toString(),
+                        workSeconds = savedCfg.doJobMinSeconds.toString(),
+                        taskCount = if (savedCfg.taskCountTarget > 0) savedCfg.taskCountTarget.toString() else "",
+                        stopAfterEmptyTimes = savedCfg.stopAfterNoTaskCount.toString(),
+                        errorSwapAccountCount = savedCfg.failJobCountToSwitchAccount.toString(),
+                        stopAfterDoneTimes = if (savedCfg.stopAfterCompletedCount > 0) savedCfg.stopAfterCompletedCount.toString() else "",
+                        browseBeforeTask = savedCfg.swipeBeforeGetJob,
+                        backHomeThenBrowse = savedCfg.returnHomeAndSwipe,
+                    )
                 )
+            }
+
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { showConfigSheet = false },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+            ) {
+                GolikeRunConfigInstagramScreen(
+                    state = igConfigState,
+                    onBack = { showConfigSheet = false },
+                    onModeChange = { igConfigState = igConfigState.copy(mode = it) },
+                    onGetTaskWaitChange = { igConfigState = igConfigState.copy(getTaskWaitSeconds = it) },
+                    onWorkSecondsChange = { igConfigState = igConfigState.copy(workSeconds = it) },
+                    onTaskCountChange = { igConfigState = igConfigState.copy(taskCount = it) },
+                    onStopAfterEmptyChange = { igConfigState = igConfigState.copy(stopAfterEmptyTimes = it) },
+                    onErrorSwapChange = { igConfigState = igConfigState.copy(errorSwapAccountCount = it) },
+                    onStopAfterDoneChange = { igConfigState = igConfigState.copy(stopAfterDoneTimes = it) },
+                    onBrowseBeforeTaskChange = { igConfigState = igConfigState.copy(browseBeforeTask = it) },
+                    onBackHomeThenBrowseChange = { igConfigState = igConfigState.copy(backHomeThenBrowse = it) },
+                    onSave = {
+                        val targetType = when (igConfigState.mode) {
+                            GolikeIgTaskMode.FollowOnly -> "instagram_follow"
+                            GolikeIgTaskMode.TymOnly -> "instagram_like"
+                            GolikeIgTaskMode.Random -> "instagram_random"
+                        }
+                        val gWait = igConfigState.getTaskWaitSeconds.toIntOrNull()?.coerceAtLeast(1) ?: 10
+                        val wSec = igConfigState.workSeconds.toIntOrNull()?.coerceAtLeast(1) ?: 10
+                        val goal = igConfigState.taskCount.toIntOrNull()?.coerceAtLeast(0) ?: 0
+                        val stopEmpty = igConfigState.stopAfterEmptyTimes.toIntOrNull()?.coerceAtLeast(1) ?: 100
+                        val errSwap = igConfigState.errorSwapAccountCount.toIntOrNull()?.coerceAtLeast(1) ?: 50
+                        val stopDone = igConfigState.stopAfterDoneTimes.toIntOrNull()?.coerceAtLeast(0) ?: 100
+
+                        GolikeRunConfigStore.save(
+                            context,
+                            savedCfg.copy(
+                                platform = "instagram",
+                                taskType = targetType,
+                                getJobMinSeconds = gWait,
+                                getJobMaxSeconds = gWait,
+                                doJobMinSeconds = wSec,
+                                doJobMaxSeconds = wSec,
+                                delayMinSeconds = gWait,
+                                delayMaxSeconds = gWait,
+                                taskCountTarget = goal,
+                                stopAfterNoTaskCount = stopEmpty,
+                                failJobCountToSwitchAccount = errSwap,
+                                stopAfterCompletedCount = stopDone,
+                                swipeBeforeGetJob = igConfigState.browseBeforeTask,
+                                returnHomeAndSwipe = igConfigState.backHomeThenBrowse
+                            )
+                        )
+                        Toast.makeText(context, "Đã lưu cấu hình Instagram", Toast.LENGTH_SHORT).show()
+                        showConfigSheet = false
+                    }
+                )
+            }
+        } else {
+            val currentConfig = remember(showConfigSheet, selectedPlatform) {
+                GolikeRunConfigStore.get(context, selectedPlatform)
+            }
+            var configUiState by remember(showConfigSheet, selectedPlatform) {
+                mutableStateOf(
+                    GolikeTaskConfigUiState(
+                        platformLabel = selectedPlatform.replaceFirstChar { it.uppercase() },
+                        getJobMinSeconds = currentConfig.getJobMinSeconds.toString(),
+                        getJobMaxSeconds = currentConfig.getJobMaxSeconds.toString(),
+                        swipeBeforeGetJob = currentConfig.swipeBeforeGetJob,
+                        doJobMinSeconds = currentConfig.doJobMinSeconds.toString(),
+                        doJobMaxSeconds = currentConfig.doJobMaxSeconds.toString(),
+                        swipeAfterFollow = currentConfig.swipeAfterFollow,
+                        completeJobMinSeconds = currentConfig.completeJobMinSeconds.toString(),
+                        completeJobMaxSeconds = currentConfig.completeJobMaxSeconds.toString(),
+                        breakMinSeconds = currentConfig.delayMinSeconds.toString(),
+                        breakMaxSeconds = currentConfig.delayMaxSeconds.toString(),
+                        goalTaskCount = currentConfig.taskCountTarget.toString(),
+                        autoSwapOnError = currentConfig.autoSwitchOnFail,
+                        errorSwapCount = currentConfig.failJobCountToSwitchAccount.toString()
+                    )
+                )
+            }
+
+            GolikeTaskConfigSheet(
+                state = configUiState,
+                onDismiss = { showConfigSheet = false },
+                onGetJobMinChange = { configUiState = configUiState.copy(getJobMinSeconds = it) },
+                onGetJobMaxChange = { configUiState = configUiState.copy(getJobMaxSeconds = it) },
+                onSwipeBeforeGetJobChange = { configUiState = configUiState.copy(swipeBeforeGetJob = it) },
+                onDoJobMinChange = { configUiState = configUiState.copy(doJobMinSeconds = it) },
+                onDoJobMaxChange = { configUiState = configUiState.copy(doJobMaxSeconds = it) },
+                onSwipeAfterFollowChange = { configUiState = configUiState.copy(swipeAfterFollow = it) },
+                onCompleteJobMinChange = { configUiState = configUiState.copy(completeJobMinSeconds = it) },
+                onCompleteJobMaxChange = { configUiState = configUiState.copy(completeJobMaxSeconds = it) },
+                onBreakMinChange = { configUiState = configUiState.copy(breakMinSeconds = it) },
+                onBreakMaxChange = { configUiState = configUiState.copy(breakMaxSeconds = it) },
+                onGoalTaskCountChange = { configUiState = configUiState.copy(goalTaskCount = it) },
+                onAutoSwapOnErrorChange = { configUiState = configUiState.copy(autoSwapOnError = it) },
+                onErrorSwapCountChange = { configUiState = configUiState.copy(errorSwapCount = it) },
+                onSave = {
+                    val gMin = configUiState.getJobMinSeconds.toIntOrNull() ?: 5
+                    val gMax = configUiState.getJobMaxSeconds.toIntOrNull() ?: 12
+                    val dMin = configUiState.doJobMinSeconds.toIntOrNull() ?: 8
+                    val dMax = configUiState.doJobMaxSeconds.toIntOrNull() ?: 15
+                    val cMin = configUiState.completeJobMinSeconds.toIntOrNull() ?: 20
+                    val cMax = configUiState.completeJobMaxSeconds.toIntOrNull() ?: 40
+                    val bMin = configUiState.breakMinSeconds.toIntOrNull() ?: 8
+                    val bMax = configUiState.breakMaxSeconds.toIntOrNull() ?: 15
+                    val goal = configUiState.goalTaskCount.toIntOrNull() ?: 0
+                    val errCnt = configUiState.errorSwapCount.toIntOrNull() ?: 5
+
+                    val newCfg = GolikeRunConfig(
+                        platform = selectedPlatform,
+                        getJobMinSeconds = minOf(gMin, gMax).coerceAtLeast(1),
+                        getJobMaxSeconds = maxOf(gMin, gMax).coerceAtLeast(1),
+                        swipeBeforeGetJob = configUiState.swipeBeforeGetJob,
+                        doJobMinSeconds = minOf(dMin, dMax).coerceAtLeast(1),
+                        doJobMaxSeconds = maxOf(dMin, dMax).coerceAtLeast(1),
+                        swipeAfterFollow = configUiState.swipeAfterFollow,
+                        completeJobMinSeconds = minOf(cMin, cMax).coerceAtLeast(1),
+                        completeJobMaxSeconds = maxOf(cMin, cMax).coerceAtLeast(1),
+                        delayMinSeconds = minOf(bMin, bMax).coerceAtLeast(1),
+                        delayMaxSeconds = maxOf(bMin, bMax).coerceAtLeast(1),
+                        taskCountTarget = goal.coerceAtLeast(0),
+                        failJobCountToSwitchAccount = errCnt.coerceAtLeast(1),
+                        autoSwitchOnFail = configUiState.autoSwapOnError
+                    )
+                    GolikeRunConfigStore.save(context, newCfg)
+                    Toast.makeText(context, "Đã lưu cấu hình làm nhiệm vụ", Toast.LENGTH_SHORT).show()
+                    showConfigSheet = false
+                }
             )
         }
-
-        GolikeTaskConfigSheet(
-            state = configUiState,
-            onDismiss = { showConfigSheet = false },
-            onGetJobMinChange = { configUiState = configUiState.copy(getJobMinSeconds = it) },
-            onGetJobMaxChange = { configUiState = configUiState.copy(getJobMaxSeconds = it) },
-            onSwipeBeforeGetJobChange = { configUiState = configUiState.copy(swipeBeforeGetJob = it) },
-            onDoJobMinChange = { configUiState = configUiState.copy(doJobMinSeconds = it) },
-            onDoJobMaxChange = { configUiState = configUiState.copy(doJobMaxSeconds = it) },
-            onSwipeAfterFollowChange = { configUiState = configUiState.copy(swipeAfterFollow = it) },
-            onCompleteJobMinChange = { configUiState = configUiState.copy(completeJobMinSeconds = it) },
-            onCompleteJobMaxChange = { configUiState = configUiState.copy(completeJobMaxSeconds = it) },
-            onBreakMinChange = { configUiState = configUiState.copy(breakMinSeconds = it) },
-            onBreakMaxChange = { configUiState = configUiState.copy(breakMaxSeconds = it) },
-            onGoalTaskCountChange = { configUiState = configUiState.copy(goalTaskCount = it) },
-            onAutoSwapOnErrorChange = { configUiState = configUiState.copy(autoSwapOnError = it) },
-            onErrorSwapCountChange = { configUiState = configUiState.copy(errorSwapCount = it) },
-            onSave = {
-                val gMin = configUiState.getJobMinSeconds.toIntOrNull() ?: 5
-                val gMax = configUiState.getJobMaxSeconds.toIntOrNull() ?: 12
-                val dMin = configUiState.doJobMinSeconds.toIntOrNull() ?: 8
-                val dMax = configUiState.doJobMaxSeconds.toIntOrNull() ?: 15
-                val cMin = configUiState.completeJobMinSeconds.toIntOrNull() ?: 20
-                val cMax = configUiState.completeJobMaxSeconds.toIntOrNull() ?: 40
-                val bMin = configUiState.breakMinSeconds.toIntOrNull() ?: 8
-                val bMax = configUiState.breakMaxSeconds.toIntOrNull() ?: 15
-                val goal = configUiState.goalTaskCount.toIntOrNull() ?: 0
-                val errCnt = configUiState.errorSwapCount.toIntOrNull() ?: 5
-
-                val newCfg = GolikeRunConfig(
-                    platform = selectedPlatform,
-                    getJobMinSeconds = minOf(gMin, gMax).coerceAtLeast(1),
-                    getJobMaxSeconds = maxOf(gMin, gMax).coerceAtLeast(1),
-                    swipeBeforeGetJob = configUiState.swipeBeforeGetJob,
-                    doJobMinSeconds = minOf(dMin, dMax).coerceAtLeast(1),
-                    doJobMaxSeconds = maxOf(dMin, dMax).coerceAtLeast(1),
-                    swipeAfterFollow = configUiState.swipeAfterFollow,
-                    completeJobMinSeconds = minOf(cMin, cMax).coerceAtLeast(1),
-                    completeJobMaxSeconds = maxOf(cMin, cMax).coerceAtLeast(1),
-                    delayMinSeconds = minOf(bMin, bMax).coerceAtLeast(1),
-                    delayMaxSeconds = maxOf(bMin, bMax).coerceAtLeast(1),
-                    taskCountTarget = goal.coerceAtLeast(0),
-                    failJobCountToSwitchAccount = errCnt.coerceAtLeast(1),
-                    autoSwitchOnFail = configUiState.autoSwapOnError
-                )
-                GolikeRunConfigStore.save(context, newCfg)
-                Toast.makeText(context, "Đã lưu cấu hình làm nhiệm vụ", Toast.LENGTH_SHORT).show()
-                showConfigSheet = false
-            }
-        )
     }
 
     // Dialog WebView Đăng nhập Golike (Vượt Cloudflare Turnstile)
@@ -1226,6 +1305,20 @@ fun GolikeAccountScreen(navController: NavController) {
             if (selectedForRunIds.isNotEmpty()) {
                 showDeleteConfirmSheet = true
             }
+        },
+        onTogglePlayAccount = { acc ->
+            val isRunning = GolikeRunningManager.isRunning(acc.id) || GolikeRunningManager.isRunning(acc.username)
+            if (isRunning) {
+                GolikeRunningManager.runningAccounts[acc.id] = false
+                GolikeRunningManager.runningAccounts[acc.username] = false
+                Toast.makeText(context, "Đã dừng tài khoản @${acc.username}", Toast.LENGTH_SHORT).show()
+            } else {
+                startAccountTask(acc)
+            }
+        },
+        onReloadAccount = { acc ->
+            reloadAccounts()
+            Toast.makeText(context, "Đã làm mới tài khoản @${acc.username}", Toast.LENGTH_SHORT).show()
         }
     )
 

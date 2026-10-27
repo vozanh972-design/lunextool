@@ -161,7 +161,6 @@ fun XsmmRunConfigScreen(navController: NavController) {
                     val targetType = when (state.mode) {
                         XsmmIgTaskMode.FollowOnly -> "instagram_follow"
                         XsmmIgTaskMode.TymOnly -> "instagram_like"
-                        XsmmIgTaskMode.CommentOnly -> "instagram_comment"
                         XsmmIgTaskMode.Random -> "instagram_random"
                     }
 

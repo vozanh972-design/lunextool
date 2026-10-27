@@ -137,6 +137,7 @@ private val Trash = listOf(
     "M10 11v6",
     "M14 11v6"
 )
+private val Check = listOf("M5 13l4 4L19 7")
 private val LinkIcon = listOf(
     "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71",
     "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
@@ -161,6 +162,8 @@ fun GolikeAccountsScreen(
     modifier: Modifier = Modifier,
     accountTypes: Map<GolikePlatform, List<GolikeAccountTypeFilter>> = DefaultGolikeAccountTypes,
     onDeleteSelected: (() -> Unit)? = null,
+    onTogglePlayAccount: ((GolikeAccount) -> Unit)? = null,
+    onReloadAccount: ((GolikeAccount) -> Unit)? = null,
 ) {
     val types = accountTypes[state.selectedPlatform].orEmpty()
     val visible = state.accounts
@@ -195,32 +198,39 @@ fun GolikeAccountsScreen(
                 Modifier.padding(top = 22.dp).fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                val headerTitle = if (state.selectedPlatform == GolikePlatform.Instagram && visible.isNotEmpty()) {
+                    "Tài khoản ${state.selectedPlatform.label} (${visible.size})"
+                } else {
+                    "Tài khoản ${state.selectedPlatform.label}"
+                }
                 BasicText(
-                    "Tài khoản ${state.selectedPlatform.label}",
+                    headerTitle,
                     Modifier.weight(1f),
                     style = type(18f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PressBox(onClick = onToggleSelectAll, contentAlignment = Alignment.CenterStart) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            GolikeCheckbox(allSelected)
-                            BasicText("Tất cả", style = type(13f, FontWeight.SemiBold, Alx.Muted))
+                if (state.selectedPlatform != GolikePlatform.Instagram) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PressBox(onClick = onToggleSelectAll, contentAlignment = Alignment.CenterStart) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                GolikeCheckbox(allSelected)
+                                BasicText("Tất cả", style = type(13f, FontWeight.SemiBold, Alx.Muted))
+                            }
                         }
-                    }
-                    if (state.selectedAccountIds.isNotEmpty() && onDeleteSelected != null) {
+                        if (state.selectedAccountIds.isNotEmpty() && onDeleteSelected != null) {
+                            PressBox(
+                                onClick = onDeleteSelected,
+                                modifier = Modifier.size(40.dp).background(Alx.DangerBg, CircleShape).border(1.dp, Alx.Danger.copy(alpha = 0.35f), CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) { SvgIcon(Trash, 18.dp, Alx.Danger, 2f) }
+                        }
                         PressBox(
-                            onClick = onDeleteSelected,
-                            modifier = Modifier.size(40.dp).background(Alx.DangerBg, CircleShape).border(1.dp, Alx.Danger.copy(alpha = 0.35f), CircleShape),
+                            onClick = onAddAccount,
+                            modifier = Modifier.size(40.dp).background(state.selectedPlatform.accent(), CircleShape),
                             contentAlignment = Alignment.Center,
-                        ) { SvgIcon(Trash, 18.dp, Alx.Danger, 2f) }
+                        ) { SvgIcon(Plus, 18.dp, Alx.White, 2.4f) }
                     }
-                    PressBox(
-                        onClick = onAddAccount,
-                        modifier = Modifier.size(40.dp).background(state.selectedPlatform.accent(), CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) { SvgIcon(Plus, 18.dp, Alx.White, 2.4f) }
                 }
             }
 
@@ -243,13 +253,25 @@ fun GolikeAccountsScreen(
             } else {
                 Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     visible.forEach { acc ->
-                        GolikeAccountRow(
-                            account = acc,
-                            selected = acc.id in state.selectedAccountIds,
-                            isLinking = state.linkingAccountId == acc.id,
-                            onLink = { onLinkAccount(acc) },
-                            onClick = { onToggleAccount(acc) }
-                        )
+                        if (state.selectedPlatform == GolikePlatform.Instagram) {
+                            GolikeInstagramAccountRow(
+                                account = acc,
+                                selected = acc.id in state.selectedAccountIds,
+                                isLinking = state.linkingAccountId == acc.id,
+                                onLink = { onLinkAccount(acc) },
+                                onClick = { onToggleAccount(acc) },
+                                onTogglePlay = { onTogglePlayAccount?.invoke(acc) ?: onToggleAccount(acc) },
+                                onReload = { onReloadAccount?.invoke(acc) ?: onLinkAccount(acc) }
+                            )
+                        } else {
+                            GolikeAccountRow(
+                                account = acc,
+                                selected = acc.id in state.selectedAccountIds,
+                                isLinking = state.linkingAccountId == acc.id,
+                                onLink = { onLinkAccount(acc) },
+                                onClick = { onToggleAccount(acc) }
+                            )
+                        }
                     }
                 }
             }
@@ -277,7 +299,7 @@ fun GolikeAccountsScreen(
             }
         }
 
-        // Thanh hành động dưới cùng: "Cấu hình" + "Chạy"
+        // Thanh hành động dưới cùng: "Cấu hình" + "Chạy" / Cấu hình + Tất cả + [▶] + [+]
         Row(
             Modifier
                 .align(Alignment.BottomCenter)
@@ -308,17 +330,56 @@ fun GolikeAccountsScreen(
                 }
             }
 
-            PressBox(
-                onClick = onRun,
-                modifier = Modifier
-                    .weight(1.25f)
-                    .height(56.dp)
-                    .background(Alx.Ink, RoundedCornerShape(18.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SvgIcon(Play, 16.dp, Alx.White, 2f, fill = true)
-                    BasicText("Chạy", style = type(15f, FontWeight.Bold, Alx.White))
+            if (state.selectedPlatform == GolikePlatform.Instagram) {
+                Row(
+                    Modifier.weight(1.25f).height(56.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    PressBox(onClick = onToggleSelectAll, contentAlignment = Alignment.CenterStart) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            GolikeCheckbox(allSelected, checkedColor = IgMagenta)
+                            BasicText("Tất cả", style = type(13f, FontWeight.SemiBold, Alx.Ink2))
+                        }
+                    }
+
+                    if (state.accounts.isNotEmpty()) {
+                        val isAnyRunning = state.accounts.any { com.cayxu.app.ui.screens.golike.GolikeRunningManager.isRunning(it.id) || com.cayxu.app.ui.screens.golike.GolikeRunningManager.isRunning(it.username) }
+                        PressBox(
+                            onClick = onRun,
+                            modifier = Modifier
+                                .padding(start = 12.dp)
+                                .size(44.dp)
+                                .background(if (isAnyRunning) Alx.Danger else IgMagenta, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (isAnyRunning) {
+                                Box(Modifier.size(12.dp).clip(RoundedCornerShape(2.dp)).background(Alx.White))
+                            } else {
+                                SvgIcon(Play, 16.dp, Alx.White, 2f, fill = true)
+                            }
+                        }
+                    }
+
+                    PressBox(
+                        onClick = onAddAccount,
+                        modifier = Modifier.padding(start = 12.dp).size(44.dp).background(IgMagenta, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) { SvgIcon(Plus, 18.dp, Alx.White, 2.4f) }
+                }
+            } else {
+                PressBox(
+                    onClick = onRun,
+                    modifier = Modifier
+                        .weight(1.25f)
+                        .height(56.dp)
+                        .background(Alx.Ink, RoundedCornerShape(18.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SvgIcon(Play, 16.dp, Alx.White, 2f, fill = true)
+                        BasicText("Chạy", style = type(15f, FontWeight.Bold, Alx.White))
+                    }
                 }
             }
         }
@@ -651,11 +712,215 @@ private fun GolikeAccountRow(
 }
 
 @Composable
-private fun GolikeCheckbox(checked: Boolean) {
+private fun GolikeInstagramAccountRow(
+    account: GolikeAccount,
+    selected: Boolean,
+    isLinking: Boolean = false,
+    onLink: () -> Unit,
+    onClick: () -> Unit,
+    onTogglePlay: () -> Unit,
+    onReload: () -> Unit
+) {
+    val isRunning = com.cayxu.app.ui.screens.golike.GolikeRunningManager.isRunning(account.id) || com.cayxu.app.ui.screens.golike.GolikeRunningManager.isRunning(account.username)
+    val igAccent = Color(0xFFC2255C)
+    val igSoft = Color(0xFFFDEAF2)
+    val liveColor = if (account.isLive) Color(0xFF15803D) else Color(0xFFC9363B)
+    val liveSoft = if (account.isLive) Color(0xFFE7F8EE) else Color(0xFFFDECEC)
+    val cardShape = RoundedCornerShape(20.dp)
+
+    PressBox(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Alx.White, cardShape)
+            .border(1.dp, if (selected) igAccent else Color(0xFFE4E8F0), cardShape)
+            .padding(14.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Hàng 1 (Top Row): Checkbox + Avatar (với chấm xanh góc dưới) + Column(Tên + Badge liên kết) + [⟳] + [▶ / ⏹]
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(11.dp)
+            ) {
+                GolikeCheckbox(selected, checkedColor = igAccent)
+
+                // Avatar 42.dp với chấm xanh góc dưới bên phải
+                Box(modifier = Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().clip(CircleShape).background(igSoft),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (account.avatar.isNotBlank()) {
+                            AsyncImage(
+                                model = account.avatar,
+                                contentDescription = "Avatar",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            BasicText(
+                                account.username.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "A",
+                                style = type(15f, FontWeight.ExtraBold, igAccent)
+                            )
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(Alx.White)
+                            .padding(2.dp)
+                            .clip(CircleShape)
+                            .background(liveColor)
+                    )
+                }
+
+                // Cột giữa: Username + Badge liên kết Golike
+                Column(Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        val displayName = if (account.username.startsWith("@")) account.username else "@${account.username}"
+                        BasicText(
+                            displayName,
+                            style = type(14.5f, FontWeight.ExtraBold, Alx.Ink),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (!account.isLive) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(liveSoft)
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                BasicText("Die", style = type(10.5f, FontWeight.ExtraBold, liveColor))
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    if (account.isGolikeLinked) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(Color(0xFFE7F8EE))
+                                .padding(start = 6.dp, end = 8.dp, top = 3.dp, bottom = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            SvgIcon(Check, 10.dp, Color(0xFF15803D), 2.5f)
+                            BasicText(
+                                "Đã liên kết Golike",
+                                style = type(10.5f, FontWeight.ExtraBold, Color(0xFF15803D))
+                            )
+                        }
+                    } else {
+                        PressBox(
+                            onClick = onLink,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(Color(0xFF1F4BD8).copy(alpha = 0.12f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (isLinking) {
+                                    CircularProgressIndicator(
+                                        color = Color(0xFF1F4BD8),
+                                        strokeWidth = 1.5.dp,
+                                        modifier = Modifier.size(9.dp)
+                                    )
+                                } else {
+                                    Box(Modifier.size(5.dp).clip(CircleShape).background(Color(0xFF1F4BD8)))
+                                }
+                                BasicText(
+                                    if (isLinking) "Đang liên kết..." else "Chưa liên kết",
+                                    style = type(10.5f, FontWeight.ExtraBold, Color(0xFF1F4BD8))
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Cụm nút bên phải: Reload [⟳] (xám) & Play/Stop [▶ / ⏹] (hồng / đỏ)
+                PressBox(
+                    onClick = onReload,
+                    modifier = Modifier.size(36.dp).clip(CircleShape).background(Color(0xFFF3F5F9)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    SvgIcon(Refresh, 16.dp, Alx.Muted, 2f)
+                }
+
+                PressBox(
+                    onClick = onTogglePlay,
+                    modifier = Modifier.size(36.dp).clip(CircleShape).background(if (isRunning) Color(0xFFC9363B) else igAccent),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isRunning) {
+                        Box(Modifier.size(11.dp).clip(RoundedCornerShape(2.5.dp)).background(Alx.White))
+                    } else {
+                        SvgIcon(Play, 14.dp, Alx.White, 2f, fill = true)
+                    }
+                }
+            }
+
+            // Hàng 2 (Middle Row): Text kết quả / trạng thái làm việc
+            val liveStatus = com.cayxu.app.ui.screens.golike.GolikeRunningManager.statusMap[account.id]
+                ?: com.cayxu.app.ui.screens.golike.GolikeRunningManager.statusMap[account.username]
+                ?: account.lastStatus
+            if (liveStatus.isNotBlank()) {
+                BasicText(
+                    liveStatus,
+                    style = type(12.5f, FontWeight.Medium, if (liveStatus.contains("Lỗi", ignoreCase = true)) Color(0xFFDC2626) else Alx.Muted),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Hàng 3 (Bottom Row): Divider + Thống kê
+            Box(
+                Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFF1F5F9))
+            )
+
+            val successCount = com.cayxu.app.ui.screens.golike.GolikeRunningManager.successCountMap[account.id]
+                ?: com.cayxu.app.ui.screens.golike.GolikeRunningManager.successCountMap[account.username]
+                ?: account.successCount
+            val errorCount = com.cayxu.app.ui.screens.golike.GolikeRunningManager.errorCountMap[account.id]
+                ?: com.cayxu.app.ui.screens.golike.GolikeRunningManager.errorCountMap[account.username]
+                ?: account.errorCount
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                BasicText(
+                    "Hoàn thành: $successCount • Lỗi: $errorCount",
+                    style = type(12f, FontWeight.SemiBold, Alx.Muted)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GolikeCheckbox(checked: Boolean, checkedColor: Color = GolikeOrange) {
     val shape = RoundedCornerShape(7.dp)
     Box(
         Modifier.size(22.dp)
-            .then(if (checked) Modifier.background(GolikeOrange, shape) else Modifier.background(Alx.White, shape).border(1.8.dp, Color(0xFF94A3B8), shape)),
+            .then(if (checked) Modifier.background(checkedColor, shape) else Modifier.background(Alx.White, shape).border(1.8.dp, Color(0xFF94A3B8), shape)),
         contentAlignment = Alignment.Center,
     ) {
         if (checked) SvgIcon(listOf("M5 13l4 4L19 7"), 13.dp, Alx.White, 2.6f)
