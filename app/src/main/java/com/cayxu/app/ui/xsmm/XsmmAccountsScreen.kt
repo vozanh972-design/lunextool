@@ -119,6 +119,10 @@ data class XsmmAccount(
     val isLinking: Boolean = false,
     val isRunning: Boolean = false,
     val pages: List<XsmmPageItem> = emptyList(),
+    val runStatus: String = "",
+    val successCount: Int = 0,
+    val errorCount: Int = 0,
+    val errorDetail: String = "",
 )
 
 data class XsmmAccountsUiState(
@@ -884,9 +888,53 @@ private fun AccountRow(
                         Spacer(Modifier.height(2.dp))
                         BasicText("Tạo: ${account.createDateFormatted}", style = type(11f, FontWeight.Medium, Alx.Muted))
                     }
+
+                    if (account.runStatus.isNotBlank() || account.successCount > 0 || account.errorCount > 0 || account.isRunning) {
+                        Spacer(Modifier.height(4.dp))
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFF8FAFC))
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            if (account.runStatus.isNotBlank()) {
+                                BasicText(
+                                    account.runStatus,
+                                    style = type(12f, FontWeight.SemiBold, if (account.runStatus.contains("Lỗi", ignoreCase = true) || account.runStatus.contains("DIE", ignoreCase = true) || account.runStatus.contains("Kháng nghị", ignoreCase = true)) Alx.Danger else platform.accent()),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (account.successCount > 0 || account.errorCount > 0) {
+                                Spacer(Modifier.height(2.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    BasicText(
+                                        "✔ Hoàn thành: ${account.successCount}",
+                                        style = type(11f, FontWeight.Bold, LiveGreen)
+                                    )
+                                    BasicText(
+                                        "✖ Lỗi: ${account.errorCount}",
+                                        style = type(11f, FontWeight.Bold, if (account.errorCount > 0) Alx.Danger else Alx.Muted)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (onOpenInfoAccount != null && (account.errorDetail.isNotBlank() || account.errorCount > 0)) {
+                        PressBox(
+                            onClick = onOpenInfoAccount,
+                            modifier = Modifier.size(34.dp).clip(CircleShape).background(Color(0xFFF1F5F9)),
+                            contentAlignment = Alignment.Center
+                        ) { SvgIcon(Info, 15.dp, Color(0xFF64748B), 2f) }
+                    }
+
                     if (onReload != null) {
                         if (account.isReloading) {
                             CircularProgressIndicator(color = platform.accent(), strokeWidth = 2.dp, modifier = Modifier.size(20.dp))

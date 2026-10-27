@@ -48,10 +48,15 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.foundation.text.selection.SelectionContainer
+import com.cayxu.app.automation.instagram.IgTaToolClient
 import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.automation.tiktok.TikTokCaptureBridge
 import com.cayxu.app.automation.tiktok.TikTokCaptureState
+import com.cayxu.app.data.local.InstagramAccount
+import com.cayxu.app.data.local.InstagramAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
+import com.cayxu.app.instagram.InstagramApiClient
 import com.cayxu.app.ui.design.Alx
 import com.cayxu.app.ui.design.EaseOutSoft
 import com.cayxu.app.ui.design.PrimaryButton
@@ -60,8 +65,10 @@ import com.cayxu.app.ui.design.type
 import com.cayxu.app.ui.theme.CardWhite
 import com.cayxu.app.ui.theme.TextPrimary
 import com.cayxu.app.ui.theme.TextSecondary
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val GolikeBrandOrange = Color(0xFFF59E0B)
 
@@ -76,6 +83,8 @@ fun GolikeAddAccountBottomSheet(
     val scope = rememberCoroutineScope()
     var usernameOrUid by remember { mutableStateOf("") }
     var proxyInput by remember { mutableStateOf("") }
+    var igCookieInput by remember { mutableStateOf("") }
+    var isAddingIg by remember { mutableStateOf(false) }
     var isScanningTikTok by remember { mutableStateOf(false) }
     var selectedVariant by remember {
         mutableStateOf(
@@ -431,54 +440,179 @@ fun GolikeAddAccountBottomSheet(
             Spacer(Modifier.height(18.dp))
 
             // Tên tài khoản / UID
-            Text(
-                text = "Tên đăng nhập / UID / @handle $platformTitle",
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary
-            )
-            Spacer(Modifier.height(6.dp))
-            OutlinedTextField(
-                value = usernameOrUid,
-                onValueChange = { usernameOrUid = it },
-                placeholder = {
-                    Text(
-                        when (platform.lowercase()) {
-                            "facebook" -> "Nhập UID Facebook hoặc link trang"
-                            "instagram" -> "Nhập username Instagram (ví dụ: nguyen_van_a)"
-                            else -> "Nhập UID hoặc tên đăng nhập"
-                        }
+            if (platform.lowercase() == "instagram") {
+                Text(
+                    text = "Danh sách Cookie / Cookie|Proxy (mỗi tài khoản một dòng):",
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
+                )
+                Spacer(Modifier.height(6.dp))
+                SelectionContainer {
+                    OutlinedTextField(
+                        value = igCookieInput,
+                        onValueChange = { igCookieInput = it },
+                        enabled = !isAddingIg,
+                        placeholder = {
+                            Text(
+                                "Định dạng: Cookie hoặc Cookie|Proxy\nVí dụ:\nsessionid=...; ds_user_id=123...; csrftoken=...|103.152.118.23:8080:user:pass\nsessionid=...; ds_user_id=456...; csrftoken=...|103.152.118.24:8080\nsessionid=...; ds_user_id=789...; csrftoken=...",
+                                color = TextSecondary.copy(alpha = 0.6f),
+                                fontSize = 12.sp
+                            )
+                        },
+                        minLines = 6,
+                        maxLines = 10,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
                     )
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            )
+                }
+            } else {
+                // Tên tài khoản / UID (Facebook, etc.)
+                Text(
+                    text = "Tên đăng nhập / UID / @handle $platformTitle",
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = usernameOrUid,
+                    onValueChange = { usernameOrUid = it },
+                    placeholder = {
+                        Text(
+                            when (platform.lowercase()) {
+                                "facebook" -> "Nhập UID Facebook hoặc link trang"
+                                else -> "Nhập UID hoặc tên đăng nhập"
+                            }
+                        )
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-            Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(14.dp))
 
-            // Proxy (tùy chọn)
-            Text(
-                text = "Proxy gắn riêng cho nick (Tùy chọn: host:port hoặc host:port:user:pass)",
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary
-            )
-            Spacer(Modifier.height(6.dp))
-            OutlinedTextField(
-                value = proxyInput,
-                onValueChange = { proxyInput = it },
-                placeholder = { Text("127.0.0.1:8080:user:pass") },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            )
+                // Proxy (tùy chọn)
+                Text(
+                    text = "Proxy gắn riêng cho nick (Tùy chọn: host:port hoặc host:port:user:pass)",
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = proxyInput,
+                    onValueChange = { proxyInput = it },
+                    placeholder = { Text("127.0.0.1:8080:user:pass") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
             Spacer(Modifier.height(16.dp))
 
             // Nút Thêm tài khoản Facebook / Instagram
             Button(
                 onClick = {
+                    if (platform.lowercase() == "instagram") {
+                        val lines = igCookieInput.split("\n").map { it.trim() }.filter { it.isNotBlank() }
+                        if (lines.isEmpty()) {
+                            Toast.makeText(context, "Vui lòng nhập ít nhất 1 dòng Cookie Instagram", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        isAddingIg = true
+                        scope.launch {
+                            var addedCount = 0
+                            withContext(Dispatchers.IO) {
+                                val golikeClient = GolikeAccountsStore.getApiClient(context)
+                                val remoteIgRes = try { golikeClient.getInstagramAccounts() } catch (_: Exception) { null }
+                                val remoteIgList = mutableMapOf<String, String>()
+                                val dataArr = remoteIgRes?.optJSONArray("data")
+                                if (dataArr != null) {
+                                    for (i in 0 until dataArr.length()) {
+                                        val obj = dataArr.optJSONObject(i) ?: continue
+                                        val gId = obj.optString("id")
+                                        val un = obj.optString("nickname").ifBlank { obj.optString("username").ifBlank { obj.optString("unique_username") } }
+                                        if (un.isNotBlank()) remoteIgList[un.lowercase()] = gId
+                                        val fbId = obj.optString("fb_id")
+                                        if (fbId.isNotBlank()) remoteIgList[fbId] = gId
+                                    }
+                                }
+
+                                for (line in lines) {
+                                    var rawCookie = ""
+                                    var proxyStr: String? = null
+                                    if (line.contains("|")) {
+                                        val lastPipeIndex = line.lastIndexOf("|")
+                                        rawCookie = line.substring(0, lastPipeIndex).trim()
+                                        proxyStr = line.substring(lastPipeIndex + 1).trim().takeIf { it.isNotBlank() }
+                                    } else {
+                                        rawCookie = line
+                                    }
+
+                                    if (!rawCookie.contains("sessionid") || !rawCookie.contains("ds_user_id") || !rawCookie.contains("csrftoken")) {
+                                        continue
+                                    }
+
+                                    val igClient = IgTaToolClient.buildClient(proxyStr)
+                                    val info = IgTaToolClient.checkCookieIg(igClient, rawCookie)
+
+                                    if (info.isLive && info.username.isNotBlank()) {
+                                        val tokens = IgTaToolClient.extractPageTokens(
+                                            client = igClient,
+                                            cookie = rawCookie,
+                                            targetUrl = "https://www.instagram.com/"
+                                        )
+                                        val dev = InstagramApiClient.getDeviceProfileFor(info.userId)
+                                        val pic = try {
+                                            InstagramApiClient.fetchProfilePic(info.username, rawCookie, proxyStr)
+                                        } catch (_: Exception) { null }
+
+                                        val igAcc = InstagramAccount(
+                                            username = info.username,
+                                            userId = info.userId,
+                                            cookie = rawCookie,
+                                            userAgent = dev.userAgent,
+                                            proxy = proxyStr.orEmpty(),
+                                            fullName = info.username,
+                                            avatar = pic.orEmpty(),
+                                            fbDtsg = tokens.dtsg,
+                                            lsd = tokens.lsd,
+                                            isLive = true
+                                        )
+                                        InstagramAccountsStore.addAccount(context, igAcc)
+
+                                        val matchedGolikeId = remoteIgList[info.username.lowercase()] ?: remoteIgList[info.userId] ?: ""
+                                        val gAcc = GolikeAccount(
+                                            id = info.username,
+                                            platform = "instagram",
+                                            username = info.username,
+                                            avatar = pic.orEmpty(),
+                                            isLive = true,
+                                            isGolikeLinked = matchedGolikeId.isNotBlank(),
+                                            golikeAccountId = matchedGolikeId,
+                                            proxy = proxyStr.orEmpty(),
+                                            lastStatus = if (matchedGolikeId.isNotBlank()) "Đã liên kết Golike • Sẵn sàng" else "Đã thêm nick • Sẵn sàng làm job"
+                                        )
+                                        GolikeAccountsStore.addOrUpdateAccount(context, gAcc)
+                                        addedCount++
+                                    }
+                                }
+                            }
+                            isAddingIg = false
+                            if (addedCount > 0) {
+                                Toast.makeText(context, "Đã thêm thành công $addedCount tài khoản Instagram!", Toast.LENGTH_SHORT).show()
+                                onAccountAdded()
+                                onDismiss()
+                            } else {
+                                Toast.makeText(context, "Không có cookie Instagram hợp lệ hoặc nick bị checkpoint!", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                        return@Button
+                    }
+
                     val rawInput = usernameOrUid.trim()
                     if (rawInput.isBlank()) {
                         Toast.makeText(context, "Vui lòng nhập tên tài khoản hoặc UID", Toast.LENGTH_SHORT).show()
@@ -499,20 +633,32 @@ fun GolikeAddAccountBottomSheet(
                     onAccountAdded()
                     onDismiss()
                 },
+                enabled = !isAddingIg,
                 colors = ButtonDefaults.buttonColors(containerColor = GolikeBrandOrange),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
             ) {
-                Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Lưu tài khoản vào danh sách",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
+                if (isAddingIg) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Đang kiểm tra & lưu tài khoản...",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                } else {
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Lưu tài khoản vào danh sách",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
             }
 
             Spacer(Modifier.height(16.dp))

@@ -44,11 +44,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.cayxu.app.automation.instagram.IgTaToolClient
+import com.cayxu.app.automation.instagram.XsmmInstagramTaskRunner
 import com.cayxu.app.automation.tiktok.TikTokAppLauncher
 import com.cayxu.app.automation.tiktok.TikTokCaptureBridge
 import com.cayxu.app.automation.tiktok.TikTokCaptureState
 import com.cayxu.app.automation.tiktok.XsmmTaskActionResult
 import com.cayxu.app.automation.tiktok.XsmmTaskAutomationBridge
+import com.cayxu.app.data.local.InstagramAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobRunnerOverlayService
 import com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge
@@ -804,7 +807,98 @@ fun GolikeAccountScreen(navController: NavController) {
                     val jobType = jobData.optString("type", "tương tác")
                     val countdown = jobRes.optInt("countdown", cfg.delayMinSeconds).coerceAtLeast(3)
 
-                    // 2. Chờ thời gian đếm ngược an toàn
+                    // 2. Thực hiện tương tác thực tế nếu là Instagram (thừa hưởng từ IgTaToolClient)
+                    if (selectedPlatform.lowercase() == "instagram") {
+                        val igAcc = InstagramAccountsStore.getAccount(context, acc.username)
+                            ?: InstagramAccountsStore.getAccount(context, acc.id)
+
+                        if (igAcc == null || igAcc.cookie.isBlank()) {
+                            consecutiveFails++
+                            val errMsg = "Chưa có Cookie Instagram cho nick ${acc.username}"
+                            val curErr = (GolikeRunningManager.errorCountMap[acc.id] ?: acc.errorCount) + 1
+                            GolikeRunningManager.errorCountMap[acc.id] = curErr
+                            GolikeRunningManager.lastErrorDetailMap[acc.id] = errMsg
+                            GolikeRunningManager.statusMap[acc.id] = "Lỗi: $errMsg"
+                            client.skipJob(adsId, jobData.optString("object_id"), golikeAccId, jobType)
+                            GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = false, errorDetail = errMsg)
+                            delay(cfg.delayMinSeconds * 1000L)
+                            continue
+                        }
+
+                        val igProxy = igAcc.proxy.ifBlank { acc.proxy }.takeIf { it.isNotBlank() }
+                        val igClient = IgTaToolClient.buildClient(igProxy)
+                        val targetLink = jobData.optString("link")
+                        val objectId = jobData.optString("object_id")
+                        val pkgName = jobData.optString("package_name")
+
+                        var actionSuccess = true
+                        var actionErrMsg = ""
+
+                        if (jobType.contains("follow", ignoreCase = true) || jobType.contains("sub", ignoreCase = true)) {
+                            GolikeRunningManager.statusMap[acc.id] = "Đang thực hiện Follow Instagram..."
+                            var uid = objectId.trim()
+                            if (!uid.all { it.isDigit() } || uid.isBlank()) {
+                                val extracted = if (targetLink.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(igClient, igAcc.cookie, targetLink) else null
+                                uid = extracted ?: objectId
+                            }
+                            val targetUser = (if (pkgName.isNotBlank()) pkgName else objectId).trim().trim('/').substringAfterLast('/')
+                            val profileUrl = if (targetLink.isNotBlank()) targetLink else if (targetUser.isNotBlank()) "https://www.instagram.com/$targetUser/" else "https://www.instagram.com/"
+                            val followRes = IgTaToolClient.follow(
+                                client = igClient,
+                                rawCookie = igAcc.cookie,
+                                targetId = uid,
+                                profileUrl = profileUrl,
+                                cachedDtsg = igAcc.fbDtsg.takeIf { it.isNotBlank() },
+                                cachedLsd = igAcc.lsd.takeIf { it.isNotBlank() },
+                                userId = igAcc.userId.takeIf { it.isNotBlank() }
+                            )
+                            if (followRes.contains("1357004") || followRes.contains("checkpoint_required") || followRes.contains("login_required")) {
+                                actionSuccess = false
+                                actionErrMsg = "Instagram yêu cầu xác minh / Checkpoint"
+                            } else if (!followRes.contains("\"following\":true") && !followRes.contains("xdt_create_friendship") && !followRes.contains("\"status\":\"ok\"")) {
+                                actionSuccess = false
+                                actionErrMsg = "Instagram từ chối Follow: $followRes"
+                            }
+                        } else if (jobType.contains("like", ignoreCase = true) || jobType.contains("tym", ignoreCase = true)) {
+                            GolikeRunningManager.statusMap[acc.id] = "Đang thực hiện Like / Tym Instagram..."
+                            var mid = (if (objectId.isNotBlank()) objectId else jobData.optString("media_id")).trim()
+                            if (!mid.all { it.isDigit() } || mid.isBlank()) {
+                                val sc = XsmmInstagramTaskRunner.extractShortcode(targetLink)
+                                    ?: XsmmInstagramTaskRunner.extractShortcode(mid)
+                                if (!sc.isNullOrBlank()) mid = XsmmInstagramTaskRunner.shortcodeToMediaId(sc) ?: mid
+                            }
+                            val likeRes = IgTaToolClient.tym(
+                                client = igClient,
+                                rawCookie = igAcc.cookie,
+                                mediaId = mid,
+                                linkJob = targetLink,
+                                cachedDtsg = igAcc.fbDtsg.takeIf { it.isNotBlank() },
+                                cachedLsd = igAcc.lsd.takeIf { it.isNotBlank() },
+                                userId = igAcc.userId.takeIf { it.isNotBlank() }
+                            )
+                            if (likeRes.contains("1357004") || likeRes.contains("checkpoint_required") || likeRes.contains("login_required")) {
+                                actionSuccess = false
+                                actionErrMsg = "Instagram yêu cầu xác minh / Checkpoint"
+                            } else if (!likeRes.contains("\"status\":\"ok\"") && !likeRes.contains("xdt_like_media") && !likeRes.contains("\"viewer_has_liked\":true")) {
+                                actionSuccess = false
+                                actionErrMsg = "Instagram từ chối Like: $likeRes"
+                            }
+                        }
+
+                        if (!actionSuccess) {
+                            consecutiveFails++
+                            val curErr = (GolikeRunningManager.errorCountMap[acc.id] ?: acc.errorCount) + 1
+                            GolikeRunningManager.errorCountMap[acc.id] = curErr
+                            GolikeRunningManager.lastErrorDetailMap[acc.id] = actionErrMsg
+                            GolikeRunningManager.statusMap[acc.id] = "Thao tác thất bại: $actionErrMsg"
+                            client.skipJob(adsId, objectId, golikeAccId, jobType)
+                            GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = false, errorDetail = actionErrMsg)
+                            delay(cfg.delayMinSeconds * 1000L)
+                            continue
+                        }
+                    }
+
+                    // 3. Chờ thời gian đếm ngược an toàn
                     for (sec in countdown downTo 1) {
                         if (!GolikeRunningManager.isRunning(acc.id)) break
                         GolikeRunningManager.statusMap[acc.id] = "Làm job $jobType | Chờ nhận xu sau ${sec}s..."
@@ -812,7 +906,7 @@ fun GolikeAccountScreen(navController: NavController) {
                     }
                     if (!GolikeRunningManager.isRunning(acc.id)) break
 
-                    // 3. Báo hoàn thành (Complete Job)
+                    // 4. Báo hoàn thành (Complete Job)
                     GolikeRunningManager.statusMap[acc.id] = "Đang gửi báo cáo hoàn thành..."
                     val compRes = when (selectedPlatform.lowercase()) {
                         "facebook" -> client.completeFacebookJob(adsId, acc.id)

@@ -1138,6 +1138,10 @@ fun XsmmAccountScreen(navController: NavController) {
                     val isRunningThis = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(clean) || (acc?.userId?.isNotBlank() == true && com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(acc.userId))
                     val displayName = acc?.fullName?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
                         ?: "@${username.trim().removePrefix("@")}"
+                    val st = igStatusMap[clean] ?: igStatusMap[username] ?: ""
+                    val sc = igSuccessCountMap[clean] ?: igSuccessCountMap[username] ?: 0
+                    val err = igErrorCountMap[clean] ?: igErrorCountMap[username] ?: 0
+                    val detail = igErrorDetailMap[clean] ?: igErrorDetailMap[username] ?: ""
                     XsmmAccount(
                         id = username,
                         name = displayName,
@@ -1148,7 +1152,11 @@ fun XsmmAccountScreen(navController: NavController) {
                         followerCount = acc?.followersCount?.toLong() ?: 0L,
                         isLive = acc?.isLive != false,
                         isLinked = isLinked,
-                        isRunning = isRunningThis
+                        isRunning = isRunningThis,
+                        runStatus = st,
+                        successCount = sc,
+                        errorCount = err,
+                        errorDetail = detail
                     )
                 }
             }
