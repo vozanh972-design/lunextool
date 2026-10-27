@@ -92,7 +92,10 @@ val DefaultGolikeAccountTypes: Map<GolikePlatform, List<GolikeAccountTypeFilter>
         GolikeAccountTypeFilter("studio", "TikTok Studio"),
     ),
     GolikePlatform.Facebook to listOf(GolikeAccountTypeFilter("facebook", "Facebook")),
-    GolikePlatform.Instagram to listOf(GolikeAccountTypeFilter("instagram", "Instagram")),
+    GolikePlatform.Instagram to listOf(
+        GolikeAccountTypeFilter("ready", "Đã có"),
+        GolikeAccountTypeFilter("unlinked", "Chưa có"),
+    ),
 )
 
 data class GolikeAccountsUiState(
@@ -166,7 +169,16 @@ fun GolikeAccountsScreen(
     onReloadAccount: ((GolikeAccount) -> Unit)? = null,
 ) {
     val types = accountTypes[state.selectedPlatform].orEmpty()
-    val visible = state.accounts
+    val visible = if (state.selectedPlatform == GolikePlatform.Instagram) {
+        val filterId = state.selectedTypeId ?: "ready"
+        if (filterId == "unlinked") {
+            state.accounts.filter { !it.isGolikeLinked || it.cookie.isBlank() }
+        } else {
+            state.accounts.filter { it.isGolikeLinked && it.cookie.isNotBlank() }
+        }
+    } else {
+        state.accounts
+    }
     val allSelected = visible.isNotEmpty() && visible.all { it.id in state.selectedAccountIds }
 
     Box(modifier = modifier.fillMaxSize().background(Alx.Bg)) {
@@ -193,9 +205,22 @@ fun GolikeAccountsScreen(
             // Tab chọn nền tảng TikTok / Facebook / Instagram
             GolikePlatformTabs(state.selectedPlatform, state.platformCounts, onSelectPlatform, Modifier.padding(top = 16.dp))
 
+            // 2 ô nhỏ phân loại lọc (Đã có / Chưa có với IG, hoặc TikTok / Lite / Studio) nằm ở giữa thẻ card và tiêu đề mục
+            if (types.size > 1) {
+                Row(
+                    Modifier.padding(top = 14.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    types.forEach { t ->
+                        val selected = state.selectedTypeId == t.id || (state.selectedTypeId == null && t == types.first())
+                        GolikeTypeChip(t.label, selected = selected) { onSelectType(t.id) }
+                    }
+                }
+            }
+
             // Tiêu đề mục: "Tài khoản TikTok" + Checkbox "Tất cả" + Nút xóa / Nút (+)
             Row(
-                Modifier.padding(top = 22.dp).fillMaxWidth(),
+                Modifier.padding(top = 18.dp).fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val headerTitle = if (state.selectedPlatform == GolikePlatform.Instagram && visible.isNotEmpty()) {
@@ -238,19 +263,6 @@ fun GolikeAccountsScreen(
                             modifier = Modifier.size(40.dp).background(Alx.DangerBg, CircleShape).border(1.dp, Alx.Danger.copy(alpha = 0.35f), CircleShape),
                             contentAlignment = Alignment.Center,
                         ) { SvgIcon(Trash, 18.dp, Alx.Danger, 2f) }
-                    }
-                }
-            }
-
-            // Hàng chip loại TikTok / TikTok Lite / TikTok Studio (chỉ hiển thị ở tab TikTok)
-            if (types.size > 1) {
-                Row(
-                    Modifier.padding(top = 14.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    types.forEach { t ->
-                        val selected = state.selectedTypeId == t.id || (state.selectedTypeId == null && t == types.first())
-                        GolikeTypeChip(t.label, selected = selected) { onSelectType(t.id) }
                     }
                 }
             }
@@ -817,7 +829,26 @@ private fun GolikeInstagramAccountRow(
 
                     Spacer(Modifier.height(4.dp))
 
-                    if (account.isGolikeLinked) {
+                    if (account.cookie.isBlank()) {
+                        PressBox(
+                            onClick = onLink,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(Color(0xFFF59E0B).copy(alpha = 0.14f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(Modifier.size(5.dp).clip(CircleShape).background(Color(0xFFD97706)))
+                                BasicText(
+                                    "Chưa có Cookie trong tool",
+                                    style = type(10.5f, FontWeight.ExtraBold, Color(0xFFB45309))
+                                )
+                            }
+                        }
+                    } else if (account.isGolikeLinked) {
                         Row(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(999.dp))

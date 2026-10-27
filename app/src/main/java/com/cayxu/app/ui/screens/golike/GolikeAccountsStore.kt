@@ -62,6 +62,7 @@ object GolikeAccountsStore {
     private const val KEY_TIKTOK_ACCOUNTS_LIST = "golike_tiktok_accounts_list"
     private const val KEY_PREFIX_ACCOUNTS = "golike_accounts_"
     private const val KEY_DELETED_GOLIKE_IG = "golike_deleted_ig_accounts"
+    private const val KEY_INSTAGRAM_MAP = "golike_instagram_map"
     private const val ENTRY_SEPARATOR = "\u0001"
 
     private val gson = Gson()
@@ -238,6 +239,29 @@ object GolikeAccountsStore {
         val clean = username.trim().removePrefix("@").lowercase()
         if (clean.isBlank()) return null
         val currentJson = prefs(context).getString(KEY_TIKTOK_MAP, "{}") ?: "{}"
+        return try {
+            val mapObj = org.json.JSONObject(currentJson)
+            mapObj.optString(clean).takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun saveInstagramMapping(context: Context, username: String, golikeAccountId: String) {
+        val clean = username.trim().removePrefix("@").lowercase()
+        if (clean.isBlank() || golikeAccountId.isBlank()) return
+        val currentJson = prefs(context).getString(KEY_INSTAGRAM_MAP, "{}") ?: "{}"
+        try {
+            val mapObj = org.json.JSONObject(currentJson)
+            mapObj.put(clean, golikeAccountId.trim())
+            prefs(context).edit().putString(KEY_INSTAGRAM_MAP, mapObj.toString()).commit()
+        } catch (_: Exception) {}
+    }
+
+    fun getInstagramAccountIdFromMap(context: Context, username: String): String? {
+        val clean = username.trim().removePrefix("@").lowercase()
+        if (clean.isBlank()) return null
+        val currentJson = prefs(context).getString(KEY_INSTAGRAM_MAP, "{}") ?: "{}"
         return try {
             val mapObj = org.json.JSONObject(currentJson)
             mapObj.optString(clean).takeIf { it.isNotBlank() }
@@ -438,9 +462,13 @@ object GolikeAccountsStore {
             igStoreAccounts.forEach { ig ->
                 val cleanHandle = ig.username.trim().removePrefix("@").lowercase()
                 if (cleanHandle.isNotBlank() && !deletedSet.contains(cleanHandle) && !deletedSet.contains(ig.username.lowercase())) {
+                    val mapId = getInstagramAccountIdFromMap(context, cleanHandle)
                     val existing = list.firstOrNull {
                         it.id.equals(cleanHandle, ignoreCase = true) || it.username.trim().removePrefix("@").equals(cleanHandle, ignoreCase = true)
                     }
+                    val effectiveGolikeId = existing?.golikeAccountId?.ifBlank { mapId.orEmpty() } ?: mapId.orEmpty()
+                    val isLinked = (existing?.isGolikeLinked == true) || effectiveGolikeId.isNotBlank()
+
                     if (existing != null) {
                         merged.add(
                             existing.copy(
@@ -452,7 +480,10 @@ object GolikeAccountsStore {
                                 userId = if (existing.userId.isNotBlank()) existing.userId else ig.userId,
                                 fbDtsg = if (existing.fbDtsg.isNotBlank()) existing.fbDtsg else ig.fbDtsg,
                                 lsd = if (existing.lsd.isNotBlank()) existing.lsd else ig.lsd,
-                                isLive = ig.isLive
+                                isLive = ig.isLive,
+                                isGolikeLinked = isLinked,
+                                golikeAccountId = effectiveGolikeId,
+                                lastStatus = if (isLinked) "Đã liên kết Golike • Sẵn sàng" else existing.lastStatus
                             )
                         )
                     } else {
@@ -463,14 +494,14 @@ object GolikeAccountsStore {
                                 username = cleanHandle,
                                 avatar = ig.avatar,
                                 isLive = ig.isLive,
-                                isGolikeLinked = false,
-                                golikeAccountId = "",
+                                isGolikeLinked = isLinked,
+                                golikeAccountId = effectiveGolikeId,
                                 proxy = ig.proxy,
                                 cookie = ig.cookie,
                                 userId = ig.userId,
                                 fbDtsg = ig.fbDtsg,
                                 lsd = ig.lsd,
-                                lastStatus = "Sẵn sàng làm job"
+                                lastStatus = if (isLinked) "Đã liên kết Golike • Sẵn sàng" else "Chưa liên kết"
                             )
                         )
                     }
@@ -482,7 +513,16 @@ object GolikeAccountsStore {
             list.forEach { gAcc ->
                 val clean = gAcc.id.trim().removePrefix("@").lowercase()
                 if (clean.isNotBlank() && !processedHandles.contains(clean) && !deletedSet.contains(clean) && !deletedSet.contains(gAcc.username.trim().removePrefix("@").lowercase())) {
-                    merged.add(gAcc)
+                    val mapId = getInstagramAccountIdFromMap(context, clean)
+                    val effectiveGolikeId = gAcc.golikeAccountId.ifBlank { mapId.orEmpty() }
+                    val isLinked = gAcc.isGolikeLinked || effectiveGolikeId.isNotBlank()
+                    merged.add(
+                        gAcc.copy(
+                            isGolikeLinked = isLinked,
+                            golikeAccountId = effectiveGolikeId,
+                            lastStatus = if (isLinked) "Đã liên kết Golike • Sẵn sàng" else gAcc.lastStatus
+                        )
+                    )
                     processedHandles.add(clean)
                 }
             }

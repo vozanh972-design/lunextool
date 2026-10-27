@@ -170,7 +170,7 @@ class GolikeApiClient(
 
     // 2. Lấy danh sách tài khoản liên kết
     fun getTikTokAccounts(): JSONObject? = execute(newRequestBuilder("$BASE_URL/tiktok-account?limit=200").get().build())
-    fun getInstagramAccounts(): JSONObject? = execute(newRequestBuilder("$BASE_URL/instagram-account?limit=200").get().build())
+    fun getInstagramAccounts(): JSONObject? = execute(newRequestBuilder("$BASE_URL/instagram-account").get().build())
     fun getFacebookAccounts(): JSONObject? = execute(newRequestBuilder("$BASE_URL/facebook-account").get().build())
 
     // 2b. Khai báo và xác minh nick TikTok vào Golike (Chuẩn GoMax)

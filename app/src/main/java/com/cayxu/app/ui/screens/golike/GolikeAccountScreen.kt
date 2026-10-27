@@ -253,20 +253,18 @@ suspend fun checkGolikeLinkedStatusForTikTokAccounts(
 /**
  * Đồng bộ danh sách tài khoản đã liên kết từ API Golike về máy và quét tài khoản trên máy.
  */
-suspend fun syncLinkedAccountsFromApi(
+/**
+ * Kiểm tra và đồng bộ danh sách tài khoản Instagram từ Golike về máy ĐÚNG 1 LẦN DUY NHẤT.
+ * Tuyệt đối không chạy vòng lặp ngầm, không polling vô hạn.
+ */
+suspend fun syncInstagramAccountsOnce(
     context: Context,
     client: GolikeApiClient,
-    platform: String,
-    uiTikTokAccounts: androidx.compose.runtime.snapshots.SnapshotStateList<GolikeAccount>? = null
-) {
-    try {
-        if (platform.lowercase() == "tiktok") {
-            checkGolikeLinkedStatusForTikTokAccounts(context, client, uiTikTokAccounts)
-        } else {
-            val res = when (platform.lowercase()) {
-                "facebook" -> client.getFacebookAccounts()
-                else -> client.getInstagramAccounts()
-            }
+    uiAccounts: androidx.compose.runtime.snapshots.SnapshotStateList<GolikeAccount>? = null
+): Int {
+    return withContext(Dispatchers.IO) {
+        try {
+            val res = client.getInstagramAccounts()
             val dataArray = res?.optJSONArray("data")
             val items = mutableListOf<org.json.JSONObject>()
             if (dataArray != null) {
@@ -276,33 +274,107 @@ suspend fun syncLinkedAccountsFromApi(
             } else {
                 res?.optJSONObject("data")?.let { items.add(it) }
             }
-            if (items.isEmpty()) return
+            if (items.isEmpty()) return@withContext 0
 
-            val existingList = GolikeAccountsStore.getAccounts(context, platform.lowercase())
+            val currentLocalList = GolikeAccountsStore.getAccounts(context, "instagram").toMutableList()
+            var matchedCount = 0
+
             for (item in items) {
                 val accountId = item.optString("id")
                 val uname = item.optString("instagram_username").ifBlank {
-                    item.optString("nickname").ifBlank {
-                        item.optString("unique_username").ifBlank {
-                            item.optString("username").ifBlank {
-                                item.optString("name", accountId)
-                            }
-                        }
+                    item.optString("username").ifBlank {
+                        item.optString("nickname").ifBlank { "acc_$accountId" }
+                    }
+                }.trim().removePrefix("@").lowercase()
+
+                if (uname.isNotBlank()) {
+                    // 1. Lưu ánh xạ vĩnh viễn vào SharedPreferences
+                    GolikeAccountsStore.saveInstagramMapping(context, uname, accountId)
+
+                    val existingIndex = currentLocalList.indexOfFirst {
+                        it.id.trim().removePrefix("@").equals(uname, ignoreCase = true) ||
+                        it.username.trim().removePrefix("@").equals(uname, ignoreCase = true)
+                    }
+
+                    val serverPic = item.optString("profile_pic_url").ifBlank { item.optString("avatar") }
+
+                    if (existingIndex >= 0) {
+                        val existing = currentLocalList[existingIndex]
+                        currentLocalList[existingIndex] = existing.copy(
+                            isGolikeLinked = true,
+                            golikeAccountId = accountId,
+                            avatar = if (existing.avatar.isBlank() && serverPic.isNotBlank()) serverPic else existing.avatar,
+                            lastStatus = "Đã liên kết Golike • Sẵn sàng"
+                        )
+                        matchedCount++
+                    } else {
+                        // Thêm nick từ Golike về máy, thuộc diện "Chưa có Cookie trong tool"
+                        currentLocalList.add(
+                            GolikeAccount(
+                                id = uname,
+                                platform = "instagram",
+                                username = uname,
+                                avatar = serverPic,
+                                isLive = true,
+                                isGolikeLinked = true,
+                                golikeAccountId = accountId,
+                                lastStatus = "Đã có trên Golike (chưa có Cookie trong tool)"
+                            )
+                        )
                     }
                 }
+            }
+
+            GolikeAccountsStore.saveAccounts(context, "instagram", currentLocalList)
+
+            withContext(Dispatchers.Main) {
+                if (uiAccounts != null) {
+                    uiAccounts.clear()
+                    uiAccounts.addAll(currentLocalList)
+                }
+            }
+            matchedCount
+        } catch (_: Exception) {
+            0
+        }
+    }
+}
+
+/**
+ * Đồng bộ danh sách tài khoản đã liên kết từ API Golike về máy.
+ */
+suspend fun syncLinkedAccountsFromApi(
+    context: Context,
+    client: GolikeApiClient,
+    platform: String,
+    uiTikTokAccounts: androidx.compose.runtime.snapshots.SnapshotStateList<GolikeAccount>? = null,
+    uiOtherAccounts: androidx.compose.runtime.snapshots.SnapshotStateList<GolikeAccount>? = null
+) {
+    try {
+        if (platform.lowercase() == "tiktok") {
+            checkGolikeLinkedStatusForTikTokAccounts(context, client, uiTikTokAccounts)
+        } else if (platform.lowercase() == "instagram") {
+            syncInstagramAccountsOnce(context, client, uiOtherAccounts)
+        } else {
+            val res = client.getFacebookAccounts()
+            val dataArray = res?.optJSONArray("data") ?: return
+            val existingList = GolikeAccountsStore.getAccounts(context, "facebook")
+            for (i in 0 until dataArray.length()) {
+                val item = dataArray.optJSONObject(i) ?: continue
+                val accountId = item.optString("id")
+                val uname = item.optString("nickname").ifBlank { item.optString("name", accountId) }
                 val fbId = item.optString("fb_id")
                 val cleanId = (if (fbId.isNotBlank()) fbId else if (uname.isNotBlank()) uname else accountId).removePrefix("@").trim()
                 if (cleanId.isNotBlank()) {
                     val existingAcc = existingList.firstOrNull {
                         it.id.equals(cleanId, ignoreCase = true) || it.username.equals(uname, ignoreCase = true)
                     }
-                    val serverPic = item.optString("profile_pic_url").ifBlank { item.optString("avatar") }
                     val acc = (existingAcc ?: GolikeAccount(
                         id = cleanId,
-                        platform = platform.lowercase(),
+                        platform = "facebook",
                         username = uname
                     )).copy(
-                        avatar = if (existingAcc?.avatar.isNullOrBlank() && serverPic.isNotBlank()) serverPic else (existingAcc?.avatar ?: serverPic),
+                        avatar = if (existingAcc?.avatar.isNullOrBlank()) item.optString("avatar") else existingAcc!!.avatar,
                         isLive = true,
                         isGolikeLinked = true,
                         golikeAccountId = accountId,
@@ -489,6 +561,9 @@ fun GolikeAccountScreen(navController: NavController) {
     var reloadingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     var addingUid by remember { mutableStateOf<String?>(null) }
 
+    // Instagram sub-filter ("ready" = Đã có, "unlinked" = Chưa có)
+    var selectedIgFilter by remember { mutableStateOf("ready") }
+
     // Danh sách tài khoản theo nền tảng
     val tiktokAccounts = remember { mutableStateListOf<GolikeAccount>() }
     val otherAccounts = remember { mutableStateListOf<GolikeAccount>() }
@@ -500,6 +575,22 @@ fun GolikeAccountScreen(navController: NavController) {
     val tiktokCount = tiktokAccounts.size
     val facebookCount = if (selectedPlatform == "facebook") otherAccounts.size else (if (!isLoggedIn) 0 else GolikeAccountsStore.getAccounts(context, "facebook").size)
     val instagramCount = if (selectedPlatform == "instagram") otherAccounts.size else (if (!isLoggedIn) 0 else GolikeAccountsStore.getAccounts(context, "instagram").size)
+
+    // Đếm số lượng cho 2 ô lọc Instagram: "Đã có" (đã liên kết + có cookie trong tool) và "Chưa có"
+    val igReadyCount = otherAccounts.count { it.isGolikeLinked && it.cookie.isNotBlank() }
+    val igUnlinkedCount = otherAccounts.size - igReadyCount
+    val dynamicAccountTypes = mapOf(
+        GolikePlatform.TikTok to listOf(
+            GolikeAccountTypeFilter("standard", "TikTok"),
+            GolikeAccountTypeFilter("lite", "TikTok Lite"),
+            GolikeAccountTypeFilter("studio", "TikTok Studio"),
+        ),
+        GolikePlatform.Facebook to listOf(GolikeAccountTypeFilter("facebook", "Facebook")),
+        GolikePlatform.Instagram to listOf(
+            GolikeAccountTypeFilter("ready", "Đã có ($igReadyCount)"),
+            GolikeAccountTypeFilter("unlinked", "Chưa có ($igUnlinkedCount)"),
+        ),
+    )
 
     // Đồng bộ danh sách tài khoản khi đổi tab hoặc sau khi đăng xuất/đăng nhập
     fun reloadAccounts() {
@@ -521,7 +612,7 @@ fun GolikeAccountScreen(navController: NavController) {
         reloadAccounts()
     }
 
-    // Tự động kiểm tra và đồng bộ trạng thái liên kết nick từ Golike API khi mở màn hình hoặc sau đăng nhập
+    // Tự động kiểm tra và đồng bộ trạng thái liên kết nick từ Golike API khi mở màn hình hoặc sau đăng nhập (gọi 1 lần duy nhất)
     LaunchedEffect(isLoggedIn, selectedPlatform) {
         if (isLoggedIn) {
             scope.launch(Dispatchers.IO) {
@@ -542,8 +633,14 @@ fun GolikeAccountScreen(navController: NavController) {
                         }
                     }
 
-                    // 2. Quét danh sách nick đã liên kết từ API Golike về và đối chiếu
-                    syncLinkedAccountsFromApi(context, client, selectedPlatform, if (selectedPlatform == "tiktok") tiktokAccounts else null)
+                    // 2. Quét danh sách nick đã liên kết từ API Golike về và đối chiếu (gọi 1 lần duy nhất, không loop)
+                    syncLinkedAccountsFromApi(
+                        context,
+                        client,
+                        selectedPlatform,
+                        if (selectedPlatform == "tiktok") tiktokAccounts else null,
+                        if (selectedPlatform != "tiktok") otherAccounts else null
+                    )
                     withContext(Dispatchers.Main) {
                         reloadAccounts()
                     }
@@ -1347,7 +1444,9 @@ fun GolikeAccountScreen(navController: NavController) {
         GolikePlatform.Facebook to facebookCount,
         GolikePlatform.Instagram to instagramCount
     )
-    val selectedTypeId = when (selectedVariant) {
+    val selectedTypeId = if (selectedPlatform == "instagram") {
+        selectedIgFilter
+    } else when (selectedVariant) {
         TikTokAppVariant.STANDARD -> "standard"
         TikTokAppVariant.LITE -> "lite"
         TikTokAppVariant.STUDIO -> "studio"
@@ -1368,6 +1467,7 @@ fun GolikeAccountScreen(navController: NavController) {
 
     GolikeAccountsScreen(
         state = accountsUiState,
+        accountTypes = dynamicAccountTypes,
         onBack = { navController.popBackStack() },
         onRefreshBalance = {
             if (isRefreshing) return@GolikeAccountsScreen
@@ -1386,8 +1486,14 @@ fun GolikeAccountScreen(navController: NavController) {
                         GolikeSession.username.value = newUname
                     }
 
-                    // Đồng bộ danh sách tài khoản liên kết từ Golike API
-                    syncLinkedAccountsFromApi(context, client, selectedPlatform)
+                    // Đồng bộ danh sách tài khoản liên kết từ Golike API (1 lần duy nhất)
+                    syncLinkedAccountsFromApi(
+                        context,
+                        client,
+                        selectedPlatform,
+                        if (selectedPlatform == "tiktok") tiktokAccounts else null,
+                        if (selectedPlatform != "tiktok") otherAccounts else null
+                    )
 
                     withContext(Dispatchers.Main) {
                         reloadAccounts()
@@ -1418,10 +1524,14 @@ fun GolikeAccountScreen(navController: NavController) {
             reloadAccounts()
         },
         onSelectType = { typeId ->
-            selectedVariant = when (typeId) {
-                "lite" -> TikTokAppVariant.LITE
-                "studio" -> TikTokAppVariant.STUDIO
-                else -> TikTokAppVariant.STANDARD
+            if (selectedPlatform == "instagram") {
+                selectedIgFilter = typeId
+            } else {
+                selectedVariant = when (typeId) {
+                    "lite" -> TikTokAppVariant.LITE
+                    "studio" -> TikTokAppVariant.STUDIO
+                    else -> TikTokAppVariant.STANDARD
+                }
             }
         },
         onToggleSelectAll = {
@@ -1626,8 +1736,27 @@ fun GolikeAccountScreen(navController: NavController) {
             }
         },
         onReloadAccount = { acc ->
-            reloadAccounts()
-            Toast.makeText(context, "Đã làm mới tài khoản @${acc.username}", Toast.LENGTH_SHORT).show()
+            if (selectedPlatform == "instagram") {
+                scope.launch {
+                    try {
+                        val client = GolikeAccountsStore.getApiClient(context)
+                        Toast.makeText(context, "Đang kiểm tra lại @" + acc.username + " trên Golike...", Toast.LENGTH_SHORT).show()
+                        syncInstagramAccountsOnce(context, client, otherAccounts)
+                        reloadAccounts()
+                        val current = otherAccounts.firstOrNull { it.id.equals(acc.id, ignoreCase = true) || it.username.equals(acc.username, ignoreCase = true) }
+                        if (current?.isGolikeLinked == true) {
+                            Toast.makeText(context, "Tài khoản @" + acc.username + " đã được liên kết trên Golike!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Tài khoản @" + acc.username + " chưa có trên Golike", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Lỗi kiểm tra: " + e.message, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } else {
+                reloadAccounts()
+                Toast.makeText(context, "Đã làm mới tài khoản @${acc.username}", Toast.LENGTH_SHORT).show()
+            }
         }
     )
 
