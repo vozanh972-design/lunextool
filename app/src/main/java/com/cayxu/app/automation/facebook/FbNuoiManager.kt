@@ -114,6 +114,14 @@ object FbNuoiManager {
 
         val job = scope.launch {
             try {
+                if (!com.cayxu.app.ui.f4f.F4fNativeBridge.ensureSession(context)) {
+                    scope.launch(Dispatchers.Main) {
+                        statusMap[uid] = "Lỗi: Bản quyền không hợp lệ hoặc đã hết hạn"
+                        lastErrorDetail[uid] = "Bản quyền không hợp lệ hoặc đã hết hạn"
+                        errorCountMap[uid] = 1
+                    }
+                    return@launch
+                }
                 val currentNuoiConfig = FbNuoiConfigStore.getConfig(context)
                 val client = com.cayxu.app.automation.facebook.nuoi.FbNuoiTaskRunner.buildClient(targetAccount.phone)
                 val runner = com.cayxu.app.automation.facebook.nuoi.FbNuoiTaskRunner(

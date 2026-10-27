@@ -67,12 +67,19 @@ class NurtureOverlayService : Service() {
         val repost = intent?.getBooleanExtra(EXTRA_REPOST, false) ?: false
 
         if (bubbleView == null) {
-            showBubble()
-            loadKeyInfo()
-            startCountdown(durationMinutes)
-            // Báo cho TikTokAccessibilityService biết ĐÚNG những hành động nào cần tự chạy -
-            // chỉ chạy cái nào cấu hình đã bật, không tự thêm hành động ngoài ý muốn.
-            NurtureBridge.start(variant, autoWatch, viewComments, copyLink, repost, durationMinutes)
+            scope.launch {
+                if (!com.cayxu.app.ui.f4f.F4fNativeBridge.ensureSession(applicationContext)) {
+                    android.widget.Toast.makeText(applicationContext, "Lỗi: Bản quyền không hợp lệ hoặc đã hết hạn", android.widget.Toast.LENGTH_LONG).show()
+                    stopAndReturn()
+                    return@launch
+                }
+                showBubble()
+                loadKeyInfo()
+                startCountdown(durationMinutes)
+                // Báo cho TikTokAccessibilityService biết ĐÚNG những hành động nào cần tự chạy -
+                // chỉ chạy cái nào cấu hình đã bật, không tự thêm hành động ngoài ý muốn.
+                NurtureBridge.start(variant, autoWatch, viewComments, copyLink, repost, durationMinutes)
+            }
         }
         return START_NOT_STICKY
     }

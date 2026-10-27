@@ -178,6 +178,13 @@ class XsmmInstagramTaskRunner(
                 onProgressUpdate?.invoke(msg, 0, 1)
                 return RunResult(0, 1, 0, msg)
             }
+
+            if (!com.cayxu.app.ui.f4f.F4fNativeBridge.ensureSession(context)) {
+                val msg = "Lỗi: Bản quyền không hợp lệ hoặc đã hết hạn"
+                onStatusUpdate?.invoke(msg)
+                onProgressUpdate?.invoke(msg, 0, 1)
+                return RunResult(0, 1, 0, msg)
+            }
             val localAcc = InstagramAccountsStore.getAccount(context, cleanUsername)
             if (localAcc == null || localAcc.cookie.isBlank()) {
                 val msg = "[$cleanUsername] Không tìm thấy cookie"

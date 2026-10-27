@@ -207,6 +207,12 @@ class XsmmJobRunnerOverlayService : Service() {
     private fun startVerifyOnlyRunner(variant: TikTokAppVariant, handle: String) {
         runnerJob?.cancel()
         runnerJob = serviceScope.launch(Dispatchers.IO) {
+            if (!com.cayxu.app.ui.f4f.F4fNativeBridge.ensureSession(applicationContext)) {
+                XsmmJobStatusBridge.update("Lỗi: Bản quyền không hợp lệ hoặc đã hết hạn")
+                delay(2000L)
+                stopSelf()
+                return@launch
+            }
             val cleanHandle = handle.trim().removePrefix("@").lowercase()
             XsmmJobStatusBridge.update("Mở TikTok (${variant.name}) kiểm tra nick...")
 
@@ -260,6 +266,12 @@ class XsmmJobRunnerOverlayService : Service() {
     private fun startAutomationRunner() {
         runnerJob?.cancel()
         runnerJob = serviceScope.launch(Dispatchers.IO) {
+            if (!com.cayxu.app.ui.f4f.F4fNativeBridge.ensureSession(applicationContext)) {
+                XsmmJobStatusBridge.update("Lỗi: Bản quyền không hợp lệ hoặc đã hết hạn")
+                delay(2000L)
+                stopSelf()
+                return@launch
+            }
             val token = XsmmAccountStore.getToken(applicationContext)
             if (token.isNullOrBlank()) {
                 XsmmJobStatusBridge.update("Lỗi: Chưa đăng nhập XSMM")
@@ -571,6 +583,12 @@ class XsmmJobRunnerOverlayService : Service() {
     private fun startGolikeAutomationRunner(variant: TikTokAppVariant) {
         runnerJob?.cancel()
         runnerJob = serviceScope.launch(Dispatchers.IO) {
+            if (!com.cayxu.app.ui.f4f.F4fNativeBridge.ensureSession(applicationContext)) {
+                XsmmJobStatusBridge.update("Lỗi: Bản quyền không hợp lệ hoặc đã hết hạn")
+                delay(2000L)
+                stopSelf()
+                return@launch
+            }
             try {
                 val token = GolikeAccountsStore.getToken(applicationContext)
                 if (token.isNullOrBlank() || !GolikeAccountsStore.isLoggedIn(applicationContext)) {

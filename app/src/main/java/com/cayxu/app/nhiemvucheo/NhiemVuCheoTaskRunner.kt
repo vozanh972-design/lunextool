@@ -101,6 +101,11 @@ object NhiemVuCheoTaskRunner {
             return
         }
 
+        if (!com.cayxu.app.ui.f4f.F4fNativeBridge.ensureSession(context)) {
+            notify("Lỗi: Bản quyền không hợp lệ hoặc đã hết hạn")
+            return
+        }
+
         val config = NvcRunConfigStore.get(context)
         val categories = config.enabledCategories.ifEmpty { listOf("reaction") }
         var currentCategoryIndex = 0

@@ -234,6 +234,12 @@ class CrossTTCOverlayService : Service() {
     private fun startAutomationRunner() {
         runnerJob?.cancel()
         runnerJob = serviceScope.launch(Dispatchers.IO) {
+            if (!com.cayxu.app.ui.f4f.F4fNativeBridge.ensureSession(applicationContext)) {
+                setStatus("Lỗi: Bản quyền không hợp lệ hoặc đã hết hạn")
+                delay(2000L)
+                stopSelf()
+                return@launch
+            }
             if (accountHandles.isEmpty()) {
                 setStatus("Lỗi: Chưa chọn tài khoản nào")
                 return@launch
