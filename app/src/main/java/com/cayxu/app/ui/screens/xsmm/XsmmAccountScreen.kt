@@ -134,6 +134,7 @@ fun XsmmAccountScreen(navController: NavController) {
     }
     var reloadingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     var linkingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var linkingInstagramUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     val accountsForVariant = allTikTokAccounts.filter { it.variant == selectedVariant }
     var facebookAccounts by remember { mutableStateOf(com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)) }
     var instagramAccounts by remember {
@@ -1050,6 +1051,7 @@ fun XsmmAccountScreen(navController: NavController) {
         livePageAvatars,
         reloadingTikTokUids,
         linkingTikTokUids,
+        linkingInstagramUids,
         com.cayxu.app.automation.facebook.XsmmFacebookManager.runningAccounts.toList(),
         com.cayxu.app.automation.instagram.XsmmInstagramManager.runningAccounts.toList()
     ) {
@@ -1135,6 +1137,7 @@ fun XsmmAccountScreen(navController: NavController) {
                     val clean = username.trim().removePrefix("@").lowercase()
                     val acc = igMap[clean]
                     val isLinked = acc?.isXsmmLinked == true
+                    val isLinkingThis = clean in linkingInstagramUids || username in linkingInstagramUids || username.lowercase().trim().removePrefix("@") in linkingInstagramUids
                     val isRunningThis = com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(clean) || (acc?.userId?.isNotBlank() == true && com.cayxu.app.automation.instagram.XsmmInstagramManager.isRunning(acc.userId))
                     val displayName = acc?.fullName?.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) }
                         ?: "@${username.trim().removePrefix("@")}"
@@ -1152,6 +1155,7 @@ fun XsmmAccountScreen(navController: NavController) {
                         followerCount = acc?.followersCount?.toLong() ?: 0L,
                         isLive = acc?.isLive != false,
                         isLinked = isLinked,
+                        isLinking = isLinkingThis,
                         isRunning = isRunningThis,
                         runStatus = st,
                         successCount = sc,
@@ -1387,6 +1391,8 @@ fun XsmmAccountScreen(navController: NavController) {
             }
 
             if (currentPlatform == XsmmPlatform.Instagram) {
+                val cleanUser = acc.id.trim().removePrefix("@").trim('/')
+                linkingInstagramUids = linkingInstagramUids + cleanUser + acc.id
                 scope.launch {
                     try {
                         val token = XsmmAccountStore.getToken(context)
@@ -1394,7 +1400,6 @@ fun XsmmAccountScreen(navController: NavController) {
                             Toast.makeText(context, "Vui lòng đăng nhập XSMM trước", Toast.LENGTH_SHORT).show()
                             return@launch
                         }
-                        val cleanUser = acc.id.trim().removePrefix("@").trim('/')
                         Toast.makeText(context, "Đang thêm @$cleanUser vào XSMM...", Toast.LENGTH_SHORT).show()
                         val res = XsmmAccountsRepository.addInstagramAccount2(token, cleanUser)
                         when (res) {
@@ -1417,6 +1422,8 @@ fun XsmmAccountScreen(navController: NavController) {
                         }
                     } catch (e: Exception) {
                         Toast.makeText(context, "Lỗi kết nối: ${e.message}", Toast.LENGTH_SHORT).show()
+                    } finally {
+                        linkingInstagramUids = linkingInstagramUids - cleanUser - acc.id
                     }
                 }
                 return@XsmmAccountsScreen

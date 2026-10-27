@@ -652,13 +652,23 @@ fun GolikeAccountScreen(navController: NavController) {
     }
 
     if (showAddAccountSheet) {
-        GolikeAddAccountBottomSheet(
-            platform = selectedPlatform,
-            onDismiss = { showAddAccountSheet = false },
-            onAccountAdded = {
-                reloadAccounts()
-            }
-        )
+        if (selectedPlatform == "instagram") {
+            com.cayxu.app.ui.screens.xsmm.InstagramCookieBottomSheet(
+                onDismiss = { showAddAccountSheet = false },
+                onCookieSaved = {
+                    showAddAccountSheet = false
+                    reloadAccounts()
+                }
+            )
+        } else {
+            GolikeAddAccountBottomSheet(
+                platform = selectedPlatform,
+                onDismiss = { showAddAccountSheet = false },
+                onAccountAdded = {
+                    reloadAccounts()
+                }
+            )
+        }
     }
 
     // Dialog xác nhận xóa tài khoản

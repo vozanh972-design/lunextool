@@ -389,6 +389,40 @@ object GolikeAccountsStore {
                 )
             }
         }
+
+        if (platform.lowercase() == "instagram") {
+            val igStoreAccounts = runCatching {
+                com.cayxu.app.data.local.InstagramAccountsStore.getAccounts(context)
+            }.getOrDefault(emptyList())
+
+            val merged = igStoreAccounts.map { ig ->
+                val cleanHandle = ig.username.trim().removePrefix("@")
+                val existing = list.firstOrNull { it.id.equals(cleanHandle, ignoreCase = true) || it.username.equals(cleanHandle, ignoreCase = true) }
+                if (existing != null) {
+                    existing.copy(
+                        id = cleanHandle,
+                        username = cleanHandle,
+                        avatar = if (existing.avatar.isNotBlank()) existing.avatar else ig.avatar,
+                        proxy = if (existing.proxy.isNotBlank()) existing.proxy else ig.proxy,
+                        isLive = ig.isLive
+                    )
+                } else {
+                    GolikeAccount(
+                        id = cleanHandle,
+                        platform = "instagram",
+                        username = cleanHandle,
+                        avatar = ig.avatar,
+                        isLive = ig.isLive,
+                        isGolikeLinked = false,
+                        golikeAccountId = "",
+                        proxy = ig.proxy,
+                        lastStatus = "Sẵn sàng"
+                    )
+                }
+            }
+            return merged
+        }
+
         return list
     }
 
@@ -427,6 +461,11 @@ object GolikeAccountsStore {
         val cleanSet = idsToRemove.map { it.trim().lowercase() }.toSet()
         val updated = currentList.filterNot { cleanSet.contains(it.id.trim().lowercase()) }
         saveAccounts(context, platform, updated)
+        if (platform.lowercase() == "instagram") {
+            runCatching {
+                com.cayxu.app.data.local.InstagramAccountsStore.deleteAccounts(context, idsToRemove)
+            }
+        }
     }
 
     /** Cập nhật trạng thái liên kết Golike */

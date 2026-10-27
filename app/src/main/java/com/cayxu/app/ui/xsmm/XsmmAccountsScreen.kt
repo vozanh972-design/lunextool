@@ -863,17 +863,19 @@ private fun AccountRow(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f, fill = false)
                             )
-                            // Pill Live / Die
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(liveSoft)
-                                    .padding(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                BasicText(
-                                    if (account.isLive) "Live" else "Die",
-                                    style = type(10.5f, FontWeight.ExtraBold, liveColor)
-                                )
+                            // Chỉ hiển thị Pill "Die" nếu tài khoản bị Die (khi Live đã có dấu chấm xanh trên avatar)
+                            if (!account.isLive) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(999.dp))
+                                        .background(liveSoft)
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    BasicText(
+                                        "Die",
+                                        style = type(10.5f, FontWeight.ExtraBold, liveColor)
+                                    )
+                                }
                             }
                         }
 
