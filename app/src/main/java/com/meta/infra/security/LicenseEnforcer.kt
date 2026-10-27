@@ -13,8 +13,8 @@ import androidx.annotation.Keep
 object LicenseEnforcer {
 
     // Magic Token kiểm tra tính toàn vẹn cố định
-    private const val SENTINEL_SEED = 0x5A5AA5A55A5AA5A5L
-    private const val PEER_NONCE_MASK = 0xA5A55A5AA5A55A5AL
+    private const val SENTINEL_SEED: Long = 0x5A5AA5A55A5AA5A5L
+    private const val PEER_NONCE_MASK: Long = 0x2A5A5AA55A5AA5A5L
 
     // --- CÁC HÀM BẪY MỒI NHỬ (HONEYPOT TRAPS) ---
     // Hacker khi tìm kiếm chuỗi "isVip" hoặc "daysLeft" sẽ cố tình sửa các hàm này:

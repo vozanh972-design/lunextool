@@ -11,8 +11,8 @@ import com.meta.infra.security.LicenseEnforcer
 @Keep
 object _MatrixRuntimeBridge {
 
-    private const val PEER_NONCE_MASK = 0xA5A55A5AA5A55A5AL
-    private const val SENTINEL_SEED = 0x5A5AA5A55A5AA5A5L
+    private const val PEER_NONCE_MASK: Long = 0x2A5A5AA55A5AA5A5L
+    private const val SENTINEL_SEED: Long = 0x5A5AA5A55A5AA5A5L
 
     /**
      * Hàm bắt tay cho File Giả (LicenseEnforcer) gọi ngược lại kiểm tra File Thật.

@@ -13,7 +13,10 @@ data class AuthSession(
     val packageName: String? = null,
     val expiresAt: String? = null,
     val daysLeft: Int? = null
-)
+) {
+    val effectiveUsername: String?
+        get() = username?.takeIf { it.isNotBlank() }
+}
 
 /**
  * Kết quả bọc lại để phân biệt lỗi mạng / lỗi server / thành công
