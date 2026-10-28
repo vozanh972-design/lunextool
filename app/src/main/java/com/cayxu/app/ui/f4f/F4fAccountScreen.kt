@@ -612,7 +612,19 @@ fun F4fAccountScreen(navController: NavController) {
         }
 
         if (showInstagramConfigSheet) {
-            var igConfigState by remember { mutableStateOf(F4fRunConfigInstagramUiState()) }
+            val savedCfg = remember { F4fRunConfigStore.get(context) }
+            var igConfigState by remember {
+                mutableStateOf(
+                    F4fRunConfigInstagramUiState(
+                        mode = F4fIgTaskMode.FollowOnly,
+                        getTaskWaitSeconds = savedCfg.getTaskWaitSeconds.toString(),
+                        workSeconds = savedCfg.workSeconds.toString(),
+                        taskCount = if (savedCfg.targetTaskCount > 0) savedCfg.targetTaskCount.toString() else "",
+                        stopAfterEmptyTimes = savedCfg.stopAfterEmptyTimes.toString(),
+                        errorSwapAccountCount = savedCfg.errorSwapCount.toString(),
+                    )
+                )
+            }
             F4fRunConfigInstagramScreen(
                 state = igConfigState,
                 onBack = { showInstagramConfigSheet = false },
@@ -626,6 +638,25 @@ fun F4fAccountScreen(navController: NavController) {
                 onBrowseBeforeTaskChange = { igConfigState = igConfigState.copy(browseBeforeTask = it) },
                 onBackHomeThenBrowseChange = { igConfigState = igConfigState.copy(backHomeThenBrowse = it) },
                 onSave = {
+                    val waitSec = igConfigState.getTaskWaitSeconds.toIntOrNull()?.coerceAtLeast(1) ?: 5
+                    val workSec = igConfigState.workSeconds.toIntOrNull()?.coerceAtLeast(1) ?: 10
+                    val targetCount = igConfigState.taskCount.toIntOrNull() ?: 0
+                    val emptyTimes = igConfigState.stopAfterEmptyTimes.toIntOrNull() ?: 3
+                    val errorTimes = igConfigState.errorSwapAccountCount.toIntOrNull() ?: 5
+
+                    val newConfig = savedCfg.copy(
+                        delaySeconds = waitSec,
+                        getTaskWaitSeconds = waitSec,
+                        workSeconds = workSec,
+                        doJobMinSeconds = workSec,
+                        doJobMaxSeconds = workSec,
+                        targetTaskCount = targetCount,
+                        stopAfterEmptyTimes = emptyTimes,
+                        errorSwapCount = errorTimes,
+                        enableFollow = true,
+                        enableLike = false,
+                    )
+                    F4fRunConfigStore.save(context, newConfig)
                     showInstagramConfigSheet = false
                     Toast.makeText(context, "Đã lưu cấu hình Follow4Follow Instagram", Toast.LENGTH_SHORT).show()
                 }

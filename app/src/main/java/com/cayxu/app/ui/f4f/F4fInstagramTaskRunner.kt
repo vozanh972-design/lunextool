@@ -1,6 +1,7 @@
 package com.cayxu.app.ui.f4f
 
 import android.content.Context
+import com.cayxu.app.automation.instagram.IgTaToolClient
 import com.cayxu.app.data.local.InstagramAccountsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -8,23 +9,33 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.math.BigInteger
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
-import com.cayxu.app.automation.instagram.IgTaToolClient
 import kotlin.coroutines.coroutineContext
+
+data class IgActionResult(
+    val isSuccess: Boolean,
+    val httpCode: Int,
+    val rawBody: String,
+    val errorMessage: String? = null
+)
 
 /**
  * Bộ thực thi nhiệm vụ Instagram độc lập cho Follow4Follow (F4F):
- * - Lấy job từ API F4F: F4fApiClient.getEarnJobs(token, platform = "instagram")
- * - Tương tác trực tiếp với Instagram thông qua Cookie tài khoản trên máy
- * - Hoàn thành và nhận thưởng xu Follow4Follow qua F4fApiClient.completeJob(...)
+ * - Sử dụng 100% logic tương tác của TA Tool (IgTaToolClient, resolveTargetUid, parseIgResult)
+ * - Tự động tra cứu UID số từ username Instagram qua API topsearch
+ * - Đếm ngược thời gian thực (real-time countdown) cho thời gian làm nhiệm vụ và thời gian giãn cách
+ * - Báo cáo kết quả và nhận xu qua F4fApiClient
  */
 class F4fInstagramTaskRunner(
     private val f4fToken: String,
     val username: String,
-    val cookie: String
+    val cookie: String,
+    var fbDtsg: String? = null,
+    var lsd: String? = null,
+    var userId: String? = null
 ) {
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -88,7 +99,32 @@ class F4fInstagramTaskRunner(
                 return@withContext
             }
 
-            val runner = F4fInstagramTaskRunner(token, cleanUser, localAcc.cookie)
+            val tokens = extractTokensFromCookie(localAcc.cookie)
+            val resolvedUserId = localAcc.userId.ifBlank { tokens["ds_user_id"].orEmpty() }
+
+            onStatusUpdate("Đang trích xuất token Instagram...")
+            val pageTokens = try {
+                IgTaToolClient.extractPageTokens(
+                    client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).build(),
+                    cookie = localAcc.cookie,
+                    targetUrl = "https://www.instagram.com/",
+                    cachedDtsg = localAcc.fbDtsg,
+                    cachedLsd = localAcc.lsd
+                )
+            } catch (_: Exception) {
+                null
+            }
+            val effDtsg = pageTokens?.dtsg?.takeIf { it.isNotBlank() } ?: localAcc.fbDtsg
+            val effLsd = pageTokens?.lsd?.takeIf { it.isNotBlank() } ?: localAcc.lsd
+
+            val runner = F4fInstagramTaskRunner(
+                f4fToken = token,
+                username = cleanUser,
+                cookie = localAcc.cookie,
+                fbDtsg = effDtsg,
+                lsd = effLsd,
+                userId = resolvedUserId
+            )
             val cfg = F4fRunConfigStore.get(context)
             var successCount = 0
             var errorCount = 0
@@ -112,16 +148,23 @@ class F4fInstagramTaskRunner(
             }
             val numericAccountId = accountIdMap[cleanUser] ?: 0L
 
-            // Gọi quickSwitchAccount để đồng bộ phiên Instagram trên F4F
+            // Đồng bộ phiên Instagram trên F4F
             F4fApiClient.quickSwitchAccount(token, "instagram")
 
             while (coroutineContext.isActive && F4fInstagramManager.isRunning(cleanUser)) {
                 try {
-                    onStatusUpdate("Đang lấy job Instagram...")
+                    // Kiểm tra mục tiêu số lượng hoàn thành
+                    if (cfg.targetTaskCount in 1..successCount) {
+                        onStatusUpdate("Đã hoàn thành mục tiêu $successCount job!")
+                        F4fInstagramManager.stop(cleanUser)
+                        break
+                    }
+
+                    onStatusUpdate("Đang lấy nhiệm vụ Follow...")
                     val jobRes = F4fApiClient.getEarnJob(
                         rawToken = token,
                         platform = "instagram",
-                        typeJob = if (cfg.enableFollow) "follow" else "like",
+                        typeJob = "follow",
                         uid = cleanUser
                     )
 
@@ -130,12 +173,15 @@ class F4fInstagramTaskRunner(
                         is F4fApiResult.Error -> {
                             consecutiveFails++
                             val msg = jobRes.message
-                            val delaySec = cfg.delaySeconds.coerceAtLeast(5)
-                            onStatusUpdate("Chưa có job: $msg (Chờ ${delaySec}s)")
-                            delay(delaySec * 1000L)
+                            val delaySec = cfg.getTaskWaitSeconds.coerceAtLeast(cfg.delaySeconds).coerceAtLeast(3)
+                            for (s in delaySec downTo 1) {
+                                if (!coroutineContext.isActive || !F4fInstagramManager.isRunning(cleanUser)) break
+                                onStatusUpdate("Chưa có job: $msg (Thử lại sau ${s}s...)")
+                                delay(1000L)
+                            }
                             if (consecutiveFails >= cfg.errorSwapCount && cfg.autoSwapOnError) {
-                                onStatusUpdate("Tạm dừng: Gặp lỗi liên tiếp $consecutiveFails lần")
-                                onErrorDetail(cleanUser, "Dừng do gặp lỗi liên tiếp $consecutiveFails lần: $msg")
+                                onStatusUpdate("Tạm dừng: Lỗi liên tiếp $consecutiveFails lần")
+                                onErrorDetail(cleanUser, "Dừng do không có nhiệm vụ hoặc lỗi liên tiếp $consecutiveFails lần: $msg")
                                 F4fInstagramManager.stop(cleanUser)
                                 break
                             }
@@ -155,31 +201,36 @@ class F4fInstagramTaskRunner(
                     val targetObjectId = job.objectId.ifBlank {
                         job.targetLink.trim().removeSuffix("/").substringAfterLast("/")
                     }
+                    val targetUsername = job.targetLink.trim().removeSuffix("/").substringAfterLast("/")
+                    val displayTarget = if (targetUsername.isNotBlank()) "@$targetUsername" else "nhiệm vụ"
 
-                    onStatusUpdate("Đang làm job #${job.jobId} (${job.typeJob})...")
-
-                    // Thực hiện tương tác trên Instagram
-                    val actionOk = if (job.typeJob.equals("like", ignoreCase = true)) {
+                    // Bước 1: Thực hiện tương tác Follow bằng 100% logic TA Tool
+                    onStatusUpdate("Đang Follow $displayTarget...")
+                    val actionResult = if (job.typeJob.equals("like", ignoreCase = true)) {
                         runner.doLike(job.targetLink)
                     } else {
-                        runner.doFollow(job.targetLink, targetUid)
+                        runner.doFollow(
+                            targetNumericId = targetObjectId.ifBlank { targetUid },
+                            targetUsername = targetUsername,
+                            targetUrl = job.targetLink
+                        )
                     }
 
-                    if (!actionOk) {
+                    if (!actionResult.isSuccess) {
                         errorCount++
                         consecutiveFails++
-                        val err = "Lỗi tương tác Instagram (Link: ${job.targetLink})"
-                        onProgressUpdate("Lỗi tương tác Instagram", successCount, errorCount)
+                        val err = actionResult.errorMessage ?: "Lỗi tương tác Instagram (Link: ${job.targetLink})"
+                        onProgressUpdate("Lỗi: $err", successCount, errorCount)
                         onErrorDetail(cleanUser, err)
 
-                        // Tự động báo cáo lỗi và bỏ qua job trên F4F
+                        // Báo cáo lỗi và bỏ qua nhiệm vụ trên F4F
                         F4fApiClient.reportJob(
                             rawToken = token,
                             jobId = job.jobId,
                             accountId = effAccountId,
                             uid = targetUid,
                             objectId = targetObjectId,
-                            message = "Link không mở được hoặc lỗi tương tác",
+                            message = err,
                             type = "instagram"
                         )
                         F4fApiClient.skipJob(
@@ -193,23 +244,32 @@ class F4fInstagramTaskRunner(
 
                         if (consecutiveFails >= cfg.errorSwapCount && cfg.autoSwapOnError) {
                             onStatusUpdate("Tạm dừng: Gặp lỗi liên tiếp $consecutiveFails lần")
-                            onErrorDetail(cleanUser, "Dừng do gặp lỗi liên tiếp $consecutiveFails lần.")
+                            onErrorDetail(cleanUser, "Dừng do gặp lỗi liên tiếp $consecutiveFails lần: $err")
                             F4fInstagramManager.stop(cleanUser)
                             break
                         }
 
-                        delay(cfg.delaySeconds * 1000L)
+                        val waitSec = cfg.getTaskWaitSeconds.coerceAtLeast(3)
+                        for (s in waitSec downTo 1) {
+                            if (!coroutineContext.isActive || !F4fInstagramManager.isRunning(cleanUser)) break
+                            onStatusUpdate("Nghỉ chờ sau lỗi: ${s}s...")
+                            delay(1000L)
+                        }
                         continue
                     }
 
-                    // Chờ delay cấu hình trước khi gửi xác nhận nhận xu
-                    for (s in (cfg.delaySeconds.coerceAtLeast(3)) downTo 1) {
+                    // Bước 2: Đếm ngược thời gian làm nhiệm vụ theo cấu hình (workSeconds)
+                    val workSec = cfg.workSeconds.coerceAtLeast(1)
+                    for (s in workSec downTo 1) {
                         if (!coroutineContext.isActive || !F4fInstagramManager.isRunning(cleanUser)) break
-                        onStatusUpdate("Job #${job.jobId}: Chờ ${s}s xác nhận...")
+                        onStatusUpdate("Đang làm $displayTarget (Chờ ${s}s...)")
                         delay(1000L)
                     }
 
-                    onStatusUpdate("Đang nhận thưởng job #${job.jobId}...")
+                    if (!coroutineContext.isActive || !F4fInstagramManager.isRunning(cleanUser)) break
+
+                    // Bước 3: Báo cáo hoàn thành để nhận xu
+                    onStatusUpdate("Đang báo cáo hoàn thành nhận xu...")
                     val claimRes = F4fApiClient.completeJob(
                         rawToken = token,
                         jobId = job.jobId,
@@ -226,7 +286,7 @@ class F4fInstagramTaskRunner(
                             val balanceNow = F4fAccountStore.getPoints(context) + reward
                             F4fAccountStore.updatePoints(context, balanceNow)
                             F4fSession.points.value = balanceNow
-                            onProgressUpdate("Hoàn thành: +$reward xu", successCount, errorCount)
+                            onProgressUpdate("Hoàn thành: +$reward xu (Job $successCount)", successCount, errorCount)
                         }
                         is F4fApiResult.Error -> {
                             errorCount++
@@ -235,7 +295,6 @@ class F4fInstagramTaskRunner(
                             onProgressUpdate(err, successCount, errorCount)
                             onErrorDetail(cleanUser, err)
 
-                            // Tự động bỏ qua job bị từ chối để không nghẽn luồng
                             F4fApiClient.skipJob(
                                 rawToken = token,
                                 jobId = job.jobId,
@@ -247,14 +306,12 @@ class F4fInstagramTaskRunner(
                         }
                     }
 
-                    val delaySec = (cfg.delayMinSeconds..cfg.delayMaxSeconds.coerceAtLeast(cfg.delayMinSeconds)).random()
-                    onStatusUpdate("Chờ ${delaySec}s chuyển job tiếp...")
-                    delay(delaySec * 1000L)
-
-                    if (cfg.targetTaskCount in 1..successCount) {
-                        onStatusUpdate("Đã đạt mục tiêu $successCount job!")
-                        F4fInstagramManager.stop(cleanUser)
-                        break
+                    // Bước 4: Đếm ngược thời gian nghỉ giãn cách trước khi lấy job tiếp theo
+                    val restSec = cfg.getTaskWaitSeconds.coerceAtLeast(1)
+                    for (s in restSec downTo 1) {
+                        if (!coroutineContext.isActive || !F4fInstagramManager.isRunning(cleanUser)) break
+                        onStatusUpdate("Nghỉ giãn cách: ${s}s...")
+                        delay(1000L)
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     onStatusUpdate("Đã tạm dừng")
@@ -264,87 +321,159 @@ class F4fInstagramTaskRunner(
                     val err = "Ngoại lệ: ${e.message}"
                     onProgressUpdate("Lỗi: $err", successCount, errorCount)
                     onErrorDetail(cleanUser, err)
-                    delay(5000L)
+                    delay(3000L)
                 }
             }
         }
     }
 
-    private suspend fun doFollow(targetUrl: String, targetUid: String = ""): Boolean = withContext(Dispatchers.IO) {
-        if (targetUid.isNotBlank()) {
-            try {
-                val igRes = IgTaToolClient.follow(
-                    client = client,
-                    rawCookie = cookie,
-                    targetId = targetUid,
-                    profileUrl = targetUrl
-                )
-                if (igRes.contains("\"following\":true") || igRes.contains("xdt_create_friendship") || igRes.contains("\"status\":\"ok\"")) {
-                    return@withContext true
-                }
-            } catch (_: Exception) {}
-        }
-
-        val targetUser = targetUrl.trim().removeSuffix("/").substringAfterLast("/")
-        if (targetUser.isBlank()) return@withContext false
-
-        val tokens = extractTokensFromCookie(cookie)
-        val csrf = tokens["csrftoken"].orEmpty()
-
+    /**
+     * Tra cứu numeric UID của tài khoản đích Instagram từ username thông qua topsearch API chuẩn TA Tool.
+     */
+    private fun resolveTargetUid(targetUsername: String): String? {
+        val clean = targetUsername.trim().removePrefix("@").trim('/').substringAfterLast('/')
+        if (clean.isBlank()) return null
         val req = Request.Builder()
-            .url("https://www.instagram.com/api/v1/friendships/create/${if (targetUid.isNotBlank()) targetUid else targetUser}/")
-            .post("".toRequestBody(JSON_TYPE))
-            .header("Cookie", cookie)
-            .header("X-CSRFToken", csrf)
+            .url("https://www.instagram.com/web/search/topsearch/?context=blended&query=$clean")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .header("X-IG-App-ID", "936619743392459")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .header("Referer", "https://www.instagram.com/$targetUser/")
-            .build()
+            .header("Cookie", cookie)
+            .get().build()
+        val jsonStr = try {
+            client.newCall(req).execute().use { it.body?.string() }
+        } catch (_: Exception) { null } ?: return null
 
-        try {
-            client.newCall(req).execute().use { response ->
-                response.isSuccessful || response.code == 200
+        return try {
+            val root = JSONObject(jsonStr)
+            val users = root.optJSONArray("users") ?: return null
+            for (i in 0 until users.length()) {
+                val u = users.getJSONObject(i).optJSONObject("user") ?: continue
+                if (u.optString("username").equals(clean, ignoreCase = true)) {
+                    val pk = u.optString("pk")
+                    if (pk.isNotBlank()) return pk
+                    val id = u.optString("id")
+                    if (id.isNotBlank()) return id
+                }
             }
-        } catch (_: Exception) {
-            false
-        }
+            null
+        } catch (_: Exception) { null }
     }
 
-    private suspend fun doLike(targetUrl: String): Boolean = withContext(Dispatchers.IO) {
-        val shortcode = extractShortcode(targetUrl) ?: return@withContext false
-        val mediaId = shortcodeToMediaId(shortcode) ?: return@withContext false
-
+    /**
+     * Phân tích kết quả Instagram từ chối hay thành công chuẩn 100% TA Tool.
+     */
+    private fun parseIgResult(rawBody: String, defaultActionName: String): IgActionResult {
+        if (rawBody.isBlank()) {
+            return IgActionResult(false, 0, "", "Phản hồi rỗng từ Instagram")
+        }
+        var cleanBody = rawBody.trim()
+        if (cleanBody.startsWith("for (;;);")) {
+            cleanBody = cleanBody.removePrefix("for (;;);").trim()
+        }
         try {
-            val tymRes = IgTaToolClient.tym(
-                client = client,
-                rawCookie = cookie,
-                mediaId = mediaId,
-                linkJob = targetUrl
-            )
-            if (tymRes.contains("\"status\":\"ok\"") || tymRes.contains("\"viewer_has_liked\":true")) {
-                return@withContext true
+            val root = JSONObject(cleanBody)
+
+            // 1. Kiểm tra lỗi chặn tính năng (Feedback required)
+            val message = root.optString("message", "")
+            val feedbackTitle = root.optString("feedback_title", "")
+            val feedbackMsg = root.optString("feedback_message", "")
+            if (message.contains("feedback_required", ignoreCase = true) || root.optBoolean("feedback_required", false)) {
+                val detail = if (feedbackMsg.isNotBlank()) feedbackMsg else if (feedbackTitle.isNotBlank()) feedbackTitle else "Tài khoản bị Instagram chặn tạm thời tính năng này"
+                return IgActionResult(false, 429, rawBody, "Chặn tính năng: $detail")
+            }
+            if (message.contains("checkpoint_required", ignoreCase = true) || root.has("checkpoint_url")) {
+                return IgActionResult(false, 403, rawBody, "Tài khoản dính Checkpoint Instagram")
+            }
+            if (message.contains("login_required", ignoreCase = true)) {
+                return IgActionResult(false, 401, rawBody, "Cookie DIE / Yêu cầu đăng nhập lại")
+            }
+
+            // 2. Kiểm tra lỗi GraphQL của Meta
+            val errors = root.optJSONArray("errors")
+            if (errors != null && errors.length() > 0) {
+                val errObj = errors.optJSONObject(0)
+                val errMsg = errObj?.optString("message", "") ?: ""
+                val errCode = errObj?.optInt("code", 0) ?: 0
+                val friendlyMsg = when (errCode) {
+                    1357004 -> "Chặn tính năng tương tác (Mã 1357004)"
+                    1357001 -> "Cookie hết hạn / Lỗi phiên (Mã 1357001)"
+                    else -> if (errMsg.isNotBlank()) errMsg else "Lỗi GraphQL Meta ($errCode)"
+                }
+                return IgActionResult(false, 400, rawBody, friendlyMsg)
+            }
+
+            // 3. Kiểm tra thành công cụ thể
+            val data = root.optJSONObject("data")
+            val friendship = data?.optJSONObject("xdt_create_friendship")
+            val status = friendship?.optJSONObject("friendship_status")
+            if (status?.optBoolean("following") == true || status?.optBoolean("outgoing_request") == true) {
+                return IgActionResult(true, 200, rawBody, null)
+            }
+            val likeMedia = data?.optJSONObject("xdt_like_media")
+            if (likeMedia != null && (likeMedia.optString("status").equals("ok", true) || likeMedia.has("client_mutation_id"))) {
+                return IgActionResult(true, 200, rawBody, null)
+            }
+            if (root.optString("status").equals("ok", true) || root.optBoolean("viewer_has_liked", false)) {
+                return IgActionResult(true, 200, rawBody, null)
             }
         } catch (_: Exception) {}
 
-        val tokens = extractTokensFromCookie(cookie)
-        val csrf = tokens["csrftoken"].orEmpty()
-
-        val req = Request.Builder()
-            .url("https://www.instagram.com/api/v1/web/likes/$mediaId/like/")
-            .post("".toRequestBody(JSON_TYPE))
-            .header("Cookie", cookie)
-            .header("X-CSRFToken", csrf)
-            .header("X-IG-App-ID", "936619743392459")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .header("Referer", targetUrl)
-            .build()
-
-        try {
-            client.newCall(req).execute().use { response ->
-                response.isSuccessful || response.code == 200
-            }
-        } catch (_: Exception) {
-            false
+        // Fallback kiểm tra chuỗi (Chỉ khi không dính lỗi fail)
+        val hasFail = cleanBody.contains("\"status\":\"fail\"") || cleanBody.contains("\"status\": \"fail\"")
+        if (!hasFail && (cleanBody.contains("\"following\":true") || cleanBody.contains("\"viewer_has_liked\":true") || cleanBody.contains("\"status\":\"ok\"") || cleanBody.contains("\"status\": \"ok\""))) {
+            return IgActionResult(true, 200, rawBody, null)
         }
+        if (cleanBody.contains("feedback_required", ignoreCase = true)) {
+            return IgActionResult(false, 429, rawBody, "Chặn tính năng (feedback_required)")
+        }
+        if (cleanBody.contains("checkpoint", ignoreCase = true)) {
+            return IgActionResult(false, 403, rawBody, "Dính Checkpoint Instagram")
+        }
+        if (cleanBody.contains("login_required", ignoreCase = true)) {
+            return IgActionResult(false, 401, rawBody, "Cookie DIE / Yêu cầu đăng nhập")
+        }
+
+        return IgActionResult(false, 400, rawBody, "Instagram từ chối ($defaultActionName)")
+    }
+
+    /**
+     * Follow 100% logic TA Tool (IgTaToolClient.follow + parseIgResult)
+     */
+    fun doFollow(targetNumericId: String, targetUsername: String, targetUrl: String = ""): IgActionResult {
+        var uid = targetNumericId.trim()
+        if (!uid.all { it.isDigit() } || uid.isBlank()) {
+            val extracted = if (targetUrl.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(client, cookie, targetUrl) else null
+            uid = extracted ?: resolveTargetUid(targetUsername) ?: targetNumericId
+        }
+        val cleanTargetUser = targetUsername.trim().trim('/').substringAfterLast('/')
+        val profileUrl = if (targetUrl.isNotBlank()) targetUrl else if (cleanTargetUser.isNotBlank()) "https://www.instagram.com/$cleanTargetUser/" else "https://www.instagram.com/"
+        val resBody = IgTaToolClient.follow(
+            client = client,
+            rawCookie = cookie,
+            targetId = uid,
+            profileUrl = profileUrl,
+            cachedDtsg = fbDtsg,
+            cachedLsd = lsd,
+            userId = userId
+        )
+        return parseIgResult(resBody, "Follow")
+    }
+
+    /**
+     * Like 100% logic TA Tool (IgTaToolClient.tym + parseIgResult)
+     */
+    fun doLike(targetUrl: String): IgActionResult {
+        val shortcode = extractShortcode(targetUrl) ?: return IgActionResult(false, 400, "", "Không trích xuất được Shortcode từ link")
+        val mediaId = shortcodeToMediaId(shortcode) ?: return IgActionResult(false, 400, "", "Không đổi được Shortcode sang MediaId")
+        val resBody = IgTaToolClient.tym(
+            client = client,
+            rawCookie = cookie,
+            mediaId = mediaId,
+            linkJob = targetUrl,
+            cachedDtsg = fbDtsg,
+            cachedLsd = lsd,
+            userId = userId
+        )
+        return parseIgResult(resBody, "Like")
     }
 }

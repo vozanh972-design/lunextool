@@ -23,6 +23,9 @@ data class F4fRunConfig(
     @SerializedName("autoSwapOnError") val autoSwapOnError: Boolean = true,
     @SerializedName("errorSwapCount") val errorSwapCount: Int = 3,
     @SerializedName("swipeBeforeGetJob") val swipeBeforeGetJob: Boolean = false,
+    @SerializedName("getTaskWaitSeconds") val getTaskWaitSeconds: Int = 5,
+    @SerializedName("workSeconds") val workSeconds: Int = 10,
+    @SerializedName("stopAfterEmptyTimes") val stopAfterEmptyTimes: Int = 3,
 )
 
 @Keep

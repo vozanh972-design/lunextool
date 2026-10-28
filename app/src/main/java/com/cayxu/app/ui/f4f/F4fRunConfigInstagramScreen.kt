@@ -59,7 +59,7 @@ enum class F4fIgTaskMode(val title: String, val subtitle: String?) {
 }
 
 data class F4fRunConfigInstagramUiState(
-    val mode: F4fIgTaskMode = F4fIgTaskMode.Random,
+    val mode: F4fIgTaskMode = F4fIgTaskMode.FollowOnly,
     val getTaskWaitSeconds: String = "5",
     val workSeconds: String = "10",
     val taskCount: String = "",
@@ -96,10 +96,7 @@ fun F4fRunConfigInstagramScreen(
             PlatformBadge(R.drawable.ic_platform_instagram, "Instagram")
 
             CardSection(title = "CHẾ ĐỘ NHIỆM VỤ") {
-                F4fIgTaskMode.entries.forEachIndexed { i, m ->
-                    if (i > 0) DividerLine()
-                    ModeRow(mode = m, selected = state.mode == m, onClick = { onModeChange(m) })
-                }
+                ModeRow(mode = F4fIgTaskMode.FollowOnly, selected = true, onClick = { onModeChange(F4fIgTaskMode.FollowOnly) })
             }
 
             CardSection(title = "THỜI GIAN CHỜ") {
