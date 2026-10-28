@@ -977,22 +977,24 @@ private fun GolikeInstagramAccountRow(
 
                 Spacer(Modifier.weight(1f))
 
-                // Nút chấm than đỏ (!) cùng hàng ở phía bên phải
-                PressBox(
-                    onClick = onErrorClick,
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFFDECEC))
-                        .border(1.dp, Color(0xFFFCA5A5), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    SvgIcon(
-                        paths = AlertCircle,
-                        size = 16.dp,
-                        color = Color(0xFFDC2626),
-                        strokeWidth = 2.2f
-                    )
+                // CHỈ hiển thị nút chấm than đỏ (!) khi thực sự có lỗi (Lỗi > 0 hoặc trạng thái có lỗi)
+                if (errorCount > 0 || liveStatus.contains("Lỗi", ignoreCase = true)) {
+                    PressBox(
+                        onClick = onErrorClick,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFDECEC))
+                            .border(1.dp, Color(0xFFFCA5A5), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        SvgIcon(
+                            paths = AlertCircle,
+                            size = 16.dp,
+                            color = Color(0xFFDC2626),
+                            strokeWidth = 2.2f
+                        )
+                    }
                 }
             }
         }

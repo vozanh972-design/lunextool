@@ -307,6 +307,7 @@ object GolikeAccountsStore {
 
     fun getApiClient(context: Context): GolikeApiClient {
         GolikeWasmSigner.init(context)
+        val rawUid = getUserId(context)
         return GolikeApiClient(
             authToken = getToken(context),
             tToken = getTToken(context),
@@ -320,8 +321,9 @@ object GolikeAccountsStore {
             webVersionText = getWebVersionText(context),
             webData = getWebData(context),
             signingKey = getSigningKey(context),
-            userId = getUserId(context).toLongOrNull(),
-            context = context
+            userId = rawUid.toLongOrNull(),
+            context = context,
+            userUid = rawUid.takeIf { it.isNotBlank() }
         )
     }
 

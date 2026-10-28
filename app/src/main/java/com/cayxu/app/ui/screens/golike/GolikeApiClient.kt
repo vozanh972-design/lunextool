@@ -35,10 +35,10 @@ class GolikeApiClient(
     var webData: String? = null,
     var signingKey: String? = null,
     var userId: Long? = null,
-    var context: Context? = null
+    var context: Context? = null,
+    var userUid: String? = null
 ) {
     var lastTokenError: String? = null
-    var userUid: String? = null
     var serverTimeOffset: Long = 0L
 
     companion object {
@@ -94,7 +94,8 @@ class GolikeApiClient(
         webData: String? = null,
         signingKey: String? = null,
         userId: Long? = null,
-        context: Context? = null
+        context: Context? = null,
+        userUid: String? = null
     ) {
         this.authToken = if (authToken.startsWith("Bearer ", ignoreCase = true)) authToken else "Bearer $authToken"
         this.tToken = tToken
@@ -110,6 +111,7 @@ class GolikeApiClient(
         this.signingKey = signingKey ?: this.signingKey
         this.userId = userId ?: this.userId
         this.context = context ?: this.context
+        this.userUid = userUid ?: this.userUid
     }
 
     private fun safeHeader(value: String?): String? {
@@ -659,8 +661,8 @@ class GolikeApiClient(
 
         // Đảm bảo có userId hợp lệ trước khi sinh chữ ký WASM (hỗ trợ cả chuỗi ULID lẫn Long)
         val effectiveUid: Any = this.userUid?.takeIf { it.isNotBlank() }
-            ?: (if ((userId ?: 0L) > 0L) userId!! else null)
             ?: GolikeAccountsStore.getUserId(ctx).takeIf { it.isNotBlank() }
+            ?: (if ((userId ?: 0L) > 0L) userId!! else null)
             ?: try {
                 val meRes = getMe()
                 val fetchedStr = meRes?.optJSONObject("data")?.optString("id")?.takeIf { it.isNotBlank() }
