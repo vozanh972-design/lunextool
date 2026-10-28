@@ -52,6 +52,7 @@ fun F4fAccountScreen(navController: NavController) {
     val igStatusMap = F4fInstagramManager.statusMap
     val igSuccessCountMap = F4fInstagramManager.successCountMap
     val igErrorCountMap = F4fInstagramManager.errorCountMap
+    val igLastErrorDetail = F4fInstagramManager.lastErrorDetail
     var isAnyRunningState by remember { mutableStateOf(false) }
     val isAnyRunning = isAnyRunningState || isOverlayRunning || isRunnerRunning || igRunningAccounts.isNotEmpty() || F4fInstagramManager.isAnyRunning()
 
