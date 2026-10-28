@@ -485,8 +485,8 @@ class GolikeApiClient(
             .header("g-auth", dynamicGAuth)
 
         onStatus("Đang lấy token nhận việc IG (sig)...")
-        val res = execute(reqBuilder.build())
-        val directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
+        var res = execute(reqBuilder.build())
+        var directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
             ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
@@ -496,10 +496,37 @@ class GolikeApiClient(
             return directToken
         }
 
-        // Tự động giải ngầm nếu gặp Captcha
-        val action = res?.optString("action")
-        val reason = res?.optString("reason")
-        val message = res?.optString("message").orEmpty()
+        var action = res?.optString("action")
+        var reason = res?.optString("reason")
+        var message = res?.optString("message").orEmpty()
+
+        // 1. Tự động làm mới session nếu server yêu cầu retry/rejected (chuẩn Web Golike nM và fc)
+        if (action == "retry" || reason == "rejected") {
+            onStatus("Làm mới session bảo mật Golike...")
+            createSecuritySession()
+            val retryBodyStr = reqPayload.toString()
+            val retryGAuth = generateGAuth(retryBodyStr, path = GolikeNativeBridge.fetchPathToken())
+            if (!retryGAuth.isNullOrBlank()) {
+                val retryReq = newRequestBuilder("$SECURITY_URL/token")
+                    .post(retryBodyStr.toRequestBody(JSON_MEDIA_TYPE))
+                    .header("g-auth", retryGAuth)
+                    .build()
+                res = execute(retryReq)
+                directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
+                    ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
+                    ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
+                    ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+                if (directToken != null) {
+                    lastTokenError = null
+                    return directToken
+                }
+                action = res?.optString("action")
+                reason = res?.optString("reason")
+                message = res?.optString("message").orEmpty()
+            }
+        }
+
+        // 2. Tự động giải ngầm nếu gặp Captcha
         if (action == "captcha" || reason == "captcha" || message.contains("xác minh", ignoreCase = true)) {
             onStatus("🛡️ Golike yêu cầu Captcha -> Đang tự động giải ngầm...")
             val solved = solveCaptchaChallenge(onStatus)
@@ -552,15 +579,13 @@ class GolikeApiClient(
         var res = execute(reqBuilder.get().build())
         var code = res?.optInt("http code", res.optInt("http_code", res.optInt("status", 0))) ?: 0
 
-        // Fallback thử lại nếu Gateway trả về 403 (Đồng bộ cả Path lẫn URL)
+        // Fallback thử lại nếu Gateway trả về 403 (Đổi path xin lại sig, giữ nguyên 100% URL Gateway chuẩn)
         if (code == 403) {
             onStatus("Chữ ký cần tạo lại -> Đang lấy lại chữ ký...")
             currentPath = "/advertising/publishers/instagram/jobs"
             val fallbackSig = getInstagramSecurityTokenForGetJob(numAccId, path = currentPath, onStatus = onStatus)
             if (!fallbackSig.isNullOrBlank()) {
-                val gatewayHost = BASE_URL.removeSuffix("/api")
-                val fallbackUrl = "$gatewayHost/advertising/publishers/instagram/jobs?instagram_account_id=$numAccId&data=null"
-                reqBuilder = newRequestBuilder(fallbackUrl).header("sig", fallbackSig)
+                reqBuilder = newRequestBuilder(url).header("sig", fallbackSig)
                 res = execute(reqBuilder.get().build())
                 code = res?.optInt("http code", res.optInt("http_code", res.optInt("status", 0))) ?: 0
             }
@@ -944,8 +969,8 @@ class GolikeApiClient(
             reqBuilder.header("g-auth", dynamicGAuth)
         }
 
-        val res = execute(reqBuilder.build())
-        val directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
+        var res = execute(reqBuilder.build())
+        var directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
             ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
             ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
@@ -955,10 +980,37 @@ class GolikeApiClient(
             return directToken
         }
 
-        // Tự động giải ngầm nếu gặp Captcha
-        val action = res?.optString("action")
-        val reason = res?.optString("reason")
-        val message = res?.optString("message").orEmpty()
+        var action = res?.optString("action")
+        var reason = res?.optString("reason")
+        var message = res?.optString("message").orEmpty()
+
+        // 1. Tự động làm mới session nếu server yêu cầu retry/rejected khi hoàn thành job
+        if (action == "retry" || reason == "rejected") {
+            onStatus("Làm mới session bảo mật Golike...")
+            createSecuritySession()
+            val retryBodyStr = reqPayload.toString()
+            val retryGAuth = generateGAuth(retryBodyStr, path = GolikeNativeBridge.fetchPathToken())
+            if (!retryGAuth.isNullOrBlank()) {
+                val retryReq = newRequestBuilder("$SECURITY_URL/token")
+                    .post(retryBodyStr.toRequestBody(JSON_MEDIA_TYPE))
+                    .header("g-auth", retryGAuth)
+                    .build()
+                res = execute(retryReq)
+                directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
+                    ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
+                    ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
+                    ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+                if (directToken != null) {
+                    lastTokenError = null
+                    return directToken
+                }
+                action = res?.optString("action")
+                reason = res?.optString("reason")
+                message = res?.optString("message").orEmpty()
+            }
+        }
+
+        // 2. Tự động giải ngầm nếu gặp Captcha
         if (action == "captcha" || reason == "captcha" || message.contains("xác minh", ignoreCase = true)) {
             onStatus("🛡️ Golike yêu cầu Captcha khi hoàn thành IG -> Đang tự động giải ngầm...")
             val solved = solveCaptchaChallenge(onStatus)
