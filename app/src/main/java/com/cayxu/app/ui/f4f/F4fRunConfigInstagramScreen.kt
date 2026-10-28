@@ -160,7 +160,17 @@ fun F4fRunConfigInstagramScreen(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Alx.Bg)
                 .navigationBarsPadding().padding(horizontal = 20.dp, vertical = 16.dp),
         ) {
-            PrimaryButton(text = "Lưu cấu hình", onClick = onSave, color = Color(0xFFC2255C))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color(0xFFC2255C))
+                    .clickable(role = Role.Button, onClick = onSave),
+                contentAlignment = Alignment.Center
+            ) {
+                BasicText("Lưu cấu hình", style = type(16f, FontWeight.Bold, Alx.White))
+            }
         }
     }
 }
