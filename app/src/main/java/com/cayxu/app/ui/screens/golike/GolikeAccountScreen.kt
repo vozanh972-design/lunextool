@@ -1330,9 +1330,15 @@ fun GolikeAccountScreen(navController: NavController) {
                             errMsg
                         }
 
-                        GolikeRunningManager.statusMap[acc.id] = "Chưa có job: $errMsg (Chờ ${cfg.delayMinSeconds}s...)"
+                        val isRealError = errCode >= 400 || !client.lastTokenError.isNullOrBlank() || errMsg.contains("từ chối", ignoreCase = true) || errMsg.contains("lỗi", ignoreCase = true)
+                        if (isRealError) {
+                            GolikeRunningManager.errorCountMap[acc.id] = (GolikeRunningManager.errorCountMap[acc.id] ?: acc.errorCount) + 1
+                            GolikeRunningManager.statusMap[acc.id] = "Lỗi: $errMsg (Chờ ${cfg.delayMinSeconds}s...)"
+                        } else {
+                            GolikeRunningManager.statusMap[acc.id] = "Chưa có job: $errMsg (Chờ ${cfg.delayMinSeconds}s...)"
+                        }
                         GolikeRunningManager.lastErrorDetailMap[acc.id] = diagnosticDetail
-                        GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = null, errorDetail = diagnosticDetail)
+                        GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = if (isRealError) false else null, errorDetail = diagnosticDetail)
 
                         if (cfg.autoSwitchOnFail && consecutiveFails >= cfg.failJobCountToSwitchAccount) {
                             GolikeRunningManager.statusMap[acc.id] = "Tạm dừng: Gặp lỗi liên tiếp $consecutiveFails lần"

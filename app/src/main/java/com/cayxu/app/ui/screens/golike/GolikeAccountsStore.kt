@@ -89,8 +89,14 @@ object GolikeAccountsStore {
             prefs(context).getString(KEY_T_TOKEN, "").orEmpty()
         }
 
-    fun getDeviceId(context: Context): String =
-        prefs(context).getString(KEY_DEVICE_ID, "").orEmpty()
+    fun getDeviceId(context: Context): String {
+        var dev = prefs(context).getString(KEY_DEVICE_ID, "")?.trim().orEmpty()
+        if (dev.isBlank()) {
+            dev = java.util.UUID.randomUUID().toString()
+            prefs(context).edit().putString(KEY_DEVICE_ID, dev).apply()
+        }
+        return dev
+    }
 
     fun getGAuth(context: Context): String =
         prefs(context).getString(KEY_G_AUTH, "").orEmpty()

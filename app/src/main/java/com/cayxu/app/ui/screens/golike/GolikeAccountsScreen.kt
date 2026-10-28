@@ -977,8 +977,11 @@ private fun GolikeInstagramAccountRow(
 
                 Spacer(Modifier.weight(1f))
 
-                // CHỈ hiển thị nút chấm than đỏ (!) khi thực sự có lỗi (Lỗi > 0 hoặc trạng thái có lỗi)
-                if (errorCount > 0 || liveStatus.contains("Lỗi", ignoreCase = true)) {
+                // Hiển thị nút chấm than đỏ (!) khi có lỗi hoặc có chi tiết lỗi ghi nhận
+                val hasErrorDetail = !com.cayxu.app.ui.screens.golike.GolikeRunningManager.lastErrorDetailMap[account.id].isNullOrBlank() ||
+                        !com.cayxu.app.ui.screens.golike.GolikeRunningManager.lastErrorDetailMap[account.username].isNullOrBlank() ||
+                        account.lastErrorDetail.isNotBlank()
+                if (errorCount > 0 || hasErrorDetail || liveStatus.contains("Lỗi", ignoreCase = true) || liveStatus.contains("Chưa có job", ignoreCase = true)) {
                     PressBox(
                         onClick = onErrorClick,
                         modifier = Modifier

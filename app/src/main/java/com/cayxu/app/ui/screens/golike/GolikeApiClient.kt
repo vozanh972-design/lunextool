@@ -513,6 +513,7 @@ class GolikeApiClient(
         // 1. Tự động làm mới session nếu server yêu cầu retry/rejected (chuẩn Web Golike nM và fc)
         if (action == "retry" || reason == "rejected") {
             onStatus("Làm mới session bảo mật Golike...")
+            this.signingKey = null
             createSecuritySession()
             val retryBodyStr = reqPayload.toString()
             val retryGAuth = generateGAuth(retryBodyStr, path = GolikeNativeBridge.fetchPathToken())
@@ -685,7 +686,8 @@ class GolikeApiClient(
                 .joinToString("") { "%02x".format(it) }
 
             val timestamp = System.currentTimeMillis() + serverTimeOffset
-            val devId = deviceId.orEmpty().ifBlank { "98ecbe1b-e52d-4537-8cfb-ae5f9d7f0237" }
+            val devId = deviceId?.takeIf { it.isNotBlank() }
+                ?: GolikeAccountsStore.getDeviceId(ctx)
 
             val randBytes = ByteArray(16)
             SecureRandom().nextBytes(randBytes)
@@ -993,6 +995,7 @@ class GolikeApiClient(
         // 1. Tự động làm mới session nếu server yêu cầu retry/rejected khi hoàn thành job
         if (action == "retry" || reason == "rejected") {
             onStatus("Làm mới session bảo mật Golike...")
+            this.signingKey = null
             createSecuritySession()
             val retryBodyStr = reqPayload.toString()
             val retryGAuth = generateGAuth(retryBodyStr, path = GolikeNativeBridge.fetchPathToken())
