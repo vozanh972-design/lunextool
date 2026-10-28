@@ -42,6 +42,8 @@ data class F4fJobInfo(
     @SerializedName("rewardCoins") val rewardCoins: Long = 0L,
     @SerializedName("accountId") val accountId: Long = 0L,
     @SerializedName("originalData") val originalData: String = "",
+    @SerializedName("uid") val uid: String = "",
+    @SerializedName("objectId") val objectId: String = "",
 )
 
 sealed class F4fApiResult<out T> {
@@ -311,6 +313,9 @@ object F4fApiClient {
                             ?: 0L
 
                         val actualTypeJob = jobObj.get("type_job")?.asString ?: typeJob
+                        val itemAccountId = jobObj.get("account_id")?.asLong ?: activeAccountId
+                        val itemUid = jobObj.get("uid")?.asString.orEmpty()
+                        val itemObjectId = jobObj.get("object_id")?.asString.orEmpty()
 
                         if (jobId > 0L && link.isNotBlank()) {
                             jobList.add(
@@ -320,8 +325,10 @@ object F4fApiClient {
                                     type = platform,
                                     typeJob = actualTypeJob,
                                     rewardCoins = coin,
-                                    accountId = activeAccountId,
-                                    originalData = jobObj.toString()
+                                    accountId = itemAccountId,
+                                    originalData = jobObj.toString(),
+                                    uid = itemUid,
+                                    objectId = itemObjectId
                                 )
                             )
                         }
@@ -330,6 +337,9 @@ object F4fApiClient {
                     val jobId = dataObj.get("id")?.asLong ?: 0L
                     val link = dataObj.get("link")?.asString ?: dataObj.get("url")?.asString.orEmpty()
                     val coin = dataObj.get("reward_amount")?.asString?.toLongOrNull() ?: dataObj.get("coin")?.asLong ?: 0L
+                    val itemAccountId = dataObj.get("account_id")?.asLong ?: activeAccountId
+                    val itemUid = dataObj.get("uid")?.asString.orEmpty()
+                    val itemObjectId = dataObj.get("object_id")?.asString.orEmpty()
                     if (jobId > 0L && link.isNotBlank()) {
                         jobList.add(
                             F4fJobInfo(
@@ -338,8 +348,10 @@ object F4fApiClient {
                                 type = platform,
                                 typeJob = typeJob,
                                 rewardCoins = coin,
-                                accountId = activeAccountId,
-                                originalData = dataObj.toString()
+                                accountId = itemAccountId,
+                                originalData = dataObj.toString(),
+                                uid = itemUid,
+                                objectId = itemObjectId
                             )
                         )
                     }
@@ -474,6 +486,133 @@ object F4fApiClient {
             F4fApiResult.Error("Lỗi kết nối: Vui lòng kiểm tra lại mạng WiFi/4G")
         } catch (e: Exception) {
             F4fApiResult.Error(e.message ?: "Lỗi xác nhận hoàn thành job F4F")
+        }
+    }
+
+    /**
+     * Kích hoạt chuyển đổi tài khoản chạy trên Follow4Follow:
+     * GET /user/account/quick-switch?type=<type>
+     */
+    suspend fun quickSwitchAccount(
+        rawToken: String,
+        type: String = "instagram"
+    ): F4fApiResult<Boolean> = withContext(Dispatchers.IO) {
+        val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
+        if (cleanToken.isBlank()) return@withContext F4fApiResult.Error("Chưa có token đăng nhập")
+
+        val fullUrl = "${F4fNativeBridge.fetchBaseUrl()}/user/account/quick-switch?type=$type"
+        val request = buildF4fRequest(fullUrl, cleanToken)
+            .get()
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                F4fApiResult.Success(response.isSuccessful)
+            }
+        } catch (e: Exception) {
+            F4fApiResult.Error(e.message ?: "Lỗi chuyển đổi tài khoản F4F")
+        }
+    }
+
+    /**
+     * Bỏ qua nhiệm vụ:
+     * POST /user/earn-coin/skip-job
+     * Body JSON: {"job_id": <id>, "account_id": <id>, "uid": "<target_uid>", "object_id": "<target_handle>", "type": "<type>"}
+     */
+    suspend fun skipJob(
+        rawToken: String,
+        jobId: Long,
+        accountId: Long,
+        uid: String = "",
+        objectId: String = "",
+        type: String = "instagram"
+    ): F4fApiResult<Boolean> = withContext(Dispatchers.IO) {
+        val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
+        if (cleanToken.isBlank()) return@withContext F4fApiResult.Error("Chưa có token đăng nhập")
+
+        val fullUrl = "${F4fNativeBridge.fetchBaseUrl()}/user/earn-coin/skip-job"
+        val jsonBody = JsonObject().apply {
+            addProperty("job_id", jobId)
+            addProperty("account_id", accountId)
+            addProperty("uid", uid)
+            addProperty("object_id", objectId)
+            addProperty("type", type)
+        }.toString()
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val requestBody = jsonBody.toRequestBody(mediaType)
+
+        val request = buildF4fRequest(fullUrl, cleanToken)
+            .post(requestBody)
+            .header("Content-Type", "application/json")
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string().orEmpty()
+                val json = runCatching { JsonParser.parseString(bodyStr).asJsonObject }.getOrNull()
+                val statusCode = json?.get("status_code")?.asInt ?: response.code
+                if (response.isSuccessful && statusCode == 200) {
+                    F4fApiResult.Success(true)
+                } else {
+                    val msg = json?.get("message")?.takeIf { !it.isJsonNull }?.asString.orEmpty()
+                    F4fApiResult.Error(if (msg.isNotBlank()) msg else "Lỗi bỏ qua job (Mã $statusCode)")
+                }
+            }
+        } catch (e: Exception) {
+            F4fApiResult.Error(e.message ?: "Lỗi kết nối khi bỏ qua job")
+        }
+    }
+
+    /**
+     * Báo cáo nhiệm vụ lỗi (link die, tài khoản đích bị khóa, lỗi tương tác):
+     * POST /user/earn-coin/report-job
+     * Body JSON: {"job_id": <id>, "account_id": <id>, "uid": "<target_uid>", "object_id": "<target_handle>", "type": "<type>", "message": "<msg>"}
+     */
+    suspend fun reportJob(
+        rawToken: String,
+        jobId: Long,
+        accountId: Long,
+        uid: String = "",
+        objectId: String = "",
+        message: String = "Link không mở được",
+        type: String = "instagram"
+    ): F4fApiResult<Boolean> = withContext(Dispatchers.IO) {
+        val cleanToken = rawToken.trim().removePrefix("Bearer ").trim()
+        if (cleanToken.isBlank()) return@withContext F4fApiResult.Error("Chưa có token đăng nhập")
+
+        val fullUrl = "${F4fNativeBridge.fetchBaseUrl()}/user/earn-coin/report-job"
+        val jsonBody = JsonObject().apply {
+            addProperty("job_id", jobId)
+            addProperty("account_id", accountId)
+            addProperty("uid", uid)
+            addProperty("object_id", objectId)
+            addProperty("type", type)
+            addProperty("message", message)
+        }.toString()
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val requestBody = jsonBody.toRequestBody(mediaType)
+
+        val request = buildF4fRequest(fullUrl, cleanToken)
+            .post(requestBody)
+            .header("Content-Type", "application/json")
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string().orEmpty()
+                val json = runCatching { JsonParser.parseString(bodyStr).asJsonObject }.getOrNull()
+                val statusCode = json?.get("status_code")?.asInt ?: response.code
+                if (response.isSuccessful && statusCode == 200) {
+                    F4fApiResult.Success(true)
+                } else {
+                    val msg = json?.get("message")?.takeIf { !it.isJsonNull }?.asString.orEmpty()
+                    F4fApiResult.Error(if (msg.isNotBlank()) msg else "Lỗi báo cáo job (Mã $statusCode)")
+                }
+            }
+        } catch (e: Exception) {
+            F4fApiResult.Error(e.message ?: "Lỗi kết nối khi báo cáo job")
         }
     }
 }

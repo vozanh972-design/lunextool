@@ -9,10 +9,10 @@ import kotlinx.coroutines.withContext
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
 import java.math.BigInteger
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
+import com.cayxu.app.automation.instagram.IgTaToolClient
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -96,6 +96,25 @@ class F4fInstagramTaskRunner(
 
             onStatusUpdate("Đang kết nối F4F...")
 
+            // Lấy danh sách tài khoản remote từ F4F để tra cứu account_id dạng số
+            val accountIdMap = mutableMapOf<String, Long>()
+            when (val listRes = F4fApiClient.fetchAccountList(token, "instagram")) {
+                is F4fApiResult.Success -> {
+                    listRes.data.forEach { acc ->
+                        val cleanUname = acc.username.trim().removePrefix("@").lowercase()
+                        val idNum = acc.id.toLongOrNull() ?: 0L
+                        if (cleanUname.isNotBlank() && idNum > 0L) {
+                            accountIdMap[cleanUname] = idNum
+                        }
+                    }
+                }
+                is F4fApiResult.Error -> {}
+            }
+            val numericAccountId = accountIdMap[cleanUser] ?: 0L
+
+            // Gọi quickSwitchAccount để đồng bộ phiên Instagram trên F4F
+            F4fApiClient.quickSwitchAccount(token, "instagram")
+
             while (coroutineContext.isActive && F4fInstagramManager.isRunning(cleanUser)) {
                 try {
                     onStatusUpdate("Đang lấy job Instagram...")
@@ -116,6 +135,7 @@ class F4fInstagramTaskRunner(
                             delay(delaySec * 1000L)
                             if (consecutiveFails >= cfg.errorSwapCount && cfg.autoSwapOnError) {
                                 onStatusUpdate("Tạm dừng: Gặp lỗi liên tiếp $consecutiveFails lần")
+                                onErrorDetail(cleanUser, "Dừng do gặp lỗi liên tiếp $consecutiveFails lần: $msg")
                                 F4fInstagramManager.stop(cleanUser)
                                 break
                             }
@@ -124,29 +144,76 @@ class F4fInstagramTaskRunner(
                     }
 
                     consecutiveFails = 0
+                    val effAccountId = if (job.accountId > 0L) {
+                        job.accountId
+                    } else if (numericAccountId > 0L) {
+                        numericAccountId
+                    } else {
+                        job.jobId
+                    }
+                    val targetUid = job.uid
+                    val targetObjectId = job.objectId.ifBlank {
+                        job.targetLink.trim().removeSuffix("/").substringAfterLast("/")
+                    }
+
                     onStatusUpdate("Đang làm job #${job.jobId} (${job.typeJob})...")
 
                     // Thực hiện tương tác trên Instagram
                     val actionOk = if (job.typeJob.equals("like", ignoreCase = true)) {
                         runner.doLike(job.targetLink)
                     } else {
-                        runner.doFollow(job.targetLink)
+                        runner.doFollow(job.targetLink, targetUid)
                     }
 
                     if (!actionOk) {
                         errorCount++
+                        consecutiveFails++
                         val err = "Lỗi tương tác Instagram (Link: ${job.targetLink})"
                         onProgressUpdate("Lỗi tương tác Instagram", successCount, errorCount)
                         onErrorDetail(cleanUser, err)
+
+                        // Tự động báo cáo lỗi và bỏ qua job trên F4F
+                        F4fApiClient.reportJob(
+                            rawToken = token,
+                            jobId = job.jobId,
+                            accountId = effAccountId,
+                            uid = targetUid,
+                            objectId = targetObjectId,
+                            message = "Link không mở được hoặc lỗi tương tác",
+                            type = "instagram"
+                        )
+                        F4fApiClient.skipJob(
+                            rawToken = token,
+                            jobId = job.jobId,
+                            accountId = effAccountId,
+                            uid = targetUid,
+                            objectId = targetObjectId,
+                            type = "instagram"
+                        )
+
+                        if (consecutiveFails >= cfg.errorSwapCount && cfg.autoSwapOnError) {
+                            onStatusUpdate("Tạm dừng: Gặp lỗi liên tiếp $consecutiveFails lần")
+                            onErrorDetail(cleanUser, "Dừng do gặp lỗi liên tiếp $consecutiveFails lần.")
+                            F4fInstagramManager.stop(cleanUser)
+                            break
+                        }
+
                         delay(cfg.delaySeconds * 1000L)
                         continue
+                    }
+
+                    // Chờ delay cấu hình trước khi gửi xác nhận nhận xu
+                    for (s in (cfg.delaySeconds.coerceAtLeast(3)) downTo 1) {
+                        if (!coroutineContext.isActive || !F4fInstagramManager.isRunning(cleanUser)) break
+                        onStatusUpdate("Job #${job.jobId}: Chờ ${s}s xác nhận...")
+                        delay(1000L)
                     }
 
                     onStatusUpdate("Đang nhận thưởng job #${job.jobId}...")
                     val claimRes = F4fApiClient.completeJob(
                         rawToken = token,
                         jobId = job.jobId,
-                        accountId = job.accountId,
+                        accountId = effAccountId,
                         type = "instagram",
                         typeJob = job.typeJob
                     )
@@ -154,7 +221,8 @@ class F4fInstagramTaskRunner(
                     when (claimRes) {
                         is F4fApiResult.Success -> {
                             successCount++
-                            val reward = claimRes.data
+                            consecutiveFails = 0
+                            val reward = claimRes.data.takeIf { it > 0 } ?: job.rewardCoins
                             val balanceNow = F4fAccountStore.getPoints(context) + reward
                             F4fAccountStore.updatePoints(context, balanceNow)
                             F4fSession.points.value = balanceNow
@@ -162,9 +230,20 @@ class F4fInstagramTaskRunner(
                         }
                         is F4fApiResult.Error -> {
                             errorCount++
+                            consecutiveFails++
                             val err = "F4F từ chối duyệt: ${claimRes.message}"
                             onProgressUpdate(err, successCount, errorCount)
                             onErrorDetail(cleanUser, err)
+
+                            // Tự động bỏ qua job bị từ chối để không nghẽn luồng
+                            F4fApiClient.skipJob(
+                                rawToken = token,
+                                jobId = job.jobId,
+                                accountId = effAccountId,
+                                uid = targetUid,
+                                objectId = targetObjectId,
+                                type = "instagram"
+                            )
                         }
                     }
 
@@ -188,16 +267,29 @@ class F4fInstagramTaskRunner(
         }
     }
 
-    private suspend fun doFollow(targetUrl: String): Boolean = withContext(Dispatchers.IO) {
+    private suspend fun doFollow(targetUrl: String, targetUid: String = ""): Boolean = withContext(Dispatchers.IO) {
+        if (targetUid.isNotBlank()) {
+            try {
+                val igRes = IgTaToolClient.follow(
+                    client = client,
+                    rawCookie = cookie,
+                    targetId = targetUid,
+                    profileUrl = targetUrl
+                )
+                if (igRes.contains("\"following\":true") || igRes.contains("xdt_create_friendship") || igRes.contains("\"status\":\"ok\"")) {
+                    return@withContext true
+                }
+            } catch (_: Exception) {}
+        }
+
         val targetUser = targetUrl.trim().removeSuffix("/").substringAfterLast("/")
         if (targetUser.isBlank()) return@withContext false
 
         val tokens = extractTokensFromCookie(cookie)
         val csrf = tokens["csrftoken"].orEmpty()
-        val dsUserId = tokens["ds_user_id"].orEmpty()
 
         val req = Request.Builder()
-            .url("https://www.instagram.com/api/v1/friendships/create/$targetUser/")
+            .url("https://www.instagram.com/api/v1/friendships/create/${if (targetUid.isNotBlank()) targetUid else targetUser}/")
             .post("".toRequestBody(JSON_TYPE))
             .header("Cookie", cookie)
             .header("X-CSRFToken", csrf)
@@ -218,6 +310,18 @@ class F4fInstagramTaskRunner(
     private suspend fun doLike(targetUrl: String): Boolean = withContext(Dispatchers.IO) {
         val shortcode = extractShortcode(targetUrl) ?: return@withContext false
         val mediaId = shortcodeToMediaId(shortcode) ?: return@withContext false
+
+        try {
+            val tymRes = IgTaToolClient.tym(
+                client = client,
+                rawCookie = cookie,
+                mediaId = mediaId,
+                linkJob = targetUrl
+            )
+            if (tymRes.contains("\"status\":\"ok\"") || tymRes.contains("\"viewer_has_liked\":true")) {
+                return@withContext true
+            }
+        } catch (_: Exception) {}
 
         val tokens = extractTokensFromCookie(cookie)
         val csrf = tokens["csrftoken"].orEmpty()
