@@ -62,11 +62,12 @@ data class F4fRunConfigInstagramUiState(
     val mode: F4fIgTaskMode = F4fIgTaskMode.FollowOnly,
     val getTaskWaitSeconds: String = "5",
     val workSeconds: String = "10",
+    val reportWaitSeconds: String = "3",
     val taskCount: String = "",
     val stopAfterEmptyTimes: String = "3",
     val errorSwapAccountCount: String = "5",
     val stopAfterDoneTimes: String = "",
-    val browseBeforeTask: Boolean = true,
+    val browseBeforeTask: Boolean = false,
     val backHomeThenBrowse: Boolean = false,
 )
 
@@ -77,12 +78,13 @@ fun F4fRunConfigInstagramScreen(
     onModeChange: (F4fIgTaskMode) -> Unit,
     onGetTaskWaitChange: (String) -> Unit,
     onWorkSecondsChange: (String) -> Unit,
+    onReportWaitSecondsChange: (String) -> Unit = {},
     onTaskCountChange: (String) -> Unit,
     onStopAfterEmptyChange: (String) -> Unit,
     onErrorSwapChange: (String) -> Unit,
     onStopAfterDoneChange: (String) -> Unit,
-    onBrowseBeforeTaskChange: (Boolean) -> Unit,
-    onBackHomeThenBrowseChange: (Boolean) -> Unit,
+    onBrowseBeforeTaskChange: (Boolean) -> Unit = {},
+    onBackHomeThenBrowseChange: (Boolean) -> Unit = {},
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -113,6 +115,13 @@ fun F4fRunConfigInstagramScreen(
                     onValueChange = onWorkSecondsChange,
                     placeholder = "10",
                 )
+                DividerLine()
+                NumberInputRow(
+                    label = "Thời gian báo cáo hoàn thành (giây)",
+                    value = state.reportWaitSeconds,
+                    onValueChange = onReportWaitSecondsChange,
+                    placeholder = "3",
+                )
             }
 
             CardSection(title = "GIỚI HẠN NHIỆM VỤ") {
@@ -135,20 +144,6 @@ fun F4fRunConfigInstagramScreen(
                     value = state.errorSwapAccountCount,
                     onValueChange = onErrorSwapChange,
                     placeholder = "5",
-                )
-            }
-
-            CardSection(title = "TÙY CHỌN NÂNG CAO") {
-                ToggleRow(
-                    label = "Lướt xem trước khi làm nhiệm vụ",
-                    checked = state.browseBeforeTask,
-                    onCheckedChange = onBrowseBeforeTaskChange,
-                )
-                DividerLine()
-                ToggleRow(
-                    label = "Về trang chủ rồi mới lướt",
-                    checked = state.backHomeThenBrowse,
-                    onCheckedChange = onBackHomeThenBrowseChange,
                 )
             }
         }

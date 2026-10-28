@@ -24,9 +24,9 @@ data class IgActionResult(
 
 /**
  * Bộ thực thi nhiệm vụ Instagram độc lập cho Follow4Follow (F4F):
- * - Sử dụng 100% logic tương tác của TA Tool (IgTaToolClient, resolveTargetUid, parseIgResult)
- * - Tự động tra cứu UID số từ username Instagram qua API topsearch
- * - Đếm ngược thời gian thực (real-time countdown) cho thời gian làm nhiệm vụ và thời gian giãn cách
+ * - Dùng 100% logic TA Tool (IgTaToolClient, extractTargetIdFromUrl, parseIgResult)
+ * - Truy cập trực tiếp link profile nhiệm vụ của F4F để lấy numeric ID, không tìm kiếm topsearch
+ * - Đếm ngược thời gian thực cho: Thời gian làm nhiệm vụ, Thời gian báo cáo hoàn thành, Thời gian giãn cách
  * - Báo cáo kết quả và nhận xu qua F4fApiClient
  */
 class F4fInstagramTaskRunner(
@@ -204,8 +204,8 @@ class F4fInstagramTaskRunner(
                     val targetUsername = job.targetLink.trim().removeSuffix("/").substringAfterLast("/")
                     val displayTarget = if (targetUsername.isNotBlank()) "@$targetUsername" else "nhiệm vụ"
 
-                    // Bước 1: Thực hiện tương tác Follow bằng 100% logic TA Tool
-                    onStatusUpdate("Đang Follow $displayTarget...")
+                    // Bước 1: Mở thẳng profile URL của nhiệm vụ và thực hiện Follow bằng 100% logic TA Tool
+                    onStatusUpdate("Đang mở Follow $displayTarget...")
                     val actionResult = if (job.typeJob.equals("like", ignoreCase = true)) {
                         runner.doLike(job.targetLink)
                     } else {
@@ -268,7 +268,17 @@ class F4fInstagramTaskRunner(
 
                     if (!coroutineContext.isActive || !F4fInstagramManager.isRunning(cleanUser)) break
 
-                    // Bước 3: Báo cáo hoàn thành để nhận xu
+                    // Bước 3: Đếm ngược thời gian chờ báo cáo hoàn thành theo cấu hình (reportWaitSeconds)
+                    val reportSec = cfg.reportWaitSeconds.coerceAtLeast(1)
+                    for (s in reportSec downTo 1) {
+                        if (!coroutineContext.isActive || !F4fInstagramManager.isRunning(cleanUser)) break
+                        onStatusUpdate("Chờ báo cáo hoàn thành: ${s}s...")
+                        delay(1000L)
+                    }
+
+                    if (!coroutineContext.isActive || !F4fInstagramManager.isRunning(cleanUser)) break
+
+                    // Bước 4: Báo cáo hoàn thành để nhận xu
                     onStatusUpdate("Đang báo cáo hoàn thành nhận xu...")
                     val claimRes = F4fApiClient.completeJob(
                         rawToken = token,
@@ -306,7 +316,7 @@ class F4fInstagramTaskRunner(
                         }
                     }
 
-                    // Bước 4: Đếm ngược thời gian nghỉ giãn cách trước khi lấy job tiếp theo
+                    // Bước 5: Đếm ngược thời gian nghỉ giãn cách trước khi lấy job tiếp theo
                     val restSec = cfg.getTaskWaitSeconds.coerceAtLeast(1)
                     for (s in restSec downTo 1) {
                         if (!coroutineContext.isActive || !F4fInstagramManager.isRunning(cleanUser)) break
@@ -328,35 +338,73 @@ class F4fInstagramTaskRunner(
     }
 
     /**
-     * Tra cứu numeric UID của tài khoản đích Instagram từ username thông qua topsearch API chuẩn TA Tool.
+     * Trích xuất User ID số trực tiếp từ trang profile Instagram của job (không tìm kiếm topsearch)
      */
-    private fun resolveTargetUid(targetUsername: String): String? {
-        val clean = targetUsername.trim().removePrefix("@").trim('/').substringAfterLast('/')
-        if (clean.isBlank()) return null
-        val req = Request.Builder()
-            .url("https://www.instagram.com/web/search/topsearch/?context=blended&query=$clean")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .header("X-IG-App-ID", "936619743392459")
-            .header("Cookie", cookie)
-            .get().build()
-        val jsonStr = try {
-            client.newCall(req).execute().use { it.body?.string() }
-        } catch (_: Exception) { null } ?: return null
+    private fun extractTargetIdFromProfile(targetUrl: String, targetUsername: String): String? {
+        val cleanUser = targetUsername.trim().removePrefix("@").trim('/').substringAfterLast('/')
+        val profileUrl = if (targetUrl.isNotBlank() && targetUrl.startsWith("http")) {
+            targetUrl
+        } else if (cleanUser.isNotBlank()) {
+            "https://www.instagram.com/$cleanUser/"
+        } else {
+            ""
+        }
 
-        return try {
-            val root = JSONObject(jsonStr)
-            val users = root.optJSONArray("users") ?: return null
-            for (i in 0 until users.length()) {
-                val u = users.getJSONObject(i).optJSONObject("user") ?: continue
-                if (u.optString("username").equals(clean, ignoreCase = true)) {
-                    val pk = u.optString("pk")
-                    if (pk.isNotBlank()) return pk
-                    val id = u.optString("id")
-                    if (id.isNotBlank()) return id
+        // 1. Mở thẳng URL trang cá nhân để lấy User ID (IgTaToolClient.extractTargetIdFromUrl)
+        if (profileUrl.isNotBlank()) {
+            val req = Request.Builder()
+                .url(profileUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .header("Cookie", cookie)
+                .header("X-IG-App-ID", "936619743392459")
+                .header("Referer", "https://www.instagram.com/")
+                .get()
+                .build()
+            try {
+                client.newCall(req).execute().use { res ->
+                    val html = res.body?.string().orEmpty()
+                    val patterns = listOf(
+                        Pattern.compile("\"profile_id\":\"(\\d+)\""),
+                        Pattern.compile("\"user_id\":\"(\\d+)\""),
+                        Pattern.compile("profilePage_(\\d+)"),
+                        Pattern.compile("property=\"instapp:owner_user_id\"\\s+content=\"(\\d+)\""),
+                        Pattern.compile("\"props\":\\s*\\{[^}]*\"id\":\\s*\"(\\d+)\""),
+                        Pattern.compile("\"id\":\"(\\d{5,})\"")
+                    )
+                    for (p in patterns) {
+                        val m = p.matcher(html)
+                        if (m.find()) {
+                            val id = m.group(1)
+                            if (!id.isNullOrBlank() && id.all { it.isDigit() }) return id
+                        }
+                    }
                 }
-            }
-            null
-        } catch (_: Exception) { null }
+            } catch (_: Exception) {}
+        }
+
+        // 2. Gọi endpoint web_profile_info chính thức của Instagram Web cho trang cá nhân đó
+        if (cleanUser.isNotBlank()) {
+            val req = Request.Builder()
+                .url("https://www.instagram.com/api/v1/users/web_profile_info/?username=$cleanUser")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .header("Cookie", cookie)
+                .header("X-IG-App-ID", "936619743392459")
+                .header("Referer", profileUrl.ifBlank { "https://www.instagram.com/$cleanUser/" })
+                .get()
+                .build()
+            try {
+                client.newCall(req).execute().use { res ->
+                    if (res.isSuccessful) {
+                        val body = res.body?.string().orEmpty()
+                        val json = try { JSONObject(body) } catch (_: Exception) { null }
+                        val id = json?.optJSONObject("data")?.optJSONObject("user")?.optString("id")
+                        if (!id.isNullOrBlank() && id.all { it.isDigit() }) return id
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        return null
     }
 
     /**
@@ -437,14 +485,19 @@ class F4fInstagramTaskRunner(
     }
 
     /**
-     * Follow 100% logic TA Tool (IgTaToolClient.follow + parseIgResult)
+     * Follow 100% logic TA Tool (Mở profile URL -> lấy numeric ID -> gọi IgTaToolClient.follow)
      */
     fun doFollow(targetNumericId: String, targetUsername: String, targetUrl: String = ""): IgActionResult {
         var uid = targetNumericId.trim()
         if (!uid.all { it.isDigit() } || uid.isBlank()) {
-            val extracted = if (targetUrl.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(client, cookie, targetUrl) else null
-            uid = extracted ?: resolveTargetUid(targetUsername) ?: targetNumericId
+            uid = extractTargetIdFromProfile(targetUrl, targetUsername) ?: ""
         }
+
+        // Chặn dứt điểm: Nếu không trích xuất được ID số, tuyệt đối không gửi username chữ vào GraphQL
+        if (uid.isBlank() || !uid.all { it.isDigit() }) {
+            return IgActionResult(false, 400, "", "Không trích xuất được ID số từ trang cá nhân @$targetUsername")
+        }
+
         val cleanTargetUser = targetUsername.trim().trim('/').substringAfterLast('/')
         val profileUrl = if (targetUrl.isNotBlank()) targetUrl else if (cleanTargetUser.isNotBlank()) "https://www.instagram.com/$cleanTargetUser/" else "https://www.instagram.com/"
         val resBody = IgTaToolClient.follow(

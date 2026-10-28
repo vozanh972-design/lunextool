@@ -619,6 +619,7 @@ fun F4fAccountScreen(navController: NavController) {
                         mode = F4fIgTaskMode.FollowOnly,
                         getTaskWaitSeconds = savedCfg.getTaskWaitSeconds.toString(),
                         workSeconds = savedCfg.workSeconds.toString(),
+                        reportWaitSeconds = savedCfg.reportWaitSeconds.toString(),
                         taskCount = if (savedCfg.targetTaskCount > 0) savedCfg.targetTaskCount.toString() else "",
                         stopAfterEmptyTimes = savedCfg.stopAfterEmptyTimes.toString(),
                         errorSwapAccountCount = savedCfg.errorSwapCount.toString(),
@@ -631,15 +632,15 @@ fun F4fAccountScreen(navController: NavController) {
                 onModeChange = { igConfigState = igConfigState.copy(mode = it) },
                 onGetTaskWaitChange = { igConfigState = igConfigState.copy(getTaskWaitSeconds = it) },
                 onWorkSecondsChange = { igConfigState = igConfigState.copy(workSeconds = it) },
+                onReportWaitSecondsChange = { igConfigState = igConfigState.copy(reportWaitSeconds = it) },
                 onTaskCountChange = { igConfigState = igConfigState.copy(taskCount = it) },
                 onStopAfterEmptyChange = { igConfigState = igConfigState.copy(stopAfterEmptyTimes = it) },
                 onErrorSwapChange = { igConfigState = igConfigState.copy(errorSwapAccountCount = it) },
                 onStopAfterDoneChange = { igConfigState = igConfigState.copy(stopAfterDoneTimes = it) },
-                onBrowseBeforeTaskChange = { igConfigState = igConfigState.copy(browseBeforeTask = it) },
-                onBackHomeThenBrowseChange = { igConfigState = igConfigState.copy(backHomeThenBrowse = it) },
                 onSave = {
                     val waitSec = igConfigState.getTaskWaitSeconds.toIntOrNull()?.coerceAtLeast(1) ?: 5
                     val workSec = igConfigState.workSeconds.toIntOrNull()?.coerceAtLeast(1) ?: 10
+                    val reportSec = igConfigState.reportWaitSeconds.toIntOrNull()?.coerceAtLeast(1) ?: 3
                     val targetCount = igConfigState.taskCount.toIntOrNull() ?: 0
                     val emptyTimes = igConfigState.stopAfterEmptyTimes.toIntOrNull() ?: 3
                     val errorTimes = igConfigState.errorSwapAccountCount.toIntOrNull() ?: 5
@@ -648,6 +649,7 @@ fun F4fAccountScreen(navController: NavController) {
                         delaySeconds = waitSec,
                         getTaskWaitSeconds = waitSec,
                         workSeconds = workSec,
+                        reportWaitSeconds = reportSec,
                         doJobMinSeconds = workSec,
                         doJobMaxSeconds = workSec,
                         targetTaskCount = targetCount,
