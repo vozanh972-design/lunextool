@@ -1228,7 +1228,41 @@ fun GolikeAccountScreen(navController: NavController) {
                 }
             }
 
-            val golikeAccId = effectiveAcc.golikeAccountId.ifBlank { effectiveAcc.id }
+            var golikeAccId = effectiveAcc.golikeAccountId.ifBlank { effectiveAcc.id }
+            if (selectedPlatform.lowercase() == "instagram") {
+                val cleanUser = effectiveAcc.username.trim().removePrefix("@").lowercase()
+                val mappedId = GolikeAccountsStore.getInstagramAccountIdFromMap(context, cleanUser)
+                if (!mappedId.isNullOrBlank()) {
+                    golikeAccId = mappedId
+                } else if (golikeAccId.isBlank() || golikeAccId.all { !it.isDigit() }) {
+                    // Tra cứu trực tiếp từ API Golike để lấy ID số chính xác (ví dụ 989084)
+                    try {
+                        val igListRes = client.getInstagramAccounts()
+                        val arr = igListRes?.optJSONArray("data")
+                        if (arr != null) {
+                            for (i in 0 until arr.length()) {
+                                val item = arr.optJSONObject(i) ?: continue
+                                val u = item.optString("instagram_username").ifBlank {
+                                    item.optString("username").ifBlank { item.optString("nickname") }
+                                }.trim().removePrefix("@").lowercase()
+                                val sId = item.optString("id")
+                                if (u == cleanUser && sId.isNotBlank()) {
+                                    golikeAccId = sId
+                                    GolikeAccountsStore.saveInstagramMapping(context, cleanUser, sId)
+                                    effectiveAcc = effectiveAcc.copy(golikeAccountId = sId, isGolikeLinked = true)
+                                    GolikeAccountsStore.addOrUpdateAccount(context, effectiveAcc)
+                                    break
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+                // Khởi tạo session bảo mật chuẩn gweb-v3 trước khi vào vòng lặp nhận việc
+                try {
+                    client.createSecuritySession()
+                } catch (_: Exception) {}
+            }
+
             var consecutiveFails = 0
 
             while (GolikeRunningManager.isRunning(acc.id) && isActive) {

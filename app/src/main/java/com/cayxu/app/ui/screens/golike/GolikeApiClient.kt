@@ -524,11 +524,16 @@ class GolikeApiClient(
         val numAccId = accountId.toLongOrNull() ?: accountId
         var currentPath = "/api/advertising/publishers/instagram/jobs"
         var sigToken = getInstagramSecurityTokenForGetJob(numAccId, path = currentPath, onStatus = onStatus)
-        val url = "$BASE_URL/advertising/publishers/instagram/jobs?instagram_account_id=$numAccId&data=null"
-        var reqBuilder = newRequestBuilder(url)
-        if (!sigToken.isNullOrBlank()) {
-            reqBuilder = reqBuilder.header("sig", sigToken)
+        if (sigToken.isNullOrBlank()) {
+            val err = lastTokenError ?: "Thiếu chữ ký sig (Không lấy được token bảo mật từ Golike)"
+            return JSONObject().apply {
+                put("success", false)
+                put("status", 400)
+                put("message", err)
+            }
         }
+        val url = "$BASE_URL/advertising/publishers/instagram/jobs?instagram_account_id=$numAccId&data=null"
+        var reqBuilder = newRequestBuilder(url).header("sig", sigToken)
         onStatus("Đang nhận việc Instagram...")
         var res = execute(reqBuilder.get().build())
         var code = res?.optInt("status", res.optInt("http_code", 0)) ?: 0
@@ -557,6 +562,11 @@ class GolikeApiClient(
         val key = res?.optString("signing_key").orEmpty()
         if (key.isNotBlank()) {
             this.signingKey = key
+            context?.let { ctx ->
+                try {
+                    GolikeAccountsStore.saveSigningKey(ctx, key)
+                } catch (_: Exception) {}
+            }
         }
         val uid = res?.optLong("uid", 0L) ?: 0L
         if (uid > 0L) {
@@ -940,6 +950,14 @@ class GolikeApiClient(
         val adsIdStr = adsId.toString()
         var currentPath = "/api/advertising/publishers/instagram/complete-jobs"
         var sigToken = getInstagramSecurityTokenForCompleteJob(adsIdStr, numAccId, path = currentPath, onStatus = onStatus)
+        if (sigToken.isNullOrBlank()) {
+            val err = lastTokenError ?: "Thiếu chữ ký sig hoàn thành (Không lấy được token bảo mật từ Golike)"
+            return JSONObject().apply {
+                put("success", false)
+                put("status", 400)
+                put("message", err)
+            }
+        }
 
         val body = JSONObject().apply {
             put("instagram_users_advertising_id", adsIdStr)
@@ -953,9 +971,7 @@ class GolikeApiClient(
 
         var reqBuilder = newRequestBuilder("$BASE_URL/advertising/publishers/instagram/complete-jobs")
             .post(body)
-        if (!sigToken.isNullOrBlank()) {
-            reqBuilder = reqBuilder.header("sig", sigToken)
-        }
+            .header("sig", sigToken)
 
         var res = execute(reqBuilder.build())
         val code = res?.optInt("status", res.optInt("http_code", 0)) ?: 0
