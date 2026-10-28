@@ -39,6 +39,7 @@ class GolikeApiClient(
 ) {
     var lastTokenError: String? = null
     var userUid: String? = null
+    var serverTimeOffset: Long = 0L
 
     companion object {
         val BASE_URL: String get() = GolikeNativeBridge.fetchBaseUrl()
@@ -439,6 +440,16 @@ class GolikeApiClient(
         return res
     }
 
+    private fun extractToken(res: JSONObject?): String? {
+        if (res == null) return null
+        fun isValid(s: String?): Boolean = !s.isNullOrBlank() && s != "null" && s != "undefined"
+        res.optString("token").takeIf { isValid(it) }?.let { return it }
+        res.optJSONObject("data")?.optString("token")?.takeIf { isValid(it) }?.let { return it }
+        res.optString("sig").takeIf { isValid(it) }?.let { return it }
+        res.optJSONObject("data")?.optString("sig")?.takeIf { isValid(it) }?.let { return it }
+        return null
+    }
+
     // 3a-IG. Lấy chữ ký token bảo mật (sig) cho nhận job Instagram
     suspend fun getInstagramSecurityTokenForGetJob(
         accountId: Any,
@@ -486,10 +497,7 @@ class GolikeApiClient(
 
         onStatus("Đang lấy token nhận việc IG (sig)...")
         var res = execute(reqBuilder.build())
-        var directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
-            ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
-            ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
-            ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+        var directToken = extractToken(res)
 
         if (directToken != null) {
             lastTokenError = null
@@ -512,10 +520,7 @@ class GolikeApiClient(
                     .header("g-auth", retryGAuth)
                     .build()
                 res = execute(retryReq)
-                directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
-                    ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
-                    ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
-                    ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+                directToken = extractToken(res)
                 if (directToken != null) {
                     lastTokenError = null
                     return directToken
@@ -540,10 +545,7 @@ class GolikeApiClient(
                     retryReqBuilder.header("g-auth", retryGAuth)
                 }
                 val retryRes = execute(retryReqBuilder.build())
-                val retToken = retryRes?.optString("token")?.takeIf { it.isNotBlank() }
-                    ?: retryRes?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
-                    ?: retryRes?.optString("sig")?.takeIf { it.isNotBlank() }
-                    ?: retryRes?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+                val retToken = extractToken(retryRes)
                 if (retToken != null) {
                     lastTokenError = null
                     return retToken
@@ -637,6 +639,10 @@ class GolikeApiClient(
                 this.userUid = uid.toString()
             }
         }
+        val sTime = res?.optLong("server_time", 0L) ?: 0L
+        if (sTime > 0L) {
+            this.serverTimeOffset = sTime - System.currentTimeMillis()
+        }
         return res
     }
 
@@ -675,7 +681,7 @@ class GolikeApiClient(
             val bodyHash = sha256.digest(bodyString.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it) }
 
-            val timestamp = System.currentTimeMillis()
+            val timestamp = System.currentTimeMillis() + serverTimeOffset
             val devId = deviceId.orEmpty().ifBlank { "98ecbe1b-e52d-4537-8cfb-ae5f9d7f0237" }
 
             val randBytes = ByteArray(16)
@@ -970,10 +976,7 @@ class GolikeApiClient(
         }
 
         var res = execute(reqBuilder.build())
-        var directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
-            ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
-            ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
-            ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+        var directToken = extractToken(res)
 
         if (directToken != null) {
             lastTokenError = null
@@ -996,10 +999,7 @@ class GolikeApiClient(
                     .header("g-auth", retryGAuth)
                     .build()
                 res = execute(retryReq)
-                directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
-                    ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
-                    ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
-                    ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+                directToken = extractToken(res)
                 if (directToken != null) {
                     lastTokenError = null
                     return directToken
@@ -1023,10 +1023,7 @@ class GolikeApiClient(
                     retryReqBuilder.header("g-auth", retryGAuth)
                 }
                 val retryRes = execute(retryReqBuilder.build())
-                val retToken = retryRes?.optString("token")?.takeIf { it.isNotBlank() }
-                    ?: retryRes?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
-                    ?: retryRes?.optString("sig")?.takeIf { it.isNotBlank() }
-                    ?: retryRes?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+                val retToken = extractToken(retryRes)
                 if (retToken != null) {
                     lastTokenError = null
                     return retToken
