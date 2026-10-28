@@ -52,8 +52,8 @@ fun F4fAccountScreen(navController: NavController) {
     val igStatusMap = F4fInstagramManager.statusMap
     val igSuccessCountMap = F4fInstagramManager.successCountMap
     val igErrorCountMap = F4fInstagramManager.errorCountMap
-    val igLastErrorDetail = F4fInstagramManager.lastErrorDetail
-    val isAnyRunning = isOverlayRunning || isRunnerRunning || igRunningAccounts.isNotEmpty() || F4fInstagramManager.isAnyRunning()
+    var isAnyRunningState by remember { mutableStateOf(false) }
+    val isAnyRunning = isAnyRunningState || isOverlayRunning || isRunnerRunning || igRunningAccounts.isNotEmpty() || F4fInstagramManager.isAnyRunning()
 
     // Quản lý kiểm tra & liên kết tài khoản TikTok
     var showTikTokCheckSheet by remember { mutableStateOf(false) }
@@ -340,7 +340,7 @@ fun F4fAccountScreen(navController: NavController) {
             onRun = {
                 if (selectedPlatform == F4fPlatform.TikTok) {
                     if (isAnyRunning || F4fJobRunnerOverlayService.isRunning.value || F4fTikTokTaskRunner.isRunning()) {
-                        isAnyRunning = false
+                        isAnyRunningState = false
                         stopF4fJobRunnerOverlay(context)
                         F4fTikTokTaskRunner.stop()
                         Toast.makeText(context, "Đã dừng nhiệm vụ Follow4Follow", Toast.LENGTH_SHORT).show()
@@ -362,7 +362,7 @@ fun F4fAccountScreen(navController: NavController) {
                         }
 
                         val handles = accountsToRun.map { it.handle.ifBlank { it.name.removePrefix("@") } }
-                        isAnyRunning = true
+                        isAnyRunningState = true
                         Toast.makeText(context, "Mở màn nổi chạy ${handles.size} nick TikTok Follow4Follow...", Toast.LENGTH_SHORT).show()
                         startF4fJobRunnerOverlay(
                             context = context,
