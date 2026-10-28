@@ -256,6 +256,9 @@ class F4fInstagramTaskRunner(
                         F4fInstagramManager.stop(cleanUser)
                         break
                     }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    onStatusUpdate("Đã tạm dừng")
+                    throw e
                 } catch (e: Exception) {
                     errorCount++
                     val err = "Ngoại lệ: ${e.message}"

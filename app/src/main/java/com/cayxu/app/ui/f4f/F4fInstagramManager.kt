@@ -89,7 +89,10 @@ object F4fInstagramManager {
     }
 
     fun stopAll() {
-        runningJobs.forEach { (_, job) -> job.cancel() }
+        runningJobs.forEach { (clean, job) ->
+            job.cancel()
+            statusMap[clean] = "Đã tạm dừng"
+        }
         runningJobs.clear()
         runningAccounts.clear()
     }

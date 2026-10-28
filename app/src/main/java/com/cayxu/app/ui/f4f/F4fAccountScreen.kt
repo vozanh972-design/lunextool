@@ -53,11 +53,7 @@ fun F4fAccountScreen(navController: NavController) {
     val igSuccessCountMap = F4fInstagramManager.successCountMap
     val igErrorCountMap = F4fInstagramManager.errorCountMap
     val igLastErrorDetail = F4fInstagramManager.lastErrorDetail
-    var isAnyRunning by remember { mutableStateOf(false) }
-
-    LaunchedEffect(isOverlayRunning, isRunnerRunning, igRunningAccounts.size) {
-        isAnyRunning = isOverlayRunning || isRunnerRunning || igRunningAccounts.isNotEmpty()
-    }
+    val isAnyRunning = isOverlayRunning || isRunnerRunning || igRunningAccounts.isNotEmpty() || F4fInstagramManager.isAnyRunning()
 
     // Quản lý kiểm tra & liên kết tài khoản TikTok
     var showTikTokCheckSheet by remember { mutableStateOf(false) }
@@ -146,11 +142,11 @@ fun F4fAccountScreen(navController: NavController) {
         reloadingTikTokUids,
         linkingTikTokUids,
         locallyLinkedHandles,
-        igRunningAccounts,
-        igStatusMap,
-        igSuccessCountMap,
-        igErrorCountMap,
-        igLastErrorDetail,
+        igRunningAccounts.toList(),
+        igStatusMap.toMap(),
+        igSuccessCountMap.toMap(),
+        igErrorCountMap.toMap(),
+        igLastErrorDetail.toMap(),
         reloadingIgUsernames,
     ) {
         when (selectedPlatform) {
@@ -216,9 +212,9 @@ fun F4fAccountScreen(navController: NavController) {
             F4fPlatform.Instagram -> {
                 val remoteHandles = remoteIgAccounts.map { it.username.trim().removePrefix("@").lowercase() }.toSet()
                 localIgAccounts.map { acc ->
-                    val cleanUser = acc.username.trim().removePrefix("@")
-                    val isLinked = cleanUser.lowercase() in remoteHandles || cleanUser.lowercase() in locallyLinkedHandles
-                    val isRunning = cleanUser in igRunningAccounts
+                    val cleanUser = acc.username.trim().lowercase().removePrefix("@")
+                    val isLinked = cleanUser in remoteHandles || cleanUser in locallyLinkedHandles
+                    val isRunning = cleanUser in igRunningAccounts || F4fInstagramManager.isRunning(cleanUser)
                     val runStatus = igStatusMap[cleanUser].orEmpty()
                     val successCount = igSuccessCountMap[cleanUser] ?: 0
                     val errorCount = igErrorCountMap[cleanUser] ?: 0
@@ -395,7 +391,7 @@ fun F4fAccountScreen(navController: NavController) {
                         }
 
                         accountsToRun.forEach { acc ->
-                            val clean = acc.handle.removePrefix("@").ifBlank { acc.name.removePrefix("@") }
+                            val clean = acc.handle.removePrefix("@").ifBlank { acc.name.removePrefix("@") }.trim().lowercase()
                             F4fInstagramManager.start(context, clean)
                         }
                         Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Instagram...", Toast.LENGTH_SHORT).show()
@@ -493,7 +489,7 @@ fun F4fAccountScreen(navController: NavController) {
                         Toast.makeText(context, "Chạy tài khoản Facebook: ${acc.name}", Toast.LENGTH_SHORT).show()
                     }
                     F4fPlatform.Instagram -> {
-                        val clean = acc.handle.removePrefix("@").ifBlank { acc.name.removePrefix("@") }
+                        val clean = acc.handle.removePrefix("@").ifBlank { acc.name.removePrefix("@") }.trim().lowercase()
                         if (F4fInstagramManager.isRunning(clean)) {
                             F4fInstagramManager.stop(clean)
                             Toast.makeText(context, "Đã dừng @$clean", Toast.LENGTH_SHORT).show()
