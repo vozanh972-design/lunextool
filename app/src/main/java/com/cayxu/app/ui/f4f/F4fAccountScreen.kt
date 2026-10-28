@@ -15,13 +15,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import com.cayxu.app.data.local.FacebookAccountsStore
+import com.cayxu.app.data.local.InstagramAccount
 import com.cayxu.app.data.local.InstagramAccountsStore
 import com.cayxu.app.data.local.TikTokAccountsStore
 import com.cayxu.app.data.local.TikTokAppVariant
+import com.cayxu.app.instagram.InstagramApiClient
 import com.cayxu.app.ui.navigation.Routes
 import com.cayxu.app.ui.overlay.xsmm.startXsmmVerifyTikTokAccount
+import com.cayxu.app.ui.xsmm.IgTaToolClient
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Màn hình tài khoản Follow4Follow (F4F) độc lập kết nối API thật:
@@ -43,10 +48,15 @@ fun F4fAccountScreen(navController: NavController) {
     var refreshingBalance by remember { mutableStateOf(false) }
     val isOverlayRunning by F4fJobRunnerOverlayService.isRunning.collectAsState()
     val isRunnerRunning by F4fTikTokTaskRunner.isRunning.collectAsState()
+    val igRunningAccounts = F4fInstagramManager.runningAccounts
+    val igStatusMap = F4fInstagramManager.statusMap
+    val igSuccessCountMap = F4fInstagramManager.successCountMap
+    val igErrorCountMap = F4fInstagramManager.errorCountMap
+    val igLastErrorDetail = F4fInstagramManager.lastErrorDetail
     var isAnyRunning by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isOverlayRunning, isRunnerRunning) {
-        isAnyRunning = isOverlayRunning || isRunnerRunning
+    LaunchedEffect(isOverlayRunning, isRunnerRunning, igRunningAccounts.size) {
+        isAnyRunning = isOverlayRunning || isRunnerRunning || igRunningAccounts.isNotEmpty()
     }
 
     // Quản lý kiểm tra & liên kết tài khoản TikTok
@@ -56,6 +66,12 @@ fun F4fAccountScreen(navController: NavController) {
     var linkingTikTokUids by remember { mutableStateOf<Set<String>>(emptySet()) }
     var locallyLinkedHandles by remember { mutableStateOf<Set<String>>(emptySet()) }
 
+    // Quản lý tài khoản Instagram
+    var reloadingIgUsernames by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showInstagramAddSheet by remember { mutableStateOf(false) }
+    var showInstagramConfigSheet by remember { mutableStateOf(false) }
+    var selectedErrorDetailAccount by remember { mutableStateOf<F4fAccount?>(null) }
+
     // Danh sách tài khoản remote từ F4F API
     var remoteTiktokAccounts by remember { mutableStateOf<List<F4fRemoteAccount>>(emptyList()) }
     var remoteFbAccounts by remember { mutableStateOf<List<F4fRemoteAccount>>(emptyList()) }
@@ -64,10 +80,14 @@ fun F4fAccountScreen(navController: NavController) {
     // Danh sách tài khoản local trên máy
     var localTikTokAccounts by remember { mutableStateOf(TikTokAccountsStore.getAccounts(context)) }
     val localFbAccounts = remember { FacebookAccountsStore.getAccounts(context) }
-    val localIgAccounts = remember { InstagramAccountsStore.getAccounts(context) }
+    var localIgAccounts by remember { mutableStateOf(InstagramAccountsStore.getAccounts(context)) }
 
     fun reloadTikTok() {
         localTikTokAccounts = TikTokAccountsStore.getAccounts(context)
+    }
+
+    fun reloadIg() {
+        localIgAccounts = InstagramAccountsStore.getAccounts(context)
     }
 
     // Hàm gọi API đồng bộ thông tin tài khoản & số dư từ server Follow4Follow
@@ -125,7 +145,13 @@ fun F4fAccountScreen(navController: NavController) {
         localIgAccounts,
         reloadingTikTokUids,
         linkingTikTokUids,
-        locallyLinkedHandles
+        locallyLinkedHandles,
+        igRunningAccounts,
+        igStatusMap,
+        igSuccessCountMap,
+        igErrorCountMap,
+        igLastErrorDetail,
+        reloadingIgUsernames,
     ) {
         when (selectedPlatform) {
             F4fPlatform.TikTok -> {
@@ -188,34 +214,35 @@ fun F4fAccountScreen(navController: NavController) {
                 }
             }
             F4fPlatform.Instagram -> {
-                if (remoteIgAccounts.isNotEmpty()) {
-                    remoteIgAccounts.map { acc ->
-                        F4fAccount(
-                            id = acc.id,
-                            name = if (acc.username.startsWith("@")) acc.username else "@${acc.username}",
-                            typeId = "instagram",
-                            statusLabel = if (acc.isLive) "Hoạt động" else "Hết hạn",
-                            statusOk = acc.isLive,
-                            avatarUrl = acc.avatarUrl,
-                            handle = "@${acc.username.removePrefix("@")}",
-                            isLive = acc.isLive,
-                        )
-                    }
-                } else {
-                    localIgAccounts.map { acc ->
-                        val displayName = acc.fullName.ifBlank { "@${acc.username.trim().removePrefix("@")}" }
-                        F4fAccount(
-                            id = acc.username,
-                            name = displayName,
-                            typeId = "instagram",
-                            statusLabel = if (acc.isLive) "Hoạt động" else "Hết hạn",
-                            statusOk = acc.isLive,
-                            avatarUrl = acc.avatar,
-                            handle = "@${acc.username.trim().removePrefix("@")}",
-                            followerCount = acc.followersCount.toLong(),
-                            isLive = acc.isLive,
-                        )
-                    }
+                val remoteHandles = remoteIgAccounts.map { it.username.trim().removePrefix("@").lowercase() }.toSet()
+                localIgAccounts.map { acc ->
+                    val cleanUser = acc.username.trim().removePrefix("@")
+                    val isLinked = cleanUser.lowercase() in remoteHandles || cleanUser.lowercase() in locallyLinkedHandles
+                    val isRunning = cleanUser in igRunningAccounts
+                    val runStatus = igStatusMap[cleanUser].orEmpty()
+                    val successCount = igSuccessCountMap[cleanUser] ?: 0
+                    val errorCount = igErrorCountMap[cleanUser] ?: 0
+                    val errorDetail = igLastErrorDetail[cleanUser].orEmpty()
+                    val displayName = acc.fullName.ifBlank { "@$cleanUser" }
+                    val isReloading = cleanUser in reloadingIgUsernames
+                    F4fAccount(
+                        id = acc.username,
+                        name = displayName,
+                        typeId = "instagram",
+                        statusLabel = if (!isLinked) "Chưa liên kết" else if (acc.isLive) "Hoạt động" else "Die / Hết hạn",
+                        statusOk = isLinked && acc.isLive,
+                        avatarUrl = acc.avatar,
+                        handle = "@$cleanUser",
+                        followerCount = acc.followersCount.toLong(),
+                        isLive = acc.isLive,
+                        isLinked = isLinked,
+                        isRunning = isRunning,
+                        isReloading = isReloading,
+                        runStatus = runStatus,
+                        successCount = successCount,
+                        errorCount = errorCount,
+                        errorDetail = errorDetail,
+                    )
                 }
             }
         }
@@ -303,51 +330,78 @@ fun F4fAccountScreen(navController: NavController) {
                         Toast.makeText(context, "Thêm tài khoản Facebook đang phát triển", Toast.LENGTH_SHORT).show()
                     }
                     F4fPlatform.Instagram -> {
-                        Toast.makeText(context, "Thêm tài khoản Instagram đang phát triển", Toast.LENGTH_SHORT).show()
+                        showInstagramAddSheet = true
                     }
                 }
             },
             onOpenConfig = {
-                navController.navigate(Routes.F4F_RUN_CONFIG)
+                if (selectedPlatform == F4fPlatform.Instagram) {
+                    showInstagramConfigSheet = true
+                } else {
+                    navController.navigate(Routes.F4F_RUN_CONFIG)
+                }
             },
             onRun = {
-                if (isAnyRunning || F4fJobRunnerOverlayService.isRunning.value || F4fTikTokTaskRunner.isRunning()) {
-                    isAnyRunning = false
-                    stopF4fJobRunnerOverlay(context)
-                    F4fTikTokTaskRunner.stop()
-                    Toast.makeText(context, "Đã dừng nhiệm vụ Follow4Follow", Toast.LENGTH_SHORT).show()
-                    refreshProfileAndAccounts()
-                } else {
-                    val accountsToRun = if (selectedAccountIds.isNotEmpty()) {
-                        accounts.filter { it.id in selectedAccountIds }
+                if (selectedPlatform == F4fPlatform.TikTok) {
+                    if (isAnyRunning || F4fJobRunnerOverlayService.isRunning.value || F4fTikTokTaskRunner.isRunning()) {
+                        isAnyRunning = false
+                        stopF4fJobRunnerOverlay(context)
+                        F4fTikTokTaskRunner.stop()
+                        Toast.makeText(context, "Đã dừng nhiệm vụ Follow4Follow", Toast.LENGTH_SHORT).show()
+                        refreshProfileAndAccounts()
                     } else {
-                        accounts.filter { it.isLinked }
-                    }
-
-                    if (accountsToRun.isEmpty()) {
-                        Toast.makeText(context, "Vui lòng chọn tài khoản TikTok đã liên kết để chạy", Toast.LENGTH_SHORT).show()
-                        return@F4fAccountsScreen
-                    }
-
-                    if (selectedAccountIds.isEmpty()) {
-                        selectedAccountIds = accountsToRun.map { it.id }.toSet()
-                    }
-
-                    when (selectedPlatform) {
-                        F4fPlatform.TikTok -> {
-                            val handles = accountsToRun.map { it.handle.ifBlank { it.name.removePrefix("@") } }
-                            isAnyRunning = true
-                            Toast.makeText(context, "Mở màn nổi chạy ${handles.size} nick TikTok Follow4Follow...", Toast.LENGTH_SHORT).show()
-                            startF4fJobRunnerOverlay(
-                                context = context,
-                                accountHandles = handles,
-                                variant = selectedVariant
-                            )
+                        val accountsToRun = if (selectedAccountIds.isNotEmpty()) {
+                            accounts.filter { it.id in selectedAccountIds }
+                        } else {
+                            accounts.filter { it.isLinked }
                         }
-                        else -> {
-                            Toast.makeText(context, "Nền tảng ${selectedPlatform.label} đang được phát triển", Toast.LENGTH_SHORT).show()
+
+                        if (accountsToRun.isEmpty()) {
+                            Toast.makeText(context, "Vui lòng chọn tài khoản TikTok đã liên kết để chạy", Toast.LENGTH_SHORT).show()
+                            return@F4fAccountsScreen
                         }
+
+                        if (selectedAccountIds.isEmpty()) {
+                            selectedAccountIds = accountsToRun.map { it.id }.toSet()
+                        }
+
+                        val handles = accountsToRun.map { it.handle.ifBlank { it.name.removePrefix("@") } }
+                        isAnyRunning = true
+                        Toast.makeText(context, "Mở màn nổi chạy ${handles.size} nick TikTok Follow4Follow...", Toast.LENGTH_SHORT).show()
+                        startF4fJobRunnerOverlay(
+                            context = context,
+                            accountHandles = handles,
+                            variant = selectedVariant
+                        )
                     }
+                } else if (selectedPlatform == F4fPlatform.Instagram) {
+                    if (F4fInstagramManager.isAnyRunning()) {
+                        F4fInstagramManager.stopAll()
+                        Toast.makeText(context, "Đã dừng tất cả tác vụ Follow4Follow Instagram", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val accountsToRun = if (selectedAccountIds.isNotEmpty()) {
+                            accounts.filter { it.id in selectedAccountIds }
+                        } else {
+                            accounts
+                        }
+
+                        if (accountsToRun.isEmpty()) {
+                            Toast.makeText(context, "Vui lòng thêm hoặc chọn tài khoản Instagram để chạy", Toast.LENGTH_SHORT).show()
+                            return@F4fAccountsScreen
+                        }
+
+                        if (selectedAccountIds.isEmpty()) {
+                            selectedAccountIds = accountsToRun.map { it.id }.toSet()
+                        }
+
+                        accountsToRun.forEach { acc ->
+                            val clean = acc.handle.removePrefix("@").ifBlank { acc.name.removePrefix("@") }
+                            F4fInstagramManager.start(context, clean)
+                        }
+                        Toast.makeText(context, "Bắt đầu chạy ${accountsToRun.size} tài khoản Instagram...", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(context, "Nền tảng ${selectedPlatform.label} đang được phát triển", Toast.LENGTH_SHORT).show()
                 }
             },
             onReloadAccount = { acc ->
@@ -364,6 +418,22 @@ fun F4fAccountScreen(navController: NavController) {
                             delay(4000)
                             reloadTikTok()
                             reloadingTikTokUids = reloadingTikTokUids - acc.id
+                        }
+                    }
+                    F4fPlatform.Instagram -> {
+                        val clean = acc.handle.removePrefix("@").ifBlank { acc.name.removePrefix("@") }
+                        reloadingIgUsernames = reloadingIgUsernames + clean
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                val igAcc = InstagramAccountsStore.getAccount(context, clean)
+                                if (igAcc != null && igAcc.cookie.isNotBlank()) {
+                                    val client = IgTaToolClient.buildClient(igAcc.proxy.ifBlank { null })
+                                    val check = IgTaToolClient.checkCookieIg(client, igAcc.cookie)
+                                    InstagramAccountsStore.updateAccount(context, igAcc.copy(isLive = check.isLive))
+                                }
+                            }
+                            reloadingIgUsernames = reloadingIgUsernames - clean
+                            reloadIg()
                         }
                     }
                     else -> {
@@ -423,9 +493,19 @@ fun F4fAccountScreen(navController: NavController) {
                         Toast.makeText(context, "Chạy tài khoản Facebook: ${acc.name}", Toast.LENGTH_SHORT).show()
                     }
                     F4fPlatform.Instagram -> {
-                        Toast.makeText(context, "Chạy tài khoản Instagram: ${acc.name}", Toast.LENGTH_SHORT).show()
+                        val clean = acc.handle.removePrefix("@").ifBlank { acc.name.removePrefix("@") }
+                        if (F4fInstagramManager.isRunning(clean)) {
+                            F4fInstagramManager.stop(clean)
+                            Toast.makeText(context, "Đã dừng @$clean", Toast.LENGTH_SHORT).show()
+                        } else {
+                            F4fInstagramManager.start(context, clean)
+                            Toast.makeText(context, "Bắt đầu chạy @$clean...", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
+            },
+            onOpenInfoAccount = { acc ->
+                selectedErrorDetailAccount = acc
             },
             onDeleteSelected = {
                 selectedAccountIds = emptySet()
@@ -440,6 +520,128 @@ fun F4fAccountScreen(navController: NavController) {
                     reloadTikTok()
                     refreshProfileAndAccounts()
                 }
+            )
+        }
+
+        if (showInstagramAddSheet) {
+            F4fIgAddSheet(
+                onDismiss = { showInstagramAddSheet = false },
+                onSubmit = { data ->
+                    val rawInput = data.trim()
+                    if (rawInput.isBlank()) {
+                        Toast.makeText(context, "Vui lòng nhập cookie tài khoản", Toast.LENGTH_SHORT).show()
+                        return@F4fIgAddSheet
+                    }
+
+                    val lines = rawInput.lines().map { it.trim() }.filter { it.isNotBlank() }
+                    val hasValid = lines.any { line ->
+                        val c = if (line.contains("|")) line.substring(0, line.lastIndexOf("|")).trim() else line
+                        c.contains("sessionid") && c.contains("ds_user_id") && c.contains("csrftoken")
+                    }
+
+                    if (!hasValid) {
+                        Toast.makeText(context, "Cookie thiếu các trường bắt buộc (cần có sessionid, ds_user_id, csrftoken)", Toast.LENGTH_LONG).show()
+                        return@F4fIgAddSheet
+                    }
+
+                    Toast.makeText(context, "Đang kiểm tra tài khoản Instagram...", Toast.LENGTH_SHORT).show()
+                    showInstagramAddSheet = false
+
+                    scope.launch {
+                        val addedAccounts = mutableListOf<String>()
+                        withContext(Dispatchers.IO) {
+                            for (line in lines) {
+                                var rawCookie = ""
+                                var proxyStr: String? = null
+                                if (line.contains("|")) {
+                                    val lastPipeIndex = line.lastIndexOf("|")
+                                    rawCookie = line.substring(0, lastPipeIndex).trim()
+                                    proxyStr = line.substring(lastPipeIndex + 1).trim().takeIf { it.isNotBlank() }
+                                } else {
+                                    rawCookie = line
+                                }
+
+                                if (!rawCookie.contains("sessionid") || !rawCookie.contains("ds_user_id") || !rawCookie.contains("csrftoken")) {
+                                    continue
+                                }
+
+                                val client = IgTaToolClient.buildClient(proxyStr)
+                                val info = IgTaToolClient.checkCookieIg(client, rawCookie)
+
+                                if (info.isLive && info.username.isNotBlank()) {
+                                    val tokens = IgTaToolClient.extractPageTokens(
+                                        client = client,
+                                        cookie = rawCookie,
+                                        targetUrl = "https://www.instagram.com/"
+                                    )
+                                    val dev = InstagramApiClient.getDeviceProfileFor(info.userId)
+                                    val pic = try {
+                                        InstagramApiClient.fetchProfilePic(info.username, rawCookie, proxyStr)
+                                    } catch (_: Exception) { null }
+
+                                    withContext(Dispatchers.Main) {
+                                        InstagramAccountsStore.addAccount(
+                                            context,
+                                            InstagramAccount(
+                                                username = info.username,
+                                                userId = info.userId,
+                                                cookie = rawCookie,
+                                                userAgent = dev.userAgent,
+                                                proxy = proxyStr.orEmpty(),
+                                                fullName = info.username,
+                                                avatar = pic.orEmpty(),
+                                                fbDtsg = tokens.dtsg,
+                                                lsd = tokens.lsd,
+                                                isLive = true
+                                            )
+                                        )
+                                        addedAccounts.add(info.username)
+                                    }
+                                }
+                            }
+                        }
+
+                        if (addedAccounts.isNotEmpty()) {
+                            val msg = if (addedAccounts.size == 1) "Thêm @${addedAccounts.first()} thành công!" else "Thêm thành công ${addedAccounts.size} tài khoản Instagram!"
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            reloadIg()
+                            refreshProfileAndAccounts()
+                        } else {
+                            Toast.makeText(context, "Không có tài khoản nào Live hoặc Cookie hết hạn", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            )
+        }
+
+        if (showInstagramConfigSheet) {
+            var igConfigState by remember { mutableStateOf(F4fRunConfigInstagramUiState()) }
+            F4fRunConfigInstagramScreen(
+                state = igConfigState,
+                onBack = { showInstagramConfigSheet = false },
+                onModeChange = { igConfigState = igConfigState.copy(mode = it) },
+                onGetTaskWaitChange = { igConfigState = igConfigState.copy(getTaskWaitSeconds = it) },
+                onWorkSecondsChange = { igConfigState = igConfigState.copy(workSeconds = it) },
+                onTaskCountChange = { igConfigState = igConfigState.copy(taskCount = it) },
+                onStopAfterEmptyChange = { igConfigState = igConfigState.copy(stopAfterEmptyTimes = it) },
+                onErrorSwapChange = { igConfigState = igConfigState.copy(errorSwapAccountCount = it) },
+                onStopAfterDoneChange = { igConfigState = igConfigState.copy(stopAfterDoneTimes = it) },
+                onBrowseBeforeTaskChange = { igConfigState = igConfigState.copy(browseBeforeTask = it) },
+                onBackHomeThenBrowseChange = { igConfigState = igConfigState.copy(backHomeThenBrowse = it) },
+                onSave = {
+                    showInstagramConfigSheet = false
+                    Toast.makeText(context, "Đã lưu cấu hình Follow4Follow Instagram", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        if (selectedErrorDetailAccount != null) {
+            val acc = selectedErrorDetailAccount!!
+            val errorMsg = acc.errorDetail.ifBlank { acc.runStatus.ifBlank { "Không có nội dung lỗi chi tiết." } }
+            F4fErrorDetailBottomSheet(
+                accountName = acc.name,
+                errorMessage = errorMsg,
+                onDismiss = { selectedErrorDetailAccount = null }
             )
         }
     }
