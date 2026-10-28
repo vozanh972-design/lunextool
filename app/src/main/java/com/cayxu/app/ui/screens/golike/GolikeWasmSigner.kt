@@ -160,7 +160,7 @@ object GolikeWasmSigner {
         timestamp: Long,
         nonceB64: String,
         deviceId: String,
-        userId: Long,
+        userId: Any,
         method: String,
         path: String,
         bodyHash: String
@@ -183,7 +183,8 @@ object GolikeWasmSigner {
         val ivB64 = Base64.encodeToString(ivBytes, Base64.NO_WRAP or Base64.URL_SAFE)
 
         mainHandler.post {
-            val script = "window.sign('$callId', '$rawKeyB64', '$ivB64', $timestamp, '$nonceB64', '$deviceId', $userId, '$method', '$path', '$bodyHash');"
+            val uJs = if (userId is Number) "$userId" else "'$userId'"
+            val script = "window.sign('$callId', '$rawKeyB64', '$ivB64', $timestamp, '$nonceB64', '$deviceId', $uJs, '$method', '$path', '$bodyHash');"
             webView?.evaluateJavascript(script, null)
         }
 

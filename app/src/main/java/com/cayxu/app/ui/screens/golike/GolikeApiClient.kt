@@ -38,6 +38,7 @@ class GolikeApiClient(
     var context: Context? = null
 ) {
     var lastTokenError: String? = null
+    var userUid: String? = null
 
     companion object {
         val BASE_URL: String get() = GolikeNativeBridge.fetchBaseUrl()
@@ -549,15 +550,26 @@ class GolikeApiClient(
         var reqBuilder = newRequestBuilder(url).header("sig", sigToken)
         onStatus("Đang nhận việc Instagram...")
         var res = execute(reqBuilder.get().build())
-        var code = res?.optInt("status", res.optInt("http_code", 0)) ?: 0
+        var code = res?.optInt("http code", res.optInt("http_code", res.optInt("status", 0))) ?: 0
 
-        // Fallback không có tiền tố /api nếu gặp lỗi 403
+        // Fallback thử lại nếu Gateway trả về 403 (Đồng bộ cả Path lẫn URL)
         if (code == 403) {
+            onStatus("Chữ ký cần tạo lại -> Đang lấy lại chữ ký...")
             currentPath = "/advertising/publishers/instagram/jobs"
             val fallbackSig = getInstagramSecurityTokenForGetJob(numAccId, path = currentPath, onStatus = onStatus)
             if (!fallbackSig.isNullOrBlank()) {
-                reqBuilder = newRequestBuilder(url).header("sig", fallbackSig)
+                val gatewayHost = BASE_URL.removeSuffix("/api")
+                val fallbackUrl = "$gatewayHost/advertising/publishers/instagram/jobs?instagram_account_id=$numAccId&data=null"
+                reqBuilder = newRequestBuilder(fallbackUrl).header("sig", fallbackSig)
                 res = execute(reqBuilder.get().build())
+                code = res?.optInt("http code", res.optInt("http_code", res.optInt("status", 0))) ?: 0
+            }
+        }
+
+        if (res != null && !res.optBoolean("success", false)) {
+            val msg = res.optString("message").orEmpty()
+            if (msg.contains("không hợp lệ", ignoreCase = true)) {
+                res.put("message", "Golike [HTTP $code]: Yêu cầu không hợp lệ (Nick ID $numAccId chưa khớp hoặc sig bị từ chối)")
             }
         }
         return res
@@ -581,9 +593,24 @@ class GolikeApiClient(
                 } catch (_: Exception) {}
             }
         }
-        val uid = res?.optLong("uid", 0L) ?: 0L
-        if (uid > 0L) {
-            this.userId = uid
+        val rawUid = res?.optString("uid")?.takeIf { it.isNotBlank() }
+        if (!rawUid.isNullOrBlank()) {
+            this.userUid = rawUid
+            val numUid = rawUid.toLongOrNull() ?: 0L
+            if (numUid > 0L) {
+                this.userId = numUid
+            }
+            context?.let { ctx ->
+                try {
+                    GolikeAccountsStore.saveUserId(ctx, rawUid)
+                } catch (_: Exception) {}
+            }
+        } else {
+            val uid = res?.optLong("uid", 0L) ?: 0L
+            if (uid > 0L) {
+                this.userId = uid
+                this.userUid = uid.toString()
+            }
         }
         return res
     }
@@ -598,26 +625,25 @@ class GolikeApiClient(
         }
         if (keyB64.isNullOrBlank()) return null
 
-        // Đảm bảo userId luôn hợp lệ (> 0) trước khi sinh chữ ký WASM
-        var uId = userId ?: 0L
-        if (uId <= 0L) {
-            val savedUid = GolikeAccountsStore.getUserId(ctx).toLongOrNull() ?: 0L
-            if (savedUid > 0L) {
-                uId = savedUid
-                this.userId = savedUid
-            } else {
-                try {
-                    val meRes = getMe()
-                    val fetchedUid = meRes?.optJSONObject("data")?.optLong("id", 0L)
-                        ?: meRes?.optLong("id", 0L) ?: 0L
-                    if (fetchedUid > 0L) {
-                        uId = fetchedUid
-                        this.userId = fetchedUid
-                        GolikeAccountsStore.saveUserId(ctx, fetchedUid.toString())
-                    }
-                } catch (_: Exception) {}
+        // Đảm bảo có userId hợp lệ trước khi sinh chữ ký WASM (hỗ trợ cả chuỗi ULID lẫn Long)
+        val effectiveUid: Any = this.userUid?.takeIf { it.isNotBlank() }
+            ?: (if ((userId ?: 0L) > 0L) userId!! else null)
+            ?: GolikeAccountsStore.getUserId(ctx).takeIf { it.isNotBlank() }
+            ?: try {
+                val meRes = getMe()
+                val fetchedStr = meRes?.optJSONObject("data")?.optString("id")?.takeIf { it.isNotBlank() }
+                    ?: meRes?.optString("id")?.takeIf { it.isNotBlank() }
+                if (!fetchedStr.isNullOrBlank()) {
+                    this.userUid = fetchedStr
+                    fetchedStr.toLongOrNull()?.let { this.userId = it }
+                    GolikeAccountsStore.saveUserId(ctx, fetchedStr)
+                    fetchedStr
+                } else {
+                    0L
+                }
+            } catch (_: Exception) {
+                0L
             }
-        }
 
         return try {
             val sha256 = MessageDigest.getInstance("SHA-256")
@@ -637,7 +663,7 @@ class GolikeApiClient(
                 timestamp = timestamp,
                 nonceB64 = randHex,
                 deviceId = devId,
-                userId = uId,
+                userId = effectiveUid,
                 method = "POST",
                 path = path,
                 bodyHash = bodyHash
