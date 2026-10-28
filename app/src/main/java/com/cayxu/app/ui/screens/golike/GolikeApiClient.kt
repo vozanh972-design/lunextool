@@ -491,6 +491,7 @@ class GolikeApiClient(
             ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
 
         if (directToken != null) {
+            lastTokenError = null
             return directToken
         }
 
@@ -511,11 +512,23 @@ class GolikeApiClient(
                     retryReqBuilder.header("g-auth", retryGAuth)
                 }
                 val retryRes = execute(retryReqBuilder.build())
-                return retryRes?.optString("token")?.takeIf { it.isNotBlank() }
+                val retToken = retryRes?.optString("token")?.takeIf { it.isNotBlank() }
                     ?: retryRes?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
                     ?: retryRes?.optString("sig")?.takeIf { it.isNotBlank() }
                     ?: retryRes?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+                if (retToken != null) {
+                    lastTokenError = null
+                    return retToken
+                }
+                lastTokenError = "Giải Captcha xong nhưng server token vẫn từ chối: ${retryRes?.toString() ?: "rỗng"}"
+            } else {
+                lastTokenError = "Golike yêu cầu xác minh Captcha nhưng giải tự động chưa thành công ($action / $reason / $message)"
             }
+        } else {
+            val serverErr = res?.optString("message")?.takeIf { it.isNotBlank() }
+                ?: res?.optString("error")?.takeIf { it.isNotBlank() }
+                ?: (if (res == null) "Không có kết nối tới server bảo mật Golike (/security/token)" else "Server bảo mật từ chối cấp token sig: $res")
+            lastTokenError = serverErr
         }
         return null
     }
@@ -912,6 +925,7 @@ class GolikeApiClient(
             ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
 
         if (directToken != null) {
+            lastTokenError = null
             return directToken
         }
 
@@ -931,11 +945,23 @@ class GolikeApiClient(
                     retryReqBuilder.header("g-auth", retryGAuth)
                 }
                 val retryRes = execute(retryReqBuilder.build())
-                return retryRes?.optString("token")?.takeIf { it.isNotBlank() }
+                val retToken = retryRes?.optString("token")?.takeIf { it.isNotBlank() }
                     ?: retryRes?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
                     ?: retryRes?.optString("sig")?.takeIf { it.isNotBlank() }
                     ?: retryRes?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+                if (retToken != null) {
+                    lastTokenError = null
+                    return retToken
+                }
+                lastTokenError = "Giải Captcha hoàn thành job xong nhưng server token vẫn từ chối: ${retryRes?.toString() ?: "rỗng"}"
+            } else {
+                lastTokenError = "Golike yêu cầu xác minh Captcha khi hoàn thành job nhưng giải tự động chưa thành công ($action / $reason / $message)"
             }
+        } else {
+            val serverErr = res?.optString("message")?.takeIf { it.isNotBlank() }
+                ?: res?.optString("error")?.takeIf { it.isNotBlank() }
+                ?: (if (res == null) "Không có kết nối tới server bảo mật Golike (/security/token)" else "Server bảo mật từ chối cấp token sig hoàn thành: $res")
+            lastTokenError = serverErr
         }
         return null
     }

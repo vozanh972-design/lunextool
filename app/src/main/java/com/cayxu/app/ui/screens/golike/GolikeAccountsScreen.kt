@@ -145,6 +145,11 @@ private val LinkIcon = listOf(
     "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71",
     "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
 )
+private val AlertCircle = listOf(
+    circle(12f, 12f, 9f),
+    "M12 8v4",
+    "M12 16h.01"
+)
 
 /* ───────────────────────────── Composable chính ───────────────────────────── */
 
@@ -167,6 +172,7 @@ fun GolikeAccountsScreen(
     onDeleteSelected: (() -> Unit)? = null,
     onTogglePlayAccount: ((GolikeAccount) -> Unit)? = null,
     onReloadAccount: ((GolikeAccount) -> Unit)? = null,
+    onErrorAccount: ((GolikeAccount) -> Unit)? = null,
 ) {
     val types = accountTypes[state.selectedPlatform].orEmpty()
     val visible = if (state.selectedPlatform == GolikePlatform.Instagram) {
@@ -281,7 +287,8 @@ fun GolikeAccountsScreen(
                                 onLink = { onLinkAccount(acc) },
                                 onClick = { onToggleAccount(acc) },
                                 onTogglePlay = { onTogglePlayAccount?.invoke(acc) ?: onToggleAccount(acc) },
-                                onReload = { onReloadAccount?.invoke(acc) ?: onLinkAccount(acc) }
+                                onReload = { onReloadAccount?.invoke(acc) ?: onLinkAccount(acc) },
+                                onErrorClick = { onErrorAccount?.invoke(acc) }
                             )
                         } else {
                             GolikeAccountRow(
@@ -739,7 +746,8 @@ private fun GolikeInstagramAccountRow(
     onLink: () -> Unit,
     onClick: () -> Unit,
     onTogglePlay: () -> Unit,
-    onReload: () -> Unit
+    onReload: () -> Unit,
+    onErrorClick: () -> Unit = {}
 ) {
     val isRunning = com.cayxu.app.ui.screens.golike.GolikeRunningManager.isRunning(account.id) || com.cayxu.app.ui.screens.golike.GolikeRunningManager.isRunning(account.username)
     val igAccent = Color(0xFFC2255C)
@@ -964,6 +972,26 @@ private fun GolikeInstagramAccountRow(
                     BasicText(
                         "Lỗi: $errorCount",
                         style = type(11.5f, FontWeight.ExtraBold, Color(0xFFC9363B))
+                    )
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                // Nút chấm than đỏ (!) cùng hàng ở phía bên phải
+                PressBox(
+                    onClick = onErrorClick,
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFFDECEC))
+                        .border(1.dp, Color(0xFFFCA5A5), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    SvgIcon(
+                        paths = AlertCircle,
+                        size = 16.dp,
+                        color = Color(0xFFDC2626),
+                        strokeWidth = 2.2f
                     )
                 }
             }

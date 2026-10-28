@@ -1257,10 +1257,43 @@ fun GolikeAccountScreen(navController: NavController) {
                         }
                     } catch (_: Exception) {}
                 }
-                // Khởi tạo session bảo mật chuẩn gweb-v3 trước khi vào vòng lặp nhận việc
-                try {
+
+                // XÁC NHẬN BƯỚC 1: ID số Golike
+                if (golikeAccId.isBlank() || !golikeAccId.all { it.isDigit() }) {
+                    val errStep1 = "[Khâu 1/4 - Định danh tài khoản]:\n" +
+                        "❌ Nick @$cleanUser chưa có ID số Golike (giá trị hiện tại: '$golikeAccId').\n" +
+                        "👉 Nguyên nhân: Golike chưa ghi nhận nick này trong danh sách tài khoản liên kết.\n" +
+                        "👉 Khắc phục: Vui lòng bấm nút làm mới (⟳) hoặc liên kết lại tài khoản với Golike."
+                    GolikeRunningManager.statusMap[acc.id] = "Lỗi: Chưa có ID số Golike"
+                    GolikeRunningManager.runningAccounts[acc.id] = false
+                    val curErr = (GolikeRunningManager.errorCountMap[acc.id] ?: acc.errorCount) + 1
+                    GolikeRunningManager.errorCountMap[acc.id] = curErr
+                    GolikeRunningManager.lastErrorDetailMap[acc.id] = errStep1
+                    GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, "Lỗi: Chưa có ID số Golike", isSuccess = false, errorDetail = errStep1)
+                    return@launch
+                }
+
+                // XÁC NHẬN BƯỚC 2: Khởi tạo session bảo mật chuẩn gweb-v3
+                GolikeRunningManager.statusMap[acc.id] = "Đang kiểm tra bảo mật Session Golike..."
+                val sessionRes = try {
                     client.createSecuritySession()
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    null
+                }
+                val currentSigningKey = client.signingKey
+                if (currentSigningKey.isNullOrBlank()) {
+                    val errStep2 = "[Khâu 2/4 - Khởi tạo Session Bảo Mật gweb-v3]:\n" +
+                        "❌ Không nhận được signing_key từ server Golike (/api/v1/security/session).\n" +
+                        "👉 Phản hồi server: ${sessionRes?.toString() ?: "Không có phản hồi (null)"}\n" +
+                        "👉 Nguyên nhân: Token đăng nhập Golike (Authorization) có thể đã hết hạn hoặc kết nối mạng không ổn định."
+                    GolikeRunningManager.statusMap[acc.id] = "Lỗi: Session bảo mật thất bại"
+                    GolikeRunningManager.runningAccounts[acc.id] = false
+                    val curErr = (GolikeRunningManager.errorCountMap[acc.id] ?: acc.errorCount) + 1
+                    GolikeRunningManager.errorCountMap[acc.id] = curErr
+                    GolikeRunningManager.lastErrorDetailMap[acc.id] = errStep2
+                    GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, "Lỗi: Session bảo mật thất bại", isSuccess = false, errorDetail = errStep2)
+                    return@launch
+                }
             }
 
             var consecutiveFails = 0
@@ -1279,9 +1312,27 @@ fun GolikeAccountScreen(navController: NavController) {
                     if (jobRes == null || !jobRes.optBoolean("success", false)) {
                         consecutiveFails++
                         val errMsg = jobRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Chưa có nhiệm vụ phù hợp lúc này"
+                        val errCode = jobRes?.optInt("status", jobRes.optInt("http_code", 0)) ?: 0
+                        val diagnosticDetail = if (selectedPlatform.lowercase() == "instagram") {
+                            val tokenErr = client.lastTokenError
+                            buildString {
+                                appendLine("[Khâu 3 & 4 - Nhận nhiệm vụ Instagram]:")
+                                appendLine("• ID tài khoản Golike: $golikeAccId")
+                                appendLine("• Mã phản hồi: HTTP $errCode | Thành công: false")
+                                appendLine("• Thông điệp từ Gateway: $errMsg")
+                                if (!tokenErr.isNullOrBlank()) {
+                                    appendLine("• Chữ ký bảo mật (Sig Token): $tokenErr")
+                                }
+                                appendLine("• Phản hồi gốc từ máy chủ:")
+                                appendLine(jobRes?.toString(2) ?: "{ \"error\": \"Không có dữ liệu phản hồi từ máy chủ\" }")
+                            }
+                        } else {
+                            errMsg
+                        }
+
                         GolikeRunningManager.statusMap[acc.id] = "Chưa có job: $errMsg (Chờ ${cfg.delayMinSeconds}s...)"
-                        GolikeRunningManager.lastErrorDetailMap[acc.id] = errMsg
-                        GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = null, errorDetail = errMsg)
+                        GolikeRunningManager.lastErrorDetailMap[acc.id] = diagnosticDetail
+                        GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = null, errorDetail = diagnosticDetail)
 
                         if (cfg.autoSwitchOnFail && consecutiveFails >= cfg.failJobCountToSwitchAccount) {
                             GolikeRunningManager.statusMap[acc.id] = "Tạm dừng: Gặp lỗi liên tiếp $consecutiveFails lần"
@@ -1461,12 +1512,31 @@ fun GolikeAccountScreen(navController: NavController) {
                         val failMsg = compRes?.optString("message")?.takeIf { it.isNotBlank() } ?: "Lỗi hoàn thành nhiệm vụ"
                         val curErr = (GolikeRunningManager.errorCountMap[acc.id] ?: acc.errorCount) + 1
                         GolikeRunningManager.errorCountMap[acc.id] = curErr
-                        GolikeRunningManager.lastErrorDetailMap[acc.id] = failMsg
+
+                        val completeDetail = if (selectedPlatform.lowercase() == "instagram") {
+                            buildString {
+                                appendLine("[Khâu Hoàn Thành Nhiệm Vụ Instagram]:")
+                                appendLine("• Job Ads ID: $igAdsId")
+                                appendLine("• ID tài khoản Golike: $golikeAccId")
+                                appendLine("• Loại Job: $jobType")
+                                appendLine("• Thông điệp từ Gateway: $failMsg")
+                                appendLine("• Phản hồi gốc từ máy chủ:")
+                                appendLine(compRes?.toString(2) ?: "{ \"error\": \"Không có phản hồi\" }")
+                            }
+                        } else {
+                            failMsg
+                        }
+
+                        GolikeRunningManager.lastErrorDetailMap[acc.id] = completeDetail
                         GolikeRunningManager.statusMap[acc.id] = "Lỗi: $failMsg"
 
                         // Gọi bỏ qua job (Skip Job)
-                        client.skipJob(adsId, jobData.optString("object_id"), golikeAccId, jobType)
-                        GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = false, errorDetail = failMsg)
+                        if (selectedPlatform.lowercase() == "instagram") {
+                            client.skipInstagramJob(igAdsId, jobData.optString("object_id"), golikeAccId, jobType)
+                        } else {
+                            client.skipJob(adsId, jobData.optString("object_id"), golikeAccId, jobType)
+                        }
+                        GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = false, errorDetail = completeDetail)
                     }
 
                     // Nghỉ giữa các job theo cấu hình
@@ -1800,6 +1870,9 @@ fun GolikeAccountScreen(navController: NavController) {
                 reloadAccounts()
                 Toast.makeText(context, "Đã làm mới tài khoản @${acc.username}", Toast.LENGTH_SHORT).show()
             }
+        },
+        onErrorAccount = { acc ->
+            selectedErrorAccount = acc
         }
     )
 
