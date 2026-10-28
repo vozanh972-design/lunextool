@@ -453,7 +453,7 @@ class GolikeApiClient(
     // 3a-IG. Lấy chữ ký token bảo mật (sig) cho nhận job Instagram
     suspend fun getInstagramSecurityTokenForGetJob(
         accountId: Any,
-        path: String = "/api/advertising/publishers/instagram/jobs",
+        path: String = "/advertising/publishers/instagram/jobs",
         onStatus: (String) -> Unit = {}
     ): String? {
         context?.let { ctx ->
@@ -560,12 +560,13 @@ class GolikeApiClient(
                 ?: (if (res == null) "Không có kết nối tới server bảo mật Golike (/security/token)" else "Server bảo mật từ chối cấp token sig: $res")
             lastTokenError = serverErr
         }
+
         return null
     }
 
     suspend fun getInstagramJob(accountId: String, onStatus: (String) -> Unit = {}): JSONObject? {
         val numAccId = accountId.toLongOrNull() ?: accountId
-        var currentPath = "/api/advertising/publishers/instagram/jobs"
+        var currentPath = "/advertising/publishers/instagram/jobs"
         var sigToken = getInstagramSecurityTokenForGetJob(numAccId, path = currentPath, onStatus = onStatus)
         if (sigToken.isNullOrBlank()) {
             val err = lastTokenError ?: "Thiếu chữ ký sig (Không lấy được token bảo mật từ Golike)"
@@ -584,7 +585,7 @@ class GolikeApiClient(
         // Fallback thử lại nếu Gateway trả về 403 (Đổi path xin lại sig, giữ nguyên 100% URL Gateway chuẩn)
         if (code == 403) {
             onStatus("Chữ ký cần tạo lại -> Đang lấy lại chữ ký...")
-            currentPath = "/advertising/publishers/instagram/jobs"
+            currentPath = "/api/advertising/publishers/instagram/jobs"
             val fallbackSig = getInstagramSecurityTokenForGetJob(numAccId, path = currentPath, onStatus = onStatus)
             if (!fallbackSig.isNullOrBlank()) {
                 reqBuilder = newRequestBuilder(url).header("sig", fallbackSig)
@@ -932,7 +933,7 @@ class GolikeApiClient(
     suspend fun getInstagramSecurityTokenForCompleteJob(
         adsId: Any,
         accountId: Any,
-        path: String = "/api/advertising/publishers/instagram/complete-jobs",
+        path: String = "/advertising/publishers/instagram/complete-jobs",
         onStatus: (String) -> Unit = {}
     ): String? {
         context?.let { ctx ->
@@ -1049,7 +1050,7 @@ class GolikeApiClient(
     ): JSONObject? {
         val numAccId = accountId.toLongOrNull() ?: accountId
         val adsIdStr = adsId.toString()
-        var currentPath = "/api/advertising/publishers/instagram/complete-jobs"
+        var currentPath = "/advertising/publishers/instagram/complete-jobs"
         var sigToken = getInstagramSecurityTokenForCompleteJob(adsIdStr, numAccId, path = currentPath, onStatus = onStatus)
         if (sigToken.isNullOrBlank()) {
             val err = lastTokenError ?: "Thiếu chữ ký sig hoàn thành (Không lấy được token bảo mật từ Golike)"
@@ -1077,7 +1078,7 @@ class GolikeApiClient(
         var res = execute(reqBuilder.build())
         val code = res?.optInt("status", res.optInt("http_code", 0)) ?: 0
         if (code == 403) {
-            currentPath = "/advertising/publishers/instagram/complete-jobs"
+            currentPath = "/api/advertising/publishers/instagram/complete-jobs"
             val fallbackSig = getInstagramSecurityTokenForCompleteJob(adsIdStr, numAccId, path = currentPath, onStatus = onStatus)
             if (!fallbackSig.isNullOrBlank()) {
                 reqBuilder = newRequestBuilder("$BASE_URL/advertising/publishers/instagram/complete-jobs")
