@@ -1238,7 +1238,7 @@ fun GolikeAccountScreen(navController: NavController) {
                     // 1. Lấy nhiệm vụ (Get Job)
                     val jobRes = when (selectedPlatform.lowercase()) {
                         "facebook" -> client.getFacebookJob(acc.id)
-                        "instagram" -> client.getInstagramJob(golikeAccId)
+                        "instagram" -> client.getInstagramJob(golikeAccId) { p -> GolikeRunningManager.statusMap[acc.id] = p }
                         else -> client.getTikTokJob(golikeAccId)
                     }
 
@@ -1267,6 +1267,7 @@ fun GolikeAccountScreen(navController: NavController) {
                     }
 
                     val adsId = jobData.optLong("ads_id", jobData.optLong("id", 0L))
+                    val igAdsId = jobData.optString("id").ifBlank { jobData.optString("ads_id") }.ifBlank { adsId.toString() }
                     val jobType = jobData.optString("type", "tương tác")
                     val countdown = jobRes.optInt("countdown", cfg.delayMinSeconds).coerceAtLeast(3)
 
@@ -1305,7 +1306,11 @@ fun GolikeAccountScreen(navController: NavController) {
                             GolikeRunningManager.errorCountMap[acc.id] = curErr
                             GolikeRunningManager.lastErrorDetailMap[acc.id] = errMsg
                             GolikeRunningManager.statusMap[acc.id] = "Lỗi: $errMsg"
-                            client.skipJob(adsId, jobData.optString("object_id"), golikeAccId, jobType)
+                            if (selectedPlatform.lowercase() == "instagram") {
+                                client.skipInstagramJob(igAdsId, jobData.optString("object_id"), golikeAccId, jobType)
+                            } else {
+                                client.skipJob(adsId, jobData.optString("object_id"), golikeAccId, jobType)
+                            }
                             GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = false, errorDetail = errMsg)
                             delay(cfg.delayMinSeconds * 1000L)
                             continue
@@ -1377,7 +1382,11 @@ fun GolikeAccountScreen(navController: NavController) {
                             GolikeRunningManager.errorCountMap[acc.id] = curErr
                             GolikeRunningManager.lastErrorDetailMap[acc.id] = actionErrMsg
                             GolikeRunningManager.statusMap[acc.id] = "Thao tác thất bại: $actionErrMsg"
-                            client.skipJob(adsId, objectId, golikeAccId, jobType)
+                            if (selectedPlatform.lowercase() == "instagram") {
+                                client.skipInstagramJob(igAdsId, objectId, golikeAccId, jobType)
+                            } else {
+                                client.skipJob(adsId, objectId, golikeAccId, jobType)
+                            }
                             GolikeAccountsStore.updateAccountProgress(context, selectedPlatform, acc.id, GolikeRunningManager.statusMap[acc.id].orEmpty(), isSuccess = false, errorDetail = actionErrMsg)
                             delay(cfg.delayMinSeconds * 1000L)
                             continue
@@ -1396,7 +1405,7 @@ fun GolikeAccountScreen(navController: NavController) {
                     GolikeRunningManager.statusMap[acc.id] = "Đang gửi báo cáo hoàn thành..."
                     val compRes = when (selectedPlatform.lowercase()) {
                         "facebook" -> client.completeFacebookJob(adsId, acc.id)
-                        "instagram" -> client.completeInstagramJob(adsId, golikeAccId)
+                        "instagram" -> client.completeInstagramJob(igAdsId, golikeAccId) { p -> GolikeRunningManager.statusMap[acc.id] = p }
                         else -> client.completeTikTokJob(adsId, golikeAccId)
                     }
 

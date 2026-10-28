@@ -438,8 +438,112 @@ class GolikeApiClient(
         return res
     }
 
-    fun getInstagramJob(accountId: String): JSONObject? =
-        execute(newRequestBuilder("$BASE_URL/advertising/publishers/instagram/jobs?instagram_account_id=$accountId").get().build())
+    // 3a-IG. Lấy chữ ký token bảo mật (sig) cho nhận job Instagram
+    suspend fun getInstagramSecurityTokenForGetJob(
+        accountId: Any,
+        path: String = "/api/advertising/publishers/instagram/jobs",
+        onStatus: (String) -> Unit = {}
+    ): String? {
+        context?.let { ctx ->
+            val syncErr = GolikeNativeBridge.checkSessionIntegrity(ctx)
+            if (syncErr != null) {
+                lastTokenError = syncErr
+                return null
+            }
+        }
+        val numAccId = when (accountId) {
+            is Number -> accountId
+            is String -> accountId.toLongOrNull() ?: accountId
+            else -> accountId
+        }
+        val telPayloadStr = GolikeNativeBridge.fetchTelemetryJson(0)
+        val reqPayload = JSONObject().apply {
+            put("plt", "instagram")
+            put("act", "get_job")
+            put("req", JSONObject().apply {
+                put("method", "GET")
+                put("path", path)
+                put("query", "instagram_account_id=$numAccId&data=null")
+                put("body", "")
+            })
+            put("tel", JSONObject(telPayloadStr))
+        }
+
+        val bodyStr = reqPayload.toString()
+        onStatus("Đang tạo chữ ký WASM Instagram...")
+        val dynamicGAuth = generateGAuth(bodyStr, path = GolikeNativeBridge.fetchPathToken())
+        if (dynamicGAuth.isNullOrBlank()) {
+            val err = "Lỗi tạo chữ ký WASM g-auth IG"
+            lastTokenError = err
+            onStatus(err)
+            return null
+        }
+
+        val reqBuilder = newRequestBuilder("$SECURITY_URL/token")
+            .post(bodyStr.toRequestBody(JSON_MEDIA_TYPE))
+            .header("g-auth", dynamicGAuth)
+
+        onStatus("Đang lấy token nhận việc IG (sig)...")
+        val res = execute(reqBuilder.build())
+        val directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
+            ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
+            ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
+            ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+
+        if (directToken != null) {
+            return directToken
+        }
+
+        // Tự động giải ngầm nếu gặp Captcha
+        val action = res?.optString("action")
+        val reason = res?.optString("reason")
+        val message = res?.optString("message").orEmpty()
+        if (action == "captcha" || reason == "captcha" || message.contains("xác minh", ignoreCase = true)) {
+            onStatus("🛡️ Golike yêu cầu Captcha -> Đang tự động giải ngầm...")
+            val solved = solveCaptchaChallenge(onStatus)
+            if (solved) {
+                onStatus("🟢 Đã giải Captcha -> Đang lấy lại sig IG...")
+                val retryBodyStr = reqPayload.toString()
+                val retryGAuth = generateGAuth(retryBodyStr, path = GolikeNativeBridge.fetchPathToken())
+                val retryReqBuilder = newRequestBuilder("$SECURITY_URL/token")
+                    .post(retryBodyStr.toRequestBody(JSON_MEDIA_TYPE))
+                if (!retryGAuth.isNullOrBlank()) {
+                    retryReqBuilder.header("g-auth", retryGAuth)
+                }
+                val retryRes = execute(retryReqBuilder.build())
+                return retryRes?.optString("token")?.takeIf { it.isNotBlank() }
+                    ?: retryRes?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
+                    ?: retryRes?.optString("sig")?.takeIf { it.isNotBlank() }
+                    ?: retryRes?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+            }
+        }
+        return null
+    }
+
+    suspend fun getInstagramJob(accountId: String, onStatus: (String) -> Unit = {}): JSONObject? {
+        val numAccId = accountId.toLongOrNull() ?: accountId
+        var currentPath = "/api/advertising/publishers/instagram/jobs"
+        var sigToken = getInstagramSecurityTokenForGetJob(numAccId, path = currentPath, onStatus = onStatus)
+        val url = "$BASE_URL/advertising/publishers/instagram/jobs?instagram_account_id=$numAccId&data=null"
+        var reqBuilder = newRequestBuilder(url)
+        if (!sigToken.isNullOrBlank()) {
+            reqBuilder = reqBuilder.header("sig", sigToken)
+        }
+        onStatus("Đang nhận việc Instagram...")
+        var res = execute(reqBuilder.get().build())
+        var code = res?.optInt("status", res.optInt("http_code", 0)) ?: 0
+
+        // Fallback không có tiền tố /api nếu gặp lỗi 403
+        if (code == 403) {
+            currentPath = "/advertising/publishers/instagram/jobs"
+            val fallbackSig = getInstagramSecurityTokenForGetJob(numAccId, path = currentPath, onStatus = onStatus)
+            if (!fallbackSig.isNullOrBlank()) {
+                reqBuilder = newRequestBuilder(url).header("sig", fallbackSig)
+                res = execute(reqBuilder.get().build())
+            }
+        }
+        return res
+    }
 
     fun getFacebookJob(fbId: String): JSONObject? =
         execute(newRequestBuilder("$BASE_URL/advertising/publishers/get-jobs-2026?fb_id=$fbId").get().build())
@@ -744,13 +848,144 @@ class GolikeApiClient(
         return res
     }
 
-    fun completeInstagramJob(adsId: Long, accountId: String): JSONObject? {
-        val body = JSONObject().apply {
-            put("ads_id", adsId)
-            put("instagram_account_id", accountId)
+    // 4a-IG. Lấy chữ ký token bảo mật (sig) cho hoàn thành job Instagram
+    suspend fun getInstagramSecurityTokenForCompleteJob(
+        adsId: Any,
+        accountId: Any,
+        path: String = "/api/advertising/publishers/instagram/complete-jobs",
+        onStatus: (String) -> Unit = {}
+    ): String? {
+        context?.let { ctx ->
+            val syncErr = GolikeNativeBridge.checkSessionIntegrity(ctx)
+            if (syncErr != null) {
+                lastTokenError = syncErr
+                return null
+            }
+        }
+        val numAccId = when (accountId) {
+            is Number -> accountId
+            is String -> accountId.toLongOrNull() ?: accountId
+            else -> accountId
+        }
+        val bodyObj = JSONObject().apply {
+            put("instagram_users_advertising_id", adsId.toString())
+            put("instagram_account_id", numAccId)
             put("async", true)
+            put("data", JSONObject.NULL)
+        }
+        val telPayloadStr = GolikeNativeBridge.fetchTelemetryJson(1)
+        val reqPayload = JSONObject().apply {
+            put("plt", "instagram")
+            put("act", "complete_job")
+            put("req", JSONObject().apply {
+                put("method", "POST")
+                put("path", path)
+                put("query", "")
+                put("body", bodyObj.toString())
+            })
+            put("tel", JSONObject(telPayloadStr))
+        }
+
+        val bodyStr = reqPayload.toString()
+        val dynamicGAuth = generateGAuth(bodyStr, path = GolikeNativeBridge.fetchPathToken())
+
+        val reqBuilder = newRequestBuilder("$SECURITY_URL/token")
+            .post(bodyStr.toRequestBody(JSON_MEDIA_TYPE))
+        if (!dynamicGAuth.isNullOrBlank()) {
+            reqBuilder.header("g-auth", dynamicGAuth)
+        }
+
+        val res = execute(reqBuilder.build())
+        val directToken = res?.optString("token")?.takeIf { it.isNotBlank() }
+            ?: res?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
+            ?: res?.optString("sig")?.takeIf { it.isNotBlank() }
+            ?: res?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+
+        if (directToken != null) {
+            return directToken
+        }
+
+        // Tự động giải ngầm nếu gặp Captcha
+        val action = res?.optString("action")
+        val reason = res?.optString("reason")
+        val message = res?.optString("message").orEmpty()
+        if (action == "captcha" || reason == "captcha" || message.contains("xác minh", ignoreCase = true)) {
+            onStatus("🛡️ Golike yêu cầu Captcha khi hoàn thành IG -> Đang tự động giải ngầm...")
+            val solved = solveCaptchaChallenge(onStatus)
+            if (solved) {
+                val retryBodyStr = reqPayload.toString()
+                val retryGAuth = generateGAuth(retryBodyStr, path = GolikeNativeBridge.fetchPathToken())
+                val retryReqBuilder = newRequestBuilder("$SECURITY_URL/token")
+                    .post(retryBodyStr.toRequestBody(JSON_MEDIA_TYPE))
+                if (!retryGAuth.isNullOrBlank()) {
+                    retryReqBuilder.header("g-auth", retryGAuth)
+                }
+                val retryRes = execute(retryReqBuilder.build())
+                return retryRes?.optString("token")?.takeIf { it.isNotBlank() }
+                    ?: retryRes?.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
+                    ?: retryRes?.optString("sig")?.takeIf { it.isNotBlank() }
+                    ?: retryRes?.optJSONObject("data")?.optString("sig")?.takeIf { it.isNotBlank() }
+            }
+        }
+        return null
+    }
+
+    suspend fun completeInstagramJob(
+        adsId: Any,
+        accountId: String,
+        captchaToken: String? = null,
+        onStatus: (String) -> Unit = {}
+    ): JSONObject? {
+        val numAccId = accountId.toLongOrNull() ?: accountId
+        val adsIdStr = adsId.toString()
+        var currentPath = "/api/advertising/publishers/instagram/complete-jobs"
+        var sigToken = getInstagramSecurityTokenForCompleteJob(adsIdStr, numAccId, path = currentPath, onStatus = onStatus)
+
+        val body = JSONObject().apply {
+            put("instagram_users_advertising_id", adsIdStr)
+            put("instagram_account_id", numAccId)
+            put("async", true)
+            put("data", JSONObject.NULL)
+            if (!captchaToken.isNullOrBlank()) {
+                put("captcha_token", captchaToken)
+            }
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
-        return execute(newRequestBuilder("$BASE_URL/advertising/publishers/instagram/complete-jobs").post(body).build())
+
+        var reqBuilder = newRequestBuilder("$BASE_URL/advertising/publishers/instagram/complete-jobs")
+            .post(body)
+        if (!sigToken.isNullOrBlank()) {
+            reqBuilder = reqBuilder.header("sig", sigToken)
+        }
+
+        var res = execute(reqBuilder.build())
+        val code = res?.optInt("status", res.optInt("http_code", 0)) ?: 0
+        if (code == 403) {
+            currentPath = "/advertising/publishers/instagram/complete-jobs"
+            val fallbackSig = getInstagramSecurityTokenForCompleteJob(adsIdStr, numAccId, path = currentPath, onStatus = onStatus)
+            if (!fallbackSig.isNullOrBlank()) {
+                reqBuilder = newRequestBuilder("$BASE_URL/advertising/publishers/instagram/complete-jobs")
+                    .post(body)
+                    .header("sig", fallbackSig)
+                res = execute(reqBuilder.build())
+            }
+        }
+        return res
+    }
+
+    // 5-IG. Bỏ qua nhiệm vụ Instagram (Skip Job)
+    fun skipInstagramJob(adsId: Any, objectId: String, accountId: Any, type: String): JSONObject? {
+        val numAccId = when (accountId) {
+            is Number -> accountId
+            is String -> accountId.toLongOrNull() ?: accountId
+            else -> accountId
+        }
+        val body = JSONObject().apply {
+            put("ads_id", adsId.toString())
+            put("object_id", objectId)
+            put("account_id", numAccId)
+            put("type", type)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        return execute(newRequestBuilder("$BASE_URL/advertising/publishers/instagram/skip-jobs").post(body).build())
     }
 
     fun completeFacebookJob(adsId: Long, fbId: String): JSONObject? {
