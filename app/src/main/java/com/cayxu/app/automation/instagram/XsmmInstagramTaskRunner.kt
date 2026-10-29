@@ -357,7 +357,17 @@ class XsmmInstagramTaskRunner(
                         else -> IgActionResult(false, 400, "", "Loại job không hợp lệ")
                     }
 
-                    if (!actionResult.isSuccess) {
+                    val isPrivateAccount = actionResult.errorMessage?.contains("Riêng tư", ignoreCase = true) == true ||
+                                           actionResult.errorMessage?.contains("Private", ignoreCase = true) == true
+
+                    if (!actionResult.isSuccess && isPrivateAccount) {
+                        notify("• Bỏ qua nick Riêng tư (Private)", completedCount, errorCount)
+                        for (sec in 3 downTo 1) {
+                            if (!coroutineContext.isActive) throw kotlinx.coroutines.CancellationException("User stopped")
+                            notify("• Bỏ qua nick Private (Chờ ${sec}s)...", completedCount, errorCount)
+                            delay(1000L)
+                        }
+                    } else if (!actionResult.isSuccess) {
                         errorCount++
                         consecutiveErrors++
                         val errReason = actionResult.errorMessage ?: "Lỗi tương tác Instagram"
@@ -376,14 +386,18 @@ class XsmmInstagramTaskRunner(
                             return RunResult(completedCount, errorCount, totalPoints, dieMsg)
                         }
 
-                        notify("• Lỗi: $errReason", completedCount, errorCount)
+                        notify("• Lỗi [$jobType]: $errReason", completedCount, errorCount)
                         onErrorDetail?.invoke(cleanUsername, "Instagram $jobType lỗi [Mã ${actionResult.httpCode}]:\n$errReason\n${actionResult.rawBody.take(300)}")
 
                         if (consecutiveErrors >= maxErrors) {
-                            notify("Lỗi liên tiếp $consecutiveErrors lần -> Dừng nick", completedCount, errorCount)
+                            notify("• Lỗi liên tiếp $consecutiveErrors lần -> Dừng nick", completedCount, errorCount)
                             return RunResult(completedCount, errorCount, totalPoints, "Lỗi liên tiếp")
                         }
-                        delay(4000L)
+                        for (sec in 4 downTo 1) {
+                            if (!coroutineContext.isActive) throw kotlinx.coroutines.CancellationException("User stopped")
+                            notify("• Lỗi: $errReason (${sec}s)...", completedCount, errorCount)
+                            delay(1000L)
+                        }
                     } else {
                         // Thao tác IG thành công -> Báo XSMM
                         consecutiveErrors = 0
@@ -391,7 +405,7 @@ class XsmmInstagramTaskRunner(
                             pendingFollowTaskIds.add(taskId)
                             notify("• Follow OK | Đang gom [${pendingFollowTaskIds.size}/10] task...", completedCount, errorCount)
                             if (pendingFollowTaskIds.size >= 10) {
-                                notify("• Gửi nhận xu 10 follow...", completedCount, errorCount)
+                                notify("• Đang gửi nhận xu 10 follow...", completedCount, errorCount)
                                 val comp = runner.completeTasks(jobType, pendingFollowTaskIds)
                                 val points = comp?.optInt("points") ?: comp?.optJSONObject("data")?.optInt("points") ?: comp?.optInt("earned_points") ?: 0
                                 val isSuccess = points > 0 || comp?.optBoolean("success", false) == true || comp?.optString("status").equals("success", true)
@@ -415,7 +429,7 @@ class XsmmInstagramTaskRunner(
                                 }
                             }
                         } else {
-                            notify("• Xác nhận nhận xu...", completedCount, errorCount)
+                            notify("• Đang gửi nhận xu $jobType...", completedCount, errorCount)
                             val comp = runner.completeTask(jobType, taskId)
                             val points = comp?.optInt("points") ?: comp?.optJSONObject("data")?.optInt("points") ?: comp?.optInt("earned_points") ?: 0
                             val isSuccess = points > 0 || comp?.optBoolean("success", false) == true || comp?.optString("status").equals("success", true)
