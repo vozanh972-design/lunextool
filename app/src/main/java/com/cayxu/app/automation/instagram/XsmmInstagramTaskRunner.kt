@@ -779,7 +779,12 @@ class XsmmInstagramTaskRunner(
             cachedLsd = account.lsd,
             userId = account.userId
         )
-        return parseIgResult(resBody, "Follow")
+        val parseRes = IgTaToolClient.parseFollowResponse(resBody)
+        return if (parseRes.isSuccess) {
+            IgActionResult(true, 200, resBody, null)
+        } else {
+            IgActionResult(false, 400, resBody, parseRes.message)
+        }
     }
 
     private fun resolveTargetUid(username: String): String? {
@@ -830,7 +835,12 @@ class XsmmInstagramTaskRunner(
                 cachedLsd = account.lsd,
                 userId = account.userId
             )
-            return parseIgResult(res, "Tym")
+            val parseRes = IgTaToolClient.parseTymCmtResponse(res)
+            return if (parseRes.isSuccess) {
+                IgActionResult(true, 200, res, null)
+            } else {
+                IgActionResult(false, 400, res, parseRes.message)
+            }
         } catch (e: Exception) {
             return IgActionResult(false, 500, "", e.message ?: "Lỗi kết nối khi Tym")
         }
@@ -859,7 +869,12 @@ class XsmmInstagramTaskRunner(
                 cachedLsd = account.lsd,
                 userId = account.userId
             )
-            return parseIgResult(res, "Comment")
+            val parseRes = IgTaToolClient.parseTymCmtResponse(res)
+            return if (parseRes.isSuccess) {
+                IgActionResult(true, 200, res, null)
+            } else {
+                IgActionResult(false, 400, res, parseRes.message)
+            }
         } catch (e: Exception) {
             return IgActionResult(false, 500, "", e.message ?: "Lỗi kết nối khi Comment")
         }

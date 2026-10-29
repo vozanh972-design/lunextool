@@ -492,6 +492,11 @@ class F4fInstagramTaskRunner(
             cachedLsd = lsd,
             userId = userId
         )
-        return parseIgResult(resBody, "Like")
+        val parseRes = IgTaToolClient.parseTymCmtResponse(resBody)
+        return if (parseRes.isSuccess) {
+            IgActionResult(true, 200, resBody, null)
+        } else {
+            IgActionResult(false, 400, resBody, parseRes.message)
+        }
     }
 }
