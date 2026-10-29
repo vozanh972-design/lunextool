@@ -99,7 +99,7 @@ object IgTaToolClient {
             .add("x-csrftoken", csrftoken)
             .add("x-ig-app-id", IG_APP_ID)
             .add("x-ig-www-claim", "0")
-            .add("x-requested-with", "XMLHttpRequest")
+            .add("x-ig-max-touch-points", "0")
 
         if (!friendlyName.isNullOrBlank()) {
             b.add("x-fb-friendly-name", friendlyName)
@@ -203,7 +203,15 @@ object IgTaToolClient {
     }
 
     private fun getActorId(cookie: String): String {
-        val m = Pattern.compile("ds_user_id=(\\d+)").matcher(cookie)
+        val cleanCookie = unquoteCookie(cookie)
+        // 1. Ưu tiên bóc Actor ID chuẩn từ cookie rur (ví dụ: rur=VLL,17841480879673473,... hoặc rur="VLL,17841480879673473,...")
+        val rurMatch = Pattern.compile("""rur=[^,;]+,(\d+)""").matcher(cleanCookie)
+        if (rurMatch.find()) {
+            val aid = rurMatch.group(1)
+            if (!aid.isNullOrBlank() && aid != "0") return aid
+        }
+        // 2. Fallback ds_user_id
+        val m = Pattern.compile("ds_user_id=(\\d+)").matcher(cleanCookie)
         return if (m.find()) m.group(1) ?: "0" else "0"
     }
 
@@ -722,15 +730,52 @@ object IgTaToolClient {
         if (responseText.isBlank()) return IgActionResultV2(false, "Phản hồi rỗng từ Instagram")
         try {
             val g = JSONObject(responseText.trim().removePrefix("for (;;);"))
-            val hasData = g.has("data") && !g.isNull("data")
-            val status = g.optString("status", "").lowercase()
-            if (!hasData && status != "ok" && status != "success") {
-                val msg = g.optString("message", "Block")
+
+            // 1. Kiểm tra lỗi nghiệp vụ từ Meta (error, errorSummary, errorDescription)
+            val errCode = g.optInt("error", 0)
+            val errSummary = g.optString("errorSummary", "")
+            val errDesc = g.optString("errorDescription", "")
+            if (errCode > 0 || errSummary.isNotBlank() || errDesc.isNotBlank()) {
+                val detail = listOfNotNull(errSummary.takeIf { it.isNotBlank() }, errDesc.takeIf { it.isNotBlank() }).joinToString(": ")
+                val msg = if (detail.isNotBlank()) detail else "Meta từ chối yêu cầu (Mã $errCode)"
                 return IgActionResultV2(false, msg)
             }
-            return IgActionResultV2(true, "Thành công")
+
+            // 2. Kiểm tra mảng lỗi GraphQL errors
+            val errors = g.optJSONArray("errors")
+            if (errors != null && errors.length() > 0) {
+                val first = errors.getJSONObject(0)
+                val errMsg = first.optString("message", "Lỗi GraphQL")
+                return IgActionResultV2(false, errMsg)
+            }
+
+            // 3. Kiểm tra thành công
+            val data = g.optJSONObject("data")
+            if (data != null) {
+                val friendship = data.optJSONObject("xdt_create_friendship")
+                val status = friendship?.optJSONObject("friendship_status")
+                if (status != null && (status.optBoolean("following") || status.optBoolean("outgoing_request"))) {
+                    return IgActionResultV2(true, "Thành công")
+                }
+                return IgActionResultV2(true, "Thành công")
+            }
+
+            val status = g.optString("status", "").lowercase()
+            if (status == "ok" || status == "success") {
+                return IgActionResultV2(true, "Thành công")
+            }
+
+            val feedbackTitle = g.optString("feedback_title", "")
+            val feedbackMsg = g.optString("feedback_message", "")
+            val fbDetail = listOfNotNull(feedbackTitle.takeIf { it.isNotBlank() }, feedbackMsg.takeIf { it.isNotBlank() }).joinToString(": ")
+            if (fbDetail.isNotBlank()) {
+                return IgActionResultV2(false, fbDetail)
+            }
+
+            val msg = g.optString("message", "Thao tác không thành công")
+            return IgActionResultV2(false, msg)
         } catch (e: Exception) {
-            return IgActionResultV2(false, "Lỗi JSON: ${e.message}")
+            return IgActionResultV2(false, "Lỗi phản hồi: ${e.message}")
         }
     }
 
@@ -738,15 +783,46 @@ object IgTaToolClient {
         if (responseText.isBlank()) return IgActionResultV2(false, "Phản hồi rỗng từ Instagram khi Tym")
         try {
             val g = JSONObject(responseText.trim().removePrefix("for (;;);"))
-            val hasData = g.has("data") && !g.isNull("data")
-            val status = g.optString("status", "").lowercase()
-            if (!hasData && status != "ok") {
-                val msg = g.optString("message", "Bị IG chặn thao tác")
+
+            // 1. Kiểm tra lỗi nghiệp vụ từ Meta
+            val errCode = g.optInt("error", 0)
+            val errSummary = g.optString("errorSummary", "")
+            val errDesc = g.optString("errorDescription", "")
+            if (errCode > 0 || errSummary.isNotBlank() || errDesc.isNotBlank()) {
+                val detail = listOfNotNull(errSummary.takeIf { it.isNotBlank() }, errDesc.takeIf { it.isNotBlank() }).joinToString(": ")
+                val msg = if (detail.isNotBlank()) detail else "Meta từ chối Tym (Mã $errCode)"
                 return IgActionResultV2(false, msg)
             }
-            return IgActionResultV2(true, "Thành công")
+
+            // 2. Kiểm tra mảng lỗi GraphQL errors
+            val errors = g.optJSONArray("errors")
+            if (errors != null && errors.length() > 0) {
+                val first = errors.getJSONObject(0)
+                return IgActionResultV2(false, first.optString("message", "Lỗi Tym GraphQL"))
+            }
+
+            // 3. Kiểm tra thành công
+            val data = g.optJSONObject("data")
+            if (data != null) {
+                return IgActionResultV2(true, "Thành công")
+            }
+
+            val status = g.optString("status", "").lowercase()
+            if (status == "ok" || status == "success") {
+                return IgActionResultV2(true, "Thành công")
+            }
+
+            val feedbackTitle = g.optString("feedback_title", "")
+            val feedbackMsg = g.optString("feedback_message", "")
+            val fbDetail = listOfNotNull(feedbackTitle.takeIf { it.isNotBlank() }, feedbackMsg.takeIf { it.isNotBlank() }).joinToString(": ")
+            if (fbDetail.isNotBlank()) {
+                return IgActionResultV2(false, fbDetail)
+            }
+
+            val msg = g.optString("message", "Không thể Tym bài viết")
+            return IgActionResultV2(false, msg)
         } catch (e: Exception) {
-            return IgActionResultV2(false, "Lỗi JSON: ${e.message}")
+            return IgActionResultV2(false, "Lỗi phản hồi: ${e.message}")
         }
     }
 
@@ -754,15 +830,36 @@ object IgTaToolClient {
         if (responseText.isBlank()) return IgActionResultV2(false, "Phản hồi rỗng từ Instagram khi Comment")
         try {
             val g = JSONObject(responseText.trim().removePrefix("for (;;);"))
-            val hasData = g.has("data") && !g.isNull("data")
-            val status = g.optString("status", "").lowercase()
-            if (!hasData && status != "ok") {
-                val msg = g.optString("message", "Bị IG chặn cmt")
+
+            val errCode = g.optInt("error", 0)
+            val errSummary = g.optString("errorSummary", "")
+            val errDesc = g.optString("errorDescription", "")
+            if (errCode > 0 || errSummary.isNotBlank() || errDesc.isNotBlank()) {
+                val detail = listOfNotNull(errSummary.takeIf { it.isNotBlank() }, errDesc.takeIf { it.isNotBlank() }).joinToString(": ")
+                val msg = if (detail.isNotBlank()) detail else "Meta từ chối Comment (Mã $errCode)"
                 return IgActionResultV2(false, msg)
             }
-            return IgActionResultV2(true, "Thành công")
+
+            val errors = g.optJSONArray("errors")
+            if (errors != null && errors.length() > 0) {
+                val first = errors.getJSONObject(0)
+                return IgActionResultV2(false, first.optString("message", "Lỗi Cmt GraphQL"))
+            }
+
+            val data = g.optJSONObject("data")
+            if (data != null) {
+                return IgActionResultV2(true, "Thành công")
+            }
+
+            val status = g.optString("status", "").lowercase()
+            if (status == "ok" || status == "success") {
+                return IgActionResultV2(true, "Thành công")
+            }
+
+            val msg = g.optString("message", "Không thể Comment bài viết")
+            return IgActionResultV2(false, msg)
         } catch (e: Exception) {
-            return IgActionResultV2(false, "Lỗi JSON: ${e.message}")
+            return IgActionResultV2(false, "Lỗi phản hồi: ${e.message}")
         }
     }
 }
