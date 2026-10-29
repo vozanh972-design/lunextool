@@ -234,6 +234,7 @@ class F4fInstagramTaskRunner(
                                 append("\n\n--- [Phản hồi gốc từ Instagram] ---\n")
                                 append(actionResult.rawBody.trim().take(2000))
                             }
+                        }
                         onProgressUpdate(errTitle, successCount, errorCount)
 
                         // Báo cáo lỗi và bỏ qua nhiệm vụ trên F4F
