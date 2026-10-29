@@ -234,9 +234,7 @@ class F4fInstagramTaskRunner(
                                 append("\n\n--- [Phản hồi gốc từ Instagram] ---\n")
                                 append(actionResult.rawBody.trim().take(2000))
                             }
-                        }
                         onProgressUpdate(errTitle, successCount, errorCount)
-                        onErrorDetail(cleanUser, fullDetail)
 
                         // Báo cáo lỗi và bỏ qua nhiệm vụ trên F4F
                         F4fApiClient.reportJob(
@@ -466,8 +464,8 @@ class F4fInstagramTaskRunner(
             return IgActionResult(false, 400, "", "Không lấy được thông tin tài khoản @$cleanTargetUser từ link nhiệm vụ")
         }
 
-        // Thực thi Follow 100% logic chuẩn V2
-        val resBody = IgTaToolClient.follow(
+        // Thực thi Follow 100% logic chuẩn Web Meta 2026
+        var resBody = IgTaToolClient.follow(
             client = client,
             cookie = cookie,
             targetId = uid,
@@ -476,7 +474,26 @@ class F4fInstagramTaskRunner(
             cachedLsd = lsd,
             userId = userId
         )
-        val parseRes = IgTaToolClient.parseFollowResponseV2(resBody)
+        var parseRes = IgTaToolClient.parseFollowResponseV2(resBody)
+
+        // Nếu ban đầu bị từ chối/429 (thường do server F4F cấp ID rác), tự động bóc UID chuẩn từ trang HTML và thử lại 1 lần
+        if (!parseRes.isSuccess && profileUrl.isNotBlank()) {
+            val realUid = IgTaToolClient.extractTargetIdFromUrl(client, cookie, profileUrl)
+            if (!realUid.isNullOrBlank() && realUid != uid) {
+                uid = realUid
+                resBody = IgTaToolClient.follow(
+                    client = client,
+                    cookie = cookie,
+                    targetId = uid,
+                    profileUrl = profileUrl,
+                    cachedDtsg = fbDtsg,
+                    cachedLsd = lsd,
+                    userId = userId
+                )
+                parseRes = IgTaToolClient.parseFollowResponseV2(resBody)
+            }
+        }
+
         return if (parseRes.isSuccess) {
             IgActionResult(true, 200, resBody, null)
         } else {

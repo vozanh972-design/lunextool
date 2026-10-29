@@ -399,10 +399,10 @@ class XsmmInstagramTaskRunner(
                         }
 
                         notify("• Lỗi [$jobType]: $errReason", completedCount, errorCount)
-                        onErrorDetail?.invoke(cleanUsername, "Instagram $jobType lỗi [Mã ${actionResult.httpCode}]:\n$errReason\n${actionResult.rawBody.take(300)}")
 
                         if (consecutiveErrors >= maxErrors) {
                             notify("• Lỗi liên tiếp $consecutiveErrors lần -> Dừng nick", completedCount, errorCount)
+                            onErrorDetail?.invoke(cleanUsername, "Instagram $jobType lỗi liên tiếp $consecutiveErrors lần [Mã ${actionResult.httpCode}]:\n$errReason\n${actionResult.rawBody.take(300)}")
                             return RunResult(completedCount, errorCount, totalPoints, "Lỗi liên tiếp")
                         }
                         val isRateLimit = actionResult.errorMessage?.contains("429") == true || actionResult.rawBody.contains("429")
@@ -806,17 +806,17 @@ class XsmmInstagramTaskRunner(
     }
 
     fun doFollow(targetNumericId: String, targetUsername: String, targetUrl: String = ""): IgActionResult {
+        val cleanTargetUser = targetUsername.trim().trim('/').substringAfterLast('/')
+        val profileUrl = if (targetUrl.isNotBlank()) targetUrl else if (cleanTargetUser.isNotBlank()) "https://www.instagram.com/$cleanTargetUser/" else "https://www.instagram.com/"
         var uid = targetNumericId.trim()
         if (!uid.all { it.isDigit() } || uid.isBlank()) {
-            val extracted = if (targetUrl.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(client, account.cookie, targetUrl) else null
+            val extracted = if (profileUrl.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(client, account.cookie, profileUrl) else null
             uid = extracted ?: ""
         }
         if (!uid.all { it.isDigit() } || uid.isBlank()) {
             return IgActionResult(false, 400, "", "Không trích xuất được ID số, bỏ qua!")
         }
-        val cleanTargetUser = targetUsername.trim().trim('/').substringAfterLast('/')
-        val profileUrl = if (targetUrl.isNotBlank()) targetUrl else if (cleanTargetUser.isNotBlank()) "https://www.instagram.com/$cleanTargetUser/" else "https://www.instagram.com/"
-        val resBody = IgTaToolClient.follow(
+        var resBody = IgTaToolClient.follow(
             client = client,
             cookie = account.cookie,
             targetId = uid,
@@ -825,7 +825,26 @@ class XsmmInstagramTaskRunner(
             cachedLsd = account.lsd,
             userId = account.userId
         )
-        val parseRes = IgTaToolClient.parseFollowResponseV2(resBody)
+        var parseRes = IgTaToolClient.parseFollowResponseV2(resBody)
+
+        // Nếu ban đầu bị từ chối/429 (thường do server XSMM cấp ID rác như 76964344445), tự động bóc UID chuẩn từ trang HTML và thử lại 1 lần
+        if (!parseRes.isSuccess && profileUrl.isNotBlank()) {
+            val realUid = IgTaToolClient.extractTargetIdFromUrl(client, account.cookie, profileUrl)
+            if (!realUid.isNullOrBlank() && realUid != uid) {
+                uid = realUid
+                resBody = IgTaToolClient.follow(
+                    client = client,
+                    cookie = account.cookie,
+                    targetId = uid,
+                    profileUrl = profileUrl,
+                    cachedDtsg = account.fbDtsg,
+                    cachedLsd = account.lsd,
+                    userId = account.userId
+                )
+                parseRes = IgTaToolClient.parseFollowResponseV2(resBody)
+            }
+        }
+
         return if (parseRes.isSuccess) {
             IgActionResult(true, 200, resBody, null)
         } else {

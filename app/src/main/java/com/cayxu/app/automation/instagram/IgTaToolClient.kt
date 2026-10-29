@@ -13,9 +13,19 @@ import kotlin.random.Random
  * Giữ nguyên các tham số, headers, default tokens, parser chuẩn V2.
  */
 object IgTaToolClient {
-    // ================= CẤU HÌNH HEADERS & USER-AGENT CHUẨN V2 =================
+    // ================= CẤU HÌNH HEADERS & USER-AGENT CHUẨN WEB META 2026 =================
     private const val USERAGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     private const val SEC_CH_UA_120 = "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\""
+    const val ASBD_ID = "359341" // Chuẩn Web Meta 2026 bắt trực tiếp từ DevTools
+    const val IG_APP_ID = "936619743392459"
+
+    fun unquoteCookie(cookie: String): String {
+        return try {
+            java.net.URLDecoder.decode(cookie.trim(), "UTF-8")
+        } catch (_: Exception) {
+            cookie.trim()
+        }
+    }
 
     fun buildClient(proxyStr: String?): OkHttpClient {
         val builder = OkHttpClient.Builder()
@@ -62,9 +72,15 @@ object IgTaToolClient {
         return builder.build()
     }
 
-    // ================= get_ig_headers (xsmmigv2.py) =================
-    fun getIgHeaders(cookie: String, csrftoken: String, referer: String = "https://www.instagram.com/"): Headers {
-        return Headers.Builder()
+    // ================= getIgHeaders chuẩn Web Meta 2026 =================
+    fun getIgHeaders(
+        cookie: String,
+        csrftoken: String,
+        referer: String = "https://www.instagram.com/",
+        friendlyName: String? = null,
+        lsd: String? = null
+    ): Headers {
+        val b = Headers.Builder()
             .add("accept", "*/*")
             .add("accept-language", "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5")
             .add("content-type", "application/x-www-form-urlencoded")
@@ -79,12 +95,19 @@ object IgTaToolClient {
             .add("sec-fetch-mode", "cors")
             .add("sec-fetch-site", "same-origin")
             .add("user-agent", USERAGENT)
-            .add("x-asbd-id", "129477")
+            .add("x-asbd-id", ASBD_ID)
             .add("x-csrftoken", csrftoken)
-            .add("x-ig-app-id", "936619743392459")
+            .add("x-ig-app-id", IG_APP_ID)
             .add("x-ig-www-claim", "0")
             .add("x-requested-with", "XMLHttpRequest")
-            .build()
+
+        if (!friendlyName.isNullOrBlank()) {
+            b.add("x-fb-friendly-name", friendlyName)
+        }
+        if (!lsd.isNullOrBlank()) {
+            b.add("x-fb-lsd", lsd)
+        }
+        return b.build()
     }
 
     data class IgCookieInfo(
@@ -93,14 +116,18 @@ object IgTaToolClient {
         val userId: String = ""
     )
 
-    // ================= check_cookie_ig (xsmmigv2.py) =================
+    // ================= check_cookie_ig chuẩn Web Meta 2026 =================
     fun checkCookieIg(client: OkHttpClient, cookie: String): IgCookieInfo {
+        val cleanCookie = unquoteCookie(cookie)
+        val csrf = getCsrfToken(cleanCookie)
         val url = "https://www.instagram.com/api/v1/accounts/edit/web_form_data/"
         val headers = Headers.Builder()
-            .add("x-ig-app-id", "936619743392459")
+            .add("x-ig-app-id", IG_APP_ID)
+            .add("x-asbd-id", ASBD_ID)
             .add("x-requested-with", "XMLHttpRequest")
+            .add("x-csrftoken", csrf)
             .add("referer", "https://www.instagram.com/accounts/edit/")
-            .add("cookie", cookie)
+            .add("cookie", cleanCookie)
             .add("user-agent", USERAGENT)
             .add("sec-ch-ua", SEC_CH_UA_120)
             .build()
@@ -113,7 +140,7 @@ object IgTaToolClient {
                 if (formData != null && formData.has("username")) {
                     val username = formData.optString("username", "")
                     if (username.isNotBlank()) {
-                        val dsMatch = Pattern.compile("ds_user_id=(\\d+)").matcher(cookie)
+                        val dsMatch = Pattern.compile("ds_user_id=(\\d+)").matcher(cleanCookie)
                         val uid = if (dsMatch.find()) dsMatch.group(1) else formData.optString("id", "")
                         return IgCookieInfo(isLive = true, username = username, userId = uid ?: "")
                     }
@@ -125,7 +152,7 @@ object IgTaToolClient {
 
     data class IgPageTokens(val dtsg: String, val lsd: String, val jazoest: String)
 
-    // ================= TRÍCH XUẤT TOKEN CHUẨN V2 =================
+    // ================= TRÍCH XUẤT TOKEN CHUẨN WEB META 2026 =================
     fun extractPageTokens(
         client: OkHttpClient,
         cookie: String,
@@ -133,9 +160,10 @@ object IgTaToolClient {
         cachedDtsg: String? = null,
         cachedLsd: String? = null
     ): IgPageTokens {
+        val cleanCookie = unquoteCookie(cookie)
         var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
-        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "Jfq8VQNmkkkJufHSbEE9bf"
-        var jazoest = "26328"
+        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "nOMctdLzh1GM0vIym-YNtf"
+        var jazoest = "26449"
 
         val target = if (targetUrl.isNotBlank()) targetUrl else "https://www.instagram.com/"
         try {
@@ -143,7 +171,7 @@ object IgTaToolClient {
                 .url(target)
                 .header("User-Agent", USERAGENT)
                 .header("Sec-Ch-Ua", SEC_CH_UA_120)
-                .header("Cookie", cookie)
+                .header("Cookie", cleanCookie)
                 .get()
                 .build()
             client.newCall(req).execute().use { res ->
@@ -179,7 +207,7 @@ object IgTaToolClient {
         return if (m.find()) m.group(1) ?: "0" else "0"
     }
 
-    // ================= follow (chuẩn 100% xsmmigv2.py dòng 222-277) =================
+    // ================= follow chuẩn 100% Web Meta 2026 =================
     fun follow(
         client: OkHttpClient,
         rawCookie: String = "",
@@ -190,15 +218,15 @@ object IgTaToolClient {
         userId: String? = null,
         cookie: String = rawCookie
     ): String {
-        val effectiveCookie = cookie.ifBlank { rawCookie }
+        val effectiveCookie = unquoteCookie(cookie.ifBlank { rawCookie })
         if (targetId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Target ID\"}"
         val target = if (profileUrl.isNotBlank()) profileUrl else "https://www.instagram.com/"
 
         var curCookie = effectiveCookie
         var dynamicCsrftoken = getCsrfToken(curCookie)
         var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
-        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "Jfq8VQNmkkkJufHSbEE9bf"
-        var jazoest = "26328"
+        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "nOMctdLzh1GM0vIym-YNtf"
+        var jazoest = "26449"
 
         val cookieMap = mutableMapOf<String, String>()
         for (item in curCookie.split(";")) {
@@ -210,12 +238,21 @@ object IgTaToolClient {
             }
         }
 
-        // BƯỚC 1: Luôn truy cập profileUrl trước để thiết lập navigation chain và nhận csrftoken mới nhất (chuẩn 100% dòng 482 xsmmigv2.py)
+        // BƯỚC 1: Truy cập trang profile để thiết lập navigation chain và lấy token phiên mới nhất
         try {
             val reqVisit = Request.Builder()
                 .url(target)
                 .header("User-Agent", USERAGENT)
                 .header("Sec-Ch-Ua", SEC_CH_UA_120)
+                .header("Sec-Ch-Ua-Mobile", "?0")
+                .header("Sec-Ch-Ua-Platform", "\"Windows\"")
+                .header("Sec-Fetch-Dest", "document")
+                .header("Sec-Fetch-Mode", "navigate")
+                .header("Sec-Fetch-Site", "none")
+                .header("Sec-Fetch-User", "?1")
+                .header("Upgrade-Insecure-Requests", "1")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
                 .header("Cookie", curCookie)
                 .get()
                 .build()
@@ -264,11 +301,11 @@ object IgTaToolClient {
             .add("__d", "www")
             .add("__user", "0")
             .add("__a", "1")
-            .add("__req", "s")
-            .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
+            .add("__req", "5l")
+            .add("__hs", "20755.HYP:instagram_web_pkg.2.1...0")
             .add("dpr", "1")
             .add("__ccg", "EXCELLENT")
-            .add("__rev", "1046917461")
+            .add("__rev", "1052189343")
             .add("__comet_req", "7")
             .add("fb_dtsg", fbDtsg)
             .add("jazoest", jazoest)
@@ -276,11 +313,11 @@ object IgTaToolClient {
             .add("fb_api_caller_class", "RelayModern")
             .add("fb_api_req_friendly_name", "usePolarisFollowMutation")
             .add("server_timestamps", "true")
-            .add("doc_id", "26508036048874888")
+            .add("doc_id", "26508036048874890")
             .add("variables", variables.toString())
             .build()
 
-        val reqHeaders = getIgHeaders(curCookie, dynamicCsrftoken, target)
+        val reqHeaders = getIgHeaders(curCookie, dynamicCsrftoken, target, friendlyName = "usePolarisFollowMutation", lsd = lsd)
 
         val req = Request.Builder()
             .url("https://www.instagram.com/api/graphql")
@@ -299,7 +336,7 @@ object IgTaToolClient {
         }
     }
 
-    // ================= tym (chuẩn 100% xsmmigv2.py dòng 278-345) =================
+    // ================= tym (chuẩn 100% Web Meta 2026 DevTools RelayModern GraphQL) =================
     fun tym(
         client: OkHttpClient,
         rawCookie: String = "",
@@ -310,14 +347,14 @@ object IgTaToolClient {
         userId: String? = null,
         cookie: String = rawCookie
     ): String {
-        val effectiveCookie = cookie.ifBlank { rawCookie }
+        val effectiveCookie = unquoteCookie(cookie.ifBlank { rawCookie })
         if (mediaId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Media ID\"}"
 
         var curCookie = effectiveCookie
         var dynamicCsrftoken = getCsrfToken(curCookie)
         var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
-        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "GyeZl-huflHZ0K5L3-pzBi"
-        var jazoest = "26492"
+        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "nOMctdLzh1GM0vIym-YNtf"
+        var jazoest = "26449"
 
         val cookieMap = mutableMapOf<String, String>()
         for (item in curCookie.split(";")) {
@@ -329,12 +366,22 @@ object IgTaToolClient {
             }
         }
 
+        val target = if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/"
         if (fbDtsg.isBlank()) {
             try {
                 val reqHome = Request.Builder()
-                    .url("https://www.instagram.com/")
+                    .url(target)
                     .header("User-Agent", USERAGENT)
                     .header("Sec-Ch-Ua", SEC_CH_UA_120)
+                    .header("Sec-Ch-Ua-Mobile", "?0")
+                    .header("Sec-Ch-Ua-Platform", "\"Windows\"")
+                    .header("Sec-Fetch-Dest", "document")
+                    .header("Sec-Fetch-Mode", "navigate")
+                    .header("Sec-Fetch-Site", "none")
+                    .header("Sec-Fetch-User", "?1")
+                    .header("Upgrade-Insecure-Requests", "1")
+                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                    .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
                     .header("Cookie", curCookie)
                     .get()
                     .build()
@@ -378,6 +425,15 @@ object IgTaToolClient {
                     .url(linkJob)
                     .header("User-Agent", USERAGENT)
                     .header("Sec-Ch-Ua", SEC_CH_UA_120)
+                    .header("Sec-Ch-Ua-Mobile", "?0")
+                    .header("Sec-Ch-Ua-Platform", "\"Windows\"")
+                    .header("Sec-Fetch-Dest", "document")
+                    .header("Sec-Fetch-Mode", "navigate")
+                    .header("Sec-Fetch-Site", "none")
+                    .header("Sec-Fetch-User", "?1")
+                    .header("Upgrade-Insecure-Requests", "1")
+                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                    .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
                     .header("Cookie", curCookie)
                     .get()
                     .build()
@@ -423,11 +479,11 @@ object IgTaToolClient {
             .add("__d", "www")
             .add("__user", "0")
             .add("__a", "1")
-            .add("__req", "h")
-            .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
+            .add("__req", "5l")
+            .add("__hs", "20755.HYP:instagram_web_pkg.2.1...0")
             .add("dpr", "1")
             .add("__ccg", "EXCELLENT")
-            .add("__rev", "1046913831")
+            .add("__rev", "1052189343")
             .add("__comet_req", "7")
             .add("fb_dtsg", fbDtsg)
             .add("jazoest", jazoest)
@@ -435,11 +491,17 @@ object IgTaToolClient {
             .add("fb_api_caller_class", "RelayModern")
             .add("fb_api_req_friendly_name", "usePolarisLikeMediaXIGLikeMutation")
             .add("server_timestamps", "true")
-            .add("doc_id", "27182485238052618")
+            .add("doc_id", "27182485238052616")
             .add("variables", variables.toString())
             .build()
 
-        val reqHeaders = getIgHeaders(curCookie, dynamicCsrftoken, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
+        val reqHeaders = getIgHeaders(
+            curCookie,
+            dynamicCsrftoken,
+            if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/",
+            friendlyName = "usePolarisLikeMediaXIGLikeMutation",
+            lsd = lsd
+        )
 
         val req = Request.Builder()
             .url("https://www.instagram.com/api/graphql")
@@ -458,7 +520,7 @@ object IgTaToolClient {
         }
     }
 
-    // ================= cmt (chuẩn 100% xsmmigv2.py dòng 346-407) =================
+    // ================= cmt (chuẩn 100% Web Meta 2026 DevTools RelayModern GraphQL) =================
     fun cmt(
         client: OkHttpClient,
         rawCookie: String = "",
@@ -470,14 +532,14 @@ object IgTaToolClient {
         userId: String? = null,
         cookie: String = rawCookie
     ): String {
-        val effectiveCookie = cookie.ifBlank { rawCookie }
+        val effectiveCookie = unquoteCookie(cookie.ifBlank { rawCookie })
         if (mediaId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Media ID\"}"
 
         var curCookie = effectiveCookie
         var dynamicCsrftoken = getCsrfToken(curCookie)
         var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
-        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "9zei3OjvTBQ-9YG6E0OMzm"
-        var jazoest = "26312"
+        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "nOMctdLzh1GM0vIym-YNtf"
+        var jazoest = "26449"
 
         val cookieMap = mutableMapOf<String, String>()
         for (item in curCookie.split(";")) {
@@ -496,6 +558,15 @@ object IgTaToolClient {
                     .url(target)
                     .header("User-Agent", USERAGENT)
                     .header("Sec-Ch-Ua", SEC_CH_UA_120)
+                    .header("Sec-Ch-Ua-Mobile", "?0")
+                    .header("Sec-Ch-Ua-Platform", "\"Windows\"")
+                    .header("Sec-Fetch-Dest", "document")
+                    .header("Sec-Fetch-Mode", "navigate")
+                    .header("Sec-Fetch-Site", "none")
+                    .header("Sec-Fetch-User", "?1")
+                    .header("Upgrade-Insecure-Requests", "1")
+                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                    .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
                     .header("Cookie", curCookie)
                     .get()
                     .build()
@@ -550,11 +621,11 @@ object IgTaToolClient {
             .add("__d", "www")
             .add("__user", "0")
             .add("__a", "1")
-            .add("__req", "10")
-            .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
+            .add("__req", "5l")
+            .add("__hs", "20755.HYP:instagram_web_pkg.2.1...0")
             .add("dpr", "1")
             .add("__ccg", "EXCELLENT")
-            .add("__rev", "1046917461")
+            .add("__rev", "1052189343")
             .add("__comet_req", "7")
             .add("fb_dtsg", fbDtsg)
             .add("jazoest", jazoest)
@@ -566,7 +637,13 @@ object IgTaToolClient {
             .add("variables", variables.toString())
             .build()
 
-        val reqHeaders = getIgHeaders(curCookie, dynamicCsrftoken, target)
+        val reqHeaders = getIgHeaders(
+            curCookie,
+            dynamicCsrftoken,
+            target,
+            friendlyName = "PolarisPostCommentInputRevampedMutation",
+            lsd = lsd
+        )
 
         val req = Request.Builder()
             .url("https://www.instagram.com/api/graphql")
@@ -585,38 +662,52 @@ object IgTaToolClient {
         }
     }
 
-    // ================= TRÍCH XUẤT TARGET ID CHUẨN 100% xsmmigv2.py =================
+    // ================= TRÍCH XUẤT TARGET ID CHUẨN 100% WEB META 2026 =================
     fun extractTargetIdFromUrl(client: OkHttpClient, cookie: String, targetUrl: String): String? {
-        val myActorId = getActorId(cookie)
+        val cleanCookie = unquoteCookie(cookie)
+        val myActorId = getActorId(cleanCookie)
+        val cleanUrl = if (targetUrl.startsWith("http")) targetUrl else "https://www.instagram.com/${targetUrl.trim().trim('/')}/"
         val req = Request.Builder()
-            .url(targetUrl)
+            .url(cleanUrl)
             .header("User-Agent", USERAGENT)
             .header("Sec-Ch-Ua", SEC_CH_UA_120)
-            .header("Cookie", cookie)
+            .header("Sec-Ch-Ua-Mobile", "?0")
+            .header("Sec-Ch-Ua-Platform", "\"Windows\"")
+            .header("Sec-Fetch-Dest", "document")
+            .header("Sec-Fetch-Mode", "navigate")
+            .header("Sec-Fetch-Site", "none")
+            .header("Sec-Fetch-User", "?1")
+            .header("Upgrade-Insecure-Requests", "1")
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+            .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+            .header("Cookie", cleanCookie)
             .get()
             .build()
         try {
             client.newCall(req).execute().use { res ->
                 val resHtml = res.body?.string().orEmpty()
-                var m = Pattern.compile(""""profile_id":"(\d+)"""").matcher(resHtml)
-                if (!m.find()) {
-                    m = Pattern.compile(""""user_id":"(\d+)"""").matcher(resHtml)
-                }
-                if (!m.find()) {
-                    m = Pattern.compile("""profilePage_(\d+)""").matcher(resHtml)
-                }
-                if (!m.find()) {
-                    m = Pattern.compile(""""owner":\{"id":"(\d+)"""").matcher(resHtml)
-                }
-                if (!m.find()) {
-                    m = Pattern.compile(""""id":"(\d+)","username":""").matcher(resHtml)
-                }
-                if (!m.find()) {
-                    m = Pattern.compile("""instagram://user\?username=[^&]*&id=(\d+)""").matcher(resHtml)
-                }
-                if (m.find()) {
-                    val id = m.group(1)
-                    if (!id.isNullOrBlank() && id != myActorId) return id
+                // 1. Thử bắt profile_id dạng JSON array hoặc string trong web script
+                val patterns = listOf(
+                    Pattern.compile("""profile_id:\s*\['(\d+)'"""),
+                    Pattern.compile(""""profile_id":\s*"(\d+)""""),
+                    Pattern.compile("""'profile_id':\s*'(\d+)'"""),
+                    Pattern.compile("""profilePage_(\d+)"""),
+                    Pattern.compile(""""user_id":\s*"(\d+)""""),
+                    Pattern.compile(""""owner":\{"id":"(\d+)""""),
+                    Pattern.compile(""""id":"(\d+)","username":"""),
+                    Pattern.compile("""instagram://user\?username=[^&]*&id=(\d+)"""),
+                    Pattern.compile(""""target_id":\s*"(\d+)""""),
+                    Pattern.compile(""""pk":\s*"(\d+)""""),
+                    Pattern.compile(""""pk_id":\s*"(\d+)"""")
+                )
+                for (p in patterns) {
+                    val m = p.matcher(resHtml)
+                    while (m.find()) {
+                        val id = m.group(1)
+                        if (!id.isNullOrBlank() && id != myActorId && id != "0") {
+                            return id
+                        }
+                    }
                 }
             }
         } catch (_: Exception) {}
