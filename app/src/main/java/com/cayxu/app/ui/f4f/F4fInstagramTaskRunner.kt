@@ -264,10 +264,12 @@ class F4fInstagramTaskRunner(
                             break
                         }
 
-                        val waitSec = cfg.getTaskWaitSeconds.coerceAtLeast(3)
+                        val isRateLimit = actionResult.errorMessage?.contains("429") == true || actionResult.rawBody.contains("429")
+                        val waitSec = if (isRateLimit) 20 else cfg.getTaskWaitSeconds.coerceAtLeast(3)
                         for (s in waitSec downTo 1) {
                             if (!coroutineContext.isActive || !F4fInstagramManager.isRunning(cleanUser)) break
-                            onStatusUpdate("Nghỉ chờ sau lỗi: ${s}s...")
+                            val prefix = if (isRateLimit) "Chờ Instagram nhả Rate-Limit 429" else "Nghỉ chờ sau lỗi"
+                            onStatusUpdate("$prefix: ${s}s...")
                             delay(1000L)
                         }
                         continue

@@ -271,7 +271,7 @@ class XsmmInstagramTaskRunner(
                 listnv.add("instagram_follow")
                 listnv.add("instagram_like")
             }
-            val doDuration = config.doTaskDurationSeconds.coerceAtLeast(8)
+            val doDuration = config.doTaskDurationSeconds.coerceAtLeast(15)
             val targetJobs = if (config.taskCountTarget > 0) config.taskCountTarget else 99999
             val maxErrors = config.failJobCountToSwitchAccount.coerceAtLeast(5)
             var completedCount = 0
@@ -398,9 +398,12 @@ class XsmmInstagramTaskRunner(
                             notify("• Lỗi liên tiếp $consecutiveErrors lần -> Dừng nick", completedCount, errorCount)
                             return RunResult(completedCount, errorCount, totalPoints, "Lỗi liên tiếp")
                         }
-                        for (sec in 4 downTo 1) {
+                        val isRateLimit = actionResult.errorMessage?.contains("429") == true || actionResult.rawBody.contains("429")
+                        val waitSec = if (isRateLimit) 20 else 5
+                        for (sec in waitSec downTo 1) {
                             if (!coroutineContext.isActive) throw kotlinx.coroutines.CancellationException("User stopped")
-                            notify("• Lỗi: $errReason (${sec}s)...", completedCount, errorCount)
+                            val prefix = if (isRateLimit) "Chờ Instagram nhả Rate-Limit 429" else "Lỗi: $errReason"
+                            notify("• $prefix (${sec}s)...", completedCount, errorCount)
                             delay(1000L)
                         }
                     } else {

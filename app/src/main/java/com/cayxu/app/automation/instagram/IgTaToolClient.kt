@@ -194,9 +194,62 @@ object IgTaToolClient {
         if (targetId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Target ID\"}"
         val target = if (profileUrl.isNotBlank()) profileUrl else "https://www.instagram.com/"
 
+        var curCookie = effectiveCookie
+        var dynamicCsrftoken = getCsrfToken(curCookie)
         var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
         var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "Jfq8VQNmkkkJufHSbEE9bf"
         var jazoest = "26328"
+
+        val cookieMap = mutableMapOf<String, String>()
+        for (item in curCookie.split(";")) {
+            val idx = item.indexOf("=")
+            if (idx > 0) {
+                val k = item.substring(0, idx).trim()
+                val v = item.substring(idx + 1).trim()
+                if (k.isNotBlank()) cookieMap[k] = v
+            }
+        }
+
+        // BƯỚC 1: Luôn truy cập profileUrl trước để thiết lập navigation chain và nhận csrftoken mới nhất (chuẩn 100% dòng 482 xsmmigv2.py)
+        try {
+            val reqVisit = Request.Builder()
+                .url(target)
+                .header("User-Agent", USERAGENT)
+                .header("Sec-Ch-Ua", SEC_CH_UA_120)
+                .header("Cookie", curCookie)
+                .get()
+                .build()
+            client.newCall(reqVisit).execute().use { res ->
+                val resHome = res.body?.string().orEmpty()
+                val lsdMatch = Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)"""").matcher(resHome)
+                if (lsdMatch.find()) {
+                    lsd = lsdMatch.group(1) ?: lsd
+                }
+                var dtsgMatch = Pattern.compile(""""dtsg":\s*\{"token":"([^"]+)"""").matcher(resHome)
+                if (!dtsgMatch.find()) {
+                    dtsgMatch = Pattern.compile("""name="fb_dtsg"\s+value="([^"]+)"""").matcher(resHome)
+                }
+                if (dtsgMatch.find()) {
+                    fbDtsg = dtsgMatch.group(1) ?: fbDtsg
+                }
+                val jazoestMatch = Pattern.compile("""name="jazoest"\s+value="(\d+)"""").matcher(resHome)
+                if (jazoestMatch.find()) {
+                    jazoest = jazoestMatch.group(1) ?: jazoest
+                }
+                val setCookies = res.headers("Set-Cookie")
+                for (sc in setCookies) {
+                    val firstPart = sc.substringBefore(";")
+                    val eqIdx = firstPart.indexOf("=")
+                    if (eqIdx > 0) {
+                        val k = firstPart.substring(0, eqIdx).trim()
+                        val v = firstPart.substring(eqIdx + 1).trim()
+                        cookieMap[k] = v
+                    }
+                }
+                cookieMap["csrftoken"]?.let { dynamicCsrftoken = it }
+                curCookie = cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
+            }
+        } catch (_: Exception) {}
 
         if (fbDtsg.isBlank()) {
             try {
@@ -204,15 +257,11 @@ object IgTaToolClient {
                     .url("https://www.instagram.com/")
                     .header("User-Agent", USERAGENT)
                     .header("Sec-Ch-Ua", SEC_CH_UA_120)
-                    .header("Cookie", effectiveCookie)
+                    .header("Cookie", curCookie)
                     .get()
                     .build()
                 client.newCall(reqHome).execute().use { res ->
                     val resHome = res.body?.string().orEmpty()
-                    val lsdMatch = Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)"""").matcher(resHome)
-                    if (lsdMatch.find()) {
-                        lsd = lsdMatch.group(1) ?: lsd
-                    }
                     var dtsgMatch = Pattern.compile(""""dtsg":\s*\{"token":"([^"]+)"""").matcher(resHome)
                     if (!dtsgMatch.find()) {
                         dtsgMatch = Pattern.compile("""name="fb_dtsg"\s+value="([^"]+)"""").matcher(resHome)
@@ -220,16 +269,27 @@ object IgTaToolClient {
                     if (dtsgMatch.find()) {
                         fbDtsg = dtsgMatch.group(1) ?: fbDtsg
                     }
-                    val jazoestMatch = Pattern.compile("""name="jazoest"\s+value="(\d+)"""").matcher(resHome)
-                    if (jazoestMatch.find()) {
-                        jazoest = jazoestMatch.group(1) ?: jazoest
+                    val lsdMatch = Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)"""").matcher(resHome)
+                    if (lsdMatch.find()) {
+                        lsd = lsdMatch.group(1) ?: lsd
                     }
+                    val setCookies = res.headers("Set-Cookie")
+                    for (sc in setCookies) {
+                        val firstPart = sc.substringBefore(";")
+                        val eqIdx = firstPart.indexOf("=")
+                        if (eqIdx > 0) {
+                            val k = firstPart.substring(0, eqIdx).trim()
+                            val v = firstPart.substring(eqIdx + 1).trim()
+                            cookieMap[k] = v
+                        }
+                    }
+                    cookieMap["csrftoken"]?.let { dynamicCsrftoken = it }
+                    curCookie = cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
                 }
             } catch (_: Exception) {}
         }
 
-        val dynamicCsrftoken = getCsrfToken(effectiveCookie)
-        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(effectiveCookie)
+        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(curCookie)
 
         val variables = JSONObject().apply {
             put("target_user_id", targetId.trim())
@@ -258,7 +318,7 @@ object IgTaToolClient {
             .add("variables", variables.toString())
             .build()
 
-        val reqHeaders = getIgHeaders(effectiveCookie, dynamicCsrftoken, target)
+        val reqHeaders = getIgHeaders(curCookie, dynamicCsrftoken, target)
 
         val req = Request.Builder()
             .url("https://www.instagram.com/api/graphql")
@@ -291,9 +351,21 @@ object IgTaToolClient {
         val effectiveCookie = cookie.ifBlank { rawCookie }
         if (mediaId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Media ID\"}"
 
+        var curCookie = effectiveCookie
+        var dynamicCsrftoken = getCsrfToken(curCookie)
         var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
         var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "GyeZl-huflHZ0K5L3-pzBi"
         var jazoest = "26492"
+
+        val cookieMap = mutableMapOf<String, String>()
+        for (item in curCookie.split(";")) {
+            val idx = item.indexOf("=")
+            if (idx > 0) {
+                val k = item.substring(0, idx).trim()
+                val v = item.substring(idx + 1).trim()
+                if (k.isNotBlank()) cookieMap[k] = v
+            }
+        }
 
         if (fbDtsg.isBlank()) {
             try {
@@ -301,7 +373,7 @@ object IgTaToolClient {
                     .url("https://www.instagram.com/")
                     .header("User-Agent", USERAGENT)
                     .header("Sec-Ch-Ua", SEC_CH_UA_120)
-                    .header("Cookie", effectiveCookie)
+                    .header("Cookie", curCookie)
                     .get()
                     .build()
                 client.newCall(reqHome).execute().use { res ->
@@ -321,12 +393,21 @@ object IgTaToolClient {
                     if (jazoestMatch.find()) {
                         jazoest = jazoestMatch.group(1) ?: jazoest
                     }
+                    val setCookies = res.headers("Set-Cookie")
+                    for (sc in setCookies) {
+                        val firstPart = sc.substringBefore(";")
+                        val eqIdx = firstPart.indexOf("=")
+                        if (eqIdx > 0) {
+                            val k = firstPart.substring(0, eqIdx).trim()
+                            val v = firstPart.substring(eqIdx + 1).trim()
+                            cookieMap[k] = v
+                        }
+                    }
+                    cookieMap["csrftoken"]?.let { dynamicCsrftoken = it }
+                    curCookie = cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
                 }
             } catch (_: Exception) {}
         }
-
-        val dynamicCsrftoken = getCsrfToken(effectiveCookie)
-        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(effectiveCookie)
 
         var trackingToken = ""
         if (linkJob.isNotBlank()) {
@@ -335,7 +416,7 @@ object IgTaToolClient {
                     .url(linkJob)
                     .header("User-Agent", USERAGENT)
                     .header("Sec-Ch-Ua", SEC_CH_UA_120)
-                    .header("Cookie", effectiveCookie)
+                    .header("Cookie", curCookie)
                     .get()
                     .build()
                 client.newCall(reqJob).execute().use { res ->
@@ -344,9 +425,23 @@ object IgTaToolClient {
                     if (ttMatch.find()) {
                         trackingToken = ttMatch.group(1) ?: ""
                     }
+                    val setCookies = res.headers("Set-Cookie")
+                    for (sc in setCookies) {
+                        val firstPart = sc.substringBefore(";")
+                        val eqIdx = firstPart.indexOf("=")
+                        if (eqIdx > 0) {
+                            val k = firstPart.substring(0, eqIdx).trim()
+                            val v = firstPart.substring(eqIdx + 1).trim()
+                            cookieMap[k] = v
+                        }
+                    }
+                    cookieMap["csrftoken"]?.let { dynamicCsrftoken = it }
+                    curCookie = cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
                 }
             } catch (_: Exception) {}
         }
+
+        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(curCookie)
 
         val variables = JSONObject().apply {
             val inputObj = JSONObject().apply {
@@ -382,7 +477,7 @@ object IgTaToolClient {
             .add("variables", variables.toString())
             .build()
 
-        val reqHeaders = getIgHeaders(effectiveCookie, dynamicCsrftoken, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
+        val reqHeaders = getIgHeaders(curCookie, dynamicCsrftoken, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
 
         val req = Request.Builder()
             .url("https://www.instagram.com/api/graphql")
@@ -394,11 +489,11 @@ object IgTaToolClient {
             client.newCall(req).execute().use { res ->
                 val text = res.body?.string()?.trim().orEmpty()
                 if (text.isNotBlank()) return text
+                return "{\"status\": \"error\", \"message\": \"HTTP ${res.code}: Phản hồi rỗng từ Instagram khi Tym\"}"
             }
         } catch (e: Exception) {
             return "{\"status\": \"error\", \"message\": \"${e.message}\"}"
         }
-        return "{\"status\": \"error\", \"message\": \"Phản hồi rỗng từ Instagram khi Tym\"}"
     }
 
     // ================= cmt (chuẩn 100% xsmmigv2.py dòng 346-407) =================
@@ -416,9 +511,21 @@ object IgTaToolClient {
         val effectiveCookie = cookie.ifBlank { rawCookie }
         if (mediaId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Media ID\"}"
 
+        var curCookie = effectiveCookie
+        var dynamicCsrftoken = getCsrfToken(curCookie)
         var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
         var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "9zei3OjvTBQ-9YG6E0OMzm"
         var jazoest = "26312"
+
+        val cookieMap = mutableMapOf<String, String>()
+        for (item in curCookie.split(";")) {
+            val idx = item.indexOf("=")
+            if (idx > 0) {
+                val k = item.substring(0, idx).trim()
+                val v = item.substring(idx + 1).trim()
+                if (k.isNotBlank()) cookieMap[k] = v
+            }
+        }
 
         val target = if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/"
         if (fbDtsg.isBlank()) {
@@ -427,7 +534,7 @@ object IgTaToolClient {
                     .url("https://www.instagram.com/")
                     .header("User-Agent", USERAGENT)
                     .header("Sec-Ch-Ua", SEC_CH_UA_120)
-                    .header("Cookie", effectiveCookie)
+                    .header("Cookie", curCookie)
                     .get()
                     .build()
                 client.newCall(reqHome).execute().use { res ->
@@ -447,12 +554,23 @@ object IgTaToolClient {
                     if (jazoestMatch.find()) {
                         jazoest = jazoestMatch.group(1) ?: jazoest
                     }
+                    val setCookies = res.headers("Set-Cookie")
+                    for (sc in setCookies) {
+                        val firstPart = sc.substringBefore(";")
+                        val eqIdx = firstPart.indexOf("=")
+                        if (eqIdx > 0) {
+                            val k = firstPart.substring(0, eqIdx).trim()
+                            val v = firstPart.substring(eqIdx + 1).trim()
+                            cookieMap[k] = v
+                        }
+                    }
+                    cookieMap["csrftoken"]?.let { dynamicCsrftoken = it }
+                    curCookie = cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
                 }
             } catch (_: Exception) {}
         }
 
-        val dynamicCsrftoken = getCsrfToken(cookie)
-        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(cookie)
+        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(curCookie)
 
         val variables = JSONObject().apply {
             val connArray = org.json.JSONArray().apply {
@@ -486,7 +604,7 @@ object IgTaToolClient {
             .add("variables", variables.toString())
             .build()
 
-        val reqHeaders = getIgHeaders(cookie, dynamicCsrftoken, target)
+        val reqHeaders = getIgHeaders(curCookie, dynamicCsrftoken, target)
 
         val req = Request.Builder()
             .url("https://www.instagram.com/api/graphql")
@@ -498,11 +616,11 @@ object IgTaToolClient {
             client.newCall(req).execute().use { res ->
                 val text = res.body?.string()?.trim().orEmpty()
                 if (text.isNotBlank()) return text
+                return "{\"status\": \"error\", \"message\": \"HTTP ${res.code}: Phản hồi rỗng từ Instagram khi Comment\"}"
             }
         } catch (e: Exception) {
             return "{\"status\": \"error\", \"message\": \"${e.message}\"}"
         }
-        return "{\"status\": \"error\", \"message\": \"Phản hồi rỗng từ Instagram khi Comment\"}"
     }
 
     // ================= TRÍCH XUẤT TARGET ID CHUẨN 100% xsmmigv2.py =================
@@ -540,30 +658,6 @@ object IgTaToolClient {
                 }
             }
         } catch (_: Exception) {}
-
-        // Fallback: Tra cứu UID bằng App REST API với Cookie của nick đang chạy
-        val cleanTarget = targetUrl.trim().removeSuffix("/").substringAfterLast("/").removePrefix("@")
-        if (cleanTarget.isNotBlank() && !cleanTarget.startsWith("http") && !cleanTarget.equals("p", true) && !cleanTarget.equals("reel", true)) {
-            try {
-                val apiReq = Request.Builder()
-                    .url("https://i.instagram.com/api/v1/users/web_profile_info/?username=$cleanTarget")
-                    .header("User-Agent", "Instagram 447.0.0.55.81 Android (36/15; 480dpi; 1080x2340; samsung; SM-S928B; e3q; qcom; vi_VN; 385311890)")
-                    .header("X-IG-App-ID", "567067343352427")
-                    .header("X-IG-Connection-Type", "WIFI")
-                    .header("X-IG-Capabilities", "3brTvw==")
-                    .header("Cookie", cookie)
-                    .get()
-                    .build()
-                client.newCall(apiReq).execute().use { res ->
-                    if (res.isSuccessful) {
-                        val body = res.body?.string().orEmpty()
-                        val json = JSONObject(body)
-                        val uid = json.optJSONObject("data")?.optJSONObject("user")?.optString("id")
-                        if (!uid.isNullOrBlank() && uid != myActorId) return uid
-                    }
-                }
-            } catch (_: Exception) {}
-        }
 
         return null
     }
