@@ -197,20 +197,21 @@ class F4fInstagramTaskRunner(
                     } else {
                         job.jobId
                     }
-                    val targetUid = job.uid
-                    val targetObjectId = job.objectId.ifBlank {
-                        job.targetLink.trim().removeSuffix("/").substringAfterLast("/")
+                    val targetNumericId = when {
+                        job.objectId.isNotBlank() && job.objectId.all { it.isDigit() } -> job.objectId
+                        job.uid.isNotBlank() && job.uid.all { it.isDigit() } -> job.uid
+                        else -> ""
                     }
                     val targetUsername = job.targetLink.trim().removeSuffix("/").substringAfterLast("/")
                     val displayTarget = if (targetUsername.isNotBlank()) "@$targetUsername" else "nhiệm vụ"
 
-                    // Bước 1: Mở thẳng profile URL của nhiệm vụ và thực hiện Follow bằng 100% logic TA Tool
+                    // Bước 1: Mở thẳng profile URL của nhiệm vụ và thực hiện Follow bằng 100% logic TA Tool V2
                     onStatusUpdate("Đang mở Follow $displayTarget...")
                     val actionResult = if (job.typeJob.equals("like", ignoreCase = true)) {
                         runner.doLike(job.targetLink)
                     } else {
                         runner.doFollow(
-                            targetNumericId = targetObjectId.ifBlank { targetUid },
+                            targetNumericId = targetNumericId,
                             targetUsername = targetUsername,
                             targetUrl = job.targetLink
                         )

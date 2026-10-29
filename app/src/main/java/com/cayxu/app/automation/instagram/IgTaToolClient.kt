@@ -505,61 +505,13 @@ object IgTaToolClient {
         return "{\"status\": \"error\", \"message\": \"Phản hồi rỗng từ Instagram khi Comment\"}"
     }
 
-    // ================= TRÍCH XUẤT TARGET ID (xsmmigv2.py dòng 600-615) =================
+    // ================= TRÍCH XUẤT TARGET ID CHUẨN 100% xsmmigv2.py =================
     fun extractTargetIdFromUrl(client: OkHttpClient, cookie: String, targetUrl: String): String? {
         val myActorId = getActorId(cookie)
-        val cleanTarget = targetUrl.trim().removeSuffix("/").substringAfterLast("/").removePrefix("@")
-
-        // 1. Thử lấy qua API web_profile_info có Cookie
-        if (cleanTarget.isNotBlank() && !cleanTarget.startsWith("p") && !cleanTarget.startsWith("reel")) {
-            val apiReq = Request.Builder()
-                .url("https://www.instagram.com/api/v1/users/web_profile_info/?username=$cleanTarget")
-                .header("User-Agent", USERAGENT)
-                .header("X-IG-App-ID", "936619743392459")
-                .header("X-Requested-With", "XMLHttpRequest")
-                .header("Referer", "https://www.instagram.com/$cleanTarget/")
-                .header("Cookie", cookie)
-                .get()
-                .build()
-            try {
-                client.newCall(apiReq).execute().use { res ->
-                    val body = res.body?.string().orEmpty()
-                    val root = JSONObject(body)
-                    val id = root.optJSONObject("data")?.optJSONObject("user")?.optString("id")
-                    if (!id.isNullOrBlank() && id != myActorId) return id
-                }
-            } catch (_: Exception) {}
-
-            // 2. Thử qua topsearch có Cookie
-            val searchReq = Request.Builder()
-                .url("https://www.instagram.com/web/search/topsearch/?context=blended&query=$cleanTarget")
-                .header("User-Agent", USERAGENT)
-                .header("X-IG-App-ID", "936619743392459")
-                .header("Cookie", cookie)
-                .get()
-                .build()
-            try {
-                client.newCall(searchReq).execute().use { res ->
-                    val body = res.body?.string().orEmpty()
-                    val root = JSONObject(body)
-                    val users = root.optJSONArray("users")
-                    if (users != null) {
-                        for (i in 0 until users.length()) {
-                            val u = users.getJSONObject(i).optJSONObject("user") ?: continue
-                            if (u.optString("username").equals(cleanTarget, ignoreCase = true)) {
-                                val pk = u.optString("pk").ifBlank { u.optString("id") }
-                                if (pk.isNotBlank() && pk != myActorId) return pk
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-
-        // 3. Chuẩn V2: GET link_job với Cookie và parse regex
         val req = Request.Builder()
             .url(targetUrl)
             .header("User-Agent", USERAGENT)
+            .header("Sec-Ch-Ua", SEC_CH_UA_120)
             .header("Cookie", cookie)
             .get()
             .build()
@@ -572,6 +524,15 @@ object IgTaToolClient {
                 }
                 if (!m.find()) {
                     m = Pattern.compile("""profilePage_(\d+)""").matcher(resHtml)
+                }
+                if (!m.find()) {
+                    m = Pattern.compile(""""owner":\{"id":"(\d+)"""").matcher(resHtml)
+                }
+                if (!m.find()) {
+                    m = Pattern.compile(""""id":"(\d+)","username":""").matcher(resHtml)
+                }
+                if (!m.find()) {
+                    m = Pattern.compile("""instagram://user\?username=[^&]*&id=(\d+)""").matcher(resHtml)
                 }
                 if (m.find()) {
                     val id = m.group(1)

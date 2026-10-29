@@ -314,8 +314,15 @@ object F4fApiClient {
 
                         val actualTypeJob = jobObj.get("type_job")?.asString ?: typeJob
                         val itemAccountId = jobObj.get("account_id")?.asLong ?: activeAccountId
-                        val itemUid = jobObj.get("uid")?.asString.orEmpty()
-                        val itemObjectId = jobObj.get("object_id")?.asString.orEmpty()
+                        val itemUid = jobObj.get("uid")?.asString
+                            ?: jobObj.get("target_id")?.asString
+                            ?: jobObj.get("user_id")?.asString
+                            ?: jobObj.get("author_id")?.asString
+                            ?: jobObj.get("instagram_id")?.asString
+                            ?: ""
+                        val itemObjectId = jobObj.get("object_id")?.asString
+                            ?: jobObj.get("target_user_id")?.asString
+                            ?: ""
 
                         if (jobId > 0L && link.isNotBlank()) {
                             jobList.add(

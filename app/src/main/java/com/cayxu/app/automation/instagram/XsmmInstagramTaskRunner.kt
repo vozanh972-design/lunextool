@@ -46,6 +46,10 @@ class XsmmInstagramTaskRunner(
     val account: IgXsmmAccount
 ) {
     private val client: OkHttpClient = buildClient(account.proxy)
+    private val xsmmClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .build()
 
     companion object {
         private const val XSMM_API = "https://xsmm.net/api/taskapi/"
@@ -475,6 +479,10 @@ class XsmmInstagramTaskRunner(
                         completedCount += pendingFollowTaskIds.size
                         totalPoints += pts
                         notify("• +$pts xu (${pendingFollowTaskIds.size} follow)", completedCount, errorCount)
+                    } else {
+                        val xsmmErr = comp?.optString("error")?.takeIf { it.isNotBlank() } ?: comp?.optString("message")?.takeIf { it.isNotBlank() } ?: "XSMM từ chối cộng xu"
+                        notify("• Lỗi XSMM: $xsmmErr", completedCount, errorCount)
+                        onErrorDetail?.invoke(cleanUsername, "XSMM không cộng xu ${pendingFollowTaskIds.size} follow:\n$xsmmErr\nPhản hồi: ${comp?.toString()?.take(200)}")
                     }
                     pendingFollowTaskIds.clear()
                     val userBal = runner.fetchUserPoints()
@@ -782,7 +790,7 @@ class XsmmInstagramTaskRunner(
         var uid = targetNumericId.trim()
         if (!uid.all { it.isDigit() } || uid.isBlank()) {
             val extracted = if (targetUrl.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(client, account.cookie, targetUrl) else null
-            uid = extracted ?: resolveTargetUid(targetUsername) ?: targetNumericId
+            uid = extracted ?: targetNumericId
         }
         val cleanTargetUser = targetUsername.trim().trim('/').substringAfterLast('/')
         val profileUrl = if (targetUrl.isNotBlank()) targetUrl else if (cleanTargetUser.isNotBlank()) "https://www.instagram.com/$cleanTargetUser/" else "https://www.instagram.com/"
@@ -799,32 +807,6 @@ class XsmmInstagramTaskRunner(
         } else {
             IgActionResult(false, 400, resBody, parseRes.message)
         }
-    }
-
-    private fun resolveTargetUid(username: String): String? {
-        val clean = username.trim().removePrefix("@").trim('/')
-        if (clean.isBlank()) return null
-        val req = Request.Builder()
-            .url("https://www.instagram.com/web/search/topsearch/?context=blended&query=$clean")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .header("X-IG-App-ID", "936619743392459")
-            .header("Cookie", account.cookie)
-            .get().build()
-        val jsonStr = execute(req) ?: return null
-        return try {
-            val root = JSONObject(jsonStr)
-            val users = root.optJSONArray("users") ?: return null
-            for (i in 0 until users.length()) {
-                val u = users.getJSONObject(i).optJSONObject("user") ?: continue
-                if (u.optString("username").equals(clean, ignoreCase = true)) {
-                    val pk = u.optString("pk")
-                    if (pk.isNotBlank()) return pk
-                    val id = u.optString("id")
-                    if (id.isNotBlank()) return id
-                }
-            }
-            null
-        } catch (_: Exception) { null }
     }
 
     fun doLike(link: String, mediaId: String): IgActionResult {
@@ -897,7 +879,9 @@ class XsmmInstagramTaskRunner(
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .header("Cookie", account.cookie)
             .get().build()
-        val html = execute(req) ?: return null
+        val html = try {
+            client.newCall(req).execute().use { it.body?.string() }
+        } catch (_: Exception) { null } ?: return null
         val patterns = listOf(
             Pattern.compile("\"media_id\":\\s*\"(\\d+)\""),
             Pattern.compile("\"post_id\":\\s*\"(\\d+)\""),
@@ -914,13 +898,13 @@ class XsmmInstagramTaskRunner(
 
     private fun execute(req: Request): String? {
         return try {
-            client.newCall(req).execute().use { it.body?.string() }
+            xsmmClient.newCall(req).execute().use { it.body?.string() }
         } catch (_: Exception) { null }
     }
 
     private fun executeWithCode(req: Request): Pair<Int, String> {
         return try {
-            client.newCall(req).execute().use { Pair(it.code, it.body?.string().orEmpty()) }
+            xsmmClient.newCall(req).execute().use { Pair(it.code, it.body?.string().orEmpty()) }
         } catch (e: Exception) {
             Pair(0, e.message.orEmpty())
         }
