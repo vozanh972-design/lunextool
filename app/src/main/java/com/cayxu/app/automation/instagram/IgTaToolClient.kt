@@ -182,48 +182,54 @@ object IgTaToolClient {
     // ================= follow (chuẩn 100% xsmmigv2.py dòng 222-277) =================
     fun follow(
         client: OkHttpClient,
-        cookie: String,
+        rawCookie: String = "",
         targetId: String,
         profileUrl: String = "",
-        userId: String? = null
+        cachedDtsg: String? = null,
+        cachedLsd: String? = null,
+        userId: String? = null,
+        cookie: String = rawCookie
     ): String {
+        val effectiveCookie = cookie.ifBlank { rawCookie }
         if (targetId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Target ID\"}"
         val target = if (profileUrl.isNotBlank()) profileUrl else "https://www.instagram.com/"
 
-        var fbDtsg = ""
-        var lsd = "Jfq8VQNmkkkJufHSbEE9bf"
+        var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
+        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "Jfq8VQNmkkkJufHSbEE9bf"
         var jazoest = "26328"
 
-        try {
-            val reqHome = Request.Builder()
-                .url(target)
-                .header("User-Agent", USERAGENT)
-                .header("Sec-Ch-Ua", SEC_CH_UA_120)
-                .header("Cookie", cookie)
-                .get()
-                .build()
-            client.newCall(reqHome).execute().use { res ->
-                val resHome = res.body?.string().orEmpty()
-                val lsdMatch = Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)"""").matcher(resHome)
-                if (lsdMatch.find()) {
-                    lsd = lsdMatch.group(1) ?: lsd
+        if (fbDtsg.isBlank()) {
+            try {
+                val reqHome = Request.Builder()
+                    .url(target)
+                    .header("User-Agent", USERAGENT)
+                    .header("Sec-Ch-Ua", SEC_CH_UA_120)
+                    .header("Cookie", effectiveCookie)
+                    .get()
+                    .build()
+                client.newCall(reqHome).execute().use { res ->
+                    val resHome = res.body?.string().orEmpty()
+                    val lsdMatch = Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)"""").matcher(resHome)
+                    if (lsdMatch.find()) {
+                        lsd = lsdMatch.group(1) ?: lsd
+                    }
+                    var dtsgMatch = Pattern.compile(""""dtsg":\s*\{"token":"([^"]+)"""").matcher(resHome)
+                    if (!dtsgMatch.find()) {
+                        dtsgMatch = Pattern.compile("""name="fb_dtsg"\s+value="([^"]+)"""").matcher(resHome)
+                    }
+                    if (dtsgMatch.find()) {
+                        fbDtsg = dtsgMatch.group(1) ?: fbDtsg
+                    }
+                    val jazoestMatch = Pattern.compile("""name="jazoest"\s+value="(\d+)"""").matcher(resHome)
+                    if (jazoestMatch.find()) {
+                        jazoest = jazoestMatch.group(1) ?: jazoest
+                    }
                 }
-                var dtsgMatch = Pattern.compile(""""dtsg":\s*\{"token":"([^"]+)"""").matcher(resHome)
-                if (!dtsgMatch.find()) {
-                    dtsgMatch = Pattern.compile("""name="fb_dtsg"\s+value="([^"]+)"""").matcher(resHome)
-                }
-                if (dtsgMatch.find()) {
-                    fbDtsg = dtsgMatch.group(1) ?: fbDtsg
-                }
-                val jazoestMatch = Pattern.compile("""name="jazoest"\s+value="(\d+)"""").matcher(resHome)
-                if (jazoestMatch.find()) {
-                    jazoest = jazoestMatch.group(1) ?: jazoest
-                }
-            }
-        } catch (_: Exception) {}
+            } catch (_: Exception) {}
+        }
 
-        val dynamicCsrftoken = getCsrfToken(cookie)
-        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(cookie)
+        val dynamicCsrftoken = getCsrfToken(effectiveCookie)
+        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(effectiveCookie)
 
         val variables = JSONObject().apply {
             put("target_user_id", targetId.trim())
@@ -252,7 +258,7 @@ object IgTaToolClient {
             .add("variables", variables.toString())
             .build()
 
-        val reqHeaders = getIgHeaders(cookie, dynamicCsrftoken, target)
+        val reqHeaders = getIgHeaders(effectiveCookie, dynamicCsrftoken, target)
 
         val req = Request.Builder()
             .url("https://www.instagram.com/api/graphql")
@@ -274,47 +280,53 @@ object IgTaToolClient {
     // ================= tym (chuẩn 100% xsmmigv2.py dòng 278-345) =================
     fun tym(
         client: OkHttpClient,
-        cookie: String,
+        rawCookie: String = "",
         mediaId: String,
         linkJob: String = "",
-        userId: String? = null
+        cachedDtsg: String? = null,
+        cachedLsd: String? = null,
+        userId: String? = null,
+        cookie: String = rawCookie
     ): String {
+        val effectiveCookie = cookie.ifBlank { rawCookie }
         if (mediaId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Media ID\"}"
 
-        var fbDtsg = ""
-        var lsd = "GyeZl-huflHZ0K5L3-pzBi"
+        var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
+        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "GyeZl-huflHZ0K5L3-pzBi"
         var jazoest = "26492"
 
-        try {
-            val reqHome = Request.Builder()
-                .url("https://www.instagram.com/")
-                .header("User-Agent", USERAGENT)
-                .header("Sec-Ch-Ua", SEC_CH_UA_120)
-                .header("Cookie", cookie)
-                .get()
-                .build()
-            client.newCall(reqHome).execute().use { res ->
-                val resHome = res.body?.string().orEmpty()
-                val lsdMatch = Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)"""").matcher(resHome)
-                if (lsdMatch.find()) {
-                    lsd = lsdMatch.group(1) ?: lsd
+        if (fbDtsg.isBlank()) {
+            try {
+                val reqHome = Request.Builder()
+                    .url("https://www.instagram.com/")
+                    .header("User-Agent", USERAGENT)
+                    .header("Sec-Ch-Ua", SEC_CH_UA_120)
+                    .header("Cookie", effectiveCookie)
+                    .get()
+                    .build()
+                client.newCall(reqHome).execute().use { res ->
+                    val resHome = res.body?.string().orEmpty()
+                    val lsdMatch = Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)"""").matcher(resHome)
+                    if (lsdMatch.find()) {
+                        lsd = lsdMatch.group(1) ?: lsd
+                    }
+                    var dtsgMatch = Pattern.compile(""""dtsg":\s*\{"token":"([^"]+)"""").matcher(resHome)
+                    if (!dtsgMatch.find()) {
+                        dtsgMatch = Pattern.compile("""name="fb_dtsg"\s+value="([^"]+)"""").matcher(resHome)
+                    }
+                    if (dtsgMatch.find()) {
+                        fbDtsg = dtsgMatch.group(1) ?: fbDtsg
+                    }
+                    val jazoestMatch = Pattern.compile("""name="jazoest"\s+value="(\d+)"""").matcher(resHome)
+                    if (jazoestMatch.find()) {
+                        jazoest = jazoestMatch.group(1) ?: jazoest
+                    }
                 }
-                var dtsgMatch = Pattern.compile(""""dtsg":\s*\{"token":"([^"]+)"""").matcher(resHome)
-                if (!dtsgMatch.find()) {
-                    dtsgMatch = Pattern.compile("""name="fb_dtsg"\s+value="([^"]+)"""").matcher(resHome)
-                }
-                if (dtsgMatch.find()) {
-                    fbDtsg = dtsgMatch.group(1) ?: fbDtsg
-                }
-                val jazoestMatch = Pattern.compile("""name="jazoest"\s+value="(\d+)"""").matcher(resHome)
-                if (jazoestMatch.find()) {
-                    jazoest = jazoestMatch.group(1) ?: jazoest
-                }
-            }
-        } catch (_: Exception) {}
+            } catch (_: Exception) {}
+        }
 
-        val dynamicCsrftoken = getCsrfToken(cookie)
-        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(cookie)
+        val dynamicCsrftoken = getCsrfToken(effectiveCookie)
+        val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(effectiveCookie)
 
         var trackingToken = ""
         if (linkJob.isNotBlank()) {
@@ -323,7 +335,7 @@ object IgTaToolClient {
                     .url(linkJob)
                     .header("User-Agent", USERAGENT)
                     .header("Sec-Ch-Ua", SEC_CH_UA_120)
-                    .header("Cookie", cookie)
+                    .header("Cookie", effectiveCookie)
                     .get()
                     .build()
                 client.newCall(reqJob).execute().use { res ->
@@ -370,7 +382,7 @@ object IgTaToolClient {
             .add("variables", variables.toString())
             .build()
 
-        val reqHeaders = getIgHeaders(cookie, dynamicCsrftoken, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
+        val reqHeaders = getIgHeaders(effectiveCookie, dynamicCsrftoken, if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/")
 
         val req = Request.Builder()
             .url("https://www.instagram.com/api/graphql")
@@ -392,46 +404,52 @@ object IgTaToolClient {
     // ================= cmt (chuẩn 100% xsmmigv2.py dòng 346-407) =================
     fun cmt(
         client: OkHttpClient,
-        cookie: String,
+        rawCookie: String = "",
         mediaId: String,
         text: String,
         linkJob: String = "",
-        userId: String? = null
+        cachedDtsg: String? = null,
+        cachedLsd: String? = null,
+        userId: String? = null,
+        cookie: String = rawCookie
     ): String {
+        val effectiveCookie = cookie.ifBlank { rawCookie }
         if (mediaId.isBlank()) return "{\"status\": \"error\", \"message\": \"Lỗi Media ID\"}"
 
-        var fbDtsg = ""
-        var lsd = "9zei3OjvTBQ-9YG6E0OMzm"
+        var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
+        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "9zei3OjvTBQ-9YG6E0OMzm"
         var jazoest = "26312"
 
         val target = if (linkJob.isNotBlank()) linkJob else "https://www.instagram.com/"
-        try {
-            val reqHome = Request.Builder()
-                .url(target)
-                .header("User-Agent", USERAGENT)
-                .header("Sec-Ch-Ua", SEC_CH_UA_120)
-                .header("Cookie", cookie)
-                .get()
-                .build()
-            client.newCall(reqHome).execute().use { res ->
-                val resHome = res.body?.string().orEmpty()
-                val lsdMatch = Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)"""").matcher(resHome)
-                if (lsdMatch.find()) {
-                    lsd = lsdMatch.group(1) ?: lsd
+        if (fbDtsg.isBlank()) {
+            try {
+                val reqHome = Request.Builder()
+                    .url(target)
+                    .header("User-Agent", USERAGENT)
+                    .header("Sec-Ch-Ua", SEC_CH_UA_120)
+                    .header("Cookie", effectiveCookie)
+                    .get()
+                    .build()
+                client.newCall(reqHome).execute().use { res ->
+                    val resHome = res.body?.string().orEmpty()
+                    val lsdMatch = Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)"""").matcher(resHome)
+                    if (lsdMatch.find()) {
+                        lsd = lsdMatch.group(1) ?: lsd
+                    }
+                    var dtsgMatch = Pattern.compile(""""dtsg":\s*\{"token":"([^"]+)"""").matcher(resHome)
+                    if (!dtsgMatch.find()) {
+                        dtsgMatch = Pattern.compile("""name="fb_dtsg"\s+value="([^"]+)"""").matcher(resHome)
+                    }
+                    if (dtsgMatch.find()) {
+                        fbDtsg = dtsgMatch.group(1) ?: fbDtsg
+                    }
+                    val jazoestMatch = Pattern.compile("""name="jazoest"\s+value="(\d+)"""").matcher(resHome)
+                    if (jazoestMatch.find()) {
+                        jazoest = jazoestMatch.group(1) ?: jazoest
+                    }
                 }
-                var dtsgMatch = Pattern.compile(""""dtsg":\s*\{"token":"([^"]+)"""").matcher(resHome)
-                if (!dtsgMatch.find()) {
-                    dtsgMatch = Pattern.compile("""name="fb_dtsg"\s+value="([^"]+)"""").matcher(resHome)
-                }
-                if (dtsgMatch.find()) {
-                    fbDtsg = dtsgMatch.group(1) ?: fbDtsg
-                }
-                val jazoestMatch = Pattern.compile("""name="jazoest"\s+value="(\d+)"""").matcher(resHome)
-                if (jazoestMatch.find()) {
-                    jazoest = jazoestMatch.group(1) ?: jazoest
-                }
-            }
-        } catch (_: Exception) {}
+            } catch (_: Exception) {}
+        }
 
         val dynamicCsrftoken = getCsrfToken(cookie)
         val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(cookie)
