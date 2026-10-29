@@ -686,7 +686,7 @@ class XsmmInstagramTaskRunner(
             val res = execute(req) ?: return null
             val json = try { JSONObject(res) } catch (_: Exception) { null }
             if (json?.optBoolean("retry", false) == true) {
-                val retryWait = Random.nextInt(10, 16)
+                val retryWait = (10..15).random()
                 Thread.sleep(retryWait * 1000L)
                 attempt++
                 continue
