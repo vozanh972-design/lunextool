@@ -13,11 +13,10 @@ import kotlin.random.Random
  * Giữ nguyên các tham số, headers, default tokens, parser chuẩn V2.
  */
 object IgTaToolClient {
-    // ================= CẤU HÌNH HEADERS & USER-AGENT CHUẨN Chrome 156 (bắt từ DevTools thật) =================
-    private const val USERAGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
-    private const val SEC_CH_UA = "\"Not:A-Brand\";v=\"8\", \"Chromium\";v=\"156\", \"Google Chrome\";v=\"156\""
-    private const val SEC_CH_UA_FULL = "\"Not:A-Brand\";v=\"8.0.0.0\", \"Chromium\";v=\"156.0.8078.73\", \"Google Chrome\";v=\"156.0.8078.73\""
-    const val ASBD_ID = "359341" // Chuẩn Web Meta 2026 bắt trực tiếp từ DevTools
+    // ================= CẤU HÌNH HEADERS & USER-AGENT CHUẨN 100% TỪ PYTHON V4 =================
+    private const val USERAGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    private const val SEC_CH_UA = "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\""
+    const val ASBD_ID = "129477"
     const val IG_APP_ID = "936619743392459"
 
     fun unquoteCookie(cookie: String): String {
@@ -73,7 +72,7 @@ object IgTaToolClient {
         return builder.build()
     }
 
-    // ================= getIgHeaders chuẩn Chrome 156 (bắt trực tiếp từ DevTools) =================
+    // ================= getIgHeaders chuẩn 100% Python v4 =================
     fun getIgHeaders(
         cookie: String,
         csrftoken: String,
@@ -83,19 +82,15 @@ object IgTaToolClient {
     ): Headers {
         val b = Headers.Builder()
             .add("accept", "*/*")
-            .add("accept-language", "vi-VN,vi;q=0.9,ja-JP;q=0.8,ja;q=0.7,en-JP;q=0.6,en;q=0.5,es-ES;q=0.4,es;q=0.3,fr-FR;q=0.2,fr;q=0.1,en-US;q=0.1")
+            .add("accept-language", "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5")
             .add("content-type", "application/x-www-form-urlencoded")
             .add("cookie", cookie)
             .add("origin", "https://www.instagram.com")
             .add("priority", "u=1, i")
             .add("referer", referer)
-            .add("sec-ch-prefers-color-scheme", "dark")
             .add("sec-ch-ua", SEC_CH_UA)
-            .add("sec-ch-ua-full-version-list", SEC_CH_UA_FULL)
             .add("sec-ch-ua-mobile", "?0")
-            .add("sec-ch-ua-model", "\"\"")
             .add("sec-ch-ua-platform", "\"Windows\"")
-            .add("sec-ch-ua-platform-version", "\"10.0.0\"")
             .add("sec-fetch-dest", "empty")
             .add("sec-fetch-mode", "cors")
             .add("sec-fetch-site", "same-origin")
@@ -105,7 +100,6 @@ object IgTaToolClient {
             .add("x-ig-app-id", IG_APP_ID)
             .add("x-ig-www-claim", "0")
             .add("x-requested-with", "XMLHttpRequest")
-            .add("x-ig-max-touch-points", "0")
 
         if (!friendlyName.isNullOrBlank()) {
             b.add("x-fb-friendly-name", friendlyName)
@@ -239,8 +233,8 @@ object IgTaToolClient {
         var curCookie = effectiveCookie
         var dynamicCsrftoken = getCsrfToken(curCookie)
         var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
-        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "nOMctdLzh1GM0vIym-YNtf"
-        var jazoest = "26449"
+        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "Jfq8VQNmkkkJufHSbEE9bf"
+        var jazoest = "26328"
 
         val cookieMap = mutableMapOf<String, String>()
         for (item in curCookie.split(";")) {
@@ -315,11 +309,11 @@ object IgTaToolClient {
             .add("__d", "www")
             .add("__user", "0")
             .add("__a", "1")
-            .add("__req", "5l")
-            .add("__hs", "20755.HYP:instagram_web_pkg.2.1...0")
+            .add("__req", "s")
+            .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
             .add("dpr", "1")
             .add("__ccg", "EXCELLENT")
-            .add("__rev", "1052205271")
+            .add("__rev", "1046917461")
             .add("__comet_req", "7")
             .add("fb_dtsg", fbDtsg)
             .add("jazoest", jazoest)
@@ -367,8 +361,8 @@ object IgTaToolClient {
         var curCookie = effectiveCookie
         var dynamicCsrftoken = getCsrfToken(curCookie)
         var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
-        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "nOMctdLzh1GM0vIym-YNtf"
-        var jazoest = "26449"
+        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "GyeZl-huflHZ0K5L3-pzBi"
+        var jazoest = "26492"
 
         val cookieMap = mutableMapOf<String, String>()
         for (item in curCookie.split(";")) {
@@ -493,11 +487,11 @@ object IgTaToolClient {
             .add("__d", "www")
             .add("__user", "0")
             .add("__a", "1")
-            .add("__req", "5l")
-            .add("__hs", "20755.HYP:instagram_web_pkg.2.1...0")
+            .add("__req", "h")
+            .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
             .add("dpr", "1")
             .add("__ccg", "EXCELLENT")
-            .add("__rev", "1052205271")
+            .add("__rev", "1046913831")
             .add("__comet_req", "7")
             .add("fb_dtsg", fbDtsg)
             .add("jazoest", jazoest)
@@ -552,8 +546,8 @@ object IgTaToolClient {
         var curCookie = effectiveCookie
         var dynamicCsrftoken = getCsrfToken(curCookie)
         var fbDtsg = cachedDtsg?.takeIf { it.isNotBlank() } ?: ""
-        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "nOMctdLzh1GM0vIym-YNtf"
-        var jazoest = "26449"
+        var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "9zei3OjvTBQ-9YG6E0OMzm"
+        var jazoest = "26312"
 
         val cookieMap = mutableMapOf<String, String>()
         for (item in curCookie.split(";")) {
@@ -635,11 +629,11 @@ object IgTaToolClient {
             .add("__d", "www")
             .add("__user", "0")
             .add("__a", "1")
-            .add("__req", "5l")
-            .add("__hs", "20755.HYP:instagram_web_pkg.2.1...0")
+            .add("__req", "10")
+            .add("__hs", "20702.HYP:instagram_web_pkg.2.1...0")
             .add("dpr", "1")
             .add("__ccg", "EXCELLENT")
-            .add("__rev", "1052205271")
+            .add("__rev", "1046917461")
             .add("__comet_req", "7")
             .add("fb_dtsg", fbDtsg)
             .add("jazoest", jazoest)
