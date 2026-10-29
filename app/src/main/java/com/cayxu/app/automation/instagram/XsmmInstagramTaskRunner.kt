@@ -389,15 +389,15 @@ class XsmmInstagramTaskRunner(
                         consecutiveErrors = 0
                         if (jobType == "instagram_follow") {
                             pendingFollowTaskIds.add(taskId)
-                            completedCount++
-                            notify("• Follow thành công ($completedCount)", completedCount, errorCount)
+                            notify("• Follow OK | Đang gom [${pendingFollowTaskIds.size}/10] task...", completedCount, errorCount)
                             if (pendingFollowTaskIds.size >= 10) {
-                                notify("• Gửi xác nhận 10 follow...", completedCount, errorCount)
+                                notify("• Gửi nhận xu 10 follow...", completedCount, errorCount)
                                 val comp = runner.completeTasks(jobType, pendingFollowTaskIds)
                                 val points = comp?.optInt("points") ?: comp?.optJSONObject("data")?.optInt("points") ?: comp?.optInt("earned_points") ?: 0
                                 val isSuccess = points > 0 || comp?.optBoolean("success", false) == true || comp?.optString("status").equals("success", true)
                                 if (isSuccess) {
                                     val pts = if (points > 0) points else (pendingFollowTaskIds.size * 35)
+                                    completedCount += pendingFollowTaskIds.size
                                     totalPoints += pts
                                     notify("• +$pts xu (10 follow)", completedCount, errorCount)
                                 } else {
@@ -457,6 +457,7 @@ class XsmmInstagramTaskRunner(
                     val isSuccess = points > 0 || comp?.optBoolean("success", false) == true || comp?.optString("status").equals("success", true)
                     if (isSuccess) {
                         val pts = if (points > 0) points else (pendingFollowTaskIds.size * 35)
+                        completedCount += pendingFollowTaskIds.size
                         totalPoints += pts
                         notify("• +$pts xu (${pendingFollowTaskIds.size} follow)", completedCount, errorCount)
                     }

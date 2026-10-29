@@ -147,9 +147,9 @@ object IgTaToolClient {
         val actorIdMatch = Pattern.compile("ds_user_id=(\\d+)").matcher(cookie)
         val uid = if (actorIdMatch.find()) actorIdMatch.group(1) else "default"
 
-        if (CACHE_TOKENS.containsKey(uid) && CACHE_TOKENS[uid]?.lsd?.isNotBlank() == true) {
+        if (CACHE_TOKENS.containsKey(uid)) {
             val cached = CACHE_TOKENS[uid]!!
-            if (cachedDtsg.isNullOrBlank() || cached.dtsg.isNotBlank()) {
+            if (cached.dtsg.isNotBlank() && cached.lsd.isNotBlank()) {
                 return cached
             }
         }
@@ -158,9 +158,9 @@ object IgTaToolClient {
         var lsd = cachedLsd?.takeIf { it.isNotBlank() } ?: "7q44S3aBoCQ_1VuGgqlys8"
         var jazoest = "26485"
 
-        val target = if (targetUrl.isNotBlank()) targetUrl else "https://www.instagram.com/"
+        // Luôn GET trang chủ Instagram bằng Cookie của tài khoản để lấy fb_dtsg và lsd chuẩn xác nhất
         val req = Request.Builder()
-            .url(target)
+            .url("https://www.instagram.com/")
             .header("User-Agent", USER_AGENT)
             .header("Sec-Ch-Ua", SEC_CH_UA)
             .header("Sec-Ch-Ua-Mobile", "?0")
@@ -172,30 +172,37 @@ object IgTaToolClient {
             client.newCall(req).execute().use { res ->
                 val html = res.body?.string() ?: ""
 
-                // 1. LSD regex: r'"LSD",\[\],{"token":"([^"]+)"}'
-                val lsdMatch = Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)"""").matcher(html)
-                if (lsdMatch.find()) {
-                    lsd = lsdMatch.group(1) ?: lsd
-                } else {
-                    val lsdFallback = Pattern.compile("""name="lsd"\s+value="([^"]+)"""").matcher(html)
-                    if (lsdFallback.find()) lsd = lsdFallback.group(1) ?: lsd
-                }
-
-                // 2. fb_dtsg regex: r'"dtsg":\{"token":"([^"]+)"' or r'name="fb_dtsg" value="([^"]+)"'
-                val dtsgMatch = Pattern.compile(""""dtsg":\s*\{"token":"([^"]+)"""").matcher(html)
-                if (dtsgMatch.find()) {
-                    fbDtsg = dtsgMatch.group(1) ?: fbDtsg
-                } else {
-                    val dtsgMatch2 = Pattern.compile("""name="fb_dtsg"\s+value="([^"]+)"""").matcher(html)
-                    if (dtsgMatch2.find()) {
-                        fbDtsg = dtsgMatch2.group(1) ?: fbDtsg
-                    } else {
-                        val dtsgMatch3 = Pattern.compile(""""DTSGInitialData",\s*\[\],\s*\{"token":"([^"]+)"""").matcher(html)
-                        if (dtsgMatch3.find()) fbDtsg = dtsgMatch3.group(1) ?: fbDtsg
+                // 1. LSD regex
+                val lsdPatterns = listOf(
+                    Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)""""),
+                    Pattern.compile("""\["LSD",\s*\[\],\s*\{"token":"([^"]+)""""),
+                    Pattern.compile("""name="lsd"\s+value="([^"]+)"""")
+                )
+                for (p in lsdPatterns) {
+                    val m = p.matcher(html)
+                    if (m.find()) {
+                        lsd = m.group(1) ?: lsd
+                        break
                     }
                 }
 
-                // 3. jazoest regex: r'name="jazoest" value="(\d+)"'
+                // 2. fb_dtsg regex
+                val dtsgPatterns = listOf(
+                    Pattern.compile("""\["DTSGInitialData",\s*\[\],\s*\{"token":"([^"]+)""""),
+                    Pattern.compile(""""DTSGInitialData",\s*\[\],\s*\{"token":"([^"]+)""""),
+                    Pattern.compile(""""dtsg":\s*\{"token":"([^"]+)""""),
+                    Pattern.compile("""name="fb_dtsg"\s+value="([^"]+)""""),
+                    Pattern.compile(""""token":"(AQ[^"]+)"""")
+                )
+                for (p in dtsgPatterns) {
+                    val m = p.matcher(html)
+                    if (m.find()) {
+                        fbDtsg = m.group(1) ?: fbDtsg
+                        break
+                    }
+                }
+
+                // 3. jazoest regex
                 val jazoestMatch = Pattern.compile("""name="jazoest"\s+value="(\d+)"""").matcher(html)
                 if (jazoestMatch.find()) {
                     jazoest = jazoestMatch.group(1) ?: jazoest
@@ -454,12 +461,12 @@ object IgTaToolClient {
         return if (lastResult.isNotBlank()) lastResult else "{\"status\": \"error\", \"message\": \"Phản hồi rỗng từ Instagram\"}"
     }
 
-    // ================= TRÍCH XUẤT TARGET ID (Thay thế temp_sess + impersonate bằng API chuẩn IG) =================
+    // ================= TRÍCH XUẤT TARGET ID (DÙNG CHÍNH COOKIE ĐĂNG NHẬP CỦA TÀI KHOẢN) =================
     fun extractTargetIdFromUrl(client: OkHttpClient, cookie: String, targetUrl: String): String? {
         val myActorId = getActorId(cookie)
         val cleanTarget = targetUrl.trim().removeSuffix("/").substringAfterLast("/").removePrefix("@")
 
-        // 1. Thử lấy nhanh bằng API web_profile_info chuẩn Instagram Web
+        // 1. Dùng Cookie đăng nhập của tài khoản gọi API web_profile_info
         if (cleanTarget.isNotBlank() && !cleanTarget.startsWith("p") && !cleanTarget.startsWith("reel")) {
             val apiReq = Request.Builder()
                 .url("https://www.instagram.com/api/v1/users/web_profile_info/?username=$cleanTarget")
@@ -467,28 +474,47 @@ object IgTaToolClient {
                 .header("X-IG-App-ID", "936619743392459")
                 .header("X-Requested-With", "XMLHttpRequest")
                 .header("Referer", "https://www.instagram.com/$cleanTarget/")
+                .header("Cookie", cookie)
                 .get()
                 .build()
             try {
                 client.newCall(apiReq).execute().use { res ->
                     val body = res.body?.string().orEmpty()
                     if (body.contains("\"id\":\"")) {
-                        val m = Pattern.compile(""""id":"(\d+)"""").matcher(body)
-                        if (m.find()) {
-                            val id = m.group(1)
-                            if (!id.isNullOrBlank() && id != myActorId) return id
+                        val root = JSONObject(body)
+                        val id = root.optJSONObject("data")?.optJSONObject("user")?.optString("id")
+                        if (!id.isNullOrBlank() && id != myActorId) return id
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // 2. Fallback: Dùng Cookie gọi API topsearch chuẩn Instagram Web
+            val searchReq = Request.Builder()
+                .url("https://www.instagram.com/web/search/topsearch/?context=blended&query=$cleanTarget")
+                .header("User-Agent", USER_AGENT)
+                .header("X-IG-App-ID", "936619743392459")
+                .header("Cookie", cookie)
+                .get()
+                .build()
+            try {
+                client.newCall(searchReq).execute().use { res ->
+                    val body = res.body?.string().orEmpty()
+                    val root = JSONObject(body)
+                    val users = root.optJSONArray("users")
+                    if (users != null) {
+                        for (i in 0 until users.length()) {
+                            val u = users.getJSONObject(i).optJSONObject("user") ?: continue
+                            if (u.optString("username").equals(cleanTarget, ignoreCase = true)) {
+                                val pk = u.optString("pk").ifBlank { u.optString("id") }
+                                if (pk.isNotBlank() && pk != myActorId) return pk
+                            }
                         }
                     }
                 }
             } catch (_: Exception) {}
         }
 
-        // 2. Lấy HTML trực tiếp với cookie session của nick (timeout ngắn 8s không gây treo)
-        val fastClient = client.newBuilder()
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(8, TimeUnit.SECONDS)
-            .build()
-
+        // 3. Fallback: Đọc HTML profile bằng Cookie của nick
         val reqWithCookie = Request.Builder()
             .url(targetUrl)
             .header("User-Agent", USER_AGENT)
@@ -496,7 +522,7 @@ object IgTaToolClient {
             .get()
             .build()
         try {
-            fastClient.newCall(reqWithCookie).execute().use { res ->
+            client.newCall(reqWithCookie).execute().use { res ->
                 val html = res.body?.string().orEmpty()
                 var m = Pattern.compile("\"profile_id\":\"(\\d+)\"").matcher(html)
                 if (m.find()) {
