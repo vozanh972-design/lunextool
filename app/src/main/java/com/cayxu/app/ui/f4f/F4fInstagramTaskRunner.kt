@@ -345,76 +345,6 @@ class F4fInstagramTaskRunner(
     }
 
     /**
-     * Trích xuất User ID số trực tiếp từ trang profile Instagram của job (không tìm kiếm topsearch)
-     */
-    private fun extractTargetIdFromProfile(targetUrl: String, targetUsername: String): String? {
-        val cleanUser = targetUsername.trim().removePrefix("@").trim('/').substringAfterLast('/')
-        val profileUrl = if (targetUrl.isNotBlank() && targetUrl.startsWith("http")) {
-            targetUrl
-        } else if (cleanUser.isNotBlank()) {
-            "https://www.instagram.com/$cleanUser/"
-        } else {
-            ""
-        }
-
-        // 1. Mở thẳng URL trang cá nhân để lấy User ID (IgTaToolClient.extractTargetIdFromUrl)
-        if (profileUrl.isNotBlank()) {
-            val req = Request.Builder()
-                .url(profileUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .header("Cookie", cookie)
-                .header("X-IG-App-ID", "936619743392459")
-                .header("Referer", "https://www.instagram.com/")
-                .get()
-                .build()
-            try {
-                client.newCall(req).execute().use { res ->
-                    val html = res.body?.string().orEmpty()
-                    val patterns = listOf(
-                        Pattern.compile("\"profile_id\":\"(\\d+)\""),
-                        Pattern.compile("\"user_id\":\"(\\d+)\""),
-                        Pattern.compile("profilePage_(\\d+)"),
-                        Pattern.compile("property=\"instapp:owner_user_id\"\\s+content=\"(\\d+)\""),
-                        Pattern.compile("\"props\":\\s*\\{[^}]*\"id\":\\s*\"(\\d+)\""),
-                        Pattern.compile("\"id\":\"(\\d{5,})\"")
-                    )
-                    for (p in patterns) {
-                        val m = p.matcher(html)
-                        if (m.find()) {
-                            val id = m.group(1)
-                            if (!id.isNullOrBlank() && id.all { it.isDigit() }) return id
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-
-        // 2. Gọi endpoint web_profile_info chính thức của Instagram Web cho trang cá nhân đó
-        if (cleanUser.isNotBlank()) {
-            val req = Request.Builder()
-                .url("https://www.instagram.com/api/v1/users/web_profile_info/?username=$cleanUser")
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .header("Cookie", cookie)
-                .header("X-IG-App-ID", "936619743392459")
-                .header("Referer", profileUrl.ifBlank { "https://www.instagram.com/$cleanUser/" })
-                .get()
-                .build()
-            try {
-                client.newCall(req).execute().use { res ->
-                    if (res.isSuccessful) {
-                        val body = res.body?.string().orEmpty()
-                        val json = try { JSONObject(body) } catch (_: Exception) { null }
-                        val id = json?.optJSONObject("data")?.optJSONObject("user")?.optString("id")
-                        if (!id.isNullOrBlank() && id.all { it.isDigit() }) return id
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-
-        return null
-    }
-
-    /**
      * Phân tích kết quả Instagram từ chối hay thành công chuẩn 100% TA Tool.
      */
     private fun parseIgResult(rawBody: String, defaultActionName: String): IgActionResult {
@@ -503,21 +433,30 @@ class F4fInstagramTaskRunner(
     }
 
     /**
-     * Follow 100% logic TA Tool (Mở profile URL -> lấy numeric ID -> gọi IgTaToolClient.follow)
+     * Follow 100% logic TA Tool (Mở profile URL bằng IgTaToolClient.extractTargetIdFromUrl -> IgTaToolClient.follow)
      */
     fun doFollow(targetNumericId: String, targetUsername: String, targetUrl: String = ""): IgActionResult {
+        val cleanTargetUser = targetUsername.trim().removePrefix("@").trim('/').substringAfterLast('/')
+        val profileUrl = if (targetUrl.isNotBlank() && targetUrl.startsWith("http")) {
+            targetUrl
+        } else if (cleanTargetUser.isNotBlank()) {
+            "https://www.instagram.com/$cleanTargetUser/"
+        } else {
+            "https://www.instagram.com/"
+        }
+
         var uid = targetNumericId.trim()
-        if (!uid.all { it.isDigit() } || uid.isBlank()) {
-            uid = extractTargetIdFromProfile(targetUrl, targetUsername) ?: ""
+        if (!uid.all { it.isDigit() } || uid.isBlank() || uid == userId) {
+            // Mở thẳng URL trang profile để lấy UID số bằng 100% TATool (IgTaToolClient.extractTargetIdFromUrl)
+            val extracted = if (profileUrl.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(client, "", profileUrl) else null
+            uid = extracted?.takeIf { it != userId } ?: ""
         }
 
-        // Chặn dứt điểm: Nếu không trích xuất được ID số, tuyệt đối không gửi username chữ vào GraphQL
         if (uid.isBlank() || !uid.all { it.isDigit() }) {
-            return IgActionResult(false, 400, "", "Không trích xuất được ID số từ trang cá nhân @$targetUsername")
+            return IgActionResult(false, 400, "", "TATool: Không trích xuất được ID số của @$cleanTargetUser từ link nhiệm vụ")
         }
 
-        val cleanTargetUser = targetUsername.trim().trim('/').substringAfterLast('/')
-        val profileUrl = if (targetUrl.isNotBlank()) targetUrl else if (cleanTargetUser.isNotBlank()) "https://www.instagram.com/$cleanTargetUser/" else "https://www.instagram.com/"
+        // Thực thi Follow 100% logic TATool
         val resBody = IgTaToolClient.follow(
             client = client,
             rawCookie = cookie,

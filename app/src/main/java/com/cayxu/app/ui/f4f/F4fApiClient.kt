@@ -474,8 +474,10 @@ object F4fApiClient {
                 val message = json.get("message")?.takeIf { !it.isJsonNull }?.asString.orEmpty()
 
                 if (statusCode == 200 && response.isSuccessful) {
-                    val reward = json.getAsJsonObject("data")?.get("coin")?.asLong
-                        ?: json.getAsJsonObject("data")?.get("reward")?.asLong
+                    val dataObj = json.getAsJsonObject("data")
+                    val reward = dataObj?.get("coin_received")?.asString?.toLongOrNull()
+                        ?: dataObj?.get("coin")?.asLong
+                        ?: dataObj?.get("reward")?.asLong
                         ?: 0L
                     F4fApiResult.Success(reward)
                 } else {
