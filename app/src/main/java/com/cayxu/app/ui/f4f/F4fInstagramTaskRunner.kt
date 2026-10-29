@@ -197,6 +197,10 @@ class F4fInstagramTaskRunner(
                     } else {
                         job.jobId
                     }
+                    val targetUid = job.uid
+                    val targetObjectId = job.objectId.ifBlank {
+                        job.targetLink.trim().removeSuffix("/").substringAfterLast("/")
+                    }
                     val targetNumericId = when {
                         job.objectId.isNotBlank() && job.objectId.all { it.isDigit() } -> job.objectId
                         job.uid.isNotBlank() && job.uid.all { it.isDigit() } -> job.uid
