@@ -237,7 +237,7 @@ class F4fInstagramTaskRunner(
                             accountId = effAccountId,
                             uid = targetUid,
                             objectId = targetObjectId,
-                            message = err,
+                            message = errTitle,
                             type = "instagram"
                         )
                         F4fApiClient.skipJob(
@@ -251,7 +251,7 @@ class F4fInstagramTaskRunner(
 
                         if (consecutiveFails >= cfg.errorSwapCount && cfg.autoSwapOnError) {
                             onStatusUpdate("Tạm dừng: Gặp lỗi liên tiếp $consecutiveFails lần")
-                            onErrorDetail(cleanUser, "Dừng do gặp lỗi liên tiếp $consecutiveFails lần: $err")
+                            onErrorDetail(cleanUser, "Dừng do gặp lỗi liên tiếp $consecutiveFails lần: $errTitle")
                             F4fInstagramManager.stop(cleanUser)
                             break
                         }
@@ -430,6 +430,8 @@ class F4fInstagramTaskRunner(
 
             // 1. Kiểm tra lỗi chặn tính năng (Feedback required)
             val message = root.optString("message", "")
+            val statusStr = root.optString("status", "")
+            val errorType = root.optString("error_type", "")
             val feedbackTitle = root.optString("feedback_title", "")
             val feedbackMsg = root.optString("feedback_message", "")
             if (message.contains("feedback_required", ignoreCase = true) || root.optBoolean("feedback_required", false)) {
