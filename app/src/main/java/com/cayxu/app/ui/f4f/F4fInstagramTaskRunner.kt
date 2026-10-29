@@ -217,8 +217,11 @@ class F4fInstagramTaskRunner(
                     }
 
                     if (!actionResult.isSuccess) {
+                        val isPrivateAccount = actionResult.errorMessage?.contains("Riêng tư (Private)") == true
                         errorCount++
-                        consecutiveFails++
+                        if (!isPrivateAccount) {
+                            consecutiveFails++
+                        }
                         val errTitle = actionResult.errorMessage ?: "Lỗi tương tác Instagram (Link: ${job.targetLink})"
                         val fullDetail = buildString {
                             append(errTitle)
@@ -433,7 +436,7 @@ class F4fInstagramTaskRunner(
     }
 
     /**
-     * Follow 100% logic TA Tool (Mở profile URL bằng IgTaToolClient.extractTargetIdFromUrl -> IgTaToolClient.follow)
+     * Follow 100% logic chuẩn Python v5.2 (Mở profile URL bằng IgTaToolClient.extractTargetIdFromUrl -> IgTaToolClient.follow)
      */
     fun doFollow(targetNumericId: String, targetUsername: String, targetUrl: String = ""): IgActionResult {
         val cleanTargetUser = targetUsername.trim().removePrefix("@").trim('/').substringAfterLast('/')
@@ -447,16 +450,16 @@ class F4fInstagramTaskRunner(
 
         var uid = targetNumericId.trim()
         if (!uid.all { it.isDigit() } || uid.isBlank() || uid == userId) {
-            // Mở thẳng URL trang profile để lấy UID số bằng 100% TATool (IgTaToolClient.extractTargetIdFromUrl)
-            val extracted = if (profileUrl.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(client, "", profileUrl) else null
+            // Mở thẳng URL trang profile để lấy UID số bằng 100% chuẩn v5.2
+            val extracted = if (profileUrl.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(client, cookie, profileUrl) else null
             uid = extracted?.takeIf { it != userId } ?: ""
         }
 
         if (uid.isBlank() || !uid.all { it.isDigit() }) {
-            return IgActionResult(false, 400, "", "TATool: Không trích xuất được ID số của @$cleanTargetUser từ link nhiệm vụ")
+            return IgActionResult(false, 400, "", "Không lấy được thông tin tài khoản @$cleanTargetUser từ link nhiệm vụ")
         }
 
-        // Thực thi Follow 100% logic TATool
+        // Thực thi Follow 100% logic chuẩn v5.2
         val resBody = IgTaToolClient.follow(
             client = client,
             rawCookie = cookie,
@@ -466,7 +469,12 @@ class F4fInstagramTaskRunner(
             cachedLsd = lsd,
             userId = userId
         )
-        return parseIgResult(resBody, "Follow")
+        val parseRes = IgTaToolClient.parseFollowResponse(resBody)
+        return if (parseRes.isSuccess) {
+            IgActionResult(true, 200, resBody, null)
+        } else {
+            IgActionResult(false, 400, resBody, parseRes.message)
+        }
     }
 
     /**
