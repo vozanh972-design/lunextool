@@ -45,8 +45,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -129,6 +131,15 @@ fun F4fErrorDetailBottomSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val clipboardManager = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+
+    if (copied) {
+        LaunchedEffect(Unit) {
+            kotlinx.coroutines.delay(2000)
+            copied = false
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -190,7 +201,28 @@ fun F4fErrorDetailBottomSheet(
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(12.dp))
+
+            // Nút sao chép toàn bộ lỗi gốc (không bị cắt) vào clipboard
+            F4fPressBox(
+                onClick = {
+                    clipboardManager.setText(AnnotatedString(errorMessage))
+                    copied = true
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (copied) Color(0xFF16A34A) else Color(0xFF1D4ED8)),
+                contentAlignment = Alignment.Center
+            ) {
+                BasicText(
+                    if (copied) "✓ Đã sao chép!" else "📋 Sao chép toàn bộ lỗi gốc",
+                    style = type(14.5f, FontWeight.Bold, Alx.White)
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
 
             F4fPressBox(
                 onClick = onDismiss,

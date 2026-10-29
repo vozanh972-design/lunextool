@@ -405,11 +405,14 @@ class XsmmInstagramTaskRunner(
                             onErrorDetail?.invoke(cleanUsername, "Instagram $jobType lỗi liên tiếp $consecutiveErrors lần [Mã ${actionResult.httpCode}]:\n$errReason\n${actionResult.rawBody.take(300)}")
                             return RunResult(completedCount, errorCount, totalPoints, "Lỗi liên tiếp")
                         }
-                        val isRateLimit = actionResult.errorMessage?.contains("429") == true || actionResult.rawBody.contains("429")
+                        // Chỉ coi là rate-limit thật khi httpCode == 429 (không dùng rawBody.contains("429") vì
+                        // timestamp trong cookie rur có thể chứa chuỗi "429" gây nhận nhầm)
+                        val isRateLimit = actionResult.httpCode == 429
                         val waitSec = if (isRateLimit) 20 else 5
+                        val errShort = actionResult.errorMessage?.take(80)?.let { "[$it]" } ?: ""
                         for (sec in waitSec downTo 1) {
                             if (!coroutineContext.isActive) throw kotlinx.coroutines.CancellationException("User stopped")
-                            val prefix = if (isRateLimit) "Chờ Instagram nhả Rate-Limit 429" else "Lỗi: $errReason"
+                            val prefix = if (isRateLimit) "IG từ chối (HTTP 429)" else "Lỗi $errShort"
                             notify("• $prefix (${sec}s)...", completedCount, errorCount)
                             delay(1000L)
                         }

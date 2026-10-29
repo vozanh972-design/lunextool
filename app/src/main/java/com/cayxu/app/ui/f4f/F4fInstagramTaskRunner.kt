@@ -256,19 +256,24 @@ class F4fInstagramTaskRunner(
                             type = "instagram"
                         )
 
+                        // Ghi chi tiết lỗi thật vào errorDetail để user sao chép được
+                        onErrorDetail(cleanUser, fullDetail)
+
                         if (consecutiveFails >= cfg.errorSwapCount && cfg.autoSwapOnError) {
                             onStatusUpdate("Tạm dừng: Gặp lỗi liên tiếp $consecutiveFails lần")
-                            onErrorDetail(cleanUser, "Dừng do gặp lỗi liên tiếp $consecutiveFails lần: $errTitle")
                             F4fInstagramManager.stop(cleanUser)
                             break
                         }
 
-                        val isRateLimit = actionResult.errorMessage?.contains("429") == true || actionResult.rawBody.contains("429")
+                        // Chỉ coi là rate-limit thật khi httpCode == 429 (không dùng rawBody.contains("429") vì
+                        // timestamp trong cookie rur có thể chứa chuỗi "429" gây nhận nhầm)
+                        val isRateLimit = actionResult.httpCode == 429
                         val waitSec = if (isRateLimit) 20 else cfg.getTaskWaitSeconds.coerceAtLeast(3)
+                        val errShort = actionResult.errorMessage?.take(80)?.let { "[$it]" } ?: ""
                         for (s in waitSec downTo 1) {
                             if (!coroutineContext.isActive || !F4fInstagramManager.isRunning(cleanUser)) break
-                            val prefix = if (isRateLimit) "Chờ Instagram nhả Rate-Limit 429" else "Nghỉ chờ sau lỗi"
-                            onStatusUpdate("$prefix: ${s}s...")
+                            val prefix = if (isRateLimit) "IG từ chối (HTTP 429)" else "Lỗi $errShort"
+                            onStatusUpdate("$prefix – Nghỉ ${s}s...")
                             delay(1000L)
                         }
                         continue
