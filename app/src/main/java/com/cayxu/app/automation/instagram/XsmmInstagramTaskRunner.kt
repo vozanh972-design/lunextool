@@ -364,7 +364,13 @@ class XsmmInstagramTaskRunner(
 
                     val isPrivateAccount = actionResult.errorMessage?.contains("Riêng tư", ignoreCase = true) == true ||
                                            actionResult.errorMessage?.contains("Private", ignoreCase = true) == true
+                    val isSkipJob = actionResult.errorMessage?.contains("bỏ qua", ignoreCase = true) == true
 
+                    if (isSkipJob) {
+                        notify("• ${actionResult.errorMessage}", completedCount, errorCount)
+                        delay(1000L)
+                        continue
+                    }
                     if (!actionResult.isSuccess && isPrivateAccount) {
                         notify("• Bỏ qua nick Riêng tư (Private)", completedCount, errorCount)
                         for (sec in 3 downTo 1) {
@@ -372,6 +378,7 @@ class XsmmInstagramTaskRunner(
                             notify("• Bỏ qua nick Private (Chờ ${sec}s)...", completedCount, errorCount)
                             delay(1000L)
                         }
+                        continue
                     } else if (!actionResult.isSuccess) {
                         errorCount++
                         consecutiveErrors++
@@ -661,23 +668,32 @@ class XsmmInstagramTaskRunner(
         val uidParam = account.userId.takeIf { it.isNotBlank() && it != "0" }
             ?: extractTokensFromCookie(account.cookie)["ds_user_id"]
             ?: account.username
-        val body = JSONObject().apply {
+        val bodyObj = JSONObject().apply {
             put("type", type)
             put("task_id", JSONArray().apply { taskIds.forEach { put(it) } })
             put("uid", uidParam)
             put("cookie_check", account.cookie)
-            put("string_ig", account.cookie)
-            put("string", account.cookie)
-            put("cookie", account.cookie)
-        }.toString().toRequestBody(JSON_TYPE)
-        val req = Request.Builder()
-            .url("${XSMM_API}tasks2/complete")
-            .header("Authorization", "Bearer $xsmmToken")
-            .header("Content-Type", "application/json")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
-            .post(body).build()
-        val res = execute(req) ?: return null
-        return try { JSONObject(res) } catch (_: Exception) { null }
+        }
+        val body = bodyObj.toString().toRequestBody(JSON_TYPE)
+        var attempt = 0
+        while (attempt < 3) {
+            val req = Request.Builder()
+                .url("${XSMM_API}tasks2/complete")
+                .header("Authorization", "Bearer $xsmmToken")
+                .header("Content-Type", "application/json")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .post(body).build()
+            val res = execute(req) ?: return null
+            val json = try { JSONObject(res) } catch (_: Exception) { null }
+            if (json?.optBoolean("retry", false) == true) {
+                val retryWait = Random.nextInt(10, 16)
+                Thread.sleep(retryWait * 1000L)
+                attempt++
+                continue
+            }
+            return json
+        }
+        return null
     }
 
     fun fetchUserPoints(): Long {
@@ -793,7 +809,10 @@ class XsmmInstagramTaskRunner(
         var uid = targetNumericId.trim()
         if (!uid.all { it.isDigit() } || uid.isBlank()) {
             val extracted = if (targetUrl.isNotBlank()) IgTaToolClient.extractTargetIdFromUrl(client, account.cookie, targetUrl) else null
-            uid = extracted ?: targetNumericId
+            uid = extracted ?: ""
+        }
+        if (!uid.all { it.isDigit() } || uid.isBlank()) {
+            return IgActionResult(false, 400, "", "Không trích xuất được ID số, bỏ qua!")
         }
         val cleanTargetUser = targetUsername.trim().trim('/').substringAfterLast('/')
         val profileUrl = if (targetUrl.isNotBlank()) targetUrl else if (cleanTargetUser.isNotBlank()) "https://www.instagram.com/$cleanTargetUser/" else "https://www.instagram.com/"

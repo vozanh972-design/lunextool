@@ -251,44 +251,6 @@ object IgTaToolClient {
             }
         } catch (_: Exception) {}
 
-        if (fbDtsg.isBlank()) {
-            try {
-                val reqHome = Request.Builder()
-                    .url("https://www.instagram.com/")
-                    .header("User-Agent", USERAGENT)
-                    .header("Sec-Ch-Ua", SEC_CH_UA_120)
-                    .header("Cookie", curCookie)
-                    .get()
-                    .build()
-                client.newCall(reqHome).execute().use { res ->
-                    val resHome = res.body?.string().orEmpty()
-                    var dtsgMatch = Pattern.compile(""""dtsg":\s*\{"token":"([^"]+)"""").matcher(resHome)
-                    if (!dtsgMatch.find()) {
-                        dtsgMatch = Pattern.compile("""name="fb_dtsg"\s+value="([^"]+)"""").matcher(resHome)
-                    }
-                    if (dtsgMatch.find()) {
-                        fbDtsg = dtsgMatch.group(1) ?: fbDtsg
-                    }
-                    val lsdMatch = Pattern.compile(""""LSD",\s*\[\],\s*\{"token":"([^"]+)"""").matcher(resHome)
-                    if (lsdMatch.find()) {
-                        lsd = lsdMatch.group(1) ?: lsd
-                    }
-                    val setCookies = res.headers("Set-Cookie")
-                    for (sc in setCookies) {
-                        val firstPart = sc.substringBefore(";")
-                        val eqIdx = firstPart.indexOf("=")
-                        if (eqIdx > 0) {
-                            val k = firstPart.substring(0, eqIdx).trim()
-                            val v = firstPart.substring(eqIdx + 1).trim()
-                            cookieMap[k] = v
-                        }
-                    }
-                    cookieMap["csrftoken"]?.let { dynamicCsrftoken = it }
-                    curCookie = cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
-                }
-            } catch (_: Exception) {}
-        }
-
         val actorId = userId?.takeIf { it.isNotBlank() } ?: getActorId(curCookie)
 
         val variables = JSONObject().apply {
@@ -531,7 +493,7 @@ object IgTaToolClient {
         if (fbDtsg.isBlank()) {
             try {
                 val reqHome = Request.Builder()
-                    .url("https://www.instagram.com/")
+                    .url(target)
                     .header("User-Agent", USERAGENT)
                     .header("Sec-Ch-Ua", SEC_CH_UA_120)
                     .header("Cookie", curCookie)
