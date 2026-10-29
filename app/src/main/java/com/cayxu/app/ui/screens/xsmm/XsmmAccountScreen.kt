@@ -1053,7 +1053,15 @@ fun XsmmAccountScreen(navController: NavController) {
         linkingTikTokUids,
         linkingInstagramUids,
         com.cayxu.app.automation.facebook.XsmmFacebookManager.runningAccounts.toList(),
-        com.cayxu.app.automation.instagram.XsmmInstagramManager.runningAccounts.toList()
+        com.cayxu.app.automation.instagram.XsmmInstagramManager.runningAccounts.toList(),
+        igStatusMap.toMap(),
+        igSuccessCountMap.toMap(),
+        igErrorCountMap.toMap(),
+        igErrorDetailMap.toMap(),
+        fbStatusMap.toMap(),
+        fbSuccessCountMap.toMap(),
+        fbErrorCountMap.toMap(),
+        fbErrorDetailMap.toMap()
     ) {
         when (currentPlatform) {
             XsmmPlatform.TikTok -> {
@@ -1116,6 +1124,10 @@ fun XsmmAccountScreen(navController: NavController) {
                         )
                     }
 
+                    val fbSt = fbStatusMap[acc.uid] ?: ""
+                    val fbSc = fbSuccessCountMap[acc.uid] ?: 0
+                    val fbErr = fbErrorCountMap[acc.uid] ?: 0
+                    val fbDetail = fbErrorDetailMap[acc.uid] ?: ""
                     XsmmAccount(
                         id = acc.uid,
                         name = acc.name.ifBlank { acc.uid },
@@ -1126,6 +1138,10 @@ fun XsmmAccountScreen(navController: NavController) {
                         isLive = acc.isLive,
                         isLinked = isLinked,
                         isRunning = isRunningThis,
+                        runStatus = fbSt,
+                        successCount = fbSc,
+                        errorCount = fbErr,
+                        errorDetail = fbDetail,
                         pages = pageItems
                     )
                 }

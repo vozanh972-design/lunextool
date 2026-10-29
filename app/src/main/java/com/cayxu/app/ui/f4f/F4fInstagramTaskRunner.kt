@@ -470,6 +470,8 @@ class F4fInstagramTaskRunner(
             cookie = cookie,
             targetId = uid,
             profileUrl = profileUrl,
+            cachedDtsg = fbDtsg,
+            cachedLsd = lsd,
             userId = userId
         )
         val parseRes = IgTaToolClient.parseFollowResponseV2(resBody)
@@ -491,6 +493,8 @@ class F4fInstagramTaskRunner(
             cookie = cookie,
             mediaId = mediaId,
             linkJob = targetUrl,
+            cachedDtsg = fbDtsg,
+            cachedLsd = lsd,
             userId = userId
         )
         val parseRes = IgTaToolClient.parseTymResponseV2(resBody)

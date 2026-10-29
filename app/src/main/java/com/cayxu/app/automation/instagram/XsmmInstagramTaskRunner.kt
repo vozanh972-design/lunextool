@@ -799,6 +799,8 @@ class XsmmInstagramTaskRunner(
             cookie = account.cookie,
             targetId = uid,
             profileUrl = profileUrl,
+            cachedDtsg = account.fbDtsg,
+            cachedLsd = account.lsd,
             userId = account.userId
         )
         val parseRes = IgTaToolClient.parseFollowResponseV2(resBody)
@@ -827,6 +829,8 @@ class XsmmInstagramTaskRunner(
                 cookie = account.cookie,
                 mediaId = mid,
                 linkJob = link,
+                cachedDtsg = account.fbDtsg,
+                cachedLsd = account.lsd,
                 userId = account.userId
             )
             val parseRes = IgTaToolClient.parseTymResponseV2(res)
@@ -859,6 +863,8 @@ class XsmmInstagramTaskRunner(
                 mediaId = mid,
                 text = text,
                 linkJob = link,
+                cachedDtsg = account.fbDtsg,
+                cachedLsd = account.lsd,
                 userId = account.userId
             )
             val parseRes = IgTaToolClient.parseCmtResponseV2(res)

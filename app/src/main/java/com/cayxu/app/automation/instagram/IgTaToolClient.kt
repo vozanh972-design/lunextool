@@ -201,7 +201,7 @@ object IgTaToolClient {
         if (fbDtsg.isBlank()) {
             try {
                 val reqHome = Request.Builder()
-                    .url(target)
+                    .url("https://www.instagram.com/")
                     .header("User-Agent", USERAGENT)
                     .header("Sec-Ch-Ua", SEC_CH_UA_120)
                     .header("Cookie", effectiveCookie)
@@ -270,11 +270,11 @@ object IgTaToolClient {
             client.newCall(req).execute().use { res ->
                 val text = res.body?.string()?.trim().orEmpty()
                 if (text.isNotBlank()) return text
+                return "{\"status\": \"error\", \"message\": \"HTTP ${res.code}: Phản hồi rỗng từ Instagram\"}"
             }
         } catch (e: Exception) {
             return "{\"status\": \"error\", \"message\": \"${e.message}\"}"
         }
-        return "{\"status\": \"error\", \"message\": \"Phản hồi rỗng từ Instagram\"}"
     }
 
     // ================= tym (chuẩn 100% xsmmigv2.py dòng 278-345) =================
@@ -424,7 +424,7 @@ object IgTaToolClient {
         if (fbDtsg.isBlank()) {
             try {
                 val reqHome = Request.Builder()
-                    .url(target)
+                    .url("https://www.instagram.com/")
                     .header("User-Agent", USERAGENT)
                     .header("Sec-Ch-Ua", SEC_CH_UA_120)
                     .header("Cookie", effectiveCookie)
@@ -540,6 +540,30 @@ object IgTaToolClient {
                 }
             }
         } catch (_: Exception) {}
+
+        // Fallback: Tra cứu UID bằng App REST API với Cookie của nick đang chạy
+        val cleanTarget = targetUrl.trim().removeSuffix("/").substringAfterLast("/").removePrefix("@")
+        if (cleanTarget.isNotBlank() && !cleanTarget.startsWith("http") && !cleanTarget.equals("p", true) && !cleanTarget.equals("reel", true)) {
+            try {
+                val apiReq = Request.Builder()
+                    .url("https://i.instagram.com/api/v1/users/web_profile_info/?username=$cleanTarget")
+                    .header("User-Agent", "Instagram 447.0.0.55.81 Android (36/15; 480dpi; 1080x2340; samsung; SM-S928B; e3q; qcom; vi_VN; 385311890)")
+                    .header("X-IG-App-ID", "567067343352427")
+                    .header("X-IG-Connection-Type", "WIFI")
+                    .header("X-IG-Capabilities", "3brTvw==")
+                    .header("Cookie", cookie)
+                    .get()
+                    .build()
+                client.newCall(apiReq).execute().use { res ->
+                    if (res.isSuccessful) {
+                        val body = res.body?.string().orEmpty()
+                        val json = JSONObject(body)
+                        val uid = json.optJSONObject("data")?.optJSONObject("user")?.optString("id")
+                        if (!uid.isNullOrBlank() && uid != myActorId) return uid
+                    }
+                }
+            } catch (_: Exception) {}
+        }
 
         return null
     }
