@@ -103,6 +103,8 @@ object IgTaToolClient {
             .add("x-asbd-id", ASBD_ID)
             .add("x-csrftoken", csrftoken)
             .add("x-ig-app-id", IG_APP_ID)
+            .add("x-ig-www-claim", "0")
+            .add("x-requested-with", "XMLHttpRequest")
             .add("x-ig-max-touch-points", "0")
 
         if (!friendlyName.isNullOrBlank()) {
@@ -325,7 +327,7 @@ object IgTaToolClient {
             .add("fb_api_caller_class", "RelayModern")
             .add("fb_api_req_friendly_name", "usePolarisFollowMutation")
             .add("server_timestamps", "true")
-            .add("doc_id", "26508036048874890")
+            .add("doc_id", "27767812149509802")
             .add("variables", variables.toString())
             .build()
 
@@ -503,7 +505,7 @@ object IgTaToolClient {
             .add("fb_api_caller_class", "RelayModern")
             .add("fb_api_req_friendly_name", "usePolarisLikeMediaXIGLikeMutation")
             .add("server_timestamps", "true")
-            .add("doc_id", "27182485238052616")
+            .add("doc_id", "27182485238052618")
             .add("variables", variables.toString())
             .build()
 
