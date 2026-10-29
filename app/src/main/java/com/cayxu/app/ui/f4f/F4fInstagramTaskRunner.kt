@@ -459,17 +459,15 @@ class F4fInstagramTaskRunner(
             return IgActionResult(false, 400, "", "Không lấy được thông tin tài khoản @$cleanTargetUser từ link nhiệm vụ")
         }
 
-        // Thực thi Follow 100% logic chuẩn v5.2
+        // Thực thi Follow 100% logic chuẩn V2
         val resBody = IgTaToolClient.follow(
             client = client,
-            rawCookie = cookie,
+            cookie = cookie,
             targetId = uid,
             profileUrl = profileUrl,
-            cachedDtsg = fbDtsg,
-            cachedLsd = lsd,
             userId = userId
         )
-        val parseRes = IgTaToolClient.parseFollowResponse(resBody)
+        val parseRes = IgTaToolClient.parseFollowResponseV2(resBody)
         return if (parseRes.isSuccess) {
             IgActionResult(true, 200, resBody, null)
         } else {
@@ -478,21 +476,19 @@ class F4fInstagramTaskRunner(
     }
 
     /**
-     * Like 100% logic TA Tool (IgTaToolClient.tym + parseIgResult)
+     * Like 100% logic TA Tool V2
      */
     fun doLike(targetUrl: String): IgActionResult {
         val shortcode = extractShortcode(targetUrl) ?: return IgActionResult(false, 400, "", "Không trích xuất được Shortcode từ link")
         val mediaId = shortcodeToMediaId(shortcode) ?: return IgActionResult(false, 400, "", "Không đổi được Shortcode sang MediaId")
         val resBody = IgTaToolClient.tym(
             client = client,
-            rawCookie = cookie,
+            cookie = cookie,
             mediaId = mediaId,
             linkJob = targetUrl,
-            cachedDtsg = fbDtsg,
-            cachedLsd = lsd,
             userId = userId
         )
-        val parseRes = IgTaToolClient.parseTymCmtResponse(resBody)
+        val parseRes = IgTaToolClient.parseTymResponseV2(resBody)
         return if (parseRes.isSuccess) {
             IgActionResult(true, 200, resBody, null)
         } else {

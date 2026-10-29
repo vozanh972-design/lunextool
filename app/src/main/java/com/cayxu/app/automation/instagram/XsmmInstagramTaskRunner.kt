@@ -197,6 +197,7 @@ class XsmmInstagramTaskRunner(
                 onProgressUpdate?.invoke(st, sc, err)
                 XsmmJobStatusBridge.update("[$cleanUsername] $st")
             }
+            notify("• Đang kiểm tra cookie & khởi tạo phiên...", 0, 0)
             val cookieTokens = extractTokensFromCookie(localAcc.cookie)
             val dsUserId = localAcc.userId.ifBlank { cookieTokens["ds_user_id"] ?: "" }
             val initialUname = localAcc.username.takeIf { it.isNotBlank() && !it.contains("người dùng", ignoreCase = true) } ?: cleanUsername
@@ -210,7 +211,7 @@ class XsmmInstagramTaskRunner(
             )
             val runner = XsmmInstagramTaskRunner(token, igAccount)
 
-            // Bước 1: Khởi động phiên tương tác chuẩn TA Tool (Sử dụng token sẵn có)
+            // Bước 1: Khởi động phiên tương tác chuẩn TA Tool V2
             val (isLive, tokens) = runner.syncSessionTokens()
             if (!isLive) {
                 val msg = "• Lỗi: Kháng nghị / Checkpoint / DIE"
@@ -787,14 +788,12 @@ class XsmmInstagramTaskRunner(
         val profileUrl = if (targetUrl.isNotBlank()) targetUrl else if (cleanTargetUser.isNotBlank()) "https://www.instagram.com/$cleanTargetUser/" else "https://www.instagram.com/"
         val resBody = IgTaToolClient.follow(
             client = client,
-            rawCookie = account.cookie,
+            cookie = account.cookie,
             targetId = uid,
             profileUrl = profileUrl,
-            cachedDtsg = account.fbDtsg,
-            cachedLsd = account.lsd,
             userId = account.userId
         )
-        val parseRes = IgTaToolClient.parseFollowResponse(resBody)
+        val parseRes = IgTaToolClient.parseFollowResponseV2(resBody)
         return if (parseRes.isSuccess) {
             IgActionResult(true, 200, resBody, null)
         } else {
@@ -843,14 +842,12 @@ class XsmmInstagramTaskRunner(
             if (mid.isBlank()) return IgActionResult(false, 400, "", "Không tìm thấy Media ID để Like")
             val res = IgTaToolClient.tym(
                 client = client,
-                rawCookie = account.cookie,
+                cookie = account.cookie,
                 mediaId = mid,
                 linkJob = link,
-                cachedDtsg = account.fbDtsg,
-                cachedLsd = account.lsd,
                 userId = account.userId
             )
-            val parseRes = IgTaToolClient.parseTymCmtResponse(res)
+            val parseRes = IgTaToolClient.parseTymResponseV2(res)
             return if (parseRes.isSuccess) {
                 IgActionResult(true, 200, res, null)
             } else {
@@ -876,15 +873,13 @@ class XsmmInstagramTaskRunner(
             if (mid.isBlank()) return IgActionResult(false, 400, "", "Không tìm thấy Media ID để Comment")
             val res = IgTaToolClient.cmt(
                 client = client,
-                rawCookie = account.cookie,
+                cookie = account.cookie,
                 mediaId = mid,
                 text = text,
                 linkJob = link,
-                cachedDtsg = account.fbDtsg,
-                cachedLsd = account.lsd,
                 userId = account.userId
             )
-            val parseRes = IgTaToolClient.parseTymCmtResponse(res)
+            val parseRes = IgTaToolClient.parseCmtResponseV2(res)
             return if (parseRes.isSuccess) {
                 IgActionResult(true, 200, res, null)
             } else {
