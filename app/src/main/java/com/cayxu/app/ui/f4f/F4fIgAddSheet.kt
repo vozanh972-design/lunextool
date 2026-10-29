@@ -174,15 +174,17 @@ fun F4fErrorDetailBottomSheet(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 60.dp, max = 320.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color(0xFFFEF2F2))
                     .border(1.dp, Color(0xFFFCA5A5), RoundedCornerShape(12.dp))
                     .padding(14.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
-                val displayError = if (errorMessage.length > 500) errorMessage.take(500) + "..." else errorMessage
+                val displayError = if (errorMessage.length > 2500) errorMessage.take(2500) + "..." else errorMessage
                 BasicText(
                     displayError.ifBlank { "Không có nội dung lỗi chi tiết." },
-                    style = type(13f, FontWeight.Medium, Color(0xFF991B1B), lineHeight = 1.4f)
+                    style = type(12.5f, FontWeight.Medium, Color(0xFF991B1B), lineHeight = 1.45f)
                 )
             }
 

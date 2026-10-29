@@ -219,9 +219,16 @@ class F4fInstagramTaskRunner(
                     if (!actionResult.isSuccess) {
                         errorCount++
                         consecutiveFails++
-                        val err = actionResult.errorMessage ?: "Lỗi tương tác Instagram (Link: ${job.targetLink})"
-                        onProgressUpdate("Lỗi: $err", successCount, errorCount)
-                        onErrorDetail(cleanUser, err)
+                        val errTitle = actionResult.errorMessage ?: "Lỗi tương tác Instagram (Link: ${job.targetLink})"
+                        val fullDetail = buildString {
+                            append(errTitle)
+                            if (actionResult.rawBody.isNotBlank()) {
+                                append("\n\n--- [Phản hồi gốc từ Instagram] ---\n")
+                                append(actionResult.rawBody.trim().take(2000))
+                            }
+                        }
+                        onProgressUpdate(errTitle, successCount, errorCount)
+                        onErrorDetail(cleanUser, fullDetail)
 
                         // Báo cáo lỗi và bỏ qua nhiệm vụ trên F4F
                         F4fApiClient.reportJob(
@@ -464,6 +471,14 @@ class F4fInstagramTaskRunner(
             if (root.optString("status").equals("ok", true) || root.optBoolean("viewer_has_liked", false)) {
                 return IgActionResult(true, 200, rawBody, null)
             }
+            // 4. Bóc tách thông báo lỗi cụ thể từ server nếu có
+            if (message.isNotBlank()) {
+                val prefix = if (errorType.isNotBlank()) "$errorType: " else ""
+                return IgActionResult(false, 400, rawBody, "Instagram phản hồi: $prefix$message")
+            }
+            if (statusStr.isNotBlank() && !statusStr.equals("ok", true)) {
+                return IgActionResult(false, 400, rawBody, "Instagram phản hồi status: $statusStr")
+            }
         } catch (_: Exception) {}
 
         // Fallback kiểm tra chuỗi (Chỉ khi không dính lỗi fail)
@@ -481,7 +496,8 @@ class F4fInstagramTaskRunner(
             return IgActionResult(false, 401, rawBody, "Cookie DIE / Yêu cầu đăng nhập")
         }
 
-        return IgActionResult(false, 400, rawBody, "Instagram từ chối ($defaultActionName)")
+        val rawExcerpt = if (rawBody.length > 150) rawBody.take(150) + "..." else rawBody
+        return IgActionResult(false, 400, rawBody, "Instagram từ chối ($defaultActionName): ${rawExcerpt.ifBlank { "Phản hồi rỗng" }}")
     }
 
     /**
