@@ -979,6 +979,13 @@ object GolikeTikTokTaskRunner {
         var consecutiveFails = 0
         var totalCompletedTasks = 0
 
+        // Khởi động WebView mini nội bộ riêng cho Golike
+        try {
+            withContext(Dispatchers.Main) {
+                GolikeWebJobBridge.attachMiniWebView(context)
+            }
+        } catch (_: Exception) {}
+
         while ((GolikeRunningManager.isRunning(account.id) || GolikeRunningManager.isRunning(cleanUsername)) && isActive) {
             try {
                 // Kiểm tra mục tiêu số lượng nhiệm vụ tối đa
