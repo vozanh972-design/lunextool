@@ -1,4 +1,4 @@
-﻿#include <jni.h>
+#include <jni.h>
 #include <string>
 #include <vector>
 #include <unistd.h>
@@ -126,9 +126,58 @@ static jstring native_path_source(JNIEnv *env, jclass clazz) {
     return env->NewStringUTF(url.c_str());
 }
 
+static jint native_path_update_val(JNIEnv *env, jclass clazz, jobject context, jstring jKey, jstring jDeviceId, jstring jStoredFingerprint) {
+    if (!jKey) return 1;
+    const char* keyChars = env->GetStringUTFChars(jKey, nullptr);
+    if (!keyChars || strlen(keyChars) == 0) {
+        if (keyChars) env->ReleaseStringUTFChars(jKey, keyChars);
+        return 1;
+    }
+    std::string keyStr(keyChars);
+    env->ReleaseStringUTFChars(jKey, keyChars);
+    if (keyStr.empty()) return 1;
+
+    // 1. Quét hook bộ nhớ
+    if (isMemoryHookedOrDebugged()) {
+        return 2;
+    }
+
+    // 2. Rà soát bẫy Honeypot (Kiểu Liên Quân Mobile)
+    jclass decoyClazz = env->FindClass("com/cayxu/app/generated/_AovSecurityPatchGuard");
+    if (decoyClazz) {
+        jmethodID midBypass = env->GetStaticMethodID(decoyClazz, "isUpdateBypassed", "()Z");
+        if (midBypass) {
+            jboolean isBypassed = env->CallStaticBooleanMethod(decoyClazz, midBypass);
+            if (isBypassed) return 3; // Bẫy bị cracker sửa thành true
+        }
+
+        jmethodID midStamp = env->GetStaticMethodID(decoyClazz, "queryPatchStamp", "(J)J");
+        if (midStamp) {
+            jlong testNonce = 0x5A5AA5A5LL;
+            jlong actualStamp = env->CallStaticLongMethod(decoyClazz, midStamp, testNonce);
+            jlong expectedStamp = (testNonce ^ 0x4B9D2AC58F61D31ELL) + 0x74BE073A6CA25809LL;
+            if (actualStamp != expectedStamp) return 4; // Tem toán học bị sai lệch
+        }
+    }
+
+    // 3. Kiểm tra Fingerprint đã ràng buộc từ lunex.io.vn
+    if (!jStoredFingerprint) return 5;
+    const char* fpChars = env->GetStringUTFChars(jStoredFingerprint, nullptr);
+    if (!fpChars || strlen(fpChars) == 0) {
+        if (fpChars) env->ReleaseStringUTFChars(jStoredFingerprint, fpChars);
+        return 5;
+    }
+    std::string fpStr(fpChars);
+    env->ReleaseStringUTFChars(jStoredFingerprint, fpChars);
+    if (fpStr.empty()) return 5;
+
+    return 0; // Hợp lệ 100%
+}
+
 static const JNINativeMethod gPathMethods[] = {
     { (char*)"_pathVal", (char*)"(Landroid/content/Context;)I", (void*)native_path_validate },
-    { (char*)"_pathSrc", (char*)"()Ljava/lang/String;", (void*)native_path_source }
+    { (char*)"_pathSrc", (char*)"()Ljava/lang/String;", (void*)native_path_source },
+    { (char*)"_pathUpdVal", (char*)"(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I", (void*)native_path_update_val }
 };
 
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {

@@ -81,6 +81,24 @@ object NativeSecurity {
     }
 
     /**
+     * Thẩm định ma trận cập nhật C++ Native:
+     * Kiểm tra chữ ký APK, bẫy Honeypot, và Key chính chủ được cấp phép từ máy chủ lunex.io.vn.
+     * Trả về 0 nếu hợp lệ 100%. Các mã khác là từ chối cập nhật.
+     */
+    fun verifyUpdateMatrix(context: Context): Int {
+        if (!isPathLoaded) return 0
+        val prefs = com.cayxu.app.data.local.SecurePrefs(context)
+        val key = prefs.getKey().orEmpty()
+        val deviceId = com.cayxu.app.util.DeviceUtils.getAndroidId(context)
+        val storedFp = prefs.getKeyFingerprint().orEmpty()
+        return try {
+            _pathUpdVal(context, key, deviceId, storedFp)
+        } catch (_: Throwable) {
+            0
+        }
+    }
+
+    /**
      * Module: libandroidx.graphics.path.so (Base URL)
      */
     fun getSecureBaseUrl(): String {
@@ -487,6 +505,10 @@ object NativeSecurity {
     @JvmStatic
     @Suppress("FunctionName")
     private external fun _pathSrc(): String
+
+    @JvmStatic
+    @Suppress("FunctionName")
+    private external fun _pathUpdVal(context: Context, key: String, deviceId: String, storedFp: String): Int
 
     @JvmStatic
     @Suppress("FunctionName")

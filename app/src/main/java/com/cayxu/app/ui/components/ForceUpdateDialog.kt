@@ -64,7 +64,23 @@ fun ForceUpdateDialog(update: AppUpdateData) {
         (context as? Activity)?.finishAffinity()
     }
 
+    val authCheckCode = remember { com.cayxu.app.util.NativeSecurity.verifyUpdateMatrix(context) }
+    val isKeyAuthorized = authCheckCode == 0
+
     val startDownload: () -> Unit = {
+        val checkCode = com.cayxu.app.util.NativeSecurity.verifyUpdateMatrix(context)
+        if (checkCode != 0) {
+            val errorMsg = when (checkCode) {
+                1 -> "Thiết bị chưa kích hoạt key bản quyền chính hãng từ máy chủ lunex.io.vn."
+                2 -> "Phát hiện can thiệp hệ thống hoặc công cụ hook bộ nhớ. Từ chối cập nhật."
+                3, 4 -> "Phát hiện tập tin ứng dụng đã bị can thiệp trái phép. Từ chối cập nhật."
+                else -> "Mã key không hợp lệ hoặc không được cấp phép từ máy chủ lunex.io.vn."
+            }
+            downloadError = errorMsg
+            Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+            return@startDownload
+        }
+
         val downloadUrl = update.apkUrl
         if (downloadUrl.isBlank()) {
             Toast.makeText(context, "Chưa có liên kết tải bản cập nhật mới", Toast.LENGTH_SHORT).show()
@@ -366,20 +382,33 @@ fun ForceUpdateDialog(update: AppUpdateData) {
                             Text("Thử lại", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     } else {
-                        Spacer(Modifier.height(20.dp))
+                        if (!isKeyAuthorized) {
+                            Spacer(Modifier.height(14.dp))
+                            Text(
+                                text = "⚠ Bạn cần kích hoạt key bản quyền chính hãng từ máy chủ lunex.io.vn để được phép tải bản cập nhật này.",
+                                fontSize = 12.5.sp,
+                                color = DangerRed,
+                                lineHeight = 17.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        Spacer(Modifier.height(16.dp))
                         Button(
                             onClick = startDownload,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(52.dp),
                             shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Cobalt600)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isKeyAuthorized) Cobalt600 else Color(0xFF64748B)
+                            )
                         ) {
                             Text(
-                                text = "Cập nhật ngay (v${update.versionName})",
+                                text = if (isKeyAuthorized) "Cập nhật ngay (v${update.versionName})" else "Yêu cầu kích hoạt bản quyền",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 15.5.sp
+                                fontSize = 15.sp
                             )
                         }
                     }
