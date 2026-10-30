@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.InstallMobile
 import androidx.compose.material.icons.filled.SecurityUpdateGood
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -158,14 +159,13 @@ fun ForceUpdateDialog(update: AppUpdateData) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.8f))
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
+                .background(Color.Black.copy(alpha = 0.65f)),
+            contentAlignment = Alignment.BottomCenter
         ) {
             Card(
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .wrapContentHeight()
@@ -173,41 +173,69 @@ fun ForceUpdateDialog(update: AppUpdateData) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 24.dp, vertical = 12.dp)
                         .verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Thanh gạt (Drag handle) đặc trưng của Bottom Sheet
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 4.dp, bottom = 18.dp)
+                            .size(width = 42.dp, height = 4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color(0xFFCBD5E1))
+                    )
+
+                    // Squircle bo góc màu xanh chứa icon mũi tên Download màu trắng
                     Box(
                         modifier = Modifier
                             .size(64.dp)
-                            .clip(CircleShape)
-                            .background(Brush.linearGradient(listOf(Navy900, Cobalt600))),
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(Color(0xFF2563EB), Cobalt600)
+                                )
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = if (isDownloading && downloadProgress < 1f) Icons.Filled.Download else Icons.Filled.SecurityUpdateGood,
+                            imageVector = Icons.Filled.Download,
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(34.dp)
+                            modifier = Modifier.size(32.dp)
                         )
                     }
 
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(14.dp))
 
-                    Text(
-                        text = "YÊU CẦU CẬP NHẬT",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = DangerRed,
-                        letterSpacing = 1.sp
-                    )
+                    // Dòng cảnh báo YÊU CẦU CẬP NHẬT có icon tam giác cảnh báo
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Warning,
+                            contentDescription = null,
+                            tint = DangerRed,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "YÊU CẦU CẬP NHẬT",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = DangerRed,
+                            letterSpacing = 0.8.sp
+                        )
+                    }
 
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(8.dp))
 
                     Text(
                         text = "Bản phát hành mới (v${update.versionName})",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.ExtraBold,
                         color = TextPrimary,
                         textAlign = TextAlign.Center
                     )
@@ -219,7 +247,7 @@ fun ForceUpdateDialog(update: AppUpdateData) {
                         fontSize = 13.5.sp,
                         color = TextSecondary,
                         textAlign = TextAlign.Center,
-                        lineHeight = 19.sp
+                        lineHeight = 20.sp
                     )
 
                     val rawChangelog = update.changelog.ifBlank {
@@ -232,30 +260,30 @@ fun ForceUpdateDialog(update: AppUpdateData) {
 
                     Spacer(Modifier.height(16.dp))
                     Card(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(18.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
                         border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
+                        Column(modifier = Modifier.padding(16.dp)) {
                             Text(
                                 text = "Nội dung cập nhật:",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp,
                                 color = TextPrimary
                             )
-                            Spacer(Modifier.height(6.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Spacer(Modifier.height(8.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 changelogLines.forEach { line ->
                                     val cleanLine = line.removePrefix("-").removePrefix("•").removePrefix("*").trim()
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.Top
                                     ) {
-                                        Text("• ", color = Cobalt600, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text("• ", color = Cobalt600, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                         Text(
                                             text = cleanLine,
-                                            fontSize = 12.5.sp,
+                                            fontSize = 13.sp,
                                             color = TextSecondary,
                                             lineHeight = 18.sp
                                         )
@@ -303,8 +331,8 @@ fun ForceUpdateDialog(update: AppUpdateData) {
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(12.dp),
+                                    .height(52.dp),
+                                shape = RoundedCornerShape(16.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Cobalt600)
                             ) {
                                 Icon(Icons.Filled.InstallMobile, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
@@ -331,32 +359,32 @@ fun ForceUpdateDialog(update: AppUpdateData) {
                             onClick = startDownload,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(46.dp),
-                            shape = RoundedCornerShape(12.dp),
+                                .height(50.dp),
+                            shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Cobalt600)
                         ) {
                             Text("Thử lại", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     } else {
-                        Spacer(Modifier.height(24.dp))
+                        Spacer(Modifier.height(20.dp))
                         Button(
                             onClick = startDownload,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
+                                .height(52.dp),
+                            shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Cobalt600)
                         ) {
                             Text(
                                 text = "Cập nhật ngay (v${update.versionName})",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
+                                fontSize = 15.5.sp
                             )
                         }
                     }
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
 
                     TextButton(
                         onClick = { (context as? Activity)?.finishAffinity() },
@@ -364,8 +392,8 @@ fun ForceUpdateDialog(update: AppUpdateData) {
                     ) {
                         Text(
                             text = "Thoát ứng dụng",
-                            color = TextSecondary,
-                            fontSize = 13.5.sp,
+                            color = Color(0xFF64748B),
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
