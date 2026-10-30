@@ -607,6 +607,13 @@ class XsmmJobRunnerOverlayService : Service() {
 
                 XsmmJobStatusBridge.update("Bắt đầu chạy Golike TikTok...")
 
+                // Khởi tạo WebView mini ngầm phục vụ nhận và hoàn thành job không bị 403
+                launch(Dispatchers.Main) {
+                    try {
+                        com.cayxu.app.ui.screens.golike.GolikeWebJobBridge.attachMiniWebView(applicationContext)
+                    } catch (_: Exception) {}
+                }
+
                 while (isActive) {
                     for (handle in activeList) {
                         if (!isActive) break
@@ -867,6 +874,9 @@ class XsmmJobRunnerOverlayService : Service() {
             GolikeRunningManager.runningAccounts.keys.forEach { k ->
                 GolikeRunningManager.runningAccounts[k] = false
             }
+            try {
+                com.cayxu.app.ui.screens.golike.GolikeWebJobBridge.destroy()
+            } catch (_: Exception) {}
         }
         overlayComposeView?.let { runCatching { windowManager.removeView(it) } }
         overlayComposeView = null
