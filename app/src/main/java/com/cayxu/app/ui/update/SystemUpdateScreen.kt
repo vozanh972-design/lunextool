@@ -183,7 +183,9 @@ private fun NoteCard(note: UpdateNote, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(20.dp)
     Column(modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape).padding(horizontal = 16.dp, vertical = 14.dp)) {
         BasicText(note.title, style = type(14.5f, FontWeight.ExtraBold, Alx.Ink))
-        BasicText(note.body, Modifier.padding(top = 6.dp), style = type(13f, FontWeight.Medium, Alx.Muted, lineHeight = 1.55f))
+        if (note.body.isNotBlank()) {
+            BasicText(note.body, Modifier.padding(top = 6.dp), style = type(13f, FontWeight.Medium, Alx.Muted, lineHeight = 1.55f))
+        }
     }
 }
 
@@ -207,9 +209,8 @@ private fun PressBox(
 /* ───────────────────────────── Dữ liệu mẫu + Preview ───────────────────────────── */
 
 val SampleUpdateNotes = listOf(
-    UpdateNote("Facebook", "Sửa lỗi đăng nhập."),
-    UpdateNote("Instagram", "Sửa lỗi đăng nhập."),
-    UpdateNote("TikTok", "Thêm tuongtaccheo tiktok."),
+    UpdateNote("XSMM", "Fix lỗi IG"),
+    UpdateNote("Fix lỗi vặt", ""),
 )
 
 @Preview(widthDp = 390, heightDp = 844, showBackground = true)

@@ -357,7 +357,7 @@ fun ProfileScreen(
                     if (parts.size == 2) {
                         UpdateNote(parts[0].trim(), parts[1].trim())
                     } else {
-                        UpdateNote("Cập nhật", cleanLine)
+                        UpdateNote(cleanLine, "")
                     }
                 }
             } else {
