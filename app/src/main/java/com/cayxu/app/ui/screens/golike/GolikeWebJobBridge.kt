@@ -270,14 +270,17 @@ object GolikeWebJobBridge {
                                 // 1. Kiểm tra Captcha (ID #captcha-golike hoặc reCAPTCHA iframe)
                                 let captchaModal = document.getElementById('captcha-golike');
                                 let recaptchaFrame = document.querySelector('iframe[src*="recaptcha"], iframe[src*="cloudflare"], div.g-recaptcha');
-                                if ((captchaModal && captchaModal.classList.contains('show')) || (recaptchaFrame && recaptchaFrame.offsetParent !== null)) {
+                                let isCaptchaVisible = (captchaModal && (captchaModal.classList.contains('show') || captchaModal.style.display === 'block')) ||
+                                    (recaptchaFrame && recaptchaFrame.offsetParent !== null && recaptchaFrame.style.display !== 'none');
+                                if (isCaptchaVisible) {
                                     if (window.GolikeJobBridge) {
                                         if (window.GolikeJobBridge.onCaptchaDetected) window.GolikeJobBridge.onCaptchaDetected();
                                         if (window.GolikeJobBridge.onWebStatus) window.GolikeJobBridge.onWebStatus('Golike: Vui lòng giải Captcha trên màn nổi...');
                                     }
+                                    return 'waiting_captcha';
                                 }
 
-                                // 2. Tự xử lý Modal xác nhận "Xác nhận làm việc bằng App" (ID #JobPolicyWarning)
+                                // 2. TRƯỜNG HỢP 1: Tự xử lý Modal xác nhận "Xác nhận làm việc bằng App" (ID #JobPolicyWarning)
                                 let policyModal = document.getElementById('JobPolicyWarning');
                                 if (policyModal && (policyModal.classList.contains('show') || policyModal.style.display === 'block' || policyModal.offsetParent !== null)) {
                                     let cb = document.getElementById('JobPolicyWarningAgree');
@@ -298,7 +301,24 @@ object GolikeWebJobBridge {
                                     swalOk.click();
                                 }
 
-                                // 3. TRANG 1: /jobs (Có lưới .job-grid và các .job-card)
+                                // BƯỚC 0: Nếu mới mở đang ở Trang chủ (Home) -> Bấm nút "Kiếm xu" ở thanh menu dưới
+                                if (pathname === '/home' || pathname.endsWith('/home') || (!document.querySelector('.job-grid') && !document.querySelector('.tk-hero') && !document.querySelector('.card-job-detail'))) {
+                                    let walletTab = Array.from(document.querySelectorAll('.nav-bottom-container .col, .nav-bottom-container div, .nav-bottom-container span')).find(el => (el.innerText || '').trim() === 'Kiếm xu');
+                                    if (walletTab) {
+                                        let clickTarget = walletTab.closest('.col') || walletTab;
+                                        clickTarget.scrollIntoView({ behavior: 'auto', block: 'center' });
+                                        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+                                            clickTarget.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+                                        });
+                                        clickTarget.click();
+                                        if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
+                                            window.GolikeJobBridge.onWebStatus('Golike: Bấm Kiếm xu từ trang chủ...');
+                                        }
+                                        return 'navigated_to_jobs';
+                                    }
+                                }
+
+                                // BƯỚC 1: TRANG /jobs (Chọn kênh kiếm xu -> Bấm chọn TikTok)
                                 if (document.querySelector('.job-grid') || pathname === '/jobs' || pathname.endsWith('/jobs')) {
                                     let ttCard = Array.from(document.querySelectorAll('.job-card')).find(c => {
                                         let name = c.querySelector('.job-name')?.innerText?.trim()?.toLowerCase() || '';
@@ -318,7 +338,7 @@ object GolikeWebJobBridge {
                                     }
                                 }
 
-                                // 4. TRANG 2: /jobs/tiktok (Chưa vào job-detail)
+                                // BƯỚC 2 & TRƯỜNG HỢP 2: TRANG /jobs/tiktok (Ở sẵn trang này các lần tiếp theo)
                                 let heroCta = document.querySelector('.tk-hero__cta') || document.querySelector('.tk-hero');
                                 if (heroCta || document.querySelector('.tk-tabs') || pathname.includes('/jobs/tiktok')) {
                                     if (!pathname.includes('job-detail')) {
@@ -341,6 +361,7 @@ object GolikeWebJobBridge {
                                                             return n.includes(targetUser);
                                                         });
                                                         if (items.length > 0) {
+                                                            items[0].scrollIntoView({ behavior: 'auto', block: 'center' });
                                                             items[0].click();
                                                             if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
                                                                 window.GolikeJobBridge.onWebStatus('Golike: Đã chọn tài khoản @' + targetUser);
