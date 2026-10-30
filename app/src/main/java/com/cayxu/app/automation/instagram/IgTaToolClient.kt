@@ -113,7 +113,8 @@ object IgTaToolClient {
     data class IgCookieInfo(
         val isLive: Boolean,
         val username: String = "",
-        val userId: String = ""
+        val userId: String = "",
+        val errorMessage: String? = null
     )
 
     // ================= check_cookie_ig chuẩn Web Meta 2026 =================
@@ -145,9 +146,21 @@ object IgTaToolClient {
                         return IgCookieInfo(isLive = true, username = username, userId = uid ?: "")
                     }
                 }
+
+                val msg = json.optString("message", "")
+                val lock = json.optBoolean("lock", false)
+                val checkpointUrl = json.optString("checkpoint_url", "")
+                if (msg.contains("checkpoint_required", ignoreCase = true) || lock || checkpointUrl.isNotBlank()) {
+                    return IgCookieInfo(isLive = false, errorMessage = "Tài khoản bị Instagram tạm ngưng / Checkpoint (Suspended)")
+                }
+                if (body.contains("login_required", ignoreCase = true)) {
+                    return IgCookieInfo(isLive = false, errorMessage = "Cookie đã hết hạn (Yêu cầu đăng nhập lại)")
+                }
             }
-        } catch (_: Exception) {}
-        return IgCookieInfo(isLive = false)
+        } catch (e: Exception) {
+            return IgCookieInfo(isLive = false, errorMessage = "Lỗi kết nối Instagram: ${e.message}")
+        }
+        return IgCookieInfo(isLive = false, errorMessage = "Cookie không hợp lệ hoặc đã hết hạn")
     }
 
     data class IgPageTokens(val dtsg: String, val lsd: String, val jazoest: String)

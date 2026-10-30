@@ -525,17 +525,11 @@ class XsmmInstagramTaskRunner(
             if (csrftoken.isNotBlank()) tokenMap["csrftoken"] = csrftoken
         } catch (_: Exception) {}
 
-        // Nếu đã có sẵn fbDtsg và lsd -> Tái sử dụng ngay lập tức chuẩn TA Tool Python, không tải lại HTML
-        if (!account.fbDtsg.isNullOrBlank() && !account.lsd.isNullOrBlank()) {
-            tokenMap["fb_dtsg"] = account.fbDtsg!!
-            tokenMap["lsd"] = account.lsd!!
-            return Pair(true, tokenMap)
-        }
-
-        // Nếu chưa có, mới tiến hành kiểm tra cookie và bóc tách
+        // Luôn kiểm tra tình trạng Cookie sống hay bị Checkpoint/Khóa trước khi chạy
         val info = IgTaToolClient.checkCookieIg(client, account.cookie)
         if (!info.isLive) {
-            account.lastErrorMessage = "Tài khoản bị Kháng nghị / Checkpoint / DIE"
+            val err = info.errorMessage ?: "Tài khoản bị Kháng nghị / Checkpoint / DIE"
+            account.lastErrorMessage = err
             return Pair(false, emptyMap())
         }
 
@@ -545,6 +539,13 @@ class XsmmInstagramTaskRunner(
         account.userId = resolvedId
         tokenMap["username"] = resolvedUser
         tokenMap["userId"] = resolvedId
+
+        // Nếu đã có sẵn fbDtsg và lsd hợp lệ -> Tái sử dụng
+        if (!account.fbDtsg.isNullOrBlank() && !account.lsd.isNullOrBlank()) {
+            tokenMap["fb_dtsg"] = account.fbDtsg!!
+            tokenMap["lsd"] = account.lsd!!
+            return Pair(true, tokenMap)
+        }
 
         val pageTokens = IgTaToolClient.extractPageTokens(
             client = client,

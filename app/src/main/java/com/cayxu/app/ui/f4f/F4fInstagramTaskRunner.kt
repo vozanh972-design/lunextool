@@ -102,10 +102,20 @@ class F4fInstagramTaskRunner(
             val tokens = extractTokensFromCookie(localAcc.cookie)
             val resolvedUserId = localAcc.userId.ifBlank { tokens["ds_user_id"].orEmpty() }
 
+            onStatusUpdate("Đang kiểm tra trạng thái Cookie...")
+            val cookieCheckClient = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).build()
+            val checkInfo = IgTaToolClient.checkCookieIg(cookieCheckClient, localAcc.cookie)
+            if (!checkInfo.isLive) {
+                val err = checkInfo.errorMessage ?: "Cookie Instagram không hợp lệ hoặc đã hết hạn"
+                onStatusUpdate("Lỗi: $err")
+                onErrorDetail(cleanUser, "$err. Vui lòng vào Instagram kiểm tra hoặc cập nhật lại Cookie.")
+                return@withContext
+            }
+
             onStatusUpdate("Đang trích xuất token Instagram...")
             val pageTokens = try {
                 IgTaToolClient.extractPageTokens(
-                    client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).build(),
+                    client = cookieCheckClient,
                     cookie = localAcc.cookie,
                     targetUrl = "https://www.instagram.com/",
                     cachedDtsg = localAcc.fbDtsg,
