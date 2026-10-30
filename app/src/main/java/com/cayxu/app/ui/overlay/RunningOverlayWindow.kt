@@ -297,7 +297,7 @@ private fun ExpandedCard(
                 Box(
                     Modifier.padding(top = 4.dp)
                         .fillMaxWidth()
-                        .height(if (isExpandedWeb) 140.dp else 1.dp)
+                        .height(if (isExpandedWeb) 180.dp else 1.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(Color.White)
                 ) {

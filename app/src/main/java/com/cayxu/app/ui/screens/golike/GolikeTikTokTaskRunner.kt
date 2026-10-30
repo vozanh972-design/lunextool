@@ -1037,7 +1037,7 @@ object GolikeTikTokTaskRunner {
                 // 100% Lấy nhiệm vụ trực tiếp qua Web Context của Golike (tránh triệt để lỗi 403 sig)
                 val currentWebData = GolikeAccountsStore.getWebData(context)
                 val jobRes = try {
-                    GolikeWebJobBridge.getJobViaWeb(golikeAccId, currentWebData)
+                    GolikeWebJobBridge.getJobViaWeb(golikeAccId, account.username, currentWebData)
                 } catch (_: Exception) { null }
                 if (jobRes == null || !jobRes.optBoolean("success", false)) {
                     consecutiveFails++
