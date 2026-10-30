@@ -78,10 +78,8 @@ fun ForceUpdateDialog(update: AppUpdateData) {
             }
             downloadError = errorMsg
             Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
-            return@startDownload
-        }
-
-        val downloadUrl = update.apkUrl
+        } else {
+            val downloadUrl = update.apkUrl
         if (downloadUrl.isBlank()) {
             Toast.makeText(context, "Chưa có liên kết tải bản cập nhật mới", Toast.LENGTH_SHORT).show()
         } else {
@@ -163,6 +161,7 @@ fun ForceUpdateDialog(update: AppUpdateData) {
             }
         }
     }
+}
 
     Dialog(
         onDismissRequest = { /* Không cho phép tắt dialog khi chưa cập nhật */ },
