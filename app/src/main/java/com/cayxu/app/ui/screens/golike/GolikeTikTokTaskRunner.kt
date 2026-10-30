@@ -815,6 +815,10 @@ object GolikeTikTokTaskRunner {
                     val getJobStartTime = System.currentTimeMillis()
                     val getJobEndTime = getJobStartTime + getJobDelay * 1000L
                     while (System.currentTimeMillis() < getJobEndTime && isActive && GolikeRunningManager.isRunning(account.id)) {
+                        while (GolikeRunningManager.isPaused && isActive && GolikeRunningManager.isRunning(account.id)) {
+                            XsmmJobStatusBridge.update("Đang tạm dừng...")
+                            delay(500L)
+                        }
                         val secLeft = ((getJobEndTime - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
                         val msg = "Lướt TikTok chờ lấy job (${secLeft}s)..."
                         onStatusChange(msg)
@@ -824,6 +828,10 @@ object GolikeTikTokTaskRunner {
                 } else {
                     for (sec in getJobDelay downTo 1) {
                         if (!GolikeRunningManager.isRunning(account.id) || !isActive) break
+                        while (GolikeRunningManager.isPaused && isActive && GolikeRunningManager.isRunning(account.id)) {
+                            XsmmJobStatusBridge.update("Đang tạm dừng...")
+                            delay(500L)
+                        }
                         val msg = "Chờ lấy nhiệm vụ TikTok (${sec}s)..."
                         onStatusChange(msg)
                         XsmmJobStatusBridge.update(msg)
@@ -944,7 +952,13 @@ object GolikeTikTokTaskRunner {
                 // Bấm tương tác (Follow hoặc Thả tim liên tục) chuẩn XSMM
                 var taskActionSuccess = false
                 val isA11yEnabled = TikTokAppLauncher.isAccessibilityServiceEnabled(context)
-                if (isA11yEnabled) {
+                // BẢO VỆ CHẶT CHẼ: Nếu là Job Tym/Like mà không có URL video thật thì KHÔNG double tap ảo
+                if (isLikeJob && realUrl.isBlank()) {
+                    val noUrlMsg = "Golike: Không có link video để thả tim, bỏ qua job ảo"
+                    onStatusChange(noUrlMsg)
+                    XsmmJobStatusBridge.update(noUrlMsg)
+                    taskActionSuccess = false
+                } else if (isA11yEnabled) {
                     val actionId = XsmmTaskAutomationBridge.triggerTask(
                         taskType = normalizedJobType,
                         swipeBefore = false,
@@ -1005,6 +1019,10 @@ object GolikeTikTokTaskRunner {
                         val compStartTime = System.currentTimeMillis()
                         val compEndTime = compStartTime + completeJobDelay * 1000L
                         while (System.currentTimeMillis() < compEndTime && isActive && GolikeRunningManager.isRunning(account.id)) {
+                            while (GolikeRunningManager.isPaused && isActive && GolikeRunningManager.isRunning(account.id)) {
+                                XsmmJobStatusBridge.update("Đang tạm dừng...")
+                                delay(500L)
+                            }
                             val secLeft = ((compEndTime - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
                             val compMsg = "Đã $shortType $displayTarget | Lướt tin chờ báo cáo (${secLeft}s)..."
                             onStatusChange(compMsg)
@@ -1015,6 +1033,10 @@ object GolikeTikTokTaskRunner {
                         // Nếu TẮT: đứng yên đếm ngược đủ thời gian hoàn thành
                         for (sec in completeJobDelay downTo 1) {
                             if (!GolikeRunningManager.isRunning(account.id) || !isActive) break
+                            while (GolikeRunningManager.isPaused && isActive && GolikeRunningManager.isRunning(account.id)) {
+                                XsmmJobStatusBridge.update("Đang tạm dừng...")
+                                delay(500L)
+                            }
                             val compMsg = "Đã $shortType $displayTarget | Chờ hoàn tất (${sec}s)..."
                             onStatusChange(compMsg)
                             XsmmJobStatusBridge.update(compMsg)

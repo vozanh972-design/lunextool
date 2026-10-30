@@ -423,6 +423,12 @@ object GolikeWebJobBridge {
         val wv = miniWebView ?: return null
         val deferred = CompletableDeferred<JSONObject?>()
         pendingGetJob = deferred
+        // Xóa sạch bộ nhớ đệm trước khi bắt đầu lấy job mới
+        mainHandler.post {
+            try {
+                wv.evaluateJavascript("window._lastJobData = null; window._lastCompleteData = null;", null)
+            } catch (_: Exception) {}
+        }
 
         val cleanTargetUser = accountUsername.trim().removePrefix("@").lowercase()
 
@@ -602,6 +608,7 @@ object GolikeWebJobBridge {
                                     // Nếu network hook đã bắt được dữ liệu chính xác từ API
                                     if (window._lastJobData && window._lastJobData.data) {
                                         let jd = window._lastJobData.data;
+                                        window._lastJobData = null; // Xóa cache ngay, tránh lặp lại job cũ
                                         let res = {
                                             success: true,
                                             status: 200,

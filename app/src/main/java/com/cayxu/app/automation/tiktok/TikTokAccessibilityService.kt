@@ -1063,7 +1063,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         if (topNode != null) {
             val b = Rect()
             topNode.getBoundsInScreen(b)
-            if (b.centerY() <= screenH * 0.22f) {
+            if (b.centerY() <= screenH * 0.45f) {
                 return true
             }
         }
@@ -1073,7 +1073,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         if (homeTabNode != null) {
             val b = Rect()
             homeTabNode.getBoundsInScreen(b)
-            if (b.centerY() >= screenH * 0.80f) {
+            if (b.centerY() >= screenH * 0.50f) {
                 val isSelected = homeTabNode.isSelected ||
                     (homeTabNode.parent?.isSelected == true) ||
                     (homeTabNode.contentDescription?.contains("đã chọn", ignoreCase = true) == true) ||
@@ -1098,7 +1098,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         val profileTab = candidates.filter { node ->
             val b = Rect()
             node.getBoundsInScreen(b)
-            b.bottom >= (screenH * 0.75f)
+            b.bottom >= (screenH * 0.40f)
         }.maxByOrNull { node ->
             val b = Rect()
             node.getBoundsInScreen(b)
@@ -1211,7 +1211,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         val dm = resources.displayMetrics
         val screenW = dm.widthPixels.toFloat()
         val screenH = dm.heightPixels.toFloat()
-        val maxTop = (screenH * 0.15f).toInt()
+        val maxTop = (screenH * 0.40f).toInt()
         val maxRight = (screenW * 0.25f).toInt()
 
         val candidates = mutableListOf<AccessibilityNodeInfo>()
@@ -1284,7 +1284,7 @@ class TikTokAccessibilityService : AccessibilityService() {
             val desc = (node.contentDescription?.toString() ?: "").lowercase()
 
             // Bắt buộc nằm ở phần dưới màn hình
-            b.bottom >= (screenH * 0.75f) &&
+            b.bottom >= (screenH * 0.40f) &&
             // Loại trừ 100% avatar tác giả, nút follow, dấu cộng
             !resId.contains("avatar") && !resId.contains("author") && !resId.contains("follow") &&
             !desc.contains("của") && !desc.contains("avatar") && !desc.contains("tác giả")

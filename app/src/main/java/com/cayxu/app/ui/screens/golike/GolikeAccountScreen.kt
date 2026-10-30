@@ -80,6 +80,7 @@ object GolikeRunningManager {
     val successCountMap = mutableStateMapOf<String, Int>()
     val errorCountMap = mutableStateMapOf<String, Int>()
     val lastErrorDetailMap = mutableStateMapOf<String, String>()
+    var isPaused by mutableStateOf(false)
 
     fun isRunning(accountId: String): Boolean = runningAccounts[accountId] == true
 

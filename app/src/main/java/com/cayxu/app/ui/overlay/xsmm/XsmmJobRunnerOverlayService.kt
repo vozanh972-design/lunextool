@@ -806,6 +806,7 @@ class XsmmJobRunnerOverlayService : Service() {
 
     private fun togglePause() {
         isPaused = !isPaused
+        com.cayxu.app.ui.screens.golike.GolikeRunningManager.isPaused = isPaused
         overlayUiState.value = overlayUiState.value.copy(paused = isPaused)
         if (isPaused) {
             val curText = overlayUiState.value.statusText
