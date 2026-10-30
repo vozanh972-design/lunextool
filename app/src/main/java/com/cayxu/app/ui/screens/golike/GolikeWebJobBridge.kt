@@ -14,7 +14,11 @@ import com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.util.concurrent.TimeUnit
 
 /**
  * Trình duyệt Web mini nhúng trực tiếp trang thật Golike (https://app.golike.net/jobs/tiktok) vào màn nổi.
@@ -154,6 +158,78 @@ object GolikeWebJobBridge {
     """
 
     /**
+     * Tạo đoạn mã Javascript giả lập 100% môi trường iOS Safari (Apple WebKit)
+     * và tự động đồng bộ trọn bộ LocalStorage từ phiên đăng nhập Golike đã lưu.
+     */
+    private fun getSpoofAndSessionScript(context: Context): String {
+        val savedToken = GolikeAccountsStore.getToken(context).orEmpty()
+        val authHeader = if (savedToken.startsWith("Bearer ", ignoreCase = true)) savedToken else "Bearer $savedToken"
+        val savedUserId = GolikeAccountsStore.getUserId(context)
+        val savedSigningKey = GolikeAccountsStore.getSigningKey(context)
+        val savedDeviceId = GolikeAccountsStore.getDeviceId(context)
+        val savedUsername = GolikeAccountsStore.getUsername(context)
+        val savedWebData = GolikeAccountsStore.getWebData(context)
+        val savedTToken = GolikeAccountsStore.getTToken(context)
+        val savedVersion = GolikeAccountsStore.getWebVersionText(context)
+
+        return """
+            (function() {
+                try {
+                    // 1. Giả lập 100% môi trường iOS Safari (Apple WebKit)
+                    Object.defineProperty(navigator, 'platform', { get: function() { return 'iPhone'; }, configurable: true });
+                    Object.defineProperty(navigator, 'vendor', { get: function() { return 'Apple Computer, Inc.'; }, configurable: true });
+                    Object.defineProperty(navigator, 'maxTouchPoints', { get: function() { return 5; }, configurable: true });
+                    if ('userAgentData' in navigator) {
+                        Object.defineProperty(navigator, 'userAgentData', { get: function() { return undefined; }, configurable: true });
+                    }
+                    try { delete window.chrome; } catch(e) {}
+                } catch(e) {}
+
+                // 2. Đồng bộ LocalStorage từ tài khoản Golike đã đăng nhập
+                try {
+                    var token = ${JSONObject.quote(savedToken)};
+                    var authHeader = ${JSONObject.quote(authHeader)};
+                    var userId = ${JSONObject.quote(savedUserId)};
+                    var signingKey = ${JSONObject.quote(savedSigningKey)};
+                    var deviceId = ${JSONObject.quote(savedDeviceId)};
+                    var username = ${JSONObject.quote(savedUsername)};
+                    var webData = ${JSONObject.quote(savedWebData)};
+                    var tToken = ${JSONObject.quote(savedTToken)};
+                    var version = ${JSONObject.quote(savedVersion)};
+
+                    if (token && !localStorage.getItem('token')) {
+                        localStorage.setItem('token', token);
+                    }
+                    if (token && !localStorage.getItem('authorization')) {
+                        localStorage.setItem('authorization', authHeader);
+                    }
+                    if (userId && !localStorage.getItem('user_id')) {
+                        localStorage.setItem('user_id', userId);
+                    }
+                    if (signingKey && !localStorage.getItem('signing_key')) {
+                        localStorage.setItem('signing_key', signingKey);
+                    }
+                    if (deviceId && !localStorage.getItem('device_id')) {
+                        localStorage.setItem('device_id', deviceId);
+                    }
+                    if (username && !localStorage.getItem('username')) {
+                        localStorage.setItem('username', username);
+                    }
+                    if (webData && webData !== 'null' && !localStorage.getItem('__')) {
+                        localStorage.setItem('__', webData);
+                    }
+                    if (tToken && !localStorage.getItem('t')) {
+                        localStorage.setItem('t', tToken);
+                    }
+                    if (version && !localStorage.getItem('g-version')) {
+                        localStorage.setItem('g-version', version);
+                    }
+                } catch(e) {}
+            })();
+        """.trimIndent()
+    }
+
+    /**
      * Tạo hoặc tái sử dụng WebView thật hiển thị trực tiếp trang Golike
      */
     @SuppressLint("SetJavaScriptEnabled")
@@ -164,12 +240,14 @@ object GolikeWebJobBridge {
         }
 
         val wv = WebView(context.applicationContext)
+        val targetUserAgent = GolikeAccountsStore.getUserAgent(context)
+
         wv.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
             cacheMode = WebSettings.LOAD_DEFAULT
-            userAgentString = GolikeApiClient.USER_AGENT
+            userAgentString = targetUserAgent
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             useWideViewPort = true
             loadWithOverviewMode = true
@@ -178,9 +256,22 @@ object GolikeWebJobBridge {
             displayZoomControls = false
         }
 
-        CookieManager.getInstance().apply {
-            setAcceptCookie(true)
-            setAcceptThirdPartyCookies(wv, true)
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        cookieManager.setAcceptThirdPartyCookies(wv, true)
+
+        // Đồng bộ cookies từ phiên đăng nhập Golike vào CookieManager
+        val savedCookies = GolikeAccountsStore.getWebCookies(context)
+        if (savedCookies.isNotBlank()) {
+            listOf("https://app.golike.net", "https://gateway.golike.net", "https://api.golike.net").forEach { domain ->
+                savedCookies.split(";").forEach { c ->
+                    val cookie = c.trim()
+                    if (cookie.isNotBlank()) {
+                        cookieManager.setCookie(domain, cookie)
+                    }
+                }
+            }
+            cookieManager.flush()
         }
 
         wv.webChromeClient = WebChromeClient()
@@ -210,11 +301,106 @@ object GolikeWebJobBridge {
                 return false
             }
 
+            override fun onPageCommitVisible(view: WebView?, url: String?) {
+                super.onPageCommitVisible(view, url)
+                // Tiêm script giả lập iOS Safari và nạp LocalStorage ngay khi trang bắt đầu render
+                view?.evaluateJavascript(getSpoofAndSessionScript(context), null)
+                view?.evaluateJavascript(NETWORK_INTERCEPTOR_JS, null)
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 Log.d(TAG, "Web Golike loaded: $url")
-                // Tự động tiêm bộ lắng nghe mạng
+                // Nạp lại đảm bảo phiên và hook mạng luôn hoạt động
+                view?.evaluateJavascript(getSpoofAndSessionScript(context), null)
                 view?.evaluateJavascript(NETWORK_INTERCEPTOR_JS, null)
+            }
+
+            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                val reqUrl = request?.url?.toString() ?: return super.shouldInterceptRequest(view, request)
+
+                // Nếu là yêu cầu lấy nhiệm vụ TikTok từ gateway Golike
+                // Can thiệp để loại bỏ hoàn toàn các header Client Hints Android (sec-ch-ua-platform)
+                // Đảm bảo Golike Backend nhận diện 100% chuẩn iOS Safari và không bao giờ hiện cảnh báo CHPLAY!
+                if (request.method.equals("GET", ignoreCase = true) &&
+                    reqUrl.contains("gateway.golike.net/api/advertising/publishers/tiktok/jobs")
+                ) {
+                    try {
+                        val client = OkHttpClient.Builder()
+                            .connectTimeout(15, TimeUnit.SECONDS)
+                            .readTimeout(20, TimeUnit.SECONDS)
+                            .build()
+
+                        val userAgent = GolikeAccountsStore.getUserAgent(context)
+                        val reqBuilder = Request.Builder()
+                            .url(reqUrl)
+                            .get()
+                            .header("User-Agent", userAgent)
+                            .header("Origin", "https://app.golike.net")
+                            .header("Referer", "https://app.golike.net/")
+                            .header("Accept", "application/json, text/plain, */*")
+                            .header("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+
+                        // Copy các headers cần thiết (Authorization, t, cookie) nhưng BỎ QUA sec-ch-*
+                        request.requestHeaders?.forEach { (k, v) ->
+                            val lower = k.lowercase()
+                            if (!lower.startsWith("sec-ch-") &&
+                                !lower.equals("user-agent", ignoreCase = true) &&
+                                !lower.equals("host", ignoreCase = true)
+                            ) {
+                                reqBuilder.header(k, v)
+                            }
+                        }
+
+                        // Đảm bảo cookie được gắn đầy đủ
+                        val cookies = CookieManager.getInstance().getCookie(reqUrl)
+                        if (!cookies.isNullOrBlank()) {
+                            reqBuilder.header("Cookie", cookies)
+                        }
+
+                        // Đảm bảo Authorization luôn có
+                        val token = GolikeAccountsStore.getToken(context).orEmpty()
+                        if (token.isNotBlank() && reqBuilder.build().header("Authorization").isNullOrBlank()) {
+                            val auth = if (token.startsWith("Bearer ", ignoreCase = true)) token else "Bearer $token"
+                            reqBuilder.header("Authorization", auth)
+                        }
+
+                        val response = client.newCall(reqBuilder.build()).execute()
+                        val responseBody = response.body?.bytes() ?: ByteArray(0)
+                        val contentType = response.header("Content-Type") ?: "application/json; charset=utf-8"
+                        val mimeType = contentType.substringBefore(";").trim()
+                        val encoding = if (contentType.contains("charset=", ignoreCase = true)) {
+                            contentType.substringAfter("charset=").substringBefore(";").trim()
+                        } else "utf-8"
+
+                        // Trả về luồng dữ liệu sạch cho WebView
+                        val responseHeaders = mutableMapOf<String, String>()
+                        response.headers.forEach { pair ->
+                            responseHeaders[pair.first] = pair.second
+                        }
+
+                        // Nếu API trả về dữ liệu job -> cũng chủ động phân tích và hoàn thành pendingGetJob
+                        val jsonString = String(responseBody, Charsets.UTF_8)
+                        try {
+                            val json = JSONObject(jsonString)
+                            if (json.optBoolean("success", false) || json.optInt("status", 0) == 200) {
+                                pendingGetJob?.complete(json)
+                            }
+                        } catch (_: Exception) {}
+
+                        return WebResourceResponse(
+                            mimeType,
+                            encoding,
+                            response.code,
+                            response.message.ifBlank { "OK" },
+                            responseHeaders,
+                            ByteArrayInputStream(responseBody)
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Lỗi can thiệp getJob request: ${e.message}")
+                    }
+                }
+                return super.shouldInterceptRequest(view, request)
             }
         }
 
@@ -251,11 +437,24 @@ object GolikeWebJobBridge {
                         wv.loadUrl("https://app.golike.net/jobs")
                     }
 
+                    wv.evaluateJavascript(getSpoofAndSessionScript(wv.context), null)
                     wv.evaluateJavascript(
                         """
                         (function() {
                             try {
                                 $NETWORK_INTERCEPTOR_JS
+
+                                // Tự động đóng popup cảnh báo CHPLAY / dừng hoạt động nếu có
+                                let popups = document.querySelectorAll('.swal2-container, .modal, .ant-modal, .van-dialog, [role="dialog"], .modal-dialog');
+                                for (let p of popups) {
+                                    let txt = (p.innerText || '').toLowerCase();
+                                    if (txt.includes('chplay') || txt.includes('dừng hoạt động') || txt.includes('bản web')) {
+                                        let closeBtn = p.querySelector('button, .btn, .swal2-confirm, .van-button, .close');
+                                        if (closeBtn && !closeBtn.disabled) {
+                                            closeBtn.click();
+                                        }
+                                    }
+                                }
 
                                 // Nếu bị trắng trang do router, tự back về trang trước trong lịch sử SPA
                                 let appEl = document.getElementById('app');

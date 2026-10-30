@@ -243,6 +243,7 @@ fun GolikeWebViewLoginDialog(
                                             if (!isCaptured.compareAndSet(false, true)) return
 
                                             val resolvedUsername = username.ifBlank { "Golike User" }
+                                            val currentCookies = android.webkit.CookieManager.getInstance().getCookie("https://app.golike.net").orEmpty()
 
                                             // 1. Lưu phiên ban đầu vào Store ngay lập tức (.commit())
                                             GolikeAccountsStore.saveLogin(
@@ -255,7 +256,9 @@ fun GolikeWebViewLoginDialog(
                                                 gAuth = gAuth,
                                                 signingKey = signingKey,
                                                 userId = userId,
-                                                webData = webData
+                                                webData = webData,
+                                                webCookies = currentCookies,
+                                                userAgent = GolikeApiClient.USER_AGENT
                                             )
                                             GolikeAccountsStore.saveVersionData(
                                                 context = context,
@@ -381,7 +384,9 @@ fun GolikeWebViewLoginDialog(
                                                         gAuth = gAuth,
                                                         signingKey = signingKey,
                                                         userId = userId,
-                                                        webData = webData
+                                                        webData = webData,
+                                                        webCookies = currentCookies,
+                                                        userAgent = GolikeApiClient.USER_AGENT
                                                     )
                                                     withContext(Dispatchers.Main) {
                                                         GolikeSession.updateBalance(context, realCoin)

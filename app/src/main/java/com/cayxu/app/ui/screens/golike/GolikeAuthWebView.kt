@@ -330,9 +330,15 @@ object GolikeAuthWebView {
             if (!auth.isNullOrBlank() && auth != "Bearer null" && auth != "Bearer undefined" &&
                 (uname.isNotBlank() || devId.isNotBlank())
             ) {
-                // Đảm bảo luôn lưu webVersion, webVersionText, webData và signingKey vào Store khi login thành công
+                // Đảm bảo luôn lưu webVersion, webVersionText, webData, signingKey, Cookies và User-Agent vào Store khi login thành công
                 context?.let { ctx ->
                     try {
+                        val cookieManager = CookieManager.getInstance()
+                        val cookies = cookieManager.getCookie("https://app.golike.net") ?: ""
+                        if (cookies.isNotBlank()) {
+                            GolikeAccountsStore.saveWebCookies(ctx, cookies)
+                        }
+                        GolikeAccountsStore.saveUserAgent(ctx, GolikeApiClient.USER_AGENT)
                         GolikeAccountsStore.saveWebVersionInfo(ctx, savedWebVersion, savedWebVersionText)
                         if (!savedWebData.isNullOrBlank() && savedWebData != "null" && savedWebData != "undefined") {
                             GolikeAccountsStore.saveWebData(ctx, savedWebData!!)

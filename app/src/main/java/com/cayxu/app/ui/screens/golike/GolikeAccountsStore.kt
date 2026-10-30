@@ -54,6 +54,7 @@ object GolikeAccountsStore {
     private const val KEY_PROTOCOL = "golike_protocol"
     private const val KEY_GAUTH_VERSION = "golike_gauth_version"
     private const val KEY_SCHEME = "golike_scheme"
+    private const val KEY_USER_AGENT = "golike_user_agent"
 
     // Các key bổ trợ
     private const val KEY_BALANCE = "golike_balance"
@@ -122,6 +123,15 @@ object GolikeAccountsStore {
     fun getGauthVersion(context: Context): String =
         prefs(context).getString(KEY_GAUTH_VERSION, "").orEmpty()
 
+    fun getUserAgent(context: Context): String =
+        prefs(context).getString(KEY_USER_AGENT, "")?.takeIf { it.isNotBlank() } ?: GolikeApiClient.USER_AGENT
+
+    fun saveUserAgent(context: Context, ua: String) {
+        if (ua.isNotBlank()) {
+            prefs(context).edit().putString(KEY_USER_AGENT, ua.trim()).commit()
+        }
+    }
+
     fun saveWebCookies(context: Context, cookies: String) {
         prefs(context).edit().putString(KEY_WEB_COOKIES, cookies.trim()).commit()
     }
@@ -160,7 +170,8 @@ object GolikeAccountsStore {
         userId: String = "",
         webData: String = "",
         webCookies: String = "",
-        header: String = ""
+        header: String = "",
+        userAgent: String = ""
     ) {
         val editor = prefs(context).edit()
             .putString(KEY_TOKEN, token.trim())
@@ -177,6 +188,7 @@ object GolikeAccountsStore {
         if (webData.isNotBlank()) editor.putString(KEY_WEB_DATA, webData.trim())
         if (webCookies.isNotBlank()) editor.putString(KEY_WEB_COOKIES, webCookies.trim())
         if (header.isNotBlank()) editor.putString(KEY_HEADER, header.trim())
+        if (userAgent.isNotBlank()) editor.putString(KEY_USER_AGENT, userAgent.trim())
         editor.commit()
     }
 
