@@ -71,10 +71,10 @@ fun ForceUpdateDialog(update: AppUpdateData) {
         val checkCode = com.cayxu.app.util.NativeSecurity.verifyUpdateMatrix(context)
         if (checkCode != 0) {
             val errorMsg = when (checkCode) {
-                1 -> "Thiết bị chưa kích hoạt key bản quyền chính hãng từ máy chủ lunex.io.vn."
-                2 -> "Phát hiện can thiệp hệ thống hoặc công cụ hook bộ nhớ. Từ chối cập nhật."
-                3, 4 -> "Phát hiện tập tin ứng dụng đã bị can thiệp trái phép. Từ chối cập nhật."
-                else -> "Mã key không hợp lệ hoặc không được cấp phép từ máy chủ lunex.io.vn."
+                1 -> "Thiết bị chưa được ủy quyền để tải bản cập nhật này."
+                2 -> "Môi trường thực thi không an toàn. Đã dừng thao tác."
+                3, 4 -> "Tính toàn vẹn của ứng dụng bị gián đoạn. Đã dừng thao tác."
+                else -> "Xác thực bản quyền không thành công. Vui lòng thử lại sau."
             }
             downloadError = errorMsg
             Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
@@ -385,7 +385,7 @@ fun ForceUpdateDialog(update: AppUpdateData) {
                         if (!isKeyAuthorized) {
                             Spacer(Modifier.height(14.dp))
                             Text(
-                                text = "⚠ Bạn cần kích hoạt key bản quyền chính hãng từ máy chủ lunex.io.vn để được phép tải bản cập nhật này.",
+                                text = "⚠ Thiết bị chưa được ủy quyền để tải gói cập nhật này. Vui lòng kích hoạt bản quyền hợp lệ.",
                                 fontSize = 12.5.sp,
                                 color = DangerRed,
                                 lineHeight = 17.sp,
