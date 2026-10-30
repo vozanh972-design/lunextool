@@ -220,15 +220,16 @@ object GolikeWebJobBridge {
 
         wv.addJavascriptInterface(WebActionInterface(), "GolikeJobBridge")
 
-        // Tải thẳng trang làm nhiệm vụ TikTok của Golike
-        wv.loadUrl("https://app.golike.net/jobs/tiktok")
+        // Chỉ tải trang gốc https://app.golike.net/jobs 1 lần duy nhất để Vue.js mount toàn bộ app
+        // Mọi điều hướng tiếp theo (vào TikTok, nhận job, hoàn thành) 100% bằng click phần tử DOM
+        wv.loadUrl("https://app.golike.net/jobs")
         miniWebView = wv
         return wv
     }
 
     /**
      * Nhận nhiệm vụ TikTok trực tiếp thông qua thao tác DOM thật chuẩn xác 100% theo HTML của Golike:
-     * 1. Trang /jobs: Click .job-card có .job-name là "Tiktok"
+     * 1. Trang /jobs: Click .job-card có .job-name là "Tiktok" (Vue Router tự chuyển mượt, không trắng trang)
      * 2. Trang /jobs/tiktok: Xử lý modal #JobPolicyWarning, chọn nick trong .tk-account-select, bấm .tk-hero__cta
      * 3. Trang /jobs/tiktok/job-detail: Bắt a.btn[href*="tiktok.com"] và trích xuất Job Id
      */
@@ -245,7 +246,7 @@ object GolikeWebJobBridge {
             mainHandler.post {
                 try {
                     val currentUrl = wv.url.orEmpty()
-                    // Nếu webview đang trống hoặc không thuộc golike -> nạp trang /jobs
+                    // Chỉ tải trang gốc /jobs khi WebView hoàn toàn rỗng lúc vừa mở app
                     if (currentUrl.isBlank() || !currentUrl.contains("golike.net")) {
                         wv.loadUrl("https://app.golike.net/jobs")
                     }
@@ -255,6 +256,13 @@ object GolikeWebJobBridge {
                         (function() {
                             try {
                                 $NETWORK_INTERCEPTOR_JS
+
+                                // Nếu bị trắng trang do router, tự back về trang trước trong lịch sử SPA
+                                let appEl = document.getElementById('app');
+                                if (appEl && appEl.children.length === 0) {
+                                    window.history.back();
+                                    return 'navigated_back_blank';
+                                }
 
                                 let pathname = window.location.pathname || '';
                                 let bodyText = document.body ? document.body.innerText : '';
