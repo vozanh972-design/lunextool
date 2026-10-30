@@ -982,7 +982,7 @@ object GolikeTikTokTaskRunner {
         // Khởi động WebView mini nội bộ riêng cho Golike
         try {
             withContext(Dispatchers.Main) {
-                GolikeWebJobBridge.attachMiniWebView(context)
+                GolikeWebJobBridge.getOrCreateMiniWebView(context)
             }
         } catch (_: Exception) {}
 
@@ -1034,20 +1034,11 @@ object GolikeTikTokTaskRunner {
                     }
                 }
 
-                // Ưu tiên lấy nhiệm vụ trực tiếp qua Web Bridge (tránh 100% lỗi 403 sig)
+                // 100% Lấy nhiệm vụ trực tiếp qua Web Context của Golike (tránh triệt để lỗi 403 sig)
                 val currentWebData = GolikeAccountsStore.getWebData(context)
-                val webJob = try {
+                val jobRes = try {
                     GolikeWebJobBridge.getJobViaWeb(golikeAccId, currentWebData)
                 } catch (_: Exception) { null }
-
-                val jobRes = if (webJob != null && webJob.optBoolean("success", false)) {
-                    webJob
-                } else {
-                    client.getTikTokJob(golikeAccId, currentWebData) { statusText ->
-                        onStatusChange("Golike: $statusText")
-                        XsmmJobStatusBridge.update("Golike: $statusText")
-                    }
-                }
                 if (jobRes == null || !jobRes.optBoolean("success", false)) {
                     consecutiveFails++
                     val httpCode = jobRes?.optInt("http_code", 0)?.takeIf { it > 0 }
@@ -1231,16 +1222,10 @@ object GolikeTikTokTaskRunner {
                     onStatusChange(reportMsg)
                     XsmmJobStatusBridge.update(reportMsg)
 
-                    // Ưu tiên báo cáo hoàn thành nhiệm vụ qua Web Bridge (trực tiếp context trình duyệt)
-                    val webComp = try {
+                    // 100% Báo cáo hoàn thành nhiệm vụ qua Web Context của Golike
+                    val compRes = try {
                         GolikeWebJobBridge.completeJobViaWeb(golikeAccId, adsId, objectId, "tiktok")
                     } catch (_: Exception) { null }
-
-                    val compRes = if (webComp != null && webComp.optBoolean("success", false)) {
-                        webComp
-                    } else {
-                        client.completeTikTokJob(adsId, golikeAccId)
-                    }
                     if (compRes != null && compRes.optBoolean("success", false)) {
                         totalCompletedTasks++
                         val price = compRes.optJSONObject("data")?.optInt("prices", 35) ?: 35

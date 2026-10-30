@@ -268,6 +268,48 @@ private fun ExpandedCard(
         }
 
         PauseResumeButton(state.paused, t, onPauseResume, Modifier.padding(top = 12.dp))
+
+        if (state.mode.equals("Golike", ignoreCase = true)) {
+            var isExpandedWeb by remember { mutableStateOf(true) }
+            Column(Modifier.padding(top = 8.dp).fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    BasicText(
+                        "Web Golike (Trình duyệt thật)",
+                        style = type(11f, FontWeight.SemiBold, Alx.Muted)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        BasicText(
+                            "Tải lại",
+                            Modifier.clickable { com.cayxu.app.ui.screens.golike.GolikeWebJobBridge.reloadWeb() },
+                            style = type(11f, FontWeight.SemiBold, Color(0xFF475569))
+                        )
+                        BasicText(
+                            if (isExpandedWeb) "Thu nhỏ" else "Hiện web",
+                            Modifier.clickable { isExpandedWeb = !isExpandedWeb },
+                            style = type(11f, FontWeight.Bold, Alx.Blue)
+                        )
+                    }
+                }
+                Box(
+                    Modifier.padding(top = 4.dp)
+                        .fillMaxWidth()
+                        .height(if (isExpandedWeb) 140.dp else 1.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.White)
+                ) {
+                    androidx.compose.ui.viewinterop.AndroidView(
+                        factory = { ctx ->
+                            com.cayxu.app.ui.screens.golike.GolikeWebJobBridge.getOrCreateMiniWebView(ctx)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
     }
 }
 
