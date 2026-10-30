@@ -1034,6 +1034,11 @@ object GolikeTikTokTaskRunner {
                     }
                 }
 
+                // Cập nhật trạng thái ngay sau khi hết thời gian chờ/lướt, tránh bị đơ ở 1s
+                val connectingWebMsg = "Đang kết nối Web Golike lấy job..."
+                onStatusChange(connectingWebMsg)
+                XsmmJobStatusBridge.update(connectingWebMsg)
+
                 // 100% Lấy nhiệm vụ trực tiếp qua Web Context của Golike (tránh triệt để lỗi 403 sig)
                 val currentWebData = GolikeAccountsStore.getWebData(context)
                 val jobRes = try {
