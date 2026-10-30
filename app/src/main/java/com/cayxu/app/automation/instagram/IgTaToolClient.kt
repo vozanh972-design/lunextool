@@ -92,7 +92,8 @@ object IgTaToolClient {
     data class IgCookieInfo(
         val isLive: Boolean,
         val username: String = "",
-        val userId: String = ""
+        val userId: String = "",
+        val errorMessage: String? = null
     )
 
     // ================= 1. HÀM CHECK COOKIE IG (check_cookie_ig) =================
@@ -110,7 +111,7 @@ object IgTaToolClient {
         try {
             client.newCall(req).execute().use { res ->
                 val body = res.body?.string() ?: ""
-                val json = JSONObject(body)
+                val json = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
                 val formData = json.optJSONObject("form_data")
                 if (formData != null && formData.has("username")) {
                     val username = formData.optString("username", "")
@@ -120,9 +121,19 @@ object IgTaToolClient {
                         return IgCookieInfo(isLive = true, username = username, userId = uid ?: "")
                     }
                 }
+                val msg = json.optString("message", "")
+                if (body.contains("checkpoint_required") || msg.contains("checkpoint")) {
+                    return IgCookieInfo(isLive = false, errorMessage = "Tài khoản dính Checkpoint Instagram")
+                }
+                if (body.contains("login_required") || msg.contains("login_required")) {
+                    return IgCookieInfo(isLive = false, errorMessage = "Cookie DIE / Yêu cầu đăng nhập")
+                }
+                val errMsg = if (msg.isNotBlank()) msg else "Cookie không hợp lệ hoặc tài khoản bị giới hạn"
+                return IgCookieInfo(isLive = false, errorMessage = errMsg)
             }
-        } catch (_: Exception) {}
-        return IgCookieInfo(isLive = false)
+        } catch (e: Exception) {
+            return IgCookieInfo(isLive = false, errorMessage = e.message ?: "Lỗi kết nối kiểm tra Cookie")
+        }
     }
 
     // ================= TRÍCH XUẤT TOKENS (fb_dtsg, lsd, jazoest) =================
