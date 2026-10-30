@@ -1407,12 +1407,7 @@ class TikTokAccessibilityService : AccessibilityService() {
 
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
-
-        // Tuyệt đối bỏ qua nếu nằm ở thanh điều hướng đáy màn hình (y >= 80% chiều cao)
-        if (bounds.top >= rootH * 0.80f) return
-
-        // Nút Follow trên trang cá nhân luôn nằm ở khoảng 15% đến 65% màn hình
-        val inProfileArea = bounds.top >= rootH * 0.15f && bounds.bottom <= rootH * 0.65f
+        val inScreenArea = bounds.width() > 0 && bounds.height() > 0
 
         val resId = (node.viewIdResourceName ?: "").lowercase()
         val desc = (node.contentDescription?.toString() ?: "").trim().lowercase()
@@ -1447,7 +1442,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                 text.startsWith("follow") || desc.startsWith("follow") ||
                 text.startsWith("theo dõi") || desc.startsWith("theo dõi")
 
-        if (inProfileArea && isFollowMatch) {
+        if (inScreenArea && isFollowMatch) {
             out.add(node)
             return
         }
@@ -1484,11 +1479,7 @@ class TikTokAccessibilityService : AccessibilityService() {
 
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
-
-        // Bỏ qua thanh điều hướng đáy màn hình (y >= 80%)
-        if (bounds.top >= rootH * 0.80f) return
-
-        val inProfileArea = bounds.top >= rootH * 0.10f && bounds.bottom <= rootH * 0.70f
+        val inScreenArea = bounds.width() > 0 && bounds.height() > 0
 
         val desc = (node.contentDescription?.toString() ?: "").trim().lowercase()
         val text = (node.text?.toString() ?: "").trim().lowercase()
@@ -1509,7 +1500,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                     desc.contains("hủy follow") || desc.contains("unfollow") ||
                     desc.contains("quản lý bạn bè") || desc.contains("quan hệ")
 
-            if (inProfileArea && isDirectMatch) {
+            if (inScreenArea && isDirectMatch) {
                 out.add(node)
                 return
             }

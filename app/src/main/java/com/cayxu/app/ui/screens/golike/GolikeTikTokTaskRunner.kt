@@ -704,218 +704,21 @@ object GolikeTikTokTaskRunner {
                 }
             }
 
-            // Nếu sau khi kiểm tra lại đã có ID (tài khoản đã có trên Golike) -> BỎ QUA HOÀN TOÀN BƯỚC FOLLOW VÀ VERIFY!
-            if (golikeAccountId.isNotBlank()) {
-                val readyMsg = "Tài khoản đã liên kết Golike. Đang lấy nhiệm vụ..."
-                onStatusChange(readyMsg)
-                XsmmJobStatusBridge.update(readyMsg)
-                GolikeAccountsStore.updateAccountProgress(context, "tiktok", cleanUsername, "Đã liên kết • Sẵn sàng", isSuccess = true)
-            } else {
-                val targetConfigAccountId = golikeAccountId.ifBlank { cleanUsername }
-
-                // 2.3 MỞ TIKTOK FOLLOW NICK CHỈ ĐỊNH ĐỂ CẤU HÌNH (CHUẨN GOMAX @gosen.vietnam)
-                var targetConfigUser = "gosen.vietnam"
-                try {
-                    val targetRes = client.getTikTokVerifyTarget(targetConfigAccountId, cleanUsername)
-                    val targetData = targetRes?.optJSONObject("data") ?: targetRes
-                    val tu = targetData?.optString("target_user")?.takeIf { it.isNotBlank() }
-                        ?: targetData?.optString("username")?.takeIf { it.isNotBlank() }
-                        ?: targetData?.optString("unique_username")?.takeIf { it.isNotBlank() }
-                        ?: targetData?.optString("nickname").orEmpty()
-                    if (tu.isNotBlank()) {
-                        targetConfigUser = tu.trim().removePrefix("@")
-                    }
-                } catch (_: Exception) {}
-
-                onStatusChange("Mở follow nick cấu hình @$targetConfigUser...")
-                XsmmJobStatusBridge.update("Mở follow nick cấu hình @$targetConfigUser...")
-
-                openTikTokTarget(context, "https://www.tiktok.com/@$targetConfigUser", variant)
-                delay(1200L) // Chờ TikTok load trang cá nhân
-
-                if (TikTokAppLauncher.isAccessibilityServiceEnabled(context)) {
-                    val actionId = XsmmTaskAutomationBridge.triggerTask(
-                        taskType = "golike_config_follow",
-                        swipeBefore = false,
-                        returnHomeAndSwipe = false,
-                        durationSeconds = 3
-                    )
-                    val startWait = System.currentTimeMillis()
-                    while (isActive && (System.currentTimeMillis() - startWait) < 12000L) {
-                        val res = XsmmTaskAutomationBridge.result.value
-                        if (res is XsmmTaskActionResult.InProgress) {
-                            onStatusChange(res.message)
-                            XsmmJobStatusBridge.update(res.message)
-                            // Nếu đã follow rồi → không bấm lại, thoát luôn
-                            if (res.message.contains("Đã follow", ignoreCase = true) ||
-                                res.message.contains("Following", ignoreCase = true) ||
-                                res.message.contains("đã theo dõi", ignoreCase = true) ||
-                                res.message.contains("nhắn tin", ignoreCase = true)
-                            ) {
-                                break
-                            }
-                        } else if (res is XsmmTaskActionResult.Completed && (res.actionId == actionId || res.actionId == 0L || res.success)) {
-                            onStatusChange(res.message)
-                            XsmmJobStatusBridge.update(res.message)
-                            break
-                        }
-                        delay(300L)
-                    }
-                } else {
-                    for (sec in 3 downTo 1) {
-                        XsmmJobStatusBridge.update("Chờ bấm Follow @$targetConfigUser (${sec}s)...")
-                        delay(1000L)
-                    }
-                }
-
-                val verifyInitMsg = "Tài khoản đã Follow @$targetConfigUser. Đang gửi xác thực lên Golike..."
-                onStatusChange(verifyInitMsg)
-                XsmmJobStatusBridge.update(verifyInitMsg)
-                delay(1000L)
-
-                // 2.4 GỬI XÁC NHẬN HOÀN TẤT CẤU HÌNH LÊN GOLIKE
-                var retryCount = 0
-                val maxConfigAttempts = 3
-                var isConfigSuccess = false
-                var verifiedAccountId = ""
-
-                while (retryCount < maxConfigAttempts && !isConfigSuccess) {
-                    retryCount++
-                    val waitNotice = "Đang gửi xác thực lên Golike (lần $retryCount/$maxConfigAttempts)..."
-                    onStatusChange(waitNotice)
-                    XsmmJobStatusBridge.update(waitNotice)
-
-                    var verifyRes = client.verifyTikTokAccountId(targetConfigAccountId, cleanUsername)
-                    android.util.Log.d("GolikeVerify", "verifyTikTokAccountId loop (lần $retryCount): $verifyRes")
-
-                    val httpCode = verifyRes?.optInt("http_code", 0) ?: 0
-                    var vStatus = verifyRes?.optInt("status", httpCode) ?: httpCode
-                    var vSuccess = verifyRes?.optBoolean("success", false) == true
-
-                    // Lấy message nguyên văn từ server Golike:
-                    var serverMessage = when {
-                        !verifyRes?.optString("message").isNullOrBlank() -> verifyRes?.optString("message").orEmpty()
-                        !verifyRes?.optString("error").isNullOrBlank() -> verifyRes?.optString("error").orEmpty()
-                        !verifyRes?.optJSONObject("data")?.optString("message").isNullOrBlank() -> verifyRes?.optJSONObject("data")?.optString("message").orEmpty()
-                        !verifyRes?.optJSONObject("error")?.optString("message").isNullOrBlank() -> verifyRes?.optJSONObject("error")?.optString("message").orEmpty()
-                        else -> ""
-                    }
-
-                    if (vStatus != 200 && !vSuccess && !serverMessage.contains("thành công", ignoreCase = true) && !serverMessage.contains("đã xác nhận", ignoreCase = true)) {
-                        val fallbackRes = client.verifyTikTokAccount(targetConfigAccountId, cleanUsername)
-                        android.util.Log.d("GolikeVerify", "verifyTikTokAccount fallback loop response: $fallbackRes")
-                        if (fallbackRes != null) {
-                            val fallbackHttpCode = fallbackRes.optInt("http_code", 0)
-                            val fallbackStatus = fallbackRes.optInt("status", fallbackHttpCode)
-                            val fallbackSuccess = fallbackRes.optBoolean("success", false) == true
-                            val fallbackMessage = when {
-                                !fallbackRes.optString("message").isNullOrBlank() -> fallbackRes.optString("message").orEmpty()
-                                !fallbackRes.optString("error").isNullOrBlank() -> fallbackRes.optString("error").orEmpty()
-                                !fallbackRes.optJSONObject("data")?.optString("message").isNullOrBlank() -> fallbackRes.optJSONObject("data")?.optString("message").orEmpty()
-                                !fallbackRes.optJSONObject("error")?.optString("message").isNullOrBlank() -> fallbackRes.optJSONObject("error")?.optString("message").orEmpty()
-                                else -> ""
-                            }
-                            if (fallbackStatus == 200 || fallbackSuccess || fallbackMessage.contains("thành công", ignoreCase = true)) {
-                                vStatus = fallbackStatus
-                                vSuccess = fallbackSuccess
-                                serverMessage = fallbackMessage
-                                verifyRes = fallbackRes
-                            } else if (serverMessage.isBlank() && fallbackMessage.isNotBlank()) {
-                                serverMessage = fallbackMessage
-                            }
-                        }
-                    }
-
-                    // XỬ LÝ 3 TRƯỜNG HỢP:
-                    val isNormalSuccess = (vStatus == 200 || vSuccess) ||
-                            serverMessage.contains("thành công", ignoreCase = true) ||
-                            serverMessage.contains("đã xác nhận", ignoreCase = true)
-
-                    if (isNormalSuccess) {
-                        // Trường hợp 1: Thành công
-                        isConfigSuccess = true
-                        verifiedAccountId = verifyRes?.optJSONObject("data")?.optString("id", "").orEmpty()
-                        if (verifiedAccountId.isBlank()) {
-                            verifiedAccountId = findExistingTikTokAccountId(client, cleanUsername) ?: targetConfigAccountId
-                        }
-                        golikeAccountId = verifiedAccountId
-                        val succMsg = "Xác thực thành công! Đang lấy nhiệm vụ..."
-                        onStatusChange(succMsg)
-                        XsmmJobStatusBridge.update(succMsg)
-                        break
-                    } else {
-                        // Kiểm tra xem có phải trạng thái đang xử lý / chờ duyệt (hoặc rỗng) hay không:
-                        val isWaitingApproval = serverMessage.contains("đang thử lại", ignoreCase = true) ||
-                                serverMessage.contains("chờ duyệt", ignoreCase = true) ||
-                                serverMessage.contains("chờ xác thực", ignoreCase = true) ||
-                                serverMessage.isBlank()
-
-                        if (isWaitingApproval) {
-                            // Trường hợp 3: Server báo trạng thái đang xử lý / chờ duyệt (CHỈ RETRY TỐI ĐA 3 LẦN)
-                            if (retryCount < maxConfigAttempts) {
-                                val waitMsg = "Golike: ${serverMessage.ifBlank { "Đang chờ duyệt xác thực" }}. Thử lại sau 3s..."
-                                onStatusChange(waitMsg)
-                                XsmmJobStatusBridge.update(waitMsg)
-                                delay(3000L)
-                            } else {
-                                val errMsg = "Golike: ${serverMessage.ifBlank { "Chờ duyệt chưa hoàn tất" }} (Vui lòng thử lại sau)"
-                                onStatusChange(errMsg)
-                                XsmmJobStatusBridge.update(errMsg)
-                                onJobFailed(errMsg)
-                                GolikeRunningManager.runningAccounts[account.id] = false
-                                GolikeRunningManager.runningAccounts[cleanUsername] = false
-                                return@withContext
-                            }
-                        } else {
-                            // Trường hợp 2: Lỗi từ server (Ví dụ: "Tài khoản này đã được liên kết với tài khoản ...", "Tài khoản chưa follow", "Không tìm thấy", ...)
-                            // HIỂN THỊ NGUYÊN VĂN THÔNG BÁO LỖI LÊN MÀN HÌNH NỔI (OVERLAY) VÀ DỪNG NGAY
-                            val errMsg = "Golike: $serverMessage"
-                            onStatusChange(errMsg)
-                            XsmmJobStatusBridge.update(errMsg)
-                            onJobFailed(errMsg)
-                            GolikeRunningManager.runningAccounts[account.id] = false
-                            GolikeRunningManager.runningAccounts[cleanUsername] = false
-                            return@withContext
-                        }
-                    }
-                }
-
-                if (isConfigSuccess) {
-                    val finalId = golikeAccountId.ifBlank { targetConfigAccountId }
-                    val successMsg = "Xác thực thành công! Đang lấy nhiệm vụ..."
-                    onStatusChange(successMsg)
-                    XsmmJobStatusBridge.update(successMsg)
-
-                    // Lưu mapping vào golike_tiktok_map
-                    GolikeAccountsStore.saveTikTokMapping(context, cleanUsername, finalId)
-
-                    val updatedAcc = GolikeAccount(
-                        id = cleanUsername,
-                        platform = "tiktok",
-                        username = account.username,
-                        avatar = account.avatar,
-                        isLive = true,
-                        isGolikeLinked = true,
-                        golikeAccountId = finalId,
-                        lastStatus = "Đã liên kết Golike • Sẵn sàng"
-                    )
-                    GolikeAccountsStore.addOrUpdateAccount(context, updatedAcc)
-                    GolikeAccountsStore.updateAccountProgress(context, "tiktok", cleanUsername, "Đã cấu hình • Sẵn sàng", isSuccess = true)
-                    delay(1200L)
-                } else {
-                    val err = "Golike: Không thể xác thực tài khoản."
-                    onStatusChange(err)
-                    XsmmJobStatusBridge.update(err)
-                    onJobFailed(err)
-                    GolikeRunningManager.runningAccounts[account.id] = false
-                    GolikeRunningManager.runningAccounts[cleanUsername] = false
-                    delay(1500L)
-                    return@withContext
+            if (golikeAccountId.isBlank()) {
+                val existingId = findExistingTikTokAccountId(client, cleanUsername)
+                if (!existingId.isNullOrBlank()) {
+                    golikeAccountId = existingId
+                    GolikeAccountsStore.saveTikTokMapping(context, cleanUsername, golikeAccountId)
                 }
             }
+
+            val readyMsg = "Tài khoản @$cleanUsername đã sẵn sàng. Đang lấy nhiệm vụ..."
+            onStatusChange(readyMsg)
+            XsmmJobStatusBridge.update(readyMsg)
+            GolikeAccountsStore.updateAccountProgress(context, "tiktok", cleanUsername, "Đã liên kết • Sẵn sàng", isSuccess = true)
         }
 
-        // BƯỚC 3: CHUYỂN NGAY SANG VÒNG LẶP LÀM JOB CỦA GOLIKE
+                // BƯỚC 3: CHUYỂN NGAY SANG VÒNG LẶP LÀM JOB CỦA GOLIKE
         var finalNumericId = golikeAccountId.ifBlank {
             GolikeAccountsStore.getTikTokAccountIdFromMap(context, cleanUsername).orEmpty()
         }
@@ -927,18 +730,12 @@ object GolikeTikTokTaskRunner {
             }
         }
 
-        // BẢO VỆ CHẶT CHẼ: BẮT BUỘC account_id PHẢI LÀ ID SỐ CỦA GOLIKE (KHÔNG ĐƯỢC LÀ USERNAME DẠNG CHỮ)
-        val numericId = finalNumericId.toLongOrNull()
-        if (numericId == null) {
-            val errNotLinked = "Golike: Nick @$cleanUsername chưa có ID số trên Golike. Vui lòng vào app.golike.net liên kết nick trước!"
-            onStatusChange(errNotLinked)
-            XsmmJobStatusBridge.update(errNotLinked)
-            onJobFailed(errNotLinked)
-            GolikeRunningManager.runningAccounts[account.id] = false
-            GolikeRunningManager.runningAccounts[cleanUsername] = false
-            return@withContext
+        // Sử dụng numeric ID nếu có, nếu chưa có sẽ dùng username để Web chọn nick trên dropdown
+        val golikeAccId = if (finalNumericId.toLongOrNull() != null) {
+            finalNumericId
+        } else {
+            cleanUsername
         }
-        val golikeAccId = numericId.toString()
 
         // Khởi tạo security session lấy signing_key & userId chuẩn bị cho việc nhận và hoàn thành job
         try {
@@ -1091,12 +888,14 @@ object GolikeTikTokTaskRunner {
                 val normalizedJobType = if (isLikeJob) "like" else "follow"
                 val shortType = if (isLikeJob) "Tym" else "Follow"
 
-                // 1. URL THẬT do Golike cấp (dùng để mở thẳng trong ứng dụng TikTok, không gán ID số vào URL profile)
+                // 1. Mở video/profile TikTok mục tiêu:
+                // Bấm trực tiếp nút [ TikTok ] xanh trên giao diện Web Golike
+                GolikeWebJobBridge.clickTikTokButtonOnWeb()
+
                 val realUrl = when {
-                    link.isNotBlank() -> link
+                    link.isNotBlank() && (link.contains("tiktok.com") || link.startsWith("snssdk1128://") || link.startsWith("http")) -> link
                     isFollowJob && !objectId.all { it.isDigit() } && objectId.isNotBlank() -> "https://www.tiktok.com/@${objectId.removePrefix("@")}"
-                    isLikeJob && objectId.isNotBlank() -> "https://www.tiktok.com/@user/video/$objectId"
-                    else -> link.ifBlank { "https://www.tiktok.com" }
+                    else -> ""
                 }
 
                 // 2. Tên hiển thị chuẩn xác và thân thiện trên Màn nổi (Overlay)
@@ -1136,8 +935,10 @@ object GolikeTikTokTaskRunner {
                 onStatusChange(openMsg)
                 XsmmJobStatusBridge.update(openMsg)
 
-                // Mở trực tiếp bằng URL thật do Golike cấp qua package TikTok đích danh (chuẩn XSMM)
-                TikTokAppLauncher.openUserProfile(context, realUrl, variant)
+                // Mở trực tiếp bằng URL thật nếu có
+                if (realUrl.isNotBlank()) {
+                    TikTokAppLauncher.openUserProfile(context, realUrl, variant)
+                }
                 delay(1200L)
 
                 // Bấm tương tác (Follow hoặc Thả tim liên tục) chuẩn XSMM

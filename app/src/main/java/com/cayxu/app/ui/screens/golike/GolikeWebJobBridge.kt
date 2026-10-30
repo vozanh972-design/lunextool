@@ -716,7 +716,7 @@ object GolikeWebJobBridge {
                 try {
                     $NETWORK_INTERCEPTOR_JS
 
-                    let compBtn = Array.from(document.querySelectorAll('button')).find(b => {
+                    let compBtn = Array.from(document.querySelectorAll('button, a, div[role="button"], .btn')).find(b => {
                         let t = (b.innerText || '').trim().toLowerCase();
                         return (t.includes('hoàn thành') || t.includes('hoan thanh')) && b.offsetParent !== null;
                     });
@@ -746,13 +746,7 @@ object GolikeWebJobBridge {
 
         // Chờ kết quả phản hồi từ Web
         val res = withTimeoutOrNull(20000L) { deferred.await() }
-        if (res != null) return res
-
-        // Fallback: nếu bấm nút xong mà web đã chuyển về hoặc không có lỗi -> xem như thành công
-        return JSONObject().apply {
-            put("success", true)
-            put("data", JSONObject().apply { put("prices", 35) })
-        }
+        return res
     }
 
     /**
