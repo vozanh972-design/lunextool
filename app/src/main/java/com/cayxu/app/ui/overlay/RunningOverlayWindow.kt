@@ -250,8 +250,8 @@ private fun ExpandedCard(
         }
 
         if (state.statusText.isNotBlank()) {
-            val isError = state.statusText.startsWith("Lỗi", ignoreCase = true) ||
-                    state.statusText.startsWith("Golike:", ignoreCase = true)
+            val isError = state.statusText.contains("Lỗi:", ignoreCase = true) ||
+                    state.statusText.contains("Thất bại", ignoreCase = true)
             Row(
                 Modifier.padding(top = 10.dp).fillMaxWidth()
                     .background(if (isError) Color(0xFFFDECEC) else Color(0xFFF5F8FF), RoundedCornerShape(14.dp))
@@ -270,7 +270,14 @@ private fun ExpandedCard(
         PauseResumeButton(state.paused, t, onPauseResume, Modifier.padding(top = 12.dp))
 
         if (state.mode.equals("Golike", ignoreCase = true)) {
-            var isExpandedWeb by remember { mutableStateOf(true) }
+            // 0: Ẩn (1dp), 1: Vừa (260dp), 2: Phóng to (380dp)
+            var webSizeMode by remember { mutableStateOf(1) }
+            val currentHeight = when (webSizeMode) {
+                2 -> 380.dp
+                1 -> 260.dp
+                else -> 1.dp
+            }
+
             Column(Modifier.padding(top = 8.dp).fillMaxWidth()) {
                 Row(
                     Modifier.fillMaxWidth(),
@@ -288,16 +295,25 @@ private fun ExpandedCard(
                             style = type(11f, FontWeight.SemiBold, Color(0xFF475569))
                         )
                         BasicText(
-                            if (isExpandedWeb) "Thu nhỏ" else "Hiện web",
-                            Modifier.clickable { isExpandedWeb = !isExpandedWeb },
+                            if (webSizeMode == 2) "Thu nhỏ" else "Phóng to",
+                            Modifier.clickable {
+                                webSizeMode = if (webSizeMode == 2) 1 else 2
+                            },
                             style = type(11f, FontWeight.Bold, Alx.Blue)
+                        )
+                        BasicText(
+                            if (webSizeMode == 0) "Hiện" else "Ẩn",
+                            Modifier.clickable {
+                                webSizeMode = if (webSizeMode == 0) 1 else 0
+                            },
+                            style = type(11f, FontWeight.Medium, Color(0xFF64748B))
                         )
                     }
                 }
                 Box(
                     Modifier.padding(top = 4.dp)
                         .fillMaxWidth()
-                        .height(if (isExpandedWeb) 180.dp else 1.dp)
+                        .height(currentHeight)
                         .clip(RoundedCornerShape(10.dp))
                         .background(Color.White)
                 ) {
