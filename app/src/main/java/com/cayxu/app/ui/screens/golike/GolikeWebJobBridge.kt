@@ -9,8 +9,8 @@ import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
 import android.webkit.*
-import com.cayxu.app.automation.common.XsmmJobStatusBridge
 import com.cayxu.app.automation.tiktok.TikTokAppLauncher
+import com.cayxu.app.ui.overlay.xsmm.XsmmJobStatusBridge
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
