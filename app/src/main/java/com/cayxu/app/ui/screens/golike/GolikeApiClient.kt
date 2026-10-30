@@ -421,9 +421,13 @@ class GolikeApiClient(
         var res = execute(reqBuilder.get().build())
         var code = res?.optInt("status", res.optInt("http_code", 0)) ?: 0
 
-        // 3. Nếu Gateway trả về 403 (sig bị từ chối), tự động fallback thử lại với path có tiền tố /api
+        // 3. Nếu Gateway trả về 403 (sig bị từ chối), tự động làm mới security session và thử lại
         if (code == 403) {
-            onStatus("Chữ ký cần tiền tố /api -> Đang tạo lại chữ ký...")
+            onStatus("Làm mới phiên bảo mật Golike...")
+            try {
+                createSecuritySession()
+            } catch (_: Exception) {}
+
             currentPath = "/api/advertising/publishers/tiktok/jobs"
             val fallbackSig = getSecurityTokenForGetJob(numAccId, effectiveData, currentPath, onStatus)
             if (!fallbackSig.isNullOrBlank()) {
@@ -436,7 +440,7 @@ class GolikeApiClient(
         if (res != null && !res.optBoolean("success", false)) {
             val msg = res.optString("message").orEmpty()
             if (msg.contains("không hợp lệ", ignoreCase = true)) {
-                res.put("message", "Golike [HTTP $code]: Yêu cầu không hợp lệ (Nick ID $numAccId chưa khớp hoặc sig bị từ chối)")
+                res.put("message", "Golike [HTTP $code]: Yêu cầu không hợp lệ (Nick ID $numAccId chưa khớp hoặc sig bị từ chối - Vui lòng Đăng nhập lại Golike)")
             }
         }
         return res
