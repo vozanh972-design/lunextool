@@ -41,6 +41,46 @@ jobs:
             fi
           fi
 
+      # Đảm bảo CMake 3.22.1 sẵn sàng, tái sử dụng hoặc cài đặt trước qua sdkmanager tránh lỗi tải hỏng file zip
+      - name: Setup Android CMake
+        run: |
+          rm -rf $ANDROID_HOME/.temp || true
+          rm -rf $ANDROID_HOME/cmake/.temp || true
+          mkdir -p $ANDROID_HOME/cmake
+          if [ ! -d "$ANDROID_HOME/cmake/3.22.1" ]; then
+            PREINSTALLED_CMAKE=$(ls -d $ANDROID_HOME/cmake/3.22.* 2>/dev/null | head -n 1)
+            if [ -n "$PREINSTALLED_CMAKE" ]; then
+              echo "Tái sử dụng CMake có sẵn: $PREINSTALLED_CMAKE -> 3.22.1"
+              ln -s "$PREINSTALLED_CMAKE" "$ANDROID_HOME/cmake/3.22.1"
+            else
+              echo "Cài đặt CMake 3.22.1 qua sdkmanager..."
+              yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "cmake;3.22.1" || true
+            fi
+          fi
+          # Fallback 1: Nếu sdkmanager chưa tạo được 3.22.1, kiểm tra xem có thư mục 3.* nào khác trong sdk không
+          if [ ! -d "$ANDROID_HOME/cmake/3.22.1" ]; then
+            ANY_CMAKE=$(ls -d $ANDROID_HOME/cmake/3.* 2>/dev/null | head -n 1)
+            if [ -n "$ANY_CMAKE" ]; then
+              echo "Symlink CMake từ: $ANY_CMAKE -> 3.22.1"
+              ln -s "$ANY_CMAKE" "$ANDROID_HOME/cmake/3.22.1"
+            fi
+          fi
+          # Fallback 2: Nếu vẫn chưa có, symlink từ system cmake trên runner Linux
+          if [ ! -d "$ANDROID_HOME/cmake/3.22.1" ] || [ ! -f "$ANDROID_HOME/cmake/3.22.1/bin/cmake" ]; then
+            SYS_CMAKE=$(which cmake || true)
+            if [ -n "$SYS_CMAKE" ]; then
+              echo "Tạo symlink từ system cmake: $SYS_CMAKE -> $ANDROID_HOME/cmake/3.22.1/bin/cmake"
+              mkdir -p "$ANDROID_HOME/cmake/3.22.1/bin"
+              ln -sf "$SYS_CMAKE" "$ANDROID_HOME/cmake/3.22.1/bin/cmake"
+              SYS_NINJA=$(which ninja || true)
+              if [ -n "$SYS_NINJA" ]; then
+                ln -sf "$SYS_NINJA" "$ANDROID_HOME/cmake/3.22.1/bin/ninja"
+              fi
+            fi
+          fi
+          echo "Kiểm tra CMake 3.22.1:"
+          ls -la $ANDROID_HOME/cmake/3.22.1/bin || true
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
