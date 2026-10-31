@@ -903,7 +903,16 @@ object GolikeTikTokTaskRunner {
                 val realUrl = when {
                     link.isNotBlank() && (link.contains("tiktok.com") || link.startsWith("snssdk1128://") || link.startsWith("http")) -> link
                     isFollowJob && !objectId.all { it.isDigit() } && objectId.isNotBlank() -> "https://www.tiktok.com/@${objectId.removePrefix("@")}"
+                    isLikeJob && objectId.all { it.isDigit() } && objectId.isNotBlank() -> "https://www.tiktok.com/@a/video/$objectId"
                     else -> ""
+                }
+
+                if (realUrl.isBlank()) {
+                    val invalidMsg = "Golike: Nhiệm vụ không có liên kết TikTok hợp lệ"
+                    onStatusChange(invalidMsg)
+                    XsmmJobStatusBridge.update(invalidMsg)
+                    delay(cfg.delayMinSeconds * 1000L)
+                    continue
                 }
 
                 // 2. Tên hiển thị chuẩn xác và thân thiện trên Màn nổi (Overlay)

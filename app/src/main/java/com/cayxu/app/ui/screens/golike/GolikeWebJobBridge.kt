@@ -161,15 +161,55 @@ object GolikeWebJobBridge {
         (function() {
             function autoDismissGolikePopups() {
                 try {
-                    let allClickables = Array.from(document.querySelectorAll('button, a, div[role="button"], span, .btn, .van-button, .swal2-confirm'));
+                    // A. XỬ LÝ ĐẶC TRỊ MODAL "Xác nhận làm việc bằng App"
+                    let allModals = Array.from(document.querySelectorAll('.modal, .van-dialog, .swal2-container, [role="dialog"], .modal-dialog, div'));
+                    let confirmModal = allModals.find(m => {
+                        let t = (m.innerText || '').toLowerCase();
+                        return t.includes('xác nhận làm việc') && (t.includes('đồng ý') || t.includes('không')) && m.offsetParent !== null;
+                    });
 
-                    // 1. Quét tìm và click nút "Đã hiểu" / "Tôi đã hiểu"
-                    for (let b of allClickables) {
-                        let t = (b.innerText || b.textContent || '').trim().toLowerCase();
-                        if ((t === 'đã hiểu' || t === 'tôi đã hiểu' || t.includes('đã hiểu') || t.includes('da hieu')) && b.offsetParent !== null) {
+                    if (confirmModal) {
+                        // 1. Tick ô checkbox [ ] Đã hiểu
+                        let cbs = confirmModal.querySelectorAll('input[type="checkbox"]');
+                        for (let cb of cbs) {
+                            if (!cb.checked) {
+                                cb.checked = true;
+                                cb.dispatchEvent(new Event('change', { bubbles: true }));
+                                cb.dispatchEvent(new Event('input', { bubbles: true }));
+                                cb.click();
+                            }
+                        }
+                        // Click vào nhãn chứa chữ Đã hiểu để chắc chắn ô được tick
+                        let labels = Array.from(confirmModal.querySelectorAll('label, span, div')).filter(el => {
+                            let txt = (el.innerText || '').trim().toLowerCase();
+                            return txt === 'đã hiểu' || txt === 'da hieu' || txt.includes('đã hiểu');
+                        });
+                        labels.forEach(lbl => {
+                            try { lbl.click(); } catch(e) {}
+                        });
+
+                        // 2. Click ngay nút [ Đồng ý ] màu xanh trong cùng modal này
+                        let agreeBtn = Array.from(confirmModal.querySelectorAll('button, .btn, .van-button, div[role="button"]')).find(b => {
+                            let txt = (b.innerText || '').trim().toLowerCase();
+                            return txt === 'đồng ý' || txt === 'dong y' || txt.includes('đồng ý');
+                        });
+                        if (agreeBtn && !agreeBtn.disabled) {
                             ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
-                                b.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+                                agreeBtn.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
                             });
+                            agreeBtn.click();
+                            if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
+                                window.GolikeJobBridge.onWebStatus('Golike: Đã xác nhận làm việc bằng App');
+                            }
+                            return true;
+                        }
+                    }
+
+                    // B. XỬ LÝ CÁC MODAL/POPUP THÔNG BÁO CÓ NÚT "ĐÃ HIỂU" (CHỈ NÚT BẤM THỰC SỰ)
+                    let realButtons = Array.from(document.querySelectorAll('button, a.btn, .swal2-confirm, div[role="button"].btn'));
+                    for (let b of realButtons) {
+                        let t = (b.innerText || '').trim().toLowerCase();
+                        if ((t === 'đã hiểu' || t === 'tôi đã hiểu' || t === 'da hieu') && b.offsetParent !== null && !b.disabled) {
                             b.click();
                             if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
                                 window.GolikeJobBridge.onWebStatus('Golike: Đã bấm "Đã hiểu"');
@@ -178,42 +218,7 @@ object GolikeWebJobBridge {
                         }
                     }
 
-                    // 2. Tự động tick checkbox xác nhận nếu có
-                    let checkboxes = document.querySelectorAll('input[type="checkbox"]');
-                    for (let cb of checkboxes) {
-                        if (!cb.checked && cb.offsetParent !== null) {
-                            cb.click();
-                        }
-                    }
-
-                    // 3. Quét tìm và click nút "Đồng ý" (trong modal "Xác nhận làm việc bằng App")
-                    for (let b of allClickables) {
-                        let t = (b.innerText || b.textContent || '').trim().toLowerCase();
-                        if ((t === 'đồng ý' || t === 'dong y' || t === 'chấp nhận') && b.offsetParent !== null) {
-                            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
-                                b.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
-                            });
-                            b.click();
-                            if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
-                                window.GolikeJobBridge.onWebStatus('Golike: Đã bấm "Đồng ý" làm việc');
-                            }
-                            return true;
-                        }
-                    }
-
-                    // 4. Modal #JobPolicyWarning nếu có
-                    let policyModal = document.getElementById('JobPolicyWarning');
-                    if (policyModal && (policyModal.classList.contains('show') || policyModal.style.display === 'block' || policyModal.offsetParent !== null)) {
-                        let cb = document.getElementById('JobPolicyWarningAgree');
-                        if (cb && !cb.checked) cb.click();
-                        let btnOk = policyModal.querySelector('.btn-primary') || policyModal.querySelector('button');
-                        if (btnOk && !btnOk.disabled) {
-                            btnOk.click();
-                            return true;
-                        }
-                    }
-
-                    // 5. Tự động đóng popup cảnh báo CHPLAY / dừng hoạt động nếu có
+                    // C. Tự động đóng popup cảnh báo CHPLAY / dừng hoạt động nếu có
                     let popups = document.querySelectorAll('.swal2-container, .modal, .ant-modal, .van-dialog, [role="dialog"], .modal-dialog');
                     for (let p of popups) {
                         let txt = (p.innerText || '').toLowerCase();
@@ -225,7 +230,7 @@ object GolikeWebJobBridge {
                         }
                     }
 
-                    // 6. Đóng SweetAlert2 "OK"
+                    // D. Đóng SweetAlert2 "OK"
                     let swalOk = document.querySelector('button.swal2-confirm');
                     if (swalOk && swalOk.offsetParent !== null && !swalOk.disabled) {
                         swalOk.click();
@@ -655,57 +660,80 @@ object GolikeWebJobBridge {
                                     }
                                 }
 
-                                // 5. TRANG 3: /jobs/tiktok/job-detail (Chi tiết nhiệm vụ)
-                                let tiktokLink = document.querySelector('a.btn[href*="tiktok.com"]') || document.querySelector('a[href*="tiktok.com"]');
-                                if (tiktokLink || document.querySelector('.card-job-detail') || pathname.includes('job-detail')) {
-                                    let link = tiktokLink ? (tiktokLink.getAttribute('href') || '') : '';
-                                    let isFollow = bodyText.includes('THEO DÕI') || bodyText.includes('Follow') || bodyText.includes('TĂNG LƯỢT THEO DÕI');
-                                    let jobType = isFollow ? 'follow' : 'like';
-
-                                    let idMatch = bodyText.match(/Job Id:\s*([A-Za-z0-9_-]+)/i);
-                                    let adsId = idMatch ? idMatch[1] : ('job_' + Date.now());
-
-                                    // Nếu network hook đã bắt được dữ liệu chính xác từ API
-                                    if (window._lastJobData && window._lastJobData.data) {
-                                        let jd = window._lastJobData.data;
-                                        window._lastJobData = null; // Xóa cache ngay, tránh lặp lại job cũ
-                                        let res = {
-                                            success: true,
-                                            status: 200,
-                                            data: {
-                                                id: jd.id || jd.ads_id || adsId,
-                                                ads_id: jd.ads_id || jd.id || adsId,
-                                                type: jd.type || jobType,
-                                                link: jd.link || link,
-                                                object_id: jd.object_id || jd.ads_id || adsId
-                                            }
-                                        };
-                                        if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
-                                            window.GolikeJobBridge.onWebStatus('Golike: Nhận job ' + adsId + ' thành công! Đang mở TikTok...');
-                                        }
-                                        window.GolikeJobBridge.onJobResult(JSON.stringify(res));
-                                        return 'job_extracted_network';
-                                    }
-
-                                    // Nếu trích xuất được từ DOM
-                                    if (link || adsId) {
+                                // Nếu network hook đã bắt được phản hồi từ API
+                                if (window._lastJobData) {
+                                    let d = window._lastJobData;
+                                    window._lastJobData = null; // Xóa cache ngay, tránh lặp lại job cũ
+                                    if ((d.success || d.status === 200) && d.data) {
+                                        let jd = d.data;
+                                        let adsId = jd.ads_id || jd.id || '';
+                                        let targetLink = jd.link || '';
+                                        let isFollow = (jd.type || '').includes('follow') || (jd.type || '').includes('sub');
+                                        let jobType = isFollow ? 'follow' : 'like';
                                         let res = {
                                             success: true,
                                             status: 200,
                                             data: {
                                                 id: adsId,
                                                 ads_id: adsId,
-                                                type: jobType,
-                                                link: link,
-                                                object_id: adsId
+                                                type: jd.type || jobType,
+                                                link: targetLink,
+                                                object_id: jd.object_id || adsId
                                             }
                                         };
                                         if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
-                                            window.GolikeJobBridge.onWebStatus('Golike: Nhận job ' + adsId + ' thành công! Đang mở TikTok...');
+                                            window.GolikeJobBridge.onWebStatus('Golike: Nhận job #' + adsId + ' thành công! Đang mở TikTok...');
                                         }
                                         window.GolikeJobBridge.onJobResult(JSON.stringify(res));
-                                        return 'job_extracted_dom';
+                                        return 'job_extracted_network';
+                                    } else if (d.message || d.error || (d.status && d.status !== 200)) {
+                                        // Trả lỗi thật từ API Golike về để TaskRunner báo cho người dùng
+                                        if (window.GolikeJobBridge && window.GolikeJobBridge.onJobResult) {
+                                            window.GolikeJobBridge.onJobResult(JSON.stringify(d));
+                                        }
+                                        return 'job_error_network';
                                     }
+                                }
+
+                                // 5. TRANG 3: /jobs/tiktok/job-detail (Chỉ trích xuất khi THỰC SỰ có link TikTok thật và Job ID thật từ DOM)
+                                let tiktokLink = document.querySelector('a.btn[href*="tiktok.com"]') || document.querySelector('a[href*="tiktok.com"]');
+                                let link = tiktokLink ? (tiktokLink.getAttribute('href') || '').trim() : '';
+                                let idMatch = bodyText.match(/Job Id:\s*([A-Za-z0-9_-]+)/i);
+
+                                if (link && (link.includes('tiktok.com') || link.startsWith('snssdk1128://')) && idMatch && idMatch[1]) {
+                                    let realAdsId = idMatch[1];
+                                    let isFollow = bodyText.includes('THEO DÕI') || bodyText.includes('Follow') || bodyText.includes('TĂNG LƯỢT THEO DÕI');
+                                    let jobType = isFollow ? 'follow' : 'like';
+                                    let res = {
+                                        success: true,
+                                        status: 200,
+                                        data: {
+                                            id: realAdsId,
+                                            ads_id: realAdsId,
+                                            type: jobType,
+                                            link: link,
+                                            object_id: realAdsId
+                                        }
+                                    };
+                                    if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
+                                        window.GolikeJobBridge.onWebStatus('Golike: Nhận job #' + realAdsId + ' thành công! Đang mở TikTok...');
+                                    }
+                                    window.GolikeJobBridge.onJobResult(JSON.stringify(res));
+                                    return 'job_extracted_dom';
+                                }
+
+                                // Kiểm tra thông báo lỗi trên giao diện (ví dụ thông báo hết việc, tài khoản bị khóa, etc.)
+                                let swalMsg = document.querySelector('.swal2-html-container, .swal2-title, .van-dialog__message')?.innerText?.trim() || '';
+                                if (swalMsg && (swalMsg.includes('hết việc') || swalMsg.includes('hết nhiệm vụ') || swalMsg.includes('thử lại') || swalMsg.includes('chưa có'))) {
+                                    let errRes = {
+                                        success: false,
+                                        status: 400,
+                                        message: swalMsg
+                                    };
+                                    if (window.GolikeJobBridge && window.GolikeJobBridge.onJobResult) {
+                                        window.GolikeJobBridge.onJobResult(JSON.stringify(errRes));
+                                    }
+                                    return 'job_error_dom';
                                 }
 
                                 return 'idle';
