@@ -12,10 +12,19 @@ data class AuthSession(
     val username: String? = null,
     val packageName: String? = null,
     val expiresAt: String? = null,
-    val daysLeft: Int? = null
+    val daysLeft: Int? = null,
+    val timeLeft: String? = null
 ) {
     val effectiveUsername: String?
         get() = username?.takeIf { it.isNotBlank() }
+
+    val isFree: Boolean
+        get() {
+            val u = username.orEmpty().lowercase()
+            val p = packageName.orEmpty().lowercase()
+            return u.contains("dùng thử") || u.contains("dung thu") || u.contains("free") || u.contains("trial") ||
+                   p.contains("dùng thử") || p.contains("dung thu") || p.contains("free") || p.contains("trial")
+        }
 }
 
 /**
@@ -46,8 +55,9 @@ class AuthRepository {
                         val uName = parts.getOrNull(1)?.takeIf { it.isNotBlank() }
                         val pkg = parts.getOrNull(2)?.takeIf { it.isNotBlank() }
                         val exp = parts.getOrNull(3)?.takeIf { it.isNotBlank() }
-                        val days = parts.getOrNull(4)?.toIntOrNull()
-                        AuthResult.Success(AuthSession(uName, pkg, exp, days))
+                        val rawTime = parts.getOrNull(4)?.takeIf { it.isNotBlank() }
+                        val days = rawTime?.filter { it.isDigit() }?.toIntOrNull()
+                        AuthResult.Success(AuthSession(uName, pkg, exp, days, rawTime))
                     } else {
                         AuthResult.ApiError("Xác thực bản quyền không hợp lệ")
                     }

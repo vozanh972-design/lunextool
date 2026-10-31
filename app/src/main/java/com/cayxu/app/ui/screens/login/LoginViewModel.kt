@@ -66,6 +66,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                     result.data.packageName?.let { securePrefs.savePackageName(it) }
                     result.data.expiresAt?.let { securePrefs.saveExpiresAt(it) }
                     result.data.daysLeft?.let { securePrefs.saveDaysLeft(it) }
+                    result.data.timeLeft?.let { securePrefs.saveTimeLeft(it) }
                     _uiState.value = _uiState.value.copy(autoVerifyStatus = AutoVerifyStatus.SUCCESS)
                     kotlinx.coroutines.delay(800L) // Hiệu ứng dấu tích xanh mượt mà
                     _pendingAutoLoginSuccess = true
@@ -154,6 +155,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                     result.data.packageName?.let { securePrefs.savePackageName(it) }
                     result.data.expiresAt?.let { securePrefs.saveExpiresAt(it) }
                     result.data.daysLeft?.let { securePrefs.saveDaysLeft(it) }
+                    result.data.timeLeft?.let { securePrefs.saveTimeLeft(it) }
                     
                     _uiState.value = _uiState.value.copy(
                         autoVerifyStatus = AutoVerifyStatus.SUCCESS,

@@ -106,6 +106,28 @@ class SecurePrefs(context: Context) {
 
     fun getExpiresAt(): String? = prefs.getString(KEY_EXPIRES_AT, null)
 
+    fun saveTimeLeft(timeLeft: String?) {
+        if (timeLeft != null) {
+            prefs.edit().putString(KEY_TIME_LEFT, timeLeft).apply()
+        } else {
+            prefs.edit().remove(KEY_TIME_LEFT).apply()
+        }
+    }
+
+    fun getTimeLeft(): String? = prefs.getString(KEY_TIME_LEFT, null)
+
+    fun isFreeKey(): Boolean {
+        val name = getBuyerUsername().orEmpty().lowercase()
+        val pkg = getPackageName().orEmpty().lowercase()
+        val key = getKey().orEmpty().lowercase()
+        return name.contains("dùng thử") || name.contains("dung thu") ||
+               name.contains("khách") || name.contains("khach") ||
+               name.contains("free") || name.contains("trial") ||
+               pkg.contains("dùng thử") || pkg.contains("dung thu") ||
+               pkg.contains("free") || pkg.contains("trial") ||
+               key.startsWith("free") || key.startsWith("trial")
+    }
+
     fun saveDaysLeft(days: Int?) {
         if (days != null) {
             prefs.edit().putInt(KEY_DAYS_LEFT, days).apply()
@@ -146,6 +168,7 @@ class SecurePrefs(context: Context) {
         private const val KEY_PACKAGE_NAME = "package_name"
         private const val KEY_EXPIRES_AT = "expires_at"
         private const val KEY_DAYS_LEFT = "days_left"
+        private const val KEY_TIME_LEFT = "time_left"
         private const val KEY_ACTIVATED_KEYS = "activated_keys"
         private const val KEY_LATEST_VERSION_CODE = "latest_known_version_code"
     }

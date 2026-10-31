@@ -229,8 +229,15 @@ fun CayXuNavGraph(
             ) {
                 com.cayxu.app.ui.license.LicenseRoute(
                     onActivated = { _ ->
-                        navController.navigate(Routes.WELCOME) {
-                            popUpTo(Routes.LOGIN) { inclusive = true }
+                        if (securePrefs.isFreeKey()) {
+                            securePrefs.setSeenWelcome()
+                            navController.navigate(Routes.HOME) {
+                                popUpTo(Routes.LOGIN) { inclusive = true }
+                            }
+                        } else {
+                            navController.navigate(Routes.WELCOME) {
+                                popUpTo(Routes.LOGIN) { inclusive = true }
+                            }
                         }
                     },
                     onBuy = {

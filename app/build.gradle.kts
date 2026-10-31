@@ -328,7 +328,8 @@ android {
         applicationId = "com.cayxu.app"
         // Android 7.0 (Nougat) trở lên
         minSdk = 24
-        // targetSdk sẽ được nâng lên khi Android 16 SDK chính thức phát hành
+        // Android 15/16 SDK chính thức
+        targetSdk = 35
         versionCode = 10
         versionName = "1.0.9"
         buildConfigField("String", "UPDATE_CHANGELOG", "\"1. XSMM: Fix lỗi IG\\n2. Fix lỗi vặt:\"")

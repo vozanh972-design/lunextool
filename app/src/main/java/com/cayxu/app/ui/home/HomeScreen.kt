@@ -102,8 +102,10 @@ data class HomeUiState(
     val servicesActive: Int = 4,
     val servicesTotal: Int = 5,
     val daysLeft: Int = 25,
+    val remainingDisplay: String = "25 ngày",
+    val isPro: Boolean = true,
     val today: DayEarnings = DayEarnings(0, 0),          // xu + tiền (đ) kiếm được hôm nay
-    val expiryText: String = "Hạn dùng 05/11/2026 · 11:51",
+    val expiryText: String = "",
     val tiles: List<HomeTile> = DefaultTiles,
     val wideTile: HomeTile? = DefaultWideTile,
     val wideStatus: String = "Sẵn sàng",
@@ -237,19 +239,41 @@ fun HomeScreen(
     val securePrefs = remember { SecurePrefs(context) }
 
     val buyerUsername = remember { securePrefs.getBuyerUsername() }
-    val effectiveName = remember(uiState.info, buyerUsername) {
-        uiState.info?.username?.ifBlank { null }
-            ?: buyerUsername?.ifBlank { null }
-            ?: "username"
+    val isFree = remember(uiState.info, buyerUsername) {
+        uiState.info?.isFree ?: securePrefs.isFreeKey()
+    }
+    val effectiveName = remember(uiState.info, buyerUsername, isFree) {
+        if (isFree) {
+            "AutoLunex"
+        } else {
+            uiState.info?.username?.ifBlank { null }
+                ?: buyerUsername?.ifBlank { null }
+                ?: "benbenteo10"
+        }
     }
     val daysLeft = remember(uiState.info) {
         uiState.info?.daysLeft ?: securePrefs.getDaysLeft()
     }
+    val rawTimeLeft = remember(uiState.info) {
+        uiState.info?.timeLeft ?: securePrefs.getTimeLeft()
+    }
+    val remainingDisplay = remember(rawTimeLeft, daysLeft) {
+        when {
+            !rawTimeLeft.isNullOrBlank() -> {
+                if (rawTimeLeft.any { it.isLetter() }) rawTimeLeft else "$rawTimeLeft ngày"
+            }
+            else -> "$daysLeft ngày"
+        }
+    }
     val rawExpiresAt = remember(uiState.info) {
         uiState.info?.expiresAt ?: securePrefs.getExpiresAt() ?: ""
     }
-    val expiryText = remember(rawExpiresAt) {
-        if (rawExpiresAt.isNotBlank()) "Hạn dùng $rawExpiresAt" else "Hạn dùng 30 ngày"
+    val expiryText = remember(rawExpiresAt, remainingDisplay) {
+        if (rawExpiresAt.isNotBlank() && rawExpiresAt != "null") {
+            "Hạn dùng $rawExpiresAt"
+        } else {
+            "Thời hạn: $remainingDisplay"
+        }
     }
 
     val xsmmPoints = remember { XsmmAccountStore.getPoints(context) }
@@ -268,13 +292,15 @@ fun HomeScreen(
         )
     }
 
-    val state = remember(effectiveName, totalCoins, daysLeft, expiryText, tiles) {
+    val state = remember(effectiveName, totalCoins, daysLeft, remainingDisplay, isFree, expiryText, tiles) {
         HomeUiState(
             username = effectiveName,
             coins = totalCoins.toString(),
             servicesActive = 5,
             servicesTotal = 5,
             daysLeft = daysLeft,
+            remainingDisplay = remainingDisplay,
+            isPro = !isFree,
             today = DayEarnings(coins = ttcCoins, money = xsmmPoints + golikeBalance),
             expiryText = expiryText,
             tiles = tiles,
@@ -304,17 +330,18 @@ fun HomeScreen(
 private fun Header(state: HomeUiState, greeting: String, onSupport: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Header luôn hiện nhãn PRO nên avatar luôn có viền PRO (gradient xanh, tím, hồng).
-            ProAvatar(initials(state.username), inner = 44.dp, ringWidth = 2.dp, gap = 2.dp, textSp = 15f, ringed = true)
+            ProAvatar(initials(state.username), inner = 44.dp, ringWidth = 2.dp, gap = 2.dp, textSp = 15f, ringed = state.isPro)
             Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 BasicText(greeting, style = type(12.5f, FontWeight.Medium, Alx.Muted))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     BasicText(state.username, style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f), maxLines = 1)
-                    BasicText(
-                        "PRO",
-                        Modifier.background(Alx.Blue, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
-                        style = type(10f, FontWeight.ExtraBold, Alx.White, spacing = 0.08f, lineHeight = 1.2f),
-                    )
+                    if (state.isPro) {
+                        BasicText(
+                            "PRO",
+                            Modifier.background(Alx.Blue, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+                            style = type(10f, FontWeight.ExtraBold, Alx.White, spacing = 0.08f, lineHeight = 1.2f),
+                        )
+                    }
                 }
             }
         }
@@ -371,10 +398,7 @@ private fun StatsCard(state: HomeUiState, modifier: Modifier = Modifier) {
             Box(Modifier.width(1.dp).fillMaxHeight().background(Alx.Divider))
             StatCell(Str.homeRemaining, Modifier.weight(1f)) {
                 BasicText(
-                    buildAnnotatedString {
-                        append("${state.daysLeft}")
-                        withStyle(SpanStyle(color = Alx.Muted, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)) { append(Str.homeDaysUnit) }
-                    },
+                    state.remainingDisplay,
                     style = valueStyle(),
                 )
             }

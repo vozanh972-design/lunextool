@@ -109,7 +109,8 @@ fun AppFlow(
             validate = validate,
             onSuccess = {
                 store.licenseKey = s.key                 // nhớ key cho các lần mở sau
-                step = if (s.firstTime) Step.Welcome else Step.Home
+                val prefs = SecurePrefs(context)
+                step = if (s.firstTime && !prefs.isFreeKey()) Step.Welcome else Step.Home
             },
             onFailure = {
                 if (!s.firstTime) store.licenseKey = null // key cũ không còn dùng được

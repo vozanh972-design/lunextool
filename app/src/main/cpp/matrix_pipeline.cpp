@@ -193,7 +193,13 @@ Java_com_cayxu_app_ui_f4f_F4fNativeBridge_registerLicenseSession(JNIEnv* env, jc
     }
     std::string pkg = extractJsonString(jsonStr, "package");
     std::string expiresAt = extractJsonString(jsonStr, "expires_at");
-    std::string daysLeft = extractJsonString(jsonStr, "days_left");
+    std::string daysLeft = extractJsonString(jsonStr, "time_left");
+    if (daysLeft.empty()) {
+        daysLeft = extractJsonString(jsonStr, "remaining");
+    }
+    if (daysLeft.empty()) {
+        daysLeft = extractJsonString(jsonStr, "days_left");
+    }
     if (daysLeft.empty()) {
         daysLeft = extractJsonString(jsonStr, "max_days");
     }

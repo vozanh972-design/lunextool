@@ -45,20 +45,25 @@ class KeyRecheckWorker(appContext: Context, params: WorkerParameters) : Coroutin
                     result.data.username?.let { prefs.saveBuyerUsername(it) }
                     result.data.packageName?.let { prefs.savePackageName(it) }
                     result.data.expiresAt?.let { prefs.saveExpiresAt(it) }
+                    result.data.daysLeft?.let { prefs.saveDaysLeft(it) }
+                    result.data.timeLeft?.let { prefs.saveTimeLeft(it) }
                 }
                 is AuthResult.ApiError -> {
-                    // Server xác nhận key không còn hợp lệ (hết hạn / bị thu hồi /
-                    // đang dùng ở thiết bị khác...) -> xoá key NGAY, không giữ lại
-                    // trong tool nữa. KHÔNG khoá vĩnh viễn (không phải phát hiện
-                    // crack) - báo cho UI đưa người dùng về màn nhập Key ngay lập
-                    // tức để họ tự nhập key mới/gia hạn.
+                    // Server xác nhận key không còn hợp lệ (hết hạn lúc 00h / bị thu hồi / hết ngày)
+                    // Xóa key NGAY LẬP TỨC và dừng mọi tiến trình chạy tự động
                     prefs.clearKey()
+                    try {
+                        applicationContext.stopService(
+                            android.content.Intent(
+                                applicationContext,
+                                com.cayxu.app.automation.overlay.XsmmJobRunnerOverlayService::class.java
+                            )
+                        )
+                    } catch (_: Exception) {}
                     com.cayxu.app.data.local.AppLockState.markKeyRevoked()
                 }
                 is AuthResult.NetworkError -> {
-                    // Lỗi mạng tạm thời (mất mạng, server bảo trì...) - KHÔNG khoá
-                    // app vì đây có thể chỉ là sự cố tạm thời, không phải key sai.
-                    // Worker sẽ tự thử lại ở lần chạy kế tiếp.
+                    // Lỗi mạng tạm thời - Worker sẽ tự thử lại ở lần chạy kế tiếp
                 }
             }
         }
@@ -70,13 +75,11 @@ class KeyRecheckWorker(appContext: Context, params: WorkerParameters) : Coroutin
     companion object {
         private const val WORK_NAME = "key_recheck_worker"
 
-        /** Random 3–10 tiếng (tính bằng phút) cho lần chạy tiếp theo. */
-        private fun randomDelayMinutes(): Long = Random.nextLong(3 * 60L, 10 * 60L + 1)
+        /** Giãn cách ngẫu nhiên 15–30 phút (tối đa 30 phút) tránh nghẽn server và dàn đều request */
+        private fun randomDelayMinutes(): Long = Random.nextLong(15L, 31L)
 
         /**
-         * Gọi hàm này 1 lần khi app khởi động (CayXuApp.onCreate) để bắt đầu chuỗi
-         * kiểm tra định kỳ. ExistingWorkPolicy.REPLACE đảm bảo không bị chạy trùng
-         * nhiều worker cùng lúc nếu app được mở lại nhiều lần.
+         * Gọi hàm này khi app khởi động để duy trì chu kỳ kiểm tra định kỳ trong vòng 30 phút.
          */
         fun scheduleNext(context: Context) {
             val request = OneTimeWorkRequestBuilder<KeyRecheckWorker>()

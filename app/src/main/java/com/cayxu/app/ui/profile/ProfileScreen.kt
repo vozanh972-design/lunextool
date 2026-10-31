@@ -112,7 +112,9 @@ data class ProfileUiState(
     val planBadge: String,          // "" thì ẩn nhãn
     val planName: String,
     val daysLeft: Int,
+    val timeLeft: String = "",
     val expiryDate: String,         // đã định dạng, vd "05/11/2026"
+    val isFree: Boolean = false,
     val language: AppLanguage,
     /** Vài dòng mới nhất của sổ xu (thường 2), lấy từ CoinLedger.observeRecent(2). Rỗng thì hiện thẻ Chưa có lịch sử. */
     val recent: List<CoinEntry> = emptyList(),
@@ -267,34 +269,53 @@ fun ProfileScreen(
     val hasUpdate = AppUpdateManager.hasNewUpdate(activeUpdateData)
     val updateVersionLabel = "Autolunex · phiên bản $realVersionName"
 
+    val isFree = remember { securePrefs.isFreeKey() }
     val buyerUsername = remember { securePrefs.getBuyerUsername() }
     val daysLeft = remember { securePrefs.getDaysLeft() }
+    val rawTimeLeft = remember { securePrefs.getTimeLeft() }
     val rawExpiresAt = remember { securePrefs.getExpiresAt() }
 
-    val username = remember(buyerUsername) {
-        if (!buyerUsername.isNullOrBlank()) buyerUsername.trim() else "benbenteo10"
+    val username = remember(buyerUsername, isFree) {
+        if (isFree) {
+            "AutoLunex"
+        } else if (!buyerUsername.isNullOrBlank()) {
+            buyerUsername.trim()
+        } else {
+            "benbenteo10"
+        }
     }
-    val handle = remember(username) { "@$username" }
+    val handle = remember(username, isFree) {
+        if (isFree) "" else "@$username"
+    }
+
+    val timeLeft = remember(rawTimeLeft, daysLeft) {
+        when {
+            !rawTimeLeft.isNullOrBlank() -> if (rawTimeLeft.any { it.isLetter() }) rawTimeLeft else "$rawTimeLeft ngày"
+            else -> "$daysLeft ngày"
+        }
+    }
 
     val expiryDate = remember(rawExpiresAt) {
-        if (!rawExpiresAt.isNullOrBlank()) {
+        if (!rawExpiresAt.isNullOrBlank() && rawExpiresAt != "null") {
             rawExpiresAt.split(" ").firstOrNull() ?: rawExpiresAt
         } else {
-            "2026-11-05"
+            ""
         }
     }
 
     val currentLang = LanguageState.language
-    val planTitle = "Thành viên PRO"
+    val planTitle = if (isFree) "Tài khoản dùng thử" else "Thành viên PRO"
 
-    val state = remember(username, handle, daysLeft, expiryDate, currentLang, recentCoins, planTitle, hasUpdate, updateVersionLabel) {
+    val state = remember(username, handle, daysLeft, timeLeft, expiryDate, currentLang, recentCoins, planTitle, isFree, hasUpdate, updateVersionLabel) {
         ProfileUiState(
             username = username,
             handle = handle,
-            planBadge = "PRO",
+            planBadge = if (isFree) "" else "PRO",
             planName = planTitle,
             daysLeft = daysLeft,
+            timeLeft = timeLeft,
             expiryDate = expiryDate,
+            isFree = isFree,
             language = currentLang,
             recent = recentCoins,
             hasUpdate = hasUpdate,
@@ -488,16 +509,16 @@ private fun UpdateBanner(versionLabel: String, onClick: () -> Unit) {
 @Composable
 private fun Identity(s: ProfileUiState, modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        // Có gói (planBadge không rỗng) thì avatar có viền PRO (gradient xanh, tím, hồng); không có gói thì avatar trơn.
+        // Có gói PRO (planBadge không rỗng và không phải Free) thì avatar có viền PRO; không có thì avatar trơn.
         ProAvatar(
-            initials = s.username.take(1).uppercase(),
+            initials = if (s.isFree) "AL" else s.username.take(2).uppercase().ifEmpty { "AL" },
             inner = 64.dp, ringWidth = 3.dp, gap = 3.dp, textSp = 26f,
-            ringed = s.planBadge.isNotEmpty(),
+            ringed = !s.isFree && s.planBadge.isNotEmpty(),
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BasicText(s.username, Modifier.weight(1f, fill = false), style = type(22f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.02f), maxLines = 1)
-                if (s.planBadge.isNotEmpty()) {
+                if (!s.isFree && s.planBadge.isNotEmpty()) {
                     BasicText(
                         s.planBadge,
                         Modifier.background(Alx.Blue, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
@@ -505,13 +526,16 @@ private fun Identity(s: ProfileUiState, modifier: Modifier = Modifier) {
                     )
                 }
             }
-            BasicText(s.handle, style = type(13.5f, FontWeight.Medium, Alx.Muted), maxLines = 1)
+            if (s.handle.isNotBlank()) {
+                BasicText(s.handle, style = type(13.5f, FontWeight.Medium, Alx.Muted), maxLines = 1)
+            }
         }
     }
 }
 
 @Composable
 private fun Membership(s: ProfileUiState, modifier: Modifier) {
+    if (s.isFree) return
     val shape = RoundedCornerShape(20.dp)
     Column(
         modifier.fillMaxWidth().background(Alx.White, shape).border(1.dp, Alx.Line, shape)
@@ -525,8 +549,10 @@ private fun Membership(s: ProfileUiState, modifier: Modifier) {
             }
             Column(Modifier.weight(1f)) {
                 BasicText(s.planName, style = type(14.5f, FontWeight.Bold, Alx.Ink))
+                val timeStr = if (s.timeLeft.isNotBlank()) s.timeLeft else "${s.daysLeft} ngày"
+                val expStr = if (s.expiryDate.isNotBlank() && s.expiryDate != "null") " · Hết hạn ${s.expiryDate}" else ""
                 BasicText(
-                    "Còn ${s.daysLeft} ngày · Hết hạn ${s.expiryDate}",
+                    "Còn $timeStr$expStr",
                     Modifier.padding(top = 1.dp),
                     style = type(12f, FontWeight.Medium, Alx.Muted),
                 )
