@@ -268,9 +268,6 @@ object GolikeWebJobBridge {
 
             window.autoDismissGolikePopups = autoDismissGolikePopups;
             autoDismissGolikePopups();
-            if (!window._golikeAutoDismissInterval) {
-                window._golikeAutoDismissInterval = setInterval(autoDismissGolikePopups, 350);
-            }
         })();
     """
 
@@ -525,9 +522,8 @@ object GolikeWebJobBridge {
 
         wv.addJavascriptInterface(WebActionInterface(), "GolikeJobBridge")
 
-        // Chỉ tải trang gốc https://app.golike.net/jobs 1 lần duy nhất để Vue.js mount toàn bộ app
-        // Mọi điều hướng tiếp theo (vào TikTok, nhận job, hoàn thành) 100% bằng click phần tử DOM
-        wv.loadUrl("https://app.golike.net/jobs")
+        // Tải trực tiếp trang nhiệm vụ TikTok thật
+        wv.loadUrl("https://app.golike.net/jobs/tiktok")
         miniWebView = wv
         return wv
     }
@@ -557,9 +553,11 @@ object GolikeWebJobBridge {
             mainHandler.post {
                 try {
                     val currentUrl = wv.url.orEmpty()
-                    // Chỉ tải trang gốc /jobs khi WebView hoàn toàn rỗng lúc vừa mở app
+                    // Tải thẳng trang /jobs/tiktok khi WebView rỗng hoặc đang ở trang khác
                     if (currentUrl.isBlank() || !currentUrl.contains("golike.net")) {
-                        wv.loadUrl("https://app.golike.net/jobs")
+                        wv.loadUrl("https://app.golike.net/jobs/tiktok")
+                    } else if (currentUrl.endsWith("/jobs") || currentUrl.endsWith("/home") || !currentUrl.contains("/jobs/tiktok")) {
+                        wv.loadUrl("https://app.golike.net/jobs/tiktok")
                     }
 
                     wv.evaluateJavascript(getSpoofAndSessionScript(wv.context), null)
@@ -580,6 +578,15 @@ object GolikeWebJobBridge {
                                 let pathname = window.location.pathname || '';
                                 let bodyText = document.body ? document.body.innerText : '';
 
+                                // Nếu chưa ở trang /jobs/tiktok thì tự chuyển đến thẳng /jobs/tiktok
+                                if (pathname === '/home' || pathname.endsWith('/home') || pathname === '/jobs' || pathname.endsWith('/jobs')) {
+                                    window.location.href = 'https://app.golike.net/jobs/tiktok';
+                                    if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
+                                        window.GolikeJobBridge.onWebStatus('Golike: Đang tải trang TikTok...');
+                                    }
+                                    return 'navigating_to_tiktok';
+                                }
+
                                 // 1. Kiểm tra Captcha (ID #captcha-golike hoặc reCAPTCHA iframe)
                                 let captchaModal = document.getElementById('captcha-golike');
                                 let recaptchaFrame = document.querySelector('iframe[src*="recaptcha"], iframe[src*="cloudflare"], div.g-recaptcha');
@@ -593,49 +600,59 @@ object GolikeWebJobBridge {
                                     return 'waiting_captcha';
                                 }
 
-                                // 2. Tự động xử lý tất cả modal "Đã hiểu", "Đồng ý"
+                                // 2. Kiểm tra modal Xác nhận làm việc bằng App (#JobPolicyWarning)
+                                let policyModal = document.getElementById('JobPolicyWarning');
+                                let isPolicyVisible = policyModal && (policyModal.offsetParent !== null || policyModal.classList.contains('show') || policyModal.style.display === 'block');
+
+                                if (isPolicyVisible) {
+                                    // 2.1 Tick ô [ ] Đã hiểu
+                                    let cb = document.getElementById('JobPolicyWarningAgree') || policyModal.querySelector('input[type="checkbox"]');
+                                    if (cb && !cb.checked) {
+                                        if (window.$) {
+                                            try { window.$(cb).prop('checked', true).trigger('change').trigger('input'); } catch(e) {}
+                                        }
+                                        cb.checked = true;
+                                        cb.dispatchEvent(new Event('input', { bubbles: true }));
+                                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                                        if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
+                                            window.GolikeJobBridge.onWebStatus('Golike: Thấy popup -> Đã tick [x] Đã hiểu');
+                                        }
+                                        return 'ticking_agree';
+                                    }
+
+                                    // 2.2 Click nút [ Đồng ý ] màu xanh (.btn-primary)
+                                    let agreeBtn = policyModal.querySelector('.btn-primary') || Array.from(policyModal.querySelectorAll('button, .btn')).find(b => {
+                                        let txt = (b.innerText || '').trim().toLowerCase();
+                                        return txt === 'đồng ý' || txt === 'dong y' || txt.includes('đồng ý');
+                                    });
+                                    if (agreeBtn) {
+                                        agreeBtn.removeAttribute('disabled');
+                                        agreeBtn.disabled = false;
+                                        if (window.$) {
+                                            try { window.$(agreeBtn).prop('disabled', false).trigger('click'); } catch(e) {}
+                                        }
+                                        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+                                            agreeBtn.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+                                        });
+                                        agreeBtn.click();
+                                        if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
+                                            window.GolikeJobBridge.onWebStatus('Golike: Đã bấm nút [ Đồng ý ]');
+                                        }
+                                        setTimeout(function() {
+                                            if (window.$ && typeof window.$('#JobPolicyWarning').modal === 'function') {
+                                                try { window.$('#JobPolicyWarning').modal('hide'); } catch(e) {}
+                                            }
+                                        }, 400);
+                                        return 'clicked_agree';
+                                    }
+                                }
+
+                                // 3. Tự động xử lý popup thông báo khác nếu có
                                 if (typeof autoDismissGolikePopups === 'function') {
                                     autoDismissGolikePopups();
                                 }
 
-                                // BƯỚC 0: Nếu mới mở đang ở Trang chủ (Home) -> Bấm nút "Kiếm xu" ở thanh menu dưới
-                                if (pathname === '/home' || pathname.endsWith('/home') || (!document.querySelector('.job-grid') && !document.querySelector('.tk-hero') && !document.querySelector('.card-job-detail'))) {
-                                    let walletTab = Array.from(document.querySelectorAll('.nav-bottom-container .col, .nav-bottom-container div, .nav-bottom-container span')).find(el => (el.innerText || '').trim() === 'Kiếm xu');
-                                    if (walletTab) {
-                                        let clickTarget = walletTab.closest('.col') || walletTab;
-                                        clickTarget.scrollIntoView({ behavior: 'auto', block: 'center' });
-                                        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
-                                            clickTarget.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
-                                        });
-                                        clickTarget.click();
-                                        if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
-                                            window.GolikeJobBridge.onWebStatus('Golike: Bấm Kiếm xu từ trang chủ...');
-                                        }
-                                        return 'navigated_to_jobs';
-                                    }
-                                }
-
-                                // BƯỚC 1: TRANG /jobs (Chọn kênh kiếm xu -> Bấm chọn TikTok)
-                                if (document.querySelector('.job-grid') || pathname === '/jobs' || pathname.endsWith('/jobs')) {
-                                    let ttCard = Array.from(document.querySelectorAll('.job-card')).find(c => {
-                                        let name = c.querySelector('.job-name')?.innerText?.trim()?.toLowerCase() || '';
-                                        return name === 'tiktok';
-                                    });
-                                    if (ttCard) {
-                                        let clickTarget = ttCard.querySelector('.job-card-inner') || ttCard;
-                                        clickTarget.scrollIntoView({ behavior: 'auto', block: 'center' });
-                                        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
-                                            clickTarget.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
-                                        });
-                                        clickTarget.click();
-                                        if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
-                                            window.GolikeJobBridge.onWebStatus('Golike: Đang vào kênh TikTok...');
-                                        }
-                                        return 'navigated_to_tiktok';
-                                    }
-                                }
-
-                                // BƯỚC 2 & TRƯỜNG HỢP 2: TRANG /jobs/tiktok (Ở sẵn trang này các lần tiếp theo)
+                                // BƯỚC 2: TRANG /jobs/tiktok
                                 let heroCta = document.querySelector('.tk-hero__cta') || document.querySelector('.tk-hero');
                                 if (heroCta || document.querySelector('.tk-tabs') || pathname.includes('/jobs/tiktok')) {
                                     if (!pathname.includes('job-detail')) {

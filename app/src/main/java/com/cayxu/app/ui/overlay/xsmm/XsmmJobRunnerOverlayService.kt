@@ -654,11 +654,6 @@ class XsmmJobRunnerOverlayService : Service() {
                             updateProgressDisplay()
                         }
 
-                        // Tự động thu nhỏ màn nổi khi bắt đầu chạy để không che màn hình
-                        launch(Dispatchers.Main) {
-                            if (!isPaused) showMiniBubble()
-                        }
-
                         GolikeTikTokTaskRunner.runTikTokTaskLoop(
                             context = applicationContext,
                             account = matchedAcc,
