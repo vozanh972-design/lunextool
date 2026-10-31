@@ -157,6 +157,91 @@ object GolikeWebJobBridge {
         })();
     """
 
+    const val AUTO_DISMISS_MODALS_JS = """
+        (function() {
+            function autoDismissGolikePopups() {
+                try {
+                    let allClickables = Array.from(document.querySelectorAll('button, a, div[role="button"], span, .btn, .van-button, .swal2-confirm'));
+
+                    // 1. Quét tìm và click nút "Đã hiểu" / "Tôi đã hiểu"
+                    for (let b of allClickables) {
+                        let t = (b.innerText || b.textContent || '').trim().toLowerCase();
+                        if ((t === 'đã hiểu' || t === 'tôi đã hiểu' || t.includes('đã hiểu') || t.includes('da hieu')) && b.offsetParent !== null) {
+                            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+                                b.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+                            });
+                            b.click();
+                            if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
+                                window.GolikeJobBridge.onWebStatus('Golike: Đã bấm "Đã hiểu"');
+                            }
+                            return true;
+                        }
+                    }
+
+                    // 2. Tự động tick checkbox xác nhận nếu có
+                    let checkboxes = document.querySelectorAll('input[type="checkbox"]');
+                    for (let cb of checkboxes) {
+                        if (!cb.checked && cb.offsetParent !== null) {
+                            cb.click();
+                        }
+                    }
+
+                    // 3. Quét tìm và click nút "Đồng ý" (trong modal "Xác nhận làm việc bằng App")
+                    for (let b of allClickables) {
+                        let t = (b.innerText || b.textContent || '').trim().toLowerCase();
+                        if ((t === 'đồng ý' || t === 'dong y' || t === 'chấp nhận') && b.offsetParent !== null) {
+                            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+                                b.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+                            });
+                            b.click();
+                            if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
+                                window.GolikeJobBridge.onWebStatus('Golike: Đã bấm "Đồng ý" làm việc');
+                            }
+                            return true;
+                        }
+                    }
+
+                    // 4. Modal #JobPolicyWarning nếu có
+                    let policyModal = document.getElementById('JobPolicyWarning');
+                    if (policyModal && (policyModal.classList.contains('show') || policyModal.style.display === 'block' || policyModal.offsetParent !== null)) {
+                        let cb = document.getElementById('JobPolicyWarningAgree');
+                        if (cb && !cb.checked) cb.click();
+                        let btnOk = policyModal.querySelector('.btn-primary') || policyModal.querySelector('button');
+                        if (btnOk && !btnOk.disabled) {
+                            btnOk.click();
+                            return true;
+                        }
+                    }
+
+                    // 5. Tự động đóng popup cảnh báo CHPLAY / dừng hoạt động nếu có
+                    let popups = document.querySelectorAll('.swal2-container, .modal, .ant-modal, .van-dialog, [role="dialog"], .modal-dialog');
+                    for (let p of popups) {
+                        let txt = (p.innerText || '').toLowerCase();
+                        if (txt.includes('chplay') || txt.includes('dừng hoạt động') || txt.includes('bản web')) {
+                            let closeBtn = p.querySelector('button, .btn, .swal2-confirm, .van-button, .close');
+                            if (closeBtn && !closeBtn.disabled) {
+                                closeBtn.click();
+                            }
+                        }
+                    }
+
+                    // 6. Đóng SweetAlert2 "OK"
+                    let swalOk = document.querySelector('button.swal2-confirm');
+                    if (swalOk && swalOk.offsetParent !== null && !swalOk.disabled) {
+                        swalOk.click();
+                    }
+                } catch(e) {}
+                return false;
+            }
+
+            window.autoDismissGolikePopups = autoDismissGolikePopups;
+            autoDismissGolikePopups();
+            if (!window._golikeAutoDismissInterval) {
+                window._golikeAutoDismissInterval = setInterval(autoDismissGolikePopups, 350);
+            }
+        })();
+    """
+
     /**
      * Tạo đoạn mã Javascript giả lập 100% môi trường iOS Safari (Apple WebKit)
      * và tự động đồng bộ trọn bộ LocalStorage từ phiên đăng nhập Golike đã lưu.
@@ -306,6 +391,7 @@ object GolikeWebJobBridge {
                 // Tiêm script giả lập iOS Safari và nạp LocalStorage ngay khi trang bắt đầu render
                 view?.evaluateJavascript(getSpoofAndSessionScript(context), null)
                 view?.evaluateJavascript(NETWORK_INTERCEPTOR_JS, null)
+                view?.evaluateJavascript(AUTO_DISMISS_MODALS_JS, null)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -314,6 +400,7 @@ object GolikeWebJobBridge {
                 // Nạp lại đảm bảo phiên và hook mạng luôn hoạt động
                 view?.evaluateJavascript(getSpoofAndSessionScript(context), null)
                 view?.evaluateJavascript(NETWORK_INTERCEPTOR_JS, null)
+                view?.evaluateJavascript(AUTO_DISMISS_MODALS_JS, null)
             }
 
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
@@ -449,18 +536,7 @@ object GolikeWebJobBridge {
                         (function() {
                             try {
                                 $NETWORK_INTERCEPTOR_JS
-
-                                // Tự động đóng popup cảnh báo CHPLAY / dừng hoạt động nếu có
-                                let popups = document.querySelectorAll('.swal2-container, .modal, .ant-modal, .van-dialog, [role="dialog"], .modal-dialog');
-                                for (let p of popups) {
-                                    let txt = (p.innerText || '').toLowerCase();
-                                    if (txt.includes('chplay') || txt.includes('dừng hoạt động') || txt.includes('bản web')) {
-                                        let closeBtn = p.querySelector('button, .btn, .swal2-confirm, .van-button, .close');
-                                        if (closeBtn && !closeBtn.disabled) {
-                                            closeBtn.click();
-                                        }
-                                    }
-                                }
+                                $AUTO_DISMISS_MODALS_JS
 
                                 // Nếu bị trắng trang do router, tự back về trang trước trong lịch sử SPA
                                 let appEl = document.getElementById('app');
@@ -485,25 +561,9 @@ object GolikeWebJobBridge {
                                     return 'waiting_captcha';
                                 }
 
-                                // 2. TRƯỜNG HỢP 1: Tự xử lý Modal xác nhận "Xác nhận làm việc bằng App" (ID #JobPolicyWarning)
-                                let policyModal = document.getElementById('JobPolicyWarning');
-                                if (policyModal && (policyModal.classList.contains('show') || policyModal.style.display === 'block' || policyModal.offsetParent !== null)) {
-                                    let cb = document.getElementById('JobPolicyWarningAgree');
-                                    if (cb && !cb.checked) cb.click();
-                                    let btnOk = policyModal.querySelector('.btn-primary');
-                                    if (btnOk && !btnOk.disabled) {
-                                        btnOk.click();
-                                        if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
-                                            window.GolikeJobBridge.onWebStatus('Golike: Đã xác nhận làm việc bằng App');
-                                        }
-                                        return 'modal_dismissed';
-                                    }
-                                }
-
-                                // Xử lý SweetAlert2 popup "OK" (sau khi báo lỗi hoặc thông báo)
-                                let swalOk = document.querySelector('button.swal2-confirm');
-                                if (swalOk && swalOk.offsetParent !== null && !swalOk.disabled) {
-                                    swalOk.click();
+                                // 2. Tự động xử lý tất cả modal "Đã hiểu", "Đồng ý"
+                                if (typeof autoDismissGolikePopups === 'function') {
+                                    autoDismissGolikePopups();
                                 }
 
                                 // BƯỚC 0: Nếu mới mở đang ở Trang chủ (Home) -> Bấm nút "Kiếm xu" ở thanh menu dưới

@@ -101,6 +101,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -224,11 +225,23 @@ private fun ExpandedCard(
     onClose: () -> Unit,
     onPauseResume: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(24.dp)
+    val configuration = LocalConfiguration.current
+    val screenHeight = configuration.screenHeightDp.dp
+    val isGolike = state.mode.equals("Golike", ignoreCase = true)
+
+    // Tab 0: Bảng điều khiển (siêu nhỏ gọn)
+    // Tab 1: Xem Web Golike (dành trọn 100% không gian cho WebView)
+    var selectedTab by remember { mutableStateOf(0) }
+
+    val shape = RoundedCornerShape(22.dp)
     Column(
-        Modifier.fillMaxWidth().shadow(20.dp, shape, ambientColor = Color(0x8C000000), spotColor = Color(0x8C000000))
-            .background(Alx.White, shape).padding(16.dp),
+        Modifier
+            .fillMaxWidth()
+            .shadow(20.dp, shape, ambientColor = Color(0x8C000000), spotColor = Color(0x8C000000))
+            .background(Alx.White, shape)
+            .padding(14.dp),
     ) {
+        // Hàng tiêu đề trên cùng
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BasicText("AUTOLUNEX", style = type(15f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
             BasicText(state.appVersion, style = type(12f, FontWeight.SemiBold, Alx.Muted))
@@ -238,102 +251,129 @@ private fun ExpandedCard(
             PressCircleButton(onClick = onClose, bg = Color(0xFFFDECEC)) { SvgIcon(Close, 17.dp, Alx.Danger, 2.2f) }
         }
 
-        Column(Modifier.padding(top = 14.dp)) {
-            InfoRow(t.modeLabel, state.mode, valueColor = Alx.Blue, divider = false)
-            InfoRow(t.accountLabel, state.accountLabel ?: t.noAccount, valueColor = Color(0xFF475569), divider = true)
-            Row(Modifier.fillMaxWidth().heightIn(min = 36.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText(t.doneLabel, Modifier.weight(1f), style = type(13f, FontWeight.Medium, Alx.Muted))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BasicText(t.doneCount(state.doneTasks), style = type(14f, FontWeight.ExtraBold, Alx.Ink))
-                    Box(Modifier.width(1.dp).height(12.dp).background(Color(0xFFD5DBE6)))
-                    BasicText(t.earnedCoins(state.earnedCoins), style = type(14f, FontWeight.ExtraBold, Alx.Blue))
+        // Nếu là Golike: Hiển thị 2 Tab chuyển đổi
+        if (isGolike) {
+            Row(
+                Modifier
+                    .padding(top = 10.dp)
+                    .fillMaxWidth()
+                    .background(Color(0xFFF1F5F9), RoundedCornerShape(10.dp))
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Tab 0: Điều khiển
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (selectedTab == 0) Alx.White else Color.Transparent)
+                        .clickable { selectedTab = 0 }
+                        .padding(vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    BasicText(
+                        "🎮 Điều khiển",
+                        style = type(12f, if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium, if (selectedTab == 0) Alx.Blue else Color(0xFF64748B))
+                    )
+                }
+
+                // Tab 1: Xem Web Golike
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (selectedTab == 1) Alx.White else Color.Transparent)
+                        .clickable { selectedTab = 1 }
+                        .padding(vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    BasicText(
+                        "🌐 Xem Web Golike",
+                        style = type(12f, if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium, if (selectedTab == 1) Alx.Blue else Color(0xFF64748B))
+                    )
                 }
             }
         }
 
-        if (state.statusText.isNotBlank()) {
-            val isError = state.statusText.contains("Lỗi:", ignoreCase = true) ||
-                    state.statusText.contains("Thất bại", ignoreCase = true)
-            Row(
-                Modifier.padding(top = 10.dp).fillMaxWidth()
-                    .background(if (isError) Color(0xFFFDECEC) else Color(0xFFF5F8FF), RoundedCornerShape(14.dp))
-                    .padding(horizontal = 12.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                PulsingDot(if (isError) Alx.Danger else Alx.Blue, 8.dp)
-                BasicText(
-                    state.statusText,
-                    style = type(13f, FontWeight.SemiBold, if (isError) Alx.Danger else Color(0xFF334155), lineHeight = 1.35f)
-                )
+        if (!isGolike || selectedTab == 0) {
+            // ──────────────── TAB 1: BẢNG ĐIỀU KHIỂN (GỌN GÀNG, KHÔNG VƯỚNG VÍU) ────────────────
+            Column(Modifier.padding(top = 10.dp)) {
+                InfoRow(t.modeLabel, state.mode, valueColor = Alx.Blue, divider = false)
+                InfoRow(t.accountLabel, state.accountLabel ?: t.noAccount, valueColor = Color(0xFF475569), divider = true)
+                Row(Modifier.fillMaxWidth().heightIn(min = 34.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BasicText(t.doneLabel, Modifier.weight(1f), style = type(13f, FontWeight.Medium, Alx.Muted))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        BasicText(t.doneCount(state.doneTasks), style = type(14f, FontWeight.ExtraBold, Alx.Ink))
+                        Box(Modifier.width(1.dp).height(12.dp).background(Color(0xFFD5DBE6)))
+                        BasicText(t.earnedCoins(state.earnedCoins), style = type(14f, FontWeight.ExtraBold, Alx.Blue))
+                    }
+                }
             }
-        }
 
-        PauseResumeButton(state.paused, t, onPauseResume, Modifier.padding(top = 12.dp))
-
-        if (state.mode.equals("Golike", ignoreCase = true)) {
-            // 0: Ẩn (1dp), 1: Vừa (260dp), 2: Phóng to (380dp)
-            var webSizeMode by remember { mutableStateOf(1) }
-            val currentHeight = when (webSizeMode) {
-                2 -> 380.dp
-                1 -> 260.dp
-                else -> 1.dp
+            if (state.statusText.isNotBlank()) {
+                val isError = state.statusText.contains("Lỗi:", ignoreCase = true) ||
+                        state.statusText.contains("Thất bại", ignoreCase = true)
+                Row(
+                    Modifier.padding(top = 10.dp).fillMaxWidth()
+                        .background(if (isError) Color(0xFFFDECEC) else Color(0xFFF5F8FF), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    PulsingDot(if (isError) Alx.Danger else Alx.Blue, 8.dp)
+                    BasicText(
+                        state.statusText,
+                        style = type(12.5f, FontWeight.SemiBold, if (isError) Alx.Danger else Color(0xFF334155), lineHeight = 1.35f)
+                    )
+                }
             }
+
+            PauseResumeButton(state.paused, t, onPauseResume, Modifier.padding(top = 10.dp))
+        } else {
+            // ──────────────── TAB 2: XEM WEB GOLIKE (100% DIỆN TÍCH CHO WEBVIEW) ────────────────
+            val webHeight = minOf((screenHeight.value * 0.52f).dp, 430.dp).coerceAtLeast(300.dp)
 
             Column(Modifier.padding(top = 8.dp).fillMaxWidth()) {
                 Row(
-                    Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth().padding(bottom = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    BasicText(
-                        "Web Golike (Trình duyệt thật)",
-                        style = type(11f, FontWeight.SemiBold, Alx.Muted)
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PulsingDot(if (state.paused) Alx.Muted else Alx.Blue, 6.dp)
                         BasicText(
-                            "Tải lại",
-                            Modifier.clickable { com.cayxu.app.ui.screens.golike.GolikeWebJobBridge.reloadWeb() },
-                            style = type(11f, FontWeight.SemiBold, Color(0xFF475569))
+                            if (state.paused) "Đang tạm dừng" else "Đang tự động thao tác web...",
+                            style = type(11f, FontWeight.SemiBold, Color(0xFF64748B))
                         )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         BasicText(
-                            if (webSizeMode == 2) "Thu nhỏ" else "Phóng to",
-                            Modifier.clickable {
-                                webSizeMode = if (webSizeMode == 2) 1 else 2
-                            },
+                            "Tải lại web",
+                            Modifier.clickable { com.cayxu.app.ui.screens.golike.GolikeWebJobBridge.reloadWeb() },
                             style = type(11f, FontWeight.Bold, Alx.Blue)
                         )
                         BasicText(
-                            if (webSizeMode == 0) "Hiện" else "Ẩn",
-                            Modifier.clickable {
-                                webSizeMode = if (webSizeMode == 0) 1 else 0
-                            },
-                            style = type(11f, FontWeight.Medium, Color(0xFF64748B))
+                            if (state.paused) "Tiếp tục" else "Tạm dừng",
+                            Modifier.clickable { onPauseResume() },
+                            style = type(11f, FontWeight.Bold, if (state.paused) Alx.Blue else Alx.Danger)
                         )
                     }
-                }
-                val currentHeight = when (webSizeMode) {
-                    2 -> 380.dp
-                    1 -> 250.dp
-                    else -> 0.dp
                 }
 
-                if (webSizeMode > 0) {
-                    Box(
-                        Modifier.padding(top = 4.dp)
-                            .fillMaxWidth()
-                            .height(currentHeight)
-                            .clip(RoundedCornerShape(10.dp))
-                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
-                            .background(Color.White)
-                    ) {
-                        androidx.compose.ui.viewinterop.AndroidView(
-                            factory = { ctx ->
-                                com.cayxu.app.ui.screens.golike.GolikeWebJobBridge.getOrCreateMiniWebView(ctx)
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(webHeight)
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(12.dp))
+                        .background(Color.White)
+                ) {
+                    androidx.compose.ui.viewinterop.AndroidView(
+                        factory = { ctx ->
+                            com.cayxu.app.ui.screens.golike.GolikeWebJobBridge.getOrCreateMiniWebView(ctx)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
         }
