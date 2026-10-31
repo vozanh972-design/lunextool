@@ -56,7 +56,7 @@ class KeyRecheckWorker(appContext: Context, params: WorkerParameters) : Coroutin
                         applicationContext.stopService(
                             android.content.Intent(
                                 applicationContext,
-                                com.cayxu.app.automation.overlay.XsmmJobRunnerOverlayService::class.java
+                                com.cayxu.app.ui.overlay.xsmm.XsmmJobRunnerOverlayService::class.java
                             )
                         )
                     } catch (_: Exception) {}
