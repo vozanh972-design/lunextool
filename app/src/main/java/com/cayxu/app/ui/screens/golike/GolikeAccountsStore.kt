@@ -123,12 +123,24 @@ object GolikeAccountsStore {
     fun getGauthVersion(context: Context): String =
         prefs(context).getString(KEY_GAUTH_VERSION, "").orEmpty()
 
-    fun getUserAgent(context: Context): String =
-        prefs(context).getString(KEY_USER_AGENT, "")?.takeIf { it.isNotBlank() } ?: GolikeApiClient.USER_AGENT
+    fun getUserAgent(context: Context): String {
+        val ua = prefs(context).getString(KEY_USER_AGENT, "")
+        if (!ua.isNullOrBlank() && !ua.contains("Android", ignoreCase = true) && !ua.contains("Linux", ignoreCase = true)) {
+            return ua
+        }
+        val defaultIos = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
+        saveUserAgent(context, defaultIos)
+        return defaultIos
+    }
 
     fun saveUserAgent(context: Context, ua: String) {
-        if (ua.isNotBlank()) {
-            prefs(context).edit().putString(KEY_USER_AGENT, ua.trim()).commit()
+        val cleanUa = if (ua.contains("Android", ignoreCase = true) || ua.contains("Linux", ignoreCase = true)) {
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
+        } else {
+            ua.trim()
+        }
+        if (cleanUa.isNotBlank()) {
+            prefs(context).edit().putString(KEY_USER_AGENT, cleanUa).commit()
         }
     }
 

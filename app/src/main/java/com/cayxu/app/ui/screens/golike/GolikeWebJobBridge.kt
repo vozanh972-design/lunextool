@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit
 object GolikeWebJobBridge {
 
     private const val TAG = "GolikeWebBridge"
+    const val IOS_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
     private var miniWebView: WebView? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -249,11 +250,15 @@ object GolikeWebJobBridge {
                             continue; // BỎ QUA HOÀN TOÀN modal Xác nhận làm việc bằng App!
                         }
                         let txt = (p.innerText || '').toLowerCase();
-                        if (txt.includes('chplay') || txt.includes('dừng hoạt động') || txt.includes('bản web')) {
-                            let closeBtn = p.querySelector('button, .btn, .swal2-confirm, .van-button, .close');
+                        if (txt.includes('chplay') || txt.includes('dừng hoạt động') || txt.includes('bản web') || txt.includes('cần cập nhật ứng dụng')) {
+                            let closeBtn = p.querySelector('.close, button.close, .modal-header button, [aria-label="Close"], button, .btn');
                             if (closeBtn && !closeBtn.disabled) {
                                 closeBtn.click();
                             }
+                            try {
+                                p.style.display = 'none';
+                                p.remove();
+                            } catch(e) {}
                         }
                     }
 
@@ -290,6 +295,9 @@ object GolikeWebJobBridge {
             (function() {
                 try {
                     // 1. Giả lập 100% môi trường iOS Safari (Apple WebKit)
+                    var iosUA = ${JSONObject.quote(IOS_USER_AGENT)};
+                    Object.defineProperty(navigator, 'userAgent', { get: function() { return iosUA; }, configurable: true });
+                    Object.defineProperty(navigator, 'appVersion', { get: function() { return iosUA.replace('Mozilla/', ''); }, configurable: true });
                     Object.defineProperty(navigator, 'platform', { get: function() { return 'iPhone'; }, configurable: true });
                     Object.defineProperty(navigator, 'vendor', { get: function() { return 'Apple Computer, Inc.'; }, configurable: true });
                     Object.defineProperty(navigator, 'maxTouchPoints', { get: function() { return 5; }, configurable: true });
@@ -354,7 +362,7 @@ object GolikeWebJobBridge {
         }
 
         val wv = WebView(context.applicationContext)
-        val targetUserAgent = GolikeAccountsStore.getUserAgent(context)
+        val targetUserAgent = IOS_USER_AGENT
 
         wv.settings.apply {
             javaScriptEnabled = true
