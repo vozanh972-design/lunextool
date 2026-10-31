@@ -249,10 +249,10 @@ object GolikeWebJobBridge {
             cacheMode = WebSettings.LOAD_DEFAULT
             userAgentString = targetUserAgent
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            useWideViewPort = true
-            loadWithOverviewMode = true
-            setSupportZoom(true)
-            builtInZoomControls = true
+            useWideViewPort = false
+            loadWithOverviewMode = false
+            setSupportZoom(false)
+            builtInZoomControls = false
             displayZoomControls = false
         }
 

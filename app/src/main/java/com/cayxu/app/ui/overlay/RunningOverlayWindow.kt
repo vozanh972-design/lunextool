@@ -312,37 +312,27 @@ private fun ExpandedCard(
                         )
                     }
                 }
-                // Hiển thị khung Web mini theo tỷ lệ màn hình điện thoại nguyên vẹn (như ảnh thực tế)
-                // không ép dẹp để toàn bộ nội dung từ trên xuống dưới đều hiển thị đầy đủ
-                Box(
-                    Modifier.padding(top = 4.dp)
-                        .fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    val boxW = if (webSizeMode == 2) 220.dp else 160.dp
-                    val boxH = if (webSizeMode == 2) 440.dp else 320.dp
-                    val scaleFactor = if (webSizeMode == 2) (220f / 360f) else (160f / 360f)
+                val currentHeight = when (webSizeMode) {
+                    2 -> 380.dp
+                    1 -> 250.dp
+                    else -> 0.dp
+                }
 
-                    if (webSizeMode > 0) {
-                        Box(
-                            Modifier.size(boxW, boxH)
-                                .clip(RoundedCornerShape(12.dp))
-                                .border(1.5.dp, Color(0xFFCBD5E1), RoundedCornerShape(12.dp))
-                                .background(Color.White)
-                        ) {
-                            androidx.compose.ui.viewinterop.AndroidView(
-                                factory = { ctx ->
-                                    com.cayxu.app.ui.screens.golike.GolikeWebJobBridge.getOrCreateMiniWebView(ctx)
-                                },
-                                modifier = Modifier
-                                    .requiredSize(360.dp, 720.dp)
-                                    .graphicsLayer {
-                                        scaleX = scaleFactor
-                                        scaleY = scaleFactor
-                                        transformOrigin = TransformOrigin(0f, 0f)
-                                    }
-                            )
-                        }
+                if (webSizeMode > 0) {
+                    Box(
+                        Modifier.padding(top = 4.dp)
+                            .fillMaxWidth()
+                            .height(currentHeight)
+                            .clip(RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
+                            .background(Color.White)
+                    ) {
+                        androidx.compose.ui.viewinterop.AndroidView(
+                            factory = { ctx ->
+                                com.cayxu.app.ui.screens.golike.GolikeWebJobBridge.getOrCreateMiniWebView(ctx)
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
                 }
             }
