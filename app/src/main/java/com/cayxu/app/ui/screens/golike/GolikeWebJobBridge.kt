@@ -161,52 +161,76 @@ object GolikeWebJobBridge {
         (function() {
             function autoDismissGolikePopups() {
                 try {
-                    // A. XỬ LÝ ĐẶC TRỊ MODAL "Xác nhận làm việc bằng App"
-                    let allModals = Array.from(document.querySelectorAll('.modal, .van-dialog, .swal2-container, [role="dialog"], .modal-dialog, div'));
-                    let confirmModal = allModals.find(m => {
-                        let t = (m.innerText || '').toLowerCase();
-                        return t.includes('xác nhận làm việc') && (t.includes('đồng ý') || t.includes('không')) && m.offsetParent !== null;
-                    });
+                    // A. XỬ LÝ ĐẶC TRỊ MODAL "Xác nhận làm việc bằng App" (#JobPolicyWarning)
+                    let policyModal = document.getElementById('JobPolicyWarning');
+                    if (!policyModal) {
+                        let modals = Array.from(document.querySelectorAll('.modal, .van-dialog, [role="dialog"], .modal-dialog'));
+                        policyModal = modals.find(m => {
+                            let t = (m.innerText || '').toLowerCase();
+                            return t.includes('xác nhận làm việc') && (t.includes('đồng ý') || t.includes('không')) && m.offsetParent !== null;
+                        });
+                    }
 
-                    if (confirmModal) {
-                        // 1. Tick ô checkbox [ ] Đã hiểu
-                        let cbs = confirmModal.querySelectorAll('input[type="checkbox"]');
-                        for (let cb of cbs) {
+                    if (policyModal && (policyModal.offsetParent !== null || policyModal.classList.contains('show') || policyModal.style.display === 'block')) {
+                        // 1. Tick chọn ô checkbox [x] Đã hiểu
+                        let cb = document.getElementById('JobPolicyWarningAgree') || policyModal.querySelector('input[type="checkbox"]');
+                        if (cb) {
                             if (!cb.checked) {
+                                if (window.$) {
+                                    try { window.$(cb).prop('checked', true).trigger('change').trigger('input'); } catch(e) {}
+                                }
                                 cb.checked = true;
-                                cb.dispatchEvent(new Event('change', { bubbles: true }));
                                 cb.dispatchEvent(new Event('input', { bubbles: true }));
-                                cb.click();
+                                cb.dispatchEvent(new Event('change', { bubbles: true }));
                             }
                         }
-                        // Click vào nhãn chứa chữ Đã hiểu để chắc chắn ô được tick
-                        let labels = Array.from(confirmModal.querySelectorAll('label, span, div')).filter(el => {
-                            let txt = (el.innerText || '').trim().toLowerCase();
-                            return txt === 'đã hiểu' || txt === 'da hieu' || txt.includes('đã hiểu');
-                        });
-                        labels.forEach(lbl => {
-                            try { lbl.click(); } catch(e) {}
-                        });
 
-                        // 2. Click ngay nút [ Đồng ý ] màu xanh trong cùng modal này
-                        let agreeBtn = Array.from(confirmModal.querySelectorAll('button, .btn, .van-button, div[role="button"]')).find(b => {
+                        // Click nhãn [ Đã hiểu ] nếu ô checkbox chưa được tick
+                        let lbl = policyModal.querySelector('label[for="JobPolicyWarningAgree"]') || Array.from(policyModal.querySelectorAll('label')).find(l => (l.innerText || '').toLowerCase().includes('đã hiểu'));
+                        if (cb && !cb.checked && lbl) {
+                            try { lbl.click(); } catch(e) {}
+                        }
+
+                        // 2. Click nút [ Đồng ý ] màu xanh (.btn-primary)
+                        let agreeBtn = policyModal.querySelector('.btn-primary') || Array.from(policyModal.querySelectorAll('button, .btn')).find(b => {
                             let txt = (b.innerText || '').trim().toLowerCase();
                             return txt === 'đồng ý' || txt === 'dong y' || txt.includes('đồng ý');
                         });
-                        if (agreeBtn && !agreeBtn.disabled) {
+
+                        if (agreeBtn) {
+                            agreeBtn.removeAttribute('disabled');
+                            agreeBtn.disabled = false;
+                            if (window.$) {
+                                try { window.$(agreeBtn).prop('disabled', false).trigger('click'); } catch(e) {}
+                            }
                             ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
                                 agreeBtn.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
                             });
                             agreeBtn.click();
+
                             if (window.GolikeJobBridge && window.GolikeJobBridge.onWebStatus) {
-                                window.GolikeJobBridge.onWebStatus('Golike: Đã xác nhận làm việc bằng App');
+                                window.GolikeJobBridge.onWebStatus('Golike: Đã tick "Đã hiểu" và bấm "Đồng ý"');
                             }
+
+                            // Ẩn modal bằng Bootstrap nếu vẫn còn hiển thị sau khi click Đồng ý
+                            setTimeout(function() {
+                                if (window.$ && typeof window.$('#JobPolicyWarning').modal === 'function') {
+                                    try { window.$('#JobPolicyWarning').modal('hide'); } catch(e) {}
+                                }
+                                let bd = document.querySelector('.modal-backdrop');
+                                if (bd && !document.querySelector('.modal.show')) {
+                                    try { bd.remove(); document.body.classList.remove('modal-open'); } catch(e) {}
+                                }
+                            }, 300);
+
                             return true;
                         }
                     }
 
-                    // B. XỬ LÝ CÁC MODAL/POPUP THÔNG BÁO CÓ NÚT "ĐÃ HIỂU" (CHỈ NÚT BẤM THỰC SỰ)
-                    let realButtons = Array.from(document.querySelectorAll('button, a.btn, .swal2-confirm, div[role="button"].btn'));
+                    // B. XỬ LÝ CÁC MODAL/POPUP THÔNG BÁO CÓ NÚT "ĐÃ HIỂU" (CHỈ NÚT BẤM THỰC SỰ NGOÀI #JobPolicyWarning)
+                    let realButtons = Array.from(document.querySelectorAll('button, a.btn, .swal2-confirm, div[role="button"].btn')).filter(b => {
+                        return !b.closest('#JobPolicyWarning');
+                    });
                     for (let b of realButtons) {
                         let t = (b.innerText || '').trim().toLowerCase();
                         if ((t === 'đã hiểu' || t === 'tôi đã hiểu' || t === 'da hieu') && b.offsetParent !== null && !b.disabled) {
@@ -218,9 +242,12 @@ object GolikeWebJobBridge {
                         }
                     }
 
-                    // C. Tự động đóng popup cảnh báo CHPLAY / dừng hoạt động nếu có
+                    // C. Tự động đóng popup cảnh báo CHPLAY / dừng hoạt động nếu có (TUYỆT ĐỐI BỎ QUA JobPolicyWarning)
                     let popups = document.querySelectorAll('.swal2-container, .modal, .ant-modal, .van-dialog, [role="dialog"], .modal-dialog');
                     for (let p of popups) {
+                        if (p.id === 'JobPolicyWarning' || (p.innerText || '').toLowerCase().includes('xác nhận làm việc')) {
+                            continue; // BỎ QUA HOÀN TOÀN modal Xác nhận làm việc bằng App!
+                        }
                         let txt = (p.innerText || '').toLowerCase();
                         if (txt.includes('chplay') || txt.includes('dừng hoạt động') || txt.includes('bản web')) {
                             let closeBtn = p.querySelector('button, .btn, .swal2-confirm, .van-button, .close');
