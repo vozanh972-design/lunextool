@@ -1063,7 +1063,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         if (topNode != null) {
             val b = Rect()
             topNode.getBoundsInScreen(b)
-            if (b.centerY() <= screenH * 0.45f) {
+            if (b.centerY() <= screenH * 0.22f) {
                 return true
             }
         }
@@ -1073,7 +1073,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         if (homeTabNode != null) {
             val b = Rect()
             homeTabNode.getBoundsInScreen(b)
-            if (b.centerY() >= screenH * 0.50f) {
+            if (b.centerY() >= screenH * 0.80f) {
                 val isSelected = homeTabNode.isSelected ||
                     (homeTabNode.parent?.isSelected == true) ||
                     (homeTabNode.contentDescription?.contains("đã chọn", ignoreCase = true) == true) ||
@@ -1098,7 +1098,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         val profileTab = candidates.filter { node ->
             val b = Rect()
             node.getBoundsInScreen(b)
-            b.bottom >= (screenH * 0.40f)
+            b.bottom >= (screenH * 0.75f)
         }.maxByOrNull { node ->
             val b = Rect()
             node.getBoundsInScreen(b)
@@ -1211,7 +1211,7 @@ class TikTokAccessibilityService : AccessibilityService() {
         val dm = resources.displayMetrics
         val screenW = dm.widthPixels.toFloat()
         val screenH = dm.heightPixels.toFloat()
-        val maxTop = (screenH * 0.40f).toInt()
+        val maxTop = (screenH * 0.15f).toInt()
         val maxRight = (screenW * 0.25f).toInt()
 
         val candidates = mutableListOf<AccessibilityNodeInfo>()
@@ -1284,7 +1284,7 @@ class TikTokAccessibilityService : AccessibilityService() {
             val desc = (node.contentDescription?.toString() ?: "").lowercase()
 
             // Bắt buộc nằm ở phần dưới màn hình
-            b.bottom >= (screenH * 0.40f) &&
+            b.bottom >= (screenH * 0.75f) &&
             // Loại trừ 100% avatar tác giả, nút follow, dấu cộng
             !resId.contains("avatar") && !resId.contains("author") && !resId.contains("follow") &&
             !desc.contains("của") && !desc.contains("avatar") && !desc.contains("tác giả")
@@ -1407,7 +1407,12 @@ class TikTokAccessibilityService : AccessibilityService() {
 
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
-        val inScreenArea = bounds.width() > 0 && bounds.height() > 0
+
+        // Tuyệt đối bỏ qua nếu nằm ở thanh điều hướng đáy màn hình (y >= 80% chiều cao)
+        if (bounds.top >= rootH * 0.80f) return
+
+        // Nút Follow trên trang cá nhân luôn nằm ở khoảng 15% đến 65% màn hình
+        val inProfileArea = bounds.top >= rootH * 0.15f && bounds.bottom <= rootH * 0.65f
 
         val resId = (node.viewIdResourceName ?: "").lowercase()
         val desc = (node.contentDescription?.toString() ?: "").trim().lowercase()
@@ -1442,7 +1447,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                 text.startsWith("follow") || desc.startsWith("follow") ||
                 text.startsWith("theo dõi") || desc.startsWith("theo dõi")
 
-        if (inScreenArea && isFollowMatch) {
+        if (inProfileArea && isFollowMatch) {
             out.add(node)
             return
         }
@@ -1479,7 +1484,11 @@ class TikTokAccessibilityService : AccessibilityService() {
 
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
-        val inScreenArea = bounds.width() > 0 && bounds.height() > 0
+
+        // Bỏ qua thanh điều hướng đáy màn hình (y >= 80%)
+        if (bounds.top >= rootH * 0.80f) return
+
+        val inProfileArea = bounds.top >= rootH * 0.10f && bounds.bottom <= rootH * 0.70f
 
         val desc = (node.contentDescription?.toString() ?: "").trim().lowercase()
         val text = (node.text?.toString() ?: "").trim().lowercase()
@@ -1500,7 +1509,7 @@ class TikTokAccessibilityService : AccessibilityService() {
                     desc.contains("hủy follow") || desc.contains("unfollow") ||
                     desc.contains("quản lý bạn bè") || desc.contains("quan hệ")
 
-            if (inScreenArea && isDirectMatch) {
+            if (inProfileArea && isDirectMatch) {
                 out.add(node)
                 return
             }
