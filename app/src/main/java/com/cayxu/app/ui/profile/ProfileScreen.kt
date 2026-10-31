@@ -166,16 +166,18 @@ fun ProfileScreen(
             .statusBarsPadding()
             .padding(start = 20.dp, end = 20.dp, top = 28.dp),
     ) {
-        if (state.hasUpdate) {
-            UpdateBanner(state.updateVersionLabel) { onAction(ProfileAction.OpenUpdate) }
-            Identity(state, Modifier.padding(top = 18.dp))
-        } else {
-            Identity(state)
+        if (!state.isFree) {
+            if (state.hasUpdate) {
+                UpdateBanner(state.updateVersionLabel) { onAction(ProfileAction.OpenUpdate) }
+                Identity(state, Modifier.padding(top = 18.dp))
+            } else {
+                Identity(state)
+            }
+            Membership(state, Modifier.padding(top = 20.dp))
         }
-        Membership(state, Modifier.padding(top = 20.dp))
 
-        // Khối Lịch sử xu: Luôn hiển thị tiêu đề và nút Xem tất cả
-        Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Khối Lịch sử xu: Đẩy lên sát đỉnh đối với key free, giữ nguyên khoảng cách với key mua
+        Row(Modifier.fillMaxWidth().padding(top = if (state.isFree) 0.dp else 24.dp), verticalAlignment = Alignment.CenterVertically) {
             BasicText("Lịch sử xu", Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
             SeeAll(onSeeAllHistory)
         }

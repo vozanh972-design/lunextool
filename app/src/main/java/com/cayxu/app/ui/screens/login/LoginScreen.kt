@@ -360,15 +360,17 @@ fun LoginScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Text(
+                    text = "Bạn chưa có key?",
+                    fontSize = 13.sp,
+                    color = TextSecondary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Text(
-                        text = "Bạn chưa có key? ",
-                        fontSize = 13.sp,
-                        color = TextSecondary
-                    )
                     Text(
                         text = "Mua ngay",
                         fontSize = 13.sp,
@@ -376,6 +378,26 @@ fun LoginScreen(
                         color = Primary,
                         modifier = Modifier.clickable {
                             showBuyWeb = true
+                        }
+                    )
+                    Text(
+                        text = " | ",
+                        fontSize = 13.sp,
+                        color = TextSecondary.copy(alpha = 0.5f)
+                    )
+                    Text(
+                        text = "Lấy key free",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Primary,
+                        modifier = Modifier.clickable {
+                            val intent = Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://lunex.io.vn/api/app/free.terria")
+                            ).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            runCatching { context.startActivity(intent) }
                         }
                     )
                 }

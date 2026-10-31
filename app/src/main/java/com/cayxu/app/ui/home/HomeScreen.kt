@@ -329,13 +329,20 @@ fun HomeScreen(
 @Composable
 private fun Header(state: HomeUiState, greeting: String, onSupport: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ProAvatar(initials(state.username), inner = 44.dp, ringWidth = 2.dp, gap = 2.dp, textSp = 15f, ringed = state.isPro)
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                BasicText(greeting, style = type(12.5f, FontWeight.Medium, Alx.Muted))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    BasicText(state.username, style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f), maxLines = 1)
-                    if (state.isPro) {
+        if (!state.isPro) {
+            // Key Free: Ẩn hoàn toàn avatar, ẩn lời chào buổi, hiện chữ to AUTOLUNEX ở góc trái như vị trí Ảnh 1
+            BasicText(
+                "AUTOLUNEX",
+                style = type(20f, FontWeight.Black, Alx.Ink, spacing = 0.05f)
+            )
+        } else {
+            // Key Mua: Hiển thị đầy đủ 100% avatar viền PRO, lời chào buổi, username người mua và badge [PRO]
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ProAvatar(initials(state.username), inner = 44.dp, ringWidth = 2.dp, gap = 2.dp, textSp = 15f, ringed = true)
+                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    BasicText(greeting, style = type(12.5f, FontWeight.Medium, Alx.Muted))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        BasicText(state.username, style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f), maxLines = 1)
                         BasicText(
                             "PRO",
                             Modifier.background(Alx.Blue, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
