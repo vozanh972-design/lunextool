@@ -202,11 +202,35 @@ fun LicenseScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Row {
-                BasicText(if (LanguageState.language == AppLanguage.EN) "Don't have a key? " else "Bạn chưa có key? ", style = type(14f, FontWeight.Medium, Alx.Ink2))
+            val context = androidx.compose.ui.platform.LocalContext.current
+            BasicText(
+                if (LanguageState.language == AppLanguage.EN) "Don't have a key?" else "Bạn chưa có key?",
+                style = type(14f, FontWeight.Medium, Alx.Ink2)
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 BasicText(
                     if (LanguageState.language == AppLanguage.EN) "Buy now" else "Mua ngay",
                     Modifier.clickable(role = Role.Button, onClick = onBuy),
+                    style = type(14f, FontWeight.ExtraBold, Alx.Blue),
+                )
+                BasicText(
+                    "|",
+                    style = type(13f, FontWeight.Normal, Alx.Muted)
+                )
+                BasicText(
+                    if (LanguageState.language == AppLanguage.EN) "Get free key" else "Lấy key free",
+                    Modifier.clickable(role = Role.Button, onClick = {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://lunex.io.vn/api/app/free.terria")
+                        ).apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        runCatching { context.startActivity(intent) }
+                    }),
                     style = type(14f, FontWeight.ExtraBold, Alx.Blue),
                 )
             }
