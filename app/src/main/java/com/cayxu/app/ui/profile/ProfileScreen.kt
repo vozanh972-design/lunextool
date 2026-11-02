@@ -164,7 +164,11 @@ fun ProfileScreen(
             .background(Alx.Bg)
             .verticalScroll(rememberScrollState())
             .statusBarsPadding()
-            .padding(start = 20.dp, end = 20.dp, top = 28.dp),
+            .padding(
+                start = 20.dp,
+                end = 20.dp,
+                top = if (state.isFree) 8.dp else 28.dp
+            ),
     ) {
         if (!state.isFree) {
             if (state.hasUpdate) {

@@ -330,8 +330,8 @@ android {
         minSdk = 24
         // Android 15/16 SDK chính thức
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.1.0"
+        versionCode = 12
+        versionName = "1.1.1"
         buildConfigField("String", "UPDATE_CHANGELOG", "\"1. XSMM: Fix lỗi IG\\n2. Fix lỗi vặt:\"")
 
         externalNativeBuild {

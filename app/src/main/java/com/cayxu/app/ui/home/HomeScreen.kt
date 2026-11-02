@@ -188,10 +188,14 @@ fun HomeScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .statusBarsPadding()
-                .padding(start = 20.dp, end = 20.dp, top = 24.dp),
+                .padding(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = if (!state.isPro) 8.dp else 24.dp
+                ),
         ) {
             Header(state, greeting, onSupport = { showSupport = true })
-            StatsCard(state, Modifier.padding(top = 20.dp))
+            StatsCard(state, Modifier.padding(top = if (!state.isPro) 14.dp else 20.dp))
             SponsorCarousel(sponsors, Modifier.padding(top = 12.dp), onOpen = onSponsorOpen)
 
             Row(
@@ -333,7 +337,7 @@ private fun Header(state: HomeUiState, greeting: String, onSupport: () -> Unit) 
             // Key Free: Ẩn hoàn toàn avatar, ẩn lời chào buổi, hiện chữ to AUTOLUNEX ở góc trái như vị trí Ảnh 1
             BasicText(
                 "AUTOLUNEX",
-                style = type(20f, FontWeight.Black, Alx.Ink, spacing = 0.05f)
+                style = type(16f, FontWeight.ExtraBold, Alx.Ink, spacing = 0.1f)
             )
         } else {
             // Key Mua: Hiển thị đầy đủ 100% avatar viền PRO, lời chào buổi, username người mua và badge [PRO]
