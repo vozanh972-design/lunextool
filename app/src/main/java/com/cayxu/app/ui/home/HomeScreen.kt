@@ -191,11 +191,11 @@ fun HomeScreen(
                 .padding(
                     start = 20.dp,
                     end = 20.dp,
-                    top = if (!state.isPro) 8.dp else 24.dp
+                    top = if (!state.isPro) 0.dp else 24.dp
                 ),
         ) {
             Header(state, greeting, onSupport = { showSupport = true })
-            StatsCard(state, Modifier.padding(top = if (!state.isPro) 14.dp else 20.dp))
+            StatsCard(state, Modifier.padding(top = if (!state.isPro) 10.dp else 20.dp))
             SponsorCarousel(sponsors, Modifier.padding(top = 12.dp), onOpen = onSponsorOpen)
 
             Row(
@@ -356,9 +356,10 @@ private fun Header(state: HomeUiState, greeting: String, onSupport: () -> Unit) 
                 }
             }
         }
-        RoundButton("Liên hệ hỗ trợ", onSupport) {
-            SvgIcon(SupportOutline, 20.dp, Alx.Ink, 1.8f)
-            SvgIcon(SupportCups, 20.dp, Alx.Ink, 1.8f, fill = true)   // hai chụp tai tô đặc, chồng đúng lên lớp nét
+        RoundButton("Liên hệ hỗ trợ", onSupport, size = if (!state.isPro) 36.dp else 44.dp) {
+            val iconSize = if (!state.isPro) 17.dp else 20.dp
+            SvgIcon(SupportOutline, iconSize, Alx.Ink, 1.8f)
+            SvgIcon(SupportCups, iconSize, Alx.Ink, 1.8f, fill = true)   // hai chụp tai tô đặc, chồng đúng lên lớp nét
         }
     }
 }
@@ -367,13 +368,18 @@ private fun Header(state: HomeUiState, greeting: String, onSupport: () -> Unit) 
 private fun initials(name: String) = name.trim().take(2).uppercase().ifEmpty { "?" }
 
 @Composable
-private fun RoundButton(label: String, onClick: () -> Unit, content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
+private fun RoundButton(
+    label: String,
+    onClick: () -> Unit,
+    size: androidx.compose.ui.unit.Dp = 44.dp,
+    content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
+) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "roundBtnPress")
     Box(
         Modifier
-            .size(44.dp)
+            .size(size)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .background(Alx.White, CircleShape)
             .border(1.dp, Alx.Line, CircleShape)
