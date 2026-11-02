@@ -194,8 +194,13 @@ fun HomeScreen(
                     top = if (!state.isPro) 0.dp else 24.dp
                 ),
         ) {
-            Header(state, greeting, onSupport = { showSupport = true })
-            StatsCard(state, Modifier.padding(top = if (!state.isPro) 10.dp else 20.dp))
+            Header(
+                state,
+                greeting,
+                onSupport = { showSupport = true },
+                modifier = if (!state.isPro) Modifier.offset(y = (-8).dp) else Modifier
+            )
+            StatsCard(state, Modifier.padding(top = if (!state.isPro) 4.dp else 20.dp))
             SponsorCarousel(sponsors, Modifier.padding(top = 12.dp), onOpen = onSponsorOpen)
 
             Row(
@@ -331,8 +336,17 @@ fun HomeScreen(
 }
 
 @Composable
-private fun Header(state: HomeUiState, greeting: String, onSupport: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+private fun Header(
+    state: HomeUiState,
+    greeting: String,
+    onSupport: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         if (!state.isPro) {
             // Key Free: Ẩn hoàn toàn avatar, ẩn lời chào buổi, hiện chữ to AUTOLUNEX ở góc trái như vị trí Ảnh 1
             BasicText(

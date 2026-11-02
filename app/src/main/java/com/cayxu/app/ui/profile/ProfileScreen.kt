@@ -181,7 +181,13 @@ fun ProfileScreen(
         }
 
         // Khối Lịch sử xu: Đẩy lên sát đỉnh đối với key free, giữ nguyên khoảng cách với key mua
-        Row(Modifier.fillMaxWidth().padding(top = if (state.isFree) 0.dp else 24.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .offset(y = if (state.isFree) (-8).dp else 0.dp)
+                .padding(top = if (state.isFree) 0.dp else 24.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             BasicText("Lịch sử xu", Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
             SeeAll(onSeeAllHistory)
         }

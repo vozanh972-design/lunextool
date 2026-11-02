@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -89,6 +90,7 @@ data class TasksUiState(
     val coins: String = "0",
     val today: DayEarnings = DayEarnings(0, 0),   // cùng nguồn với Trang chủ để hai nơi luôn khớp
     val services: List<TaskService> = DefaultServices,
+    val isFree: Boolean = false,
 )
 
 /** Danh sách mạng hỗ trợ ở đây là dữ liệu mẫu: sửa theo đúng từng nền tảng của bạn. */
@@ -119,12 +121,24 @@ fun TasksScreen(
             .background(Alx.Bg)
             .verticalScroll(rememberScrollState())
             .statusBarsPadding()
-            .padding(start = 20.dp, end = 20.dp, top = 28.dp),
+            .padding(
+                start = 20.dp,
+                end = 20.dp,
+                top = if (state.isFree) 0.dp else 28.dp
+            ),
     ) {
-        BasicText(com.cayxu.app.ui.locale.Str.tasksTitle, style = type(30f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f))
-        BasicText(com.cayxu.app.ui.locale.Str.tasksSubtitle(state.services.size), Modifier.padding(top = 4.dp), style = type(14f, FontWeight.Medium, Alx.Muted))
+        BasicText(
+            com.cayxu.app.ui.locale.Str.tasksTitle,
+            modifier = if (state.isFree) Modifier.offset(y = (-8).dp) else Modifier,
+            style = type(30f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f)
+        )
+        BasicText(
+            com.cayxu.app.ui.locale.Str.tasksSubtitle(state.services.size),
+            modifier = if (state.isFree) Modifier.offset(y = (-8).dp).padding(top = 2.dp) else Modifier.padding(top = 4.dp),
+            style = type(14f, FontWeight.Medium, Alx.Muted)
+        )
 
-        Summary(state, Modifier.padding(top = 18.dp))
+        Summary(state, Modifier.padding(top = if (state.isFree) 8.dp else 18.dp))
 
         Column(Modifier.padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             state.services.forEach { ServiceRow(it) { onService(it) } }
@@ -144,17 +158,20 @@ fun TasksScreen(
     onService: ((TaskService) -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    val securePrefs = remember { SecurePrefs(context) }
+    val isFree = remember { securePrefs.isFreeKey() }
     val xsmmPoints = remember { XsmmAccountStore.getPoints(context) }
     val golikeBalance = remember { GolikeAccountsStore.getBalance(context) }
     val ttcAccounts = remember { TtcAccountsStore.getAccounts(context) }
     val ttcCoins = remember(ttcAccounts) { ttcAccounts.sumOf { it.coins } }
     val totalCoins: Long = xsmmPoints + golikeBalance + ttcCoins
 
-    val state = remember(totalCoins) {
+    val state = remember(totalCoins, isFree) {
         TasksUiState(
             coins = totalCoins.toString(),
             today = DayEarnings(coins = ttcCoins, money = xsmmPoints + golikeBalance),
             services = DefaultServices,
+            isFree = isFree,
         )
     }
 
