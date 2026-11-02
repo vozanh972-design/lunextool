@@ -84,6 +84,7 @@ data class TaskService(
     val platforms: List<Platform>,
     val badgeSizeSp: Float = 13f,
     val isSupported: Boolean = true,
+    val statusText: String? = null,
 )
 
 data class TasksUiState(
@@ -96,7 +97,7 @@ data class TasksUiState(
 /** Danh sách mạng hỗ trợ ở đây là dữ liệu mẫu: sửa theo đúng từng nền tảng của bạn. */
 val DefaultServices = listOf(
     TaskService("xsmm", "XSMM", Color(0xFFC9363B), Color(0xFFFDECEC), "XSMM", listOf(Platform.TikTok, Platform.Facebook, Platform.Instagram), 12.5f),
-    TaskService("golike", "GL", Alx.Blue, Alx.BlueSoft, "GoLike", listOf(Platform.Facebook, Platform.Instagram, Platform.TikTok)),
+    TaskService("golike", "GL", Color(0xFF94A3B8), Color(0xFFF1F5F9), "GoLike", listOf(Platform.Facebook, Platform.Instagram, Platform.TikTok), isSupported = false, statusText = "Tạm dừng"),
     TaskService("ttc", "TTC", Color(0xFFC2255C), Color(0xFFFDEAF2), "Tuongtaccheo", listOf(Platform.Facebook)),
     TaskService("tiktok", "TikT", Color(0xFF334155), Color(0xFFEDF0F5), "TikTok TTC", listOf(Platform.TikTok), 12.5f),
     TaskService("f4f", "F4F", Color(0xFF7C3AED), Color(0xFFF5F3FF), "Follow4Follow", listOf(Platform.Facebook, Platform.TikTok, Platform.Instagram), 13f),
@@ -291,7 +292,7 @@ private fun ServiceRow(s: TaskService, onClick: () -> Unit) {
                     .padding(horizontal = 9.dp, vertical = 5.dp),
             ) {
                 BasicText(
-                    com.cayxu.app.ui.locale.Str.tasksNotSupported,
+                    s.statusText ?: com.cayxu.app.ui.locale.Str.tasksNotSupported,
                     style = type(11.5f, FontWeight.SemiBold, Color(0xFF94A3B8)),
                 )
             }
