@@ -167,7 +167,7 @@ fun ProfileScreen(
             .padding(
                 start = 20.dp,
                 end = 20.dp,
-                top = if (state.isFree) 0.dp else 4.dp
+                top = 0.dp
             ),
     ) {
         if (!state.isFree) {

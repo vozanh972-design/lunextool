@@ -800,8 +800,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                         Regex("""c_user=(\d+)""").find(c)?.groupValues?.get(1)
                                     } ?: "N/A"
 
-                                val isFallbackLive = fallbackUid != "N/A" && fallbackUid.isNotBlank()
-                                val fallbackAvatar = if (isFallbackLive) "https://graph.facebook.com/$fallbackUid/picture?type=large" else ""
+                                val fallbackAvatar = if (fallbackUid != "N/A" && fallbackUid.isNotBlank()) "https://graph.facebook.com/$fallbackUid/picture?type=large" else ""
 
                                 return@async FacebookAccount(
                                     uid = fallbackUid,
@@ -810,7 +809,7 @@ fun XsmmAccountScreen(navController: NavController) {
                                     note = cookiePart.orEmpty(),
                                     bio = directToken.orEmpty(),
                                     phone = proxy.orEmpty(),
-                                    isLive = isFallbackLive
+                                    isLive = false
                                 )
                             }
                         }.awaitAll()
@@ -1545,7 +1544,10 @@ fun XsmmAccountScreen(navController: NavController) {
                                     facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
                                     Toast.makeText(context, "Đã làm mới [${merged.name}] (Live)", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Không thể làm mới [${targetAcc.name}], vui lòng kiểm tra lại Cookie/Mật khẩu", Toast.LENGTH_SHORT).show()
+                                    val updatedDie = targetAcc.copy(isLive = false)
+                                    com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updatedDie)
+                                    facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
+                                    Toast.makeText(context, "Tài khoản [${targetAcc.name}] DIE hoặc hết hạn", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         } catch (e: Exception) {

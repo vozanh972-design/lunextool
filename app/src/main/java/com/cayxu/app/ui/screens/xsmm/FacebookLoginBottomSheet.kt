@@ -344,8 +344,7 @@ fun FacebookLoginBottomSheet(
                                                 Regex("""c_user=(\d+)""").find(c)?.groupValues?.get(1)
                                             } ?: "N/A"
 
-                                        val isFallbackLive = fallbackUid != "N/A" && fallbackUid.isNotBlank()
-                                        val avatar = if (isFallbackLive) "https://graph.facebook.com/v21.0/$fallbackUid/picture?type=large" else ""
+                                        val avatar = if (fallbackUid != "N/A" && fallbackUid.isNotBlank()) "https://graph.facebook.com/v21.0/$fallbackUid/picture?type=large" else ""
 
                                         return@async FacebookAccount(
                                             uid = fallbackUid,
@@ -354,7 +353,7 @@ fun FacebookLoginBottomSheet(
                                             note = cookiePart.orEmpty(),
                                             bio = directToken.orEmpty(),
                                             phone = proxy.orEmpty(),
-                                            isLive = isFallbackLive
+                                            isLive = false
                                         )
                                     }
                                 }.awaitAll()

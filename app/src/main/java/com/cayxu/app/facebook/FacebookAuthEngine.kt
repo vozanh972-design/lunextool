@@ -513,23 +513,13 @@ class FacebookAuthEngine(
                         message = "Đăng nhập Cookie thành công",
                         rawResponse = body
                     )
-                } else if (uidFromCookie.isNotBlank() && uidFromCookie.matches(Regex("""\d+"""))) {
-                    LoginResult(
-                        isSuccess = true,
-                        userId = uidFromCookie,
-                        userName = uidFromCookie,
-                        accessToken = null,
-                        cookies = cleanCookie,
-                        avatarUrl = "https://graph.facebook.com/v21.0/$uidFromCookie/picture?type=large",
-                        message = "Đăng nhập Cookie thành công",
-                        rawResponse = body
-                    )
                 } else {
                     val errMsg = json?.optString("error_msg")
                         ?: json?.optJSONObject("error")?.optString("message")
                         ?: "Cookie đã hết hạn hoặc tài khoản bị Checkpoint"
                     LoginResult(
                         isSuccess = false,
+                        userId = uidFromCookie.ifBlank { null },
                         message = errMsg,
                         rawResponse = body
                     )

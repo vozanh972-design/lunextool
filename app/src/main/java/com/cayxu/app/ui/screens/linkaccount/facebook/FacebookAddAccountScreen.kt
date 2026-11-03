@@ -299,8 +299,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                 val fallbackUid = singleUid.ifBlank {
                                     Regex("""c_user=(\d+)""").find(singleCookie)?.groupValues?.get(1) ?: "N/A"
                                 }
-                                val isFallbackLive = fallbackUid != "N/A" && fallbackUid.isNotBlank()
-                                val fallbackAvatar = if (isFallbackLive) "https://graph.facebook.com/$fallbackUid/picture?type=large" else ""
+                                val fallbackAvatar = if (fallbackUid != "N/A" && fallbackUid.isNotBlank()) "https://graph.facebook.com/$fallbackUid/picture?type=large" else ""
 
                                 FacebookAccount(
                                     uid = fallbackUid,
@@ -311,7 +310,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                     note = singleCookie,
                                     phone = singleProxy,
                                     bio = singleToken,
-                                    isLive = isFallbackLive
+                                    isLive = false
                                 )
                             }
 
@@ -406,8 +405,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                                 } catch (_: Exception) {}
                                             }
 
-                                            val isLiveFallback = uid.matches(Regex("""\d+"""))
-                                            val fallbackAvatar = if (isLiveFallback) "https://graph.facebook.com/$uid/picture?type=large" else ""
+                                            val fallbackAvatar = if (uid.isNotBlank() && uid != "N/A") "https://graph.facebook.com/$uid/picture?type=large" else ""
                                             return@async FacebookAccount(
                                                 uid = uid.ifBlank { "N/A" },
                                                 name = uid,
@@ -415,7 +413,7 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                                 password = pwd,
                                                 link = twofa,
                                                 note = fullCookie,
-                                                isLive = isLiveFallback
+                                                isLive = false
                                             )
                                         }
 
@@ -426,17 +424,14 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                         }
 
                                         val uidFromC = Regex("""c_user=(\d+)""").find(line)?.groupValues?.get(1)
-                                        if (!uidFromC.isNullOrBlank()) {
-                                            FacebookAccount(
-                                                uid = uidFromC,
-                                                name = uidFromC,
-                                                avatar = "https://graph.facebook.com/$uidFromC/picture?type=large",
-                                                note = line,
-                                                isLive = true
-                                            )
-                                        } else {
-                                            FacebookAccount(uid = "N/A", note = line, isLive = false)
-                                        }
+                                        val avatar = if (!uidFromC.isNullOrBlank()) "https://graph.facebook.com/$uidFromC/picture?type=large" else ""
+                                        FacebookAccount(
+                                            uid = uidFromC ?: "N/A",
+                                            name = uidFromC ?: "N/A",
+                                            avatar = avatar,
+                                            note = line,
+                                            isLive = false
+                                        )
                                     }
                                 }.awaitAll()
                             }

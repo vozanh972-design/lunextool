@@ -204,21 +204,6 @@ class FacebookAccountManager {
             )
         }
 
-        // Nếu cookie có UID hợp lệ -> Bảo lưu trạng thái Live, không để tài khoản bị đánh dấu Die oan
-        if (uid.isNotBlank() && uid.matches(Regex("""\d+"""))) {
-            val avatar = "$GRAPH_BASE_URL/$uid/picture?type=large"
-            return FacebookAccount(
-                uid = uid,
-                name = uid,
-                avatar = avatar,
-                note = cleanCookie,
-                bio = "",
-                pages = emptyList(),
-                phone = proxyStr.orEmpty(),
-                isLive = true
-            )
-        }
-
         return null
     }
 
