@@ -198,9 +198,9 @@ fun HomeScreen(
                 state,
                 greeting,
                 onSupport = { showSupport = true },
-                modifier = if (!state.isPro) Modifier.offset(y = (-8).dp) else Modifier
+                modifier = Modifier.offset(y = (-8).dp)
             )
-            StatsCard(state, Modifier.padding(top = if (!state.isPro) 4.dp else 12.dp))
+            StatsCard(state, Modifier.padding(top = 4.dp))
             SponsorCarousel(sponsors, Modifier.padding(top = 12.dp), onOpen = onSponsorOpen)
 
             Row(

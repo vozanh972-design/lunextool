@@ -130,16 +130,16 @@ fun TasksScreen(
     ) {
         BasicText(
             com.cayxu.app.ui.locale.Str.tasksTitle,
-            modifier = if (state.isFree) Modifier.offset(y = (-8).dp) else Modifier,
+            modifier = Modifier.offset(y = (-8).dp),
             style = type(30f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f)
         )
         BasicText(
             com.cayxu.app.ui.locale.Str.tasksSubtitle(state.services.size),
-            modifier = if (state.isFree) Modifier.offset(y = (-8).dp).padding(top = 2.dp) else Modifier.padding(top = 4.dp),
+            modifier = Modifier.offset(y = (-8).dp).padding(top = 2.dp),
             style = type(14f, FontWeight.Medium, Alx.Muted)
         )
 
-        Summary(state, Modifier.padding(top = if (state.isFree) 8.dp else 18.dp))
+        Summary(state, Modifier.offset(y = (-8).dp).padding(top = 8.dp))
 
         Column(Modifier.padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             state.services.forEach { ServiceRow(it) { onService(it) } }

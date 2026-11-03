@@ -237,7 +237,13 @@ fun XsmmAccountsScreen(
                 .padding(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 120.dp),
         ) {
             // Header
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .offset(y = (-8).dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 PressBox(
                     onClick = onBack,
                     modifier = Modifier.size(44.dp).background(Alx.White, CircleShape).border(1.dp, Alx.Line, CircleShape),
@@ -246,9 +252,9 @@ fun XsmmAccountsScreen(
                 BasicText("XSMM", style = type(24f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.02f))
             }
 
-            AccountCard(state, onRefreshBalance, onLogout, Modifier.padding(top = 20.dp))
+            AccountCard(state, onRefreshBalance, onLogout, Modifier.offset(y = (-8).dp).padding(top = 16.dp))
 
-            PlatformTabs(state.selectedPlatform, state.platformCounts, onSelectPlatform, Modifier.padding(top = 16.dp))
+            PlatformTabs(state.selectedPlatform, state.platformCounts, onSelectPlatform, Modifier.offset(y = (-8).dp).padding(top = 16.dp))
 
             // Section header
             Row(

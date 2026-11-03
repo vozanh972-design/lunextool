@@ -173,19 +173,19 @@ fun ProfileScreen(
         if (!state.isFree) {
             if (state.hasUpdate) {
                 UpdateBanner(state.updateVersionLabel) { onAction(ProfileAction.OpenUpdate) }
-                Identity(state, Modifier.padding(top = 18.dp))
+                Identity(state, Modifier.offset(y = (-8).dp).padding(top = 14.dp))
             } else {
-                Identity(state)
+                Identity(state, Modifier.offset(y = (-8).dp))
             }
-            Membership(state, Modifier.padding(top = 20.dp))
+            Membership(state, Modifier.offset(y = (-8).dp).padding(top = 16.dp))
         }
 
-        // Khối Lịch sử xu: Đẩy lên sát đỉnh đối với key free, giữ nguyên khoảng cách với key mua
+        // Khối Lịch sử xu: Đẩy lên sát đỉnh đồng nhất
         Row(
             Modifier
                 .fillMaxWidth()
-                .offset(y = if (state.isFree) (-8).dp else 0.dp)
-                .padding(top = if (state.isFree) 0.dp else 24.dp),
+                .offset(y = (-8).dp)
+                .padding(top = if (state.isFree) 0.dp else 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             BasicText("Lịch sử xu", Modifier.weight(1f), style = type(17f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.01f))
