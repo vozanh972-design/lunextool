@@ -118,7 +118,7 @@ class FacebookAccountManager {
 
         val reqBuilder = Request.Builder()
             .url("https://api.facebook.com/method/auth.getSessionForApp")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("User-Agent", DEFAULT_DALVIK_UA)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .header("Accept", "*/*")
         if (cleanCookie.isNotBlank()) {
@@ -190,7 +190,7 @@ class FacebookAccountManager {
             val avatar = cookieRes.avatarUrl ?: if (realUid.startsWith("615") || realUid.matches(Regex("\\d+"))) "$GRAPH_BASE_URL/$realUid/picture?type=large" else ""
 
             val pageEngine = FacebookPageEngine(proxyHost = proxyHost, proxyPort = proxyPort)
-            val pages = pageEngine.getAdminedPages(cookieRes.accessToken)
+            val pages = if (!cookieRes.accessToken.isNullOrBlank()) pageEngine.getAdminedPages(cookieRes.accessToken) else emptyList()
 
             return FacebookAccount(
                 uid = realUid,
@@ -199,6 +199,21 @@ class FacebookAccountManager {
                 note = cleanCookie,
                 bio = cookieRes.accessToken.orEmpty(),
                 pages = pages,
+                phone = proxyStr.orEmpty(),
+                isLive = true
+            )
+        }
+
+        // Nếu cookie có UID hợp lệ -> Bảo lưu trạng thái Live, không để tài khoản bị đánh dấu Die oan
+        if (uid.isNotBlank() && uid.matches(Regex("""\d+"""))) {
+            val avatar = "$GRAPH_BASE_URL/$uid/picture?type=large"
+            return FacebookAccount(
+                uid = uid,
+                name = uid,
+                avatar = avatar,
+                note = cleanCookie,
+                bio = "",
+                pages = emptyList(),
                 phone = proxyStr.orEmpty(),
                 isLive = true
             )

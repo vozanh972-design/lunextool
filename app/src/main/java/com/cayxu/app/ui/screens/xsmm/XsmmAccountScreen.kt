@@ -800,13 +800,17 @@ fun XsmmAccountScreen(navController: NavController) {
                                         Regex("""c_user=(\d+)""").find(c)?.groupValues?.get(1)
                                     } ?: "N/A"
 
+                                val isFallbackLive = fallbackUid != "N/A" && fallbackUid.isNotBlank()
+                                val fallbackAvatar = if (isFallbackLive) "https://graph.facebook.com/$fallbackUid/picture?type=large" else ""
+
                                 return@async FacebookAccount(
                                     uid = fallbackUid,
                                     name = fallbackUid,
+                                    avatar = fallbackAvatar,
                                     note = cookiePart.orEmpty(),
                                     bio = directToken.orEmpty(),
                                     phone = proxy.orEmpty(),
-                                    isLive = false
+                                    isLive = isFallbackLive
                                 )
                             }
                         }.awaitAll()
@@ -1541,18 +1545,12 @@ fun XsmmAccountScreen(navController: NavController) {
                                     facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
                                     Toast.makeText(context, "Đã làm mới [${merged.name}] (Live)", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    val updatedDie = targetAcc.copy(isLive = false)
-                                    com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updatedDie)
-                                    facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
-                                    Toast.makeText(context, "Tài khoản [${targetAcc.name}] DIE hoặc hết hạn", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Không thể làm mới [${targetAcc.name}], vui lòng kiểm tra lại Cookie/Mật khẩu", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) {
-                                val updatedDie = targetAcc.copy(isLive = false)
-                                com.cayxu.app.data.local.FacebookAccountsStore.addAccount(context, updatedDie)
-                                facebookAccounts = com.cayxu.app.data.local.FacebookAccountsStore.getAccounts(context, forceReload = true)
-                                Toast.makeText(context, "Lỗi kiểm tra [${targetAcc.name}]: ${e.message} (Đánh dấu Die)", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Lỗi kết nối khi làm mới [${targetAcc.name}]: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }

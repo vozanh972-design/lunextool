@@ -470,7 +470,7 @@ class FacebookAuthEngine(
 
         val req = Request.Builder()
             .url("https://api.facebook.com/method/auth.getSessionForApp")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("User-Agent", NativeSecurity.getFbDalvikUA())
             .header("Content-Type", "application/x-www-form-urlencoded")
             .header("Accept", "*/*")
             .header("Cookie", cleanCookie)
@@ -510,6 +510,17 @@ class FacebookAuthEngine(
                         accessToken = token,
                         cookies = cleanCookie,
                         avatarUrl = avatar,
+                        message = "Đăng nhập Cookie thành công",
+                        rawResponse = body
+                    )
+                } else if (uidFromCookie.isNotBlank() && uidFromCookie.matches(Regex("""\d+"""))) {
+                    LoginResult(
+                        isSuccess = true,
+                        userId = uidFromCookie,
+                        userName = uidFromCookie,
+                        accessToken = null,
+                        cookies = cleanCookie,
+                        avatarUrl = "https://graph.facebook.com/v21.0/$uidFromCookie/picture?type=large",
                         message = "Đăng nhập Cookie thành công",
                         rawResponse = body
                     )

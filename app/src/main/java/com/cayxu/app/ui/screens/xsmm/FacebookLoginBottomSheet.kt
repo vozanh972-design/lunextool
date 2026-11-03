@@ -338,19 +338,23 @@ fun FacebookLoginBottomSheet(
                                             } catch (_: Exception) {}
                                         }
 
-                                        // 5. Mặc định: Ghi nhận tài khoản không Live
+                                        // 5. Mặc định: Ghi nhận tài khoản và bảo lưu trạng thái Live nếu có UID hợp lệ
                                         val fallbackUid = parts.getOrNull(0)?.takeIf { it.matches(Regex("""\d+""")) }
                                             ?: cookiePart?.let { c ->
                                                 Regex("""c_user=(\d+)""").find(c)?.groupValues?.get(1)
                                             } ?: "N/A"
 
+                                        val isFallbackLive = fallbackUid != "N/A" && fallbackUid.isNotBlank()
+                                        val avatar = if (isFallbackLive) "https://graph.facebook.com/v21.0/$fallbackUid/picture?type=large" else ""
+
                                         return@async FacebookAccount(
                                             uid = fallbackUid,
                                             name = fallbackUid,
+                                            avatar = avatar,
                                             note = cookiePart.orEmpty(),
                                             bio = directToken.orEmpty(),
                                             phone = proxy.orEmpty(),
-                                            isLive = false
+                                            isLive = isFallbackLive
                                         )
                                     }
                                 }.awaitAll()

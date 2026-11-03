@@ -191,7 +191,7 @@ fun HomeScreen(
                 .padding(
                     start = 20.dp,
                     end = 20.dp,
-                    top = if (!state.isPro) 0.dp else 24.dp
+                    top = if (!state.isPro) 0.dp else 4.dp
                 ),
         ) {
             Header(
@@ -200,7 +200,7 @@ fun HomeScreen(
                 onSupport = { showSupport = true },
                 modifier = if (!state.isPro) Modifier.offset(y = (-8).dp) else Modifier
             )
-            StatsCard(state, Modifier.padding(top = if (!state.isPro) 4.dp else 20.dp))
+            StatsCard(state, Modifier.padding(top = if (!state.isPro) 4.dp else 16.dp))
             SponsorCarousel(sponsors, Modifier.padding(top = 12.dp), onOpen = onSponsorOpen)
 
             Row(

@@ -121,7 +121,6 @@ class SecurePrefs(context: Context) {
         val pkg = getPackageName().orEmpty().lowercase()
         val key = getKey().orEmpty().lowercase()
         return name.contains("dùng thử") || name.contains("dung thu") ||
-               name.contains("khách") || name.contains("khach") ||
                name.contains("free") || name.contains("trial") ||
                pkg.contains("dùng thử") || pkg.contains("dung thu") ||
                pkg.contains("free") || pkg.contains("trial") ||

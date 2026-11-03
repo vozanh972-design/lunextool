@@ -296,15 +296,22 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                     }
                                 }
 
+                                val fallbackUid = singleUid.ifBlank {
+                                    Regex("""c_user=(\d+)""").find(singleCookie)?.groupValues?.get(1) ?: "N/A"
+                                }
+                                val isFallbackLive = fallbackUid != "N/A" && fallbackUid.isNotBlank()
+                                val fallbackAvatar = if (isFallbackLive) "https://graph.facebook.com/$fallbackUid/picture?type=large" else ""
+
                                 FacebookAccount(
-                                    uid = singleUid.ifBlank { "N/A" },
-                                    name = singleUid,
+                                    uid = fallbackUid,
+                                    name = fallbackUid,
+                                    avatar = fallbackAvatar,
                                     password = singlePassword,
                                     link = singleTwoFa,
                                     note = singleCookie,
                                     phone = singleProxy,
                                     bio = singleToken,
-                                    isLive = false
+                                    isLive = isFallbackLive
                                 )
                             }
 
@@ -399,13 +406,16 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                                 } catch (_: Exception) {}
                                             }
 
+                                            val isLiveFallback = uid.matches(Regex("""\d+"""))
+                                            val fallbackAvatar = if (isLiveFallback) "https://graph.facebook.com/$uid/picture?type=large" else ""
                                             return@async FacebookAccount(
                                                 uid = uid.ifBlank { "N/A" },
                                                 name = uid,
+                                                avatar = fallbackAvatar,
                                                 password = pwd,
                                                 link = twofa,
                                                 note = fullCookie,
-                                                isLive = false
+                                                isLive = isLiveFallback
                                             )
                                         }
 
@@ -415,7 +425,18 @@ fun FacebookAddAccountScreen(navController: NavController) {
                                             return@async cookieAcc.copy(isLive = true)
                                         }
 
-                                        FacebookAccount(uid = "N/A", note = line, isLive = false)
+                                        val uidFromC = Regex("""c_user=(\d+)""").find(line)?.groupValues?.get(1)
+                                        if (!uidFromC.isNullOrBlank()) {
+                                            FacebookAccount(
+                                                uid = uidFromC,
+                                                name = uidFromC,
+                                                avatar = "https://graph.facebook.com/$uidFromC/picture?type=large",
+                                                note = line,
+                                                isLive = true
+                                            )
+                                        } else {
+                                            FacebookAccount(uid = "N/A", note = line, isLive = false)
+                                        }
                                     }
                                 }.awaitAll()
                             }
