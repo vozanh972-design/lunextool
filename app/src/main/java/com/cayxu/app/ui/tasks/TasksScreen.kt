@@ -122,24 +122,19 @@ fun TasksScreen(
             .background(Alx.Bg)
             .verticalScroll(rememberScrollState())
             .statusBarsPadding()
-            .padding(
-                start = 20.dp,
-                end = 20.dp,
-                top = 0.dp
-            ),
+            .padding(horizontal = 20.dp),
     ) {
         BasicText(
             com.cayxu.app.ui.locale.Str.tasksTitle,
-            modifier = Modifier.offset(y = (-8).dp),
             style = type(30f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f)
         )
         BasicText(
             com.cayxu.app.ui.locale.Str.tasksSubtitle(state.services.size),
-            modifier = Modifier.offset(y = (-8).dp).padding(top = 2.dp),
+            modifier = Modifier.padding(top = 2.dp),
             style = type(14f, FontWeight.Medium, Alx.Muted)
         )
 
-        Summary(state, Modifier.offset(y = (-8).dp).padding(top = 8.dp))
+        Summary(state, Modifier.padding(top = 8.dp))
 
         Column(Modifier.padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             state.services.forEach { ServiceRow(it) { onService(it) } }

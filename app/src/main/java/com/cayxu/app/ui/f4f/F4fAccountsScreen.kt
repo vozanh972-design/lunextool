@@ -209,7 +209,7 @@ fun F4fAccountsScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .statusBarsPadding()
-                .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 120.dp),
+                .padding(start = 20.dp, end = 20.dp, bottom = 120.dp),
         ) {
             // Header
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {

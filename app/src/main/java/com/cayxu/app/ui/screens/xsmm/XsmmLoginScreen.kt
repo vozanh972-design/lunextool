@@ -187,7 +187,7 @@ fun XsmmLoginScreen(
             .statusBarsPadding()
             .imePadding()
             .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, top = 24.dp),
+            .padding(horizontal = 20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             PressBox(

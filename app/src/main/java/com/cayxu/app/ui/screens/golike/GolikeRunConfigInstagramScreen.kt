@@ -77,7 +77,7 @@ fun GolikeRunConfigInstagramScreen(
     Box(modifier.fillMaxSize().background(Alx.Bg)) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .statusBarsPadding().padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 120.dp),
+                .statusBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 120.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             ConfigHeader(onBack)

@@ -188,17 +188,12 @@ fun HomeScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .statusBarsPadding()
-                .padding(
-                    start = 20.dp,
-                    end = 20.dp,
-                    top = 0.dp
-                ),
+                .padding(horizontal = 20.dp),
         ) {
             Header(
                 state,
                 greeting,
                 onSupport = { showSupport = true },
-                modifier = Modifier.offset(y = (-8).dp)
             )
             StatsCard(state, Modifier.padding(top = 4.dp))
             SponsorCarousel(sponsors, Modifier.padding(top = 12.dp), onOpen = onSponsorOpen)

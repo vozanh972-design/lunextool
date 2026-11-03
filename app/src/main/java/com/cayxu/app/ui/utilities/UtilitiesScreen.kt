@@ -123,7 +123,7 @@ fun UtilitiesScreen(
             .background(Alx.Bg)
             .verticalScroll(rememberScrollState())
             .statusBarsPadding()
-            .padding(start = 20.dp, end = 20.dp, top = 28.dp),
+            .padding(horizontal = 20.dp),
     ) {
         BasicText(com.cayxu.app.ui.locale.Str.utilitiesTitle, style = type(30f, FontWeight.ExtraBold, Alx.Ink, spacing = -0.03f))
         BasicText(

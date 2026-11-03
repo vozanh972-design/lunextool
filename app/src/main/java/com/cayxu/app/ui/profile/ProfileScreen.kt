@@ -164,27 +164,22 @@ fun ProfileScreen(
             .background(Alx.Bg)
             .verticalScroll(rememberScrollState())
             .statusBarsPadding()
-            .padding(
-                start = 20.dp,
-                end = 20.dp,
-                top = 0.dp
-            ),
+            .padding(horizontal = 20.dp),
     ) {
         if (!state.isFree) {
             if (state.hasUpdate) {
                 UpdateBanner(state.updateVersionLabel) { onAction(ProfileAction.OpenUpdate) }
-                Identity(state, Modifier.offset(y = (-8).dp).padding(top = 14.dp))
+                Identity(state, Modifier.padding(top = 14.dp))
             } else {
-                Identity(state, Modifier.offset(y = (-8).dp))
+                Identity(state)
             }
-            Membership(state, Modifier.offset(y = (-8).dp).padding(top = 16.dp))
+            Membership(state, Modifier.padding(top = 16.dp))
         }
 
         // Khối Lịch sử xu: Đẩy lên sát đỉnh đồng nhất
         Row(
             Modifier
                 .fillMaxWidth()
-                .offset(y = (-8).dp)
                 .padding(top = if (state.isFree) 0.dp else 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
